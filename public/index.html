@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyWebUI</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<aside id="side">
+  <div class="head"><button id="new">+ new chat</button></div>
+  <div id="chats"></div>
+</aside>
+
+<main>
+  <header>
+    <button id="menu">=</button>
+    <h1>TinyWebUI</h1>
+    <span id="status"></span>
+    <span class="grow"></span>
+    <button id="toggle-settings">settings</button>
+  </header>
+
+  <section id="settings">
+    <div class="sec">
+      <div class="sec-h">model</div>
+      <div>
+        <label for="systemPrompt">system prompt</label>
+        <textarea id="systemPrompt" rows="6"></textarea>
+      </div>
+      <div class="row">
+        <div><label for="model">model</label><input id="model" spellcheck="false"></div>
+        <div><label for="temperature">temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="provider default"></div>
+        <div><label for="maxTokens">max tokens</label><input id="maxTokens" type="number" min="1" placeholder="no limit"></div>
+        <div><label for="maxToolRounds">max tool turns</label><input id="maxToolRounds" type="number" min="1" max="50"></div>
+        <div><label for="cacheTtl" title="Anthropic cache lifetime. 1h costs more to write but survives longer pauses.">cache ttl</label><select id="cacheTtl"><option value="5m">5 min</option><option value="1h">1 hour</option></select></div>
+      </div>
+      <div class="row">
+        <div><label for="compactThreshold" title="Prompt size at which old tool results are compacted out of the window. 0 disables it.">compact above (tokens)</label><input id="compactThreshold" type="number" min="0" step="1000"></div>
+        <div><label for="keepTurns" title="Recent user turns whose tool results are always kept in full.">keep last turns</label><input id="keepTurns" type="number" min="1" max="20"></div>
+        <div><label for="maxInlineChars" title="A single tool result larger than this is stubbed on arrival.">stub above (chars)</label><input id="maxInlineChars" type="number" min="0" step="1000"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-h">mcp servers <span id="mcpPath" class="usage"></span></div>
+      <textarea id="mcpText" rows="9" spellcheck="false"></textarea>
+      <div class="row">
+        <div id="mcpMsg" class="usage"></div>
+        <div style="flex:0 0 auto"><button id="saveMcp">save &amp; reconnect</button></div>
+      </div>
+      <div>
+        <label>tools <span id="toolCount" class="usage"></span></label>
+        <div id="tools" class="tool-list"></div>
+      </div>
+    </div>
+    <div class="sec-bar">
+      <span id="saveMsg" class="usage"></span>
+      <button id="cancel">close</button>
+      <button class="primary" id="save">save settings</button>
+    </div>
+  </section>
+
+  <div id="log"><div class="wrap" id="wrap"></div></div>
+
+  <footer>
+    <form id="form">
+      <textarea id="input" rows="1" placeholder="message (enter to send, shift+enter for newline)"></textarea>
+      <button class="primary" id="send" type="submit">send</button>
+    </form>
+  </footer>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

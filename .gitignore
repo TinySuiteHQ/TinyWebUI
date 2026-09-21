@@ -1,0 +1,12 @@
+node_modules/
+
+# Holds the API key and MCP wiring -- local only.
+tinywebui.config.json
+
+# Local MCP wiring (paths, tokens).
+mcp.json
+
+# Conversation store (holds every tool result in full).
+tinywebui.db
+tinywebui.db-wal
+tinywebui.db-shm

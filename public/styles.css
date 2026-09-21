@@ -1,0 +1,246 @@
+:root {
+  --bg: #fff; --panel: #f4f4f5; --line: #d8d8dc; --fg: #18181b;
+  --muted: #6b6b73; --faint: #9a9aa2; --accent: #3b38c4; --tool: #0f6b63; --err: #b42318;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bar: 38px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141417; --panel: #1c1c20; --line: #303036; --fg: #e8e8ea;
+    --muted: #9a9aa2; --faint: #6a6a72; --accent: #8b85f5; --tool: #5eead4; --err: #fca5a5;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.6 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  display: flex; height: 100dvh; overflow: hidden;
+}
+button {
+  font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 3px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer;
+}
+button:hover { border-color: var(--fg); }
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+button:disabled { opacity: .45; cursor: default; }
+input, textarea, select {
+  font: inherit; font-size: 13px; width: 100%; padding: 5px 7px; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 3px; resize: vertical;
+}
+textarea#systemPrompt, textarea#mcpText { font-family: var(--mono); font-size: 12px; }
+label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+
+/* history sidebar */
+aside {
+  width: 200px; flex-shrink: 0; border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; background: var(--panel);
+}
+/* Same fixed height as the header, so the two top bars line up across the
+   sidebar border instead of each sizing to its own contents. */
+aside .head {
+  height: var(--bar); flex-shrink: 0; padding: 0 8px;
+  display: flex; align-items: center; border-bottom: 1px solid var(--line);
+}
+aside .head button { width: 100%; }
+#chats { flex: 1; overflow-y: auto; }
+.chat-item {
+  display: flex; align-items: center; gap: 4px; padding: 5px 8px;
+  cursor: pointer; font-size: 12px; color: var(--muted); border-bottom: 1px solid transparent;
+}
+.chat-item:hover { background: var(--bg); color: var(--fg); }
+.chat-item.active { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
+.chat-item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item .x { opacity: 0; border: 0; background: none; color: var(--faint); padding: 0 3px; }
+.chat-item:hover .x { opacity: 1; }
+.chat-item .x:hover { color: var(--err); }
+.empty { padding: 10px 8px; font-size: 11px; color: var(--faint); }
+
+/* main column */
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+header {
+  height: var(--bar); flex-shrink: 0; padding: 0 14px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: 13px; margin: 0; font-weight: 600; }
+header .grow { flex: 1; }
+#status { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+#menu { display: none; }
+
+/* Settings takes the whole main column rather than squeezing the transcript. */
+#settings {
+  display: none; position: absolute; inset: 0; z-index: 10; padding: 0;
+  background: var(--bg); flex-direction: column; overflow-y: auto;
+}
+#settings.open { display: flex; }
+.sec {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 16px 18px; max-width: 760px; width: 100%; margin: 0 auto;
+}
+.sec + .sec { border-top: 1px solid var(--line); }
+.sec:last-child { padding-bottom: 22px; }
+
+/* Action bar pinned to the bottom of the settings overlay. */
+.sec-bar {
+  position: sticky; bottom: 0; margin-top: auto;
+  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+  padding: 10px 18px; border-top: 1px solid var(--line); background: var(--panel);
+}
+.sec-bar .usage { margin-right: auto; }
+.sec-h {
+  font-size: 11px; font-family: var(--mono); text-transform: uppercase;
+  letter-spacing: .08em; color: var(--fg); display: flex; gap: 8px; align-items: baseline;
+}
+
+/* tool inspector */
+.tool-list { border: 1px solid var(--line); border-radius: 3px; background: var(--bg); }
+details.tool + details.tool { border-top: 1px solid var(--line); }
+details.tool > summary {
+  cursor: pointer; list-style: none; padding: 4px 9px; display: flex;
+  align-items: baseline; gap: 8px; font-size: 12px;
+}
+details.tool > summary::-webkit-details-marker { display: none; }
+details.tool > summary:hover { background: var(--panel); }
+.tool .srv { font-family: var(--mono); color: var(--faint); font-size: 11px; }
+.tool .name { font-family: var(--mono); color: var(--tool); }
+.tool .desc {
+  color: var(--muted); font-size: 11px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool .doc {
+  padding: 8px 10px; border-top: 1px solid var(--line); background: var(--panel);
+  font-size: 12px; color: var(--muted); white-space: pre-wrap;
+}
+.tool .doc pre {
+  margin: 7px 0 0; font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}
+.tool .params { margin-top: 7px; }
+.tool .param { display: flex; gap: 7px; font-family: var(--mono); font-size: 11.5px; padding: 1px 0; }
+.tool .param b { color: var(--fg); font-weight: 500; }
+.tool .param .ty { color: var(--faint); }
+.tool .param .req { color: var(--err); }
+.tool .param .d { color: var(--muted); flex: 1; min-width: 0; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.row > * { flex: 1 1 160px; }
+
+#log { flex: 1; overflow-y: auto; padding: 18px 14px 6px; }
+.wrap { max-width: 740px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+.who { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-bottom: 3px; }
+
+/* Three layers, visually distinct:
+   1. the question     -- solid accent bar, full contrast
+   2. the work         -- indented rail, dimmed, mono
+   3. the final answer -- no rail, widest measure, normal prose */
+
+.msg.user { padding-top: 4px; }
+.msg.user + * { margin-top: 2px; }
+.msg.user .body {
+  white-space: pre-wrap; border-left: 2px solid var(--accent);
+  padding-left: 10px; font-weight: 500;
+}
+/* A hairline above every question but the first, so turns are countable. */
+.msg.user:not(:first-child)::before {
+  content: ""; display: block; border-top: 1px solid var(--line);
+  margin: 6px 0 16px;
+}
+
+.work {
+  display: flex; flex-direction: column; gap: 7px;
+  margin-left: 1px; padding: 2px 0 2px 13px;
+  border-left: 1px dashed var(--line);
+}
+.work .steps { background: none; }
+
+/* The answer is the only block with no left rule -- that absence is what marks
+   it as the result rather than another step. */
+.msg.assistant .md { padding-left: 0; }
+
+/* rendered markdown */
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+.md p { margin: 0 0 .7em; }
+.md h1, .md h2, .md h3, .md h4 { margin: 1.1em 0 .4em; line-height: 1.3; font-weight: 600; font-size: 1em; }
+.md h1 { font-size: 1.15em; } .md h2 { font-size: 1.08em; }
+.md ul, .md ol { margin: 0 0 .7em; padding-left: 1.3em; }
+.md li { margin: .15em 0; }
+.md li > ul, .md li > ol { margin-bottom: 0; }
+.md a { color: var(--accent); }
+.md code { background: var(--panel); border-radius: 2px; padding: .1em .3em; font: .87em var(--mono); }
+.md pre {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+  padding: 8px 10px; overflow-x: auto; margin: 0 0 .7em;
+}
+.md pre code { background: none; padding: 0; font-size: .85em; line-height: 1.5; }
+.md blockquote { margin: 0 0 .7em; padding-left: .8em; border-left: 2px solid var(--line); color: var(--muted); }
+.md table { border-collapse: collapse; margin: 0 0 .7em; font-size: .92em; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; }
+.md th { background: var(--panel); font-weight: 600; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+
+/* thinking */
+details.think > summary,
+details.step > summary { cursor: pointer; list-style: none; }
+details.think > summary::-webkit-details-marker,
+details.step > summary::-webkit-details-marker { display: none; }
+details.think > summary {
+  color: var(--faint); font-size: 11px; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+details.think > summary:hover { color: var(--fg); }
+details.think > summary::before { content: "+ "; }
+details.think[open] > summary::before { content: "- "; }
+.think-body {
+  margin-top: 4px; padding-left: 10px; border-left: 1px solid var(--line);
+  color: var(--muted); white-space: pre-wrap; font-size: 12.5px;
+  max-height: 320px; overflow-y: auto;
+}
+
+/* tool steps */
+.steps { border: 1px solid var(--line); border-radius: 3px; }
+details.step + details.step { border-top: 1px solid var(--line); }
+details.step > summary {
+  padding: 4px 9px; display: flex; align-items: baseline; gap: 7px;
+  font-size: 12px; font-family: var(--mono);
+}
+details.step > summary:hover { background: var(--panel); }
+.step .name { color: var(--tool); }
+.step.bad .name { color: var(--err); }
+.step .arg { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .ms { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.step pre {
+  margin: 0; padding: 7px 10px; background: var(--panel); border-top: 1px solid var(--line);
+  font: 11.5px/1.5 var(--mono); color: var(--muted);
+  white-space: pre-wrap; word-break: break-word; max-height: 280px; overflow: auto;
+}
+
+.usage { font-size: 11px; color: var(--faint); font-family: var(--mono); }
+/* A compacted tool result: the model was sent a short stub, but the transcript
+   still shows the full output, so the badge is the only visible difference. */
+.step.compacted .name::after {
+  content: 'compacted';
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--faint);
+  font-size: 10px;
+}
+.work > .usage { margin: 2px 0 6px; }
+
+.err { color: var(--err); font-size: 12px; font-family: var(--mono); }
+.notice {
+  color: var(--muted); font-size: 11.5px; font-family: var(--mono);
+  border-left: 2px solid var(--err); padding-left: 10px;
+}
+
+footer { border-top: 1px solid var(--line); padding: 10px 14px; flex-shrink: 0; }
+form { max-width: 740px; margin: 0 auto; display: flex; gap: 6px; align-items: flex-end; }
+#input { max-height: 190px; }
+
+@media (max-width: 720px) {
+  aside { position: fixed; inset: 0 auto 0 0; z-index: 20; transform: translateX(-100%); }
+  aside.open { transform: none; }
+  #menu { display: inline-block; }
+}
