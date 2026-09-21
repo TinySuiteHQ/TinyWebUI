@@ -8,22 +8,30 @@
 </head>
 <body>
 
+<header>
+  <button id="menu" aria-label="Show chat history" aria-expanded="false" aria-controls="side">=</button>
+  <h1>TinyWebUI</h1>
+  <span id="status" role="status" aria-live="polite"></span>
+  <span class="grow"></span>
+  <button id="toggle-settings">settings</button>
+</header>
+
+<div id="shell">
+
+<div id="side-backdrop"></div>
+
 <aside id="side" aria-label="Chat history">
   <div class="head"><button id="new">+ new chat</button></div>
+  <div class="search-row">
+    <input id="chatSearch" type="search" placeholder="search chats…" aria-label="Search chats" autocomplete="off" spellcheck="false">
+    <button id="chatSearchClear" class="x" type="button" aria-label="Clear search" hidden>×</button>
+  </div>
   <div id="chats"></div>
   <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0"
        aria-label="Resize chat history" title="Drag to resize, double-click to reset"></div>
 </aside>
 
 <main>
-  <header>
-    <button id="menu" aria-label="Show chat history" aria-expanded="false" aria-controls="side">=</button>
-    <h1>TinyWebUI</h1>
-    <span id="status" role="status" aria-live="polite"></span>
-    <span class="grow"></span>
-    <button id="toggle-settings">settings</button>
-  </header>
-
   <section id="settings">
     <div class="sec">
       <div class="sec-h">model</div>
@@ -73,6 +81,8 @@
     </form>
   </footer>
 </main>
+
+</div>
 
 <script type="module" src="app.js"></script>
 </body>

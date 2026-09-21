@@ -26,8 +26,40 @@
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: var(--fs-body)/1.6 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
-  display: flex; height: 100dvh; overflow: hidden;
+  display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
 }
+/* The two panes below the header, previously body's own direct children and
+   row-flexed themselves. Split out so header can run the full page width as
+   one top bar instead of being confined to the main column beside it. */
+#shell { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+/* The one top bar, full page width, above both panes. Centered on the row's
+   own cross axis -- the same rule at every width, which is what keeps menu,
+   title, status and settings sitting on one clean line whether the header is
+   512px or 1514px wide. This only reads as clean because #status below is
+   pinned to a single line: two mismatched buttons and two lines of status
+   text fighting over "centered" is what baseline alignment used to paper
+   over, one font's metrics at a time, instead of removing the actual cause. */
+header {
+  height: var(--bar); flex-shrink: 0; padding: 0 .875rem;
+  display: flex; align-items: center; gap: .5rem;
+  border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: var(--fs-ui); margin: 0; font-weight: 600; flex-shrink: 0; }
+header .grow { flex: 1; }
+/* #status is a long, dynamic string -- model id plus a tool count -- that
+   fits fine on a wide header and does not on a narrow one. Flex items don't
+   shrink past their own content width by default (min-width:auto), so
+   without help here it wraps to a second line instead: the header grows
+   past its own fixed height, and every other child's baseline alignment goes
+   with it -- which is what made the whole bar look wrong, not just this one
+   span. One line, truncated, is what a status string is for anyway; the
+   model and tool count are both one click away in settings if cut off. */
+#status {
+  font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono);
+  min-width: 3rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+#menu { display: none; }
 
 /* One focus ring for everything, drawn outside the element so a dense row does
    not clip it. Keyboard only -- the mouse never sees it. */
@@ -83,6 +115,20 @@ aside .head {
   display: flex; align-items: center; border-bottom: 1px solid var(--line);
 }
 aside .head button { width: 100%; }
+
+.search-row {
+  flex-shrink: 0; position: relative; padding: .5rem; border-bottom: 1px solid var(--line);
+}
+.search-row input { padding-right: 2rem; }
+.search-row input::-webkit-search-cancel-button { display: none; }
+#chatSearchClear {
+  position: absolute; top: 50%; right: .75rem; transform: translateY(-50%);
+  width: 1.5rem; height: 1.5rem; min-height: 0; padding: 0; border: 0; background: none;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--faint); font-size: var(--fs-body); line-height: 1;
+}
+#chatSearchClear:hover { color: var(--err); }
+
 #chats { flex: 1; overflow-y: auto; }
 .chat-item {
   display: flex; align-items: center; gap: .25rem; padding: .375rem .5rem;
@@ -102,17 +148,29 @@ aside .head button { width: 100%; }
 .chat-item .x:hover, .chat-item .x:focus-visible { color: var(--err); }
 .empty { padding: .625rem .5rem; font-size: var(--fs-ui); color: var(--muted); }
 
+/* A search result carries a title and a snippet, so it grows past the plain
+   list's single line rather than truncating either one away. */
+.chat-item.search-hit { flex-direction: column; align-items: stretch; gap: .1875rem; padding: .5rem; }
+.chat-item.search-hit .t { flex: initial; white-space: normal; overflow: visible; }
+.hit-title {
+  display: flex; align-items: baseline; gap: .375rem;
+  color: var(--fg); font-size: var(--fs-ui);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hit-role {
+  flex-shrink: 0; margin-left: auto; color: var(--faint); font-size: var(--fs-meta);
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .04em;
+}
+.hit-snippet {
+  color: var(--muted); font-size: var(--fs-meta); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hit-snippet mark {
+  background: none; color: var(--fg); font-weight: 600;
+}
+
 /* main column */
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
-header {
-  height: var(--bar); flex-shrink: 0; padding: 0 .875rem;
-  display: flex; align-items: center; gap: .5rem;
-  border-bottom: 1px solid var(--line);
-}
-header h1 { font-size: var(--fs-ui); margin: 0; font-weight: 600; }
-header .grow { flex: 1; }
-#status { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
-#menu { display: none; }
 
 /* Settings takes the whole main column rather than squeezing the transcript. */
 #settings {
@@ -399,11 +457,35 @@ form {
 #input { max-height: 13rem; font-size: var(--fs-body); }
 #send { min-width: 5rem; }
 
+#side-backdrop { display: none; }
+
 @media (max-width: 720px) {
-  aside { position: fixed; inset: 0 auto 0 0; z-index: 20; transform: translateX(-100%); }
+  /* The drawer slides out under the header rather than over it, so the menu
+     button that opened it -- and the settings button beside it -- stay in
+     place and tappable the whole time it is open, instead of vanishing
+     behind an overlay the moment it appears. */
+  aside {
+    position: fixed; top: var(--bar); bottom: 0; left: 0; width: min(85vw, 22rem);
+    z-index: 20; transform: translateX(-100%); transition: transform .18s ease;
+  }
   aside.open { transform: none; }
-  /* An overlay drawer has no edge to drag against the content, so the handle
-     has nothing to mean here. */
+  /* A fixed width here rather than var(--side-w): the drag handle that sets
+     that variable is mouse-only and hidden on this path, and an overlay
+     drawer has no edge to drag against the content anyway. */
   #side-resize { display: none; }
   #menu { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* Closing the drawer needs more ways in than hunting for the menu button
+     again: tapping the dimmed content behind it, or Escape, both close it
+     (wired in app.js). */
+  #side-backdrop {
+    display: block; position: fixed; top: var(--bar); right: 0; bottom: 0; left: 0;
+    z-index: 19; background: rgb(0 0 0 / 40%);
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+  }
+  #side-backdrop.open { opacity: 1; pointer-events: auto; }
+
+  /* iOS zooms the whole page in on focusing any input under 16px -- these are
+     all a notch smaller than that on the desktop type scale. */
+  input, textarea, select { font-size: 16px; }
 }

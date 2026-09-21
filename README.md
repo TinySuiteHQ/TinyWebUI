@@ -348,4 +348,45 @@ the live event stream for the rest, and the sidebar shows a dot against any chat
 working. `POST /api/chats/:id/stop` is how you actually mean it — the send button becomes
 `stop` while a turn is in flight.
 
+### Search
+
+The sidebar's search box (`GET /api/search?q=`) is full-text over every chat at once, via
+SQLite's FTS5, and returns one row per matching *chat* -- not one per matching message. A
+chat where the same word landed in five messages does not crowd out four others that only
+said it once; each chat's single best-ranked message stands for it in the results.
+
+It searches the conversation, not the process behind it: user messages and the assistant's
+actual answer, never reasoning, tool calls, tool results, or narration -- all of that is the
+"work" the transcript shows collapsed, not the conversation, and indexing it would make every
+search mostly noise from things nobody typed or read. Narration is the subtle one: "let me
+check the PDF" between two tool calls is a real, stored assistant message, indistinguishable
+by role alone from the answer that ends the turn. The index applies the same rule the UI
+already does -- a message is indexed provisionally, and retracted the moment a later message
+in the same turn proves it was narration, not the answer, so only whatever the transcript
+actually ended up calling the answer stays searchable. A chat still mid-turn is left out of
+the results entirely regardless, since its content hasn't settled and there's nowhere
+sensible for a click to land on it yet.
+
+Free text is turned into an AND-of-words query, quoted term by term, which is what makes
+typing something like `what's tuition cost?` search rather than throw a syntax error -- and
+the last word gets a trailing wildcard, so results narrow while you're still typing it. The
+index self-heals: opening the database backfills anything missing from it (a chat from before
+search existed, or any other drift), so there's no migration step.
+
+### Tool control
+
+The settings panel's tools section is grouped, not flat: built-ins first, then every MCP
+server as its own card with a health dot -- connected, disabled, or failed to connect (with
+the error) -- and that server's tools underneath. Every tool, built-in or MCP, carries a
+checkbox; unchecking it removes it from what the model is offered on the next turn, without
+touching the connection it came from. Unchecking a server is a different operation: it tears
+the connection down (`GET /api/tools`, `POST /api/tools/toggle`, `POST
+/api/mcp/servers/:name/toggle`), one fewer live child process or open connection rather than
+just one the model is not shown -- the same `disabled` flag the raw `mcp.json` editor already
+understood, now reachable without hand-editing JSON.
+
+Toggling either one is a request the current chat's tool block was built from, so it costs a
+cache miss on that chat's next turn, the same as changing `maxToolRounds` or `compactThreshold`
+would.
+
 Transcripts written by an earlier version are imported from `localStorage` on first load.

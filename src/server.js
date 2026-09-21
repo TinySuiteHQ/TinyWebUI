@@ -235,6 +235,23 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         });
       }
 
+      // Full-text search across every stored message, for the sidebar's search
+      // box. GET with a query string, so it is bookmarkable and cacheable like
+      // any other read, unlike the POST-with-body routes below it.
+      if (req.method === 'GET' && (req.url || '').split('?')[0] === '/api/search') {
+        const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
+        const limit = 30;
+        // A chat mid-turn is still being written -- store.search would be
+        // matching against text that has not settled, and openChat/rejoin is
+        // not built to land a click in the middle of a live stream. Overfetch
+        // and filter rather than ask the store to know about runs, which is a
+        // server-only concept it has no business importing.
+        const results = store.search(q, limit * 2)
+          .filter((r) => !isRunning(r.chatId))
+          .slice(0, limit);
+        return json(res, 200, { results });
+      }
+
       if (req.method === 'GET' && req.url === '/api/chats') {
         // `running` is what puts the dot in the sidebar: a turn belongs to the
         // server, so a chat can be working while nothing is watching it.

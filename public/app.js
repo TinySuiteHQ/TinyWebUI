@@ -139,6 +139,107 @@ async function loadChats() {
     const res = await (await fetch('/api/chats')).json();
     chats = res.chats || [];
   } catch { chats = []; }
+  // A background poll (the running-dot refresh) must not clobber search
+  // results the user is looking at with the plain chronological list.
+  refreshSidebar();
+}
+
+/* ---------- search ---------- */
+
+let searchQuery = '';
+let searchResults = null;
+let searchSeq = 0;
+
+/** Redraws whichever view is current -- search results, or the plain list. */
+function refreshSidebar() {
+  if (searchQuery && searchResults) renderSearchResults(searchResults, searchQuery);
+  else renderChatList();
+}
+
+async function runSearch(q) {
+  const seq = ++searchSeq;
+  if (!q.trim()) {
+    searchQuery = '';
+    searchResults = null;
+    return renderChatList();
+  }
+  let results = [];
+  try {
+    results = (await (await fetch(`/api/search?q=${encodeURIComponent(q)}`)).json()).results || [];
+  } catch { /* leave whatever is on screen; the next keystroke will retry */ }
+  if (seq !== searchSeq) return; // a newer query landed first -- this one is stale
+  searchQuery = q;
+  searchResults = results;
+  renderSearchResults(results, q);
+}
+
+/** Turns snippet()'s ‹...› markers into <mark>, escaping everything else. */
+function markSnippet(raw) {
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return raw.split('‹').map((chunk, i) => {
+    if (i === 0) return esc(chunk);
+    const at = chunk.indexOf('›');
+    if (at === -1) return esc(chunk); // an unmatched marker -- show it plainly rather than eat it
+    return `<mark>${esc(chunk.slice(0, at))}</mark>${esc(chunk.slice(at + 1))}`;
+  }).join('');
+}
+
+const SEARCH_ROLE_LABEL = { user: 'you', assistant: 'assistant', tool: 'tool' };
+
+function renderSearchResults(results, query) {
+  $('chats').innerHTML = '';
+  if (!results.length) {
+    const e = el('div', 'empty');
+    e.textContent = `no matches for “${query}”`;
+    return $('chats').appendChild(e);
+  }
+  for (const r of results) {
+    const row = el('div', 'chat-item search-hit');
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    const body = el('div', 't');
+    const title = el('div', 'hit-title');
+    title.textContent = r.chatTitle;
+    const role = el('span', 'hit-role');
+    role.textContent = SEARCH_ROLE_LABEL[r.role] || r.role;
+    title.appendChild(role);
+    const snip = el('div', 'hit-snippet');
+    snip.innerHTML = markSnippet(r.snippet);
+    body.append(title, snip);
+    row.appendChild(body);
+    const go = () => openChat(r.chatId);
+    row.onclick = go;
+    row.onkeydown = (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      go();
+    };
+    $('chats').appendChild(row);
+  }
+}
+
+let searchDebounce = null;
+$('chatSearch').addEventListener('input', () => {
+  const q = $('chatSearch').value;
+  $('chatSearchClear').hidden = !q;
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => runSearch(q), 150);
+});
+$('chatSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('chatSearch').value) {
+    e.preventDefault();
+    clearSearch();
+  }
+});
+$('chatSearchClear').onclick = () => { clearSearch(); $('chatSearch').focus(); };
+
+function clearSearch() {
+  clearTimeout(searchDebounce);
+  searchSeq++; // invalidate any in-flight query so a slow reply cannot land after this
+  searchQuery = '';
+  searchResults = null;
+  $('chatSearch').value = '';
+  $('chatSearchClear').hidden = true;
   renderChatList();
 }
 
@@ -164,7 +265,11 @@ async function migrateLocal() {
 function newChat() {
   chat = { id: null, title: 'New chat' };
   wrap.innerHTML = '';
-  renderChatList();
+  // Starting fresh is a clear signal that browsing is done; a lingering
+  // search would otherwise still be sitting over the sidebar underneath it,
+  // and on mobile the drawer would otherwise still be covering the composer.
+  clearSearch();
+  closeSideDrawer();
 }
 
 async function openChat(id) {
@@ -176,8 +281,8 @@ async function openChat(id) {
   // Mid-turn, the server hands back only the settled part of the transcript;
   // the rest arrives as events, exactly as it did for the tab that started it.
   replay(found.messages);
-  renderChatList();
-  $('side').classList.remove('open');
+  clearSearch();
+  closeSideDrawer();
   if (found.running) rejoin(id);
 }
 
@@ -837,10 +942,26 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('settings').classList.contains('open')) toggleSettings(false);
 });
 $('new').onclick = newChat;
-$('menu').onclick = () => {
-  const open = $('side').classList.toggle('open');
+
+/**
+ * The mobile drawer. Three ways in beyond the menu button: tapping the
+ * dimmed backdrop behind it, Escape, and picking a chat (via closeSideDrawer
+ * in openChat/newChat above) -- a panel with only one way to close is the
+ * kind of thing that reads as broken on a phone even when it technically
+ * isn't.
+ */
+function setSideDrawer(open) {
+  $('side').classList.toggle('open', open);
+  $('side-backdrop').classList.toggle('open', open);
   $('menu').setAttribute('aria-expanded', String(open));
-};
+}
+const closeSideDrawer = () => setSideDrawer(false);
+
+$('menu').onclick = () => setSideDrawer(!$('side').classList.contains('open'));
+$('side-backdrop').onclick = closeSideDrawer;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();
+});
 
 /* ---------- send ---------- */
 

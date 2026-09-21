@@ -52,7 +52,112 @@ CREATE TABLE IF NOT EXISTS artifacts (
   char_len   INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+-- Full-text search over what was actually said, not how it got answered.
+-- Reasoning and tool results are the "work" the transcript shows collapsed,
+-- not the conversation, and are left out of the index by role alone -- a
+-- tool result can be a page-sized scrape, and indexing it would mean every
+-- search is mostly noise from things nobody typed or read. ('system' rows
+-- would be indexed too, but none are ever persisted: the system prompt and
+-- the per-round budget note are wire-only, appended in llm.js and never
+-- written to the store.)
+--
+-- Role alone is not enough, though. Narration between tool calls -- "let me
+-- check the PDF" -- is a real assistant message, indistinguishable by role
+-- from the answer that ends the turn, and the UI itself treats it the same
+-- way: addTurn() in app.js demotes it into the collapsed work the moment
+-- anything follows it, under a "note" label, and only whatever is still
+-- standing when the turn ends is shown as the answer. The index follows the
+-- same rule. A message can't know its own fate at insert time -- more rounds
+-- might still follow -- so every assistant row is indexed provisionally, and
+-- the "supersede" trigger below retracts the one immediately before it the
+-- moment a further assistant or tool row proves it was narration, not the
+-- answer. Whatever is left indexed when the turn ends is, by construction,
+-- exactly what the transcript ended up calling the answer. (A note is
+-- visible in the index for the brief window before that -- moot in practice,
+-- since a running chat is excluded from search results entirely regardless;
+-- see isRunning in server.js.)
+--
+-- Deliberately NOT an external-content table: FTS5's external-content mode
+-- expects to read the indexed columns back off the source table by name when
+-- it needs to (a rebuild, an integrity-check), which only works when the
+-- source table happens to have a same-named column -- ours doesn't, since
+-- 'body' is a filtered, role-conditional projection of content, not a
+-- column that exists anywhere. A plain FTS5 table stores its own copy of
+-- that text instead: one extra copy of the visible transcript on disk, in
+-- exchange for triggers that are ordinary INSERT/UPDATE/DELETE rather than
+-- external-content's special 'delete' and 'rebuild' incantations.
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  body,
+  tokenize='unicode61'
+);
+
+-- Dropped and recreated every open rather than IF NOT EXISTS: a trigger by
+-- this name may already exist from an earlier shape of this logic, and IF
+-- NOT EXISTS would leave that older body (and whatever it left indexed) in
+-- place silently. The table itself does not need this -- its shape hasn't
+-- changed -- only what gets written into it has.
+DROP TRIGGER IF EXISTS messages_fts_ai;
+DROP TRIGGER IF EXISTS messages_fts_supersede;
+DROP TRIGGER IF EXISTS messages_fts_ad;
+DROP TRIGGER IF EXISTS messages_fts_au;
+
+CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages
+WHEN new.role IN ('user', 'assistant', 'system') BEGIN
+  INSERT INTO messages_fts(rowid, body) VALUES (new.id, coalesce(new.content, ''));
+END;
+-- The row immediately before this one, in the same chat, is retracted from
+-- the index if it was an assistant row -- something else in the same turn
+-- just followed it, so it was narration, not the answer. A 'user' row never
+-- fires this (a new question ends the previous turn, it doesn't continue
+-- it), so the trigger cannot retract an answer that genuinely stood alone.
+CREATE TRIGGER messages_fts_supersede AFTER INSERT ON messages
+WHEN new.role IN ('assistant', 'tool') BEGIN
+  DELETE FROM messages_fts WHERE rowid = (
+    SELECT id FROM messages WHERE chat_id = new.chat_id AND seq = new.seq - 1 AND role = 'assistant'
+  );
+END;
+CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+  DELETE FROM messages_fts WHERE rowid = old.id;
+END;
+CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+  DELETE FROM messages_fts WHERE rowid = new.id;
+  INSERT INTO messages_fts(rowid, body)
+    SELECT new.id, coalesce(new.content, '') WHERE new.role IN ('user', 'assistant', 'system');
+END;
 `;
+
+/**
+ * The bulk form of the supersede trigger above, for correcting whatever an
+ * earlier shape of these triggers already left indexed: any assistant row
+ * immediately followed, in the same chat, by another assistant or tool row.
+ */
+const SUPERSEDE_CLEANUP = `
+  DELETE FROM messages_fts WHERE rowid IN (
+    SELECT m.id FROM messages m
+    JOIN messages nxt ON nxt.chat_id = m.chat_id AND nxt.seq = m.seq + 1
+    WHERE m.role = 'assistant' AND nxt.role IN ('assistant', 'tool')
+  )
+`;
+
+/**
+ * Turns free text from a search box into an FTS5 MATCH expression that cannot
+ * fail to parse. FTS5's own query grammar has ANDs, ORs, dashes, colons and
+ * parens in it, and a search box is not a query language -- a user typing
+ * "what's tuition cost?" should search for those words, not hit a syntax
+ * error. Quoting every token as its own phrase turns that grammar off entirely
+ * and leaves only AND-of-words, plus a trailing "*" on the last token so a
+ * query still narrows results while it is being typed rather than only once
+ * a whole word is finished.
+ */
+function ftsQuery(raw) {
+  const tokens = String(raw ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 12);
+  if (!tokens.length) return '';
+  const esc = (t) => t.replace(/"/g, '""');
+  return tokens
+    .map((t, i) => (i === tokens.length - 1 ? `"${esc(t)}"*` : `"${esc(t)}"`))
+    .join(' ');
+}
 
 export class Store {
   constructor(path) {
@@ -61,6 +166,37 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
+    // A tool row, or an assistant note later superseded within its own turn,
+    // indexed under an earlier shape of the triggers above is corrected on
+    // open rather than left to linger -- the triggers alone only ever
+    // prevent NEW drift, not clean up old drift.
+    this.db.exec(`
+      DELETE FROM messages_fts WHERE rowid IN (
+        SELECT id FROM messages WHERE role NOT IN ('user', 'assistant', 'system')
+      )
+    `);
+    this.db.exec(SUPERSEDE_CLEANUP);
+    // The triggers keep the index in step with every write from here on, but
+    // they cannot backfill history that predates them -- a database from
+    // before search existed opens with a `messages_fts` that is real but
+    // empty for rows that should be in it. A count mismatch, restricted to
+    // the roles that belong in the index, is also what any other divergence
+    // would look like, so this doubles as self-repair: whatever is missing
+    // is added, nothing already correct is touched.
+    const { m, f } = this.db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM messages WHERE role IN ('user', 'assistant', 'system')) AS m,
+        (SELECT COUNT(*) FROM messages_fts) AS f
+    `).get();
+    if (m !== f) {
+      this.db.exec(`
+        INSERT INTO messages_fts(rowid, body)
+        SELECT id, coalesce(content, '')
+        FROM messages
+        WHERE role IN ('user', 'assistant', 'system')
+          AND id NOT IN (SELECT rowid FROM messages_fts)
+      `);
+    }
   }
 
   close() {
@@ -185,6 +321,52 @@ export class Store {
 
   getArtifact(id) {
     return this.db.prepare('SELECT * FROM artifacts WHERE id = ?').get(id) || null;
+  }
+
+  /* ---------- search ---------- */
+
+  /**
+   * Full-text search, one row per matching CHAT, not per matching message --
+   * a search box is for finding a conversation, and a chat where the same
+   * word landed in five messages should not crowd out four other chats that
+   * only said it once. Each chat's own best-ranked message stands for it,
+   * and chats are then ordered against each other by that same rank.
+   *
+   * `bm25()` and `snippet()` are FTS5 auxiliary functions: usable only in a
+   * query that itself matches the virtual table, not through an arbitrary
+   * subquery. Computing both once in `hits` and carrying the values through
+   * `ranked` (rather than recomputing `bm25(messages_fts)` inside the window
+   * function's own ORDER BY) is what keeps them legal here -- SQLite raises
+   * "unable to use function bm25 in the requested context" otherwise.
+   */
+  search(query, limit = 30) {
+    const q = ftsQuery(query);
+    if (!q) return [];
+    return this.db.prepare(`
+      WITH hits AS (
+        SELECT
+          m.chat_id  AS chatId,
+          c.title    AS chatTitle,
+          m.seq      AS seq,
+          m.role     AS role,
+          c.updated_at AS chatUpdatedAt,
+          bm25(messages_fts) AS rank,
+          snippet(messages_fts, 0, '‹', '›', '…', 12) AS snippet
+        FROM messages_fts
+        JOIN messages m ON m.id = messages_fts.rowid
+        JOIN chats c ON c.id = m.chat_id
+        WHERE messages_fts MATCH ?
+      ),
+      ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY chatId ORDER BY rank) AS rn
+        FROM hits
+      )
+      SELECT chatId, chatTitle, seq, role, chatUpdatedAt, snippet
+      FROM ranked
+      WHERE rn = 1
+      ORDER BY rank
+      LIMIT ?
+    `).all(q, limit);
   }
 }
 

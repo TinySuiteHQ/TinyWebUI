@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const TOY = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'toy-mcp-server.mjs');
+const TOY = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'toy-mcp-server.mjs');
 
 let lastBody = null;
 const fake = createServer((req, res) => {
