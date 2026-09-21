@@ -1,70 +1,117 @@
 :root {
   --bg: #fff; --panel: #f4f4f5; --line: #d8d8dc; --fg: #18181b;
-  --muted: #6b6b73; --faint: #9a9aa2; --accent: #3b38c4; --tool: #0f6b63; --err: #b42318;
+  --muted: #5c5c66; --faint: #6f6f78; --accent: #3b38c4; --tool: #0d5c55; --err: #a4181a;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --bar: 38px;
+
+  /* One type scale, in rem, so the browser's own font-size setting still
+     applies. Nothing below 0.8125rem/13px: that was the floor the old 10-11px
+     metadata kept falling through. */
+  --fs-meta: .8125rem;  /* timestamps, counts, badges */
+  --fs-ui: .9375rem;    /* controls, labels, list rows */
+  --fs-body: 1.0625rem; /* the transcript itself */
+
+  /* Minimum hit target. Every interactive element is at least this tall, which
+     is what drives the bar height and the row padding rather than the reverse. */
+  --tap: 2.25rem;
+  --bar: 3rem;
+  --measure: 46rem;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #141417; --panel: #1c1c20; --line: #303036; --fg: #e8e8ea;
-    --muted: #9a9aa2; --faint: #6a6a72; --accent: #8b85f5; --tool: #5eead4; --err: #fca5a5;
+    --bg: #141417; --panel: #1c1c20; --line: #3a3a42; --fg: #e8e8ea;
+    --muted: #a8a8b2; --faint: #92929c; --accent: #a5a0ff; --tool: #5eead4; --err: #fca5a5;
   }
 }
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
-  font: 14px/1.6 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  font: var(--fs-body)/1.6 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
   display: flex; height: 100dvh; overflow: hidden;
 }
+
+/* One focus ring for everything, drawn outside the element so a dense row does
+   not clip it. Keyboard only -- the mouse never sees it. */
+:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px;
+}
+
 button {
-  font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 3px;
+  font: inherit; font-size: var(--fs-ui); line-height: 1.2;
+  min-height: var(--tap); padding: .375rem .75rem; border-radius: 3px;
   border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer;
 }
 button:hover { border-color: var(--fg); }
 button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-button:disabled { opacity: .45; cursor: default; }
+button:disabled { opacity: .55; cursor: default; }
 input, textarea, select {
-  font: inherit; font-size: 13px; width: 100%; padding: 5px 7px; color: var(--fg);
+  font: inherit; font-size: var(--fs-ui); width: 100%; min-height: var(--tap);
+  padding: .375rem .5rem; color: var(--fg);
   background: var(--bg); border: 1px solid var(--line); border-radius: 3px; resize: vertical;
 }
-textarea#systemPrompt, textarea#mcpText { font-family: var(--mono); font-size: 12px; }
-label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+textarea#systemPrompt, textarea#mcpText { font-family: var(--mono); font-size: var(--fs-ui); }
+label { font-size: var(--fs-ui); color: var(--muted); display: block; margin-bottom: .25rem; }
 
 /* history sidebar */
 aside {
-  width: 200px; flex-shrink: 0; border-right: 1px solid var(--line);
+  /* Driven by the drag handle below; the fallback is the width it always had. */
+  width: var(--side-w, 15rem);
+  position: relative;
+  flex-shrink: 0; border-right: 1px solid var(--line);
   display: flex; flex-direction: column; background: var(--panel);
 }
+
+/* The drag handle straddles the sidebar border: a 1px border is not a target,
+   so the grab area is widened without moving anything it sits against. */
+#side-resize {
+  position: absolute; top: 0; bottom: 0; right: -3px; width: 7px;
+  cursor: col-resize; z-index: 2; touch-action: none;
+}
+#side-resize::after {
+  content: ""; position: absolute; inset: 0 3px; background: var(--accent);
+  opacity: 0; transition: opacity .12s;
+}
+#side-resize:hover::after,
+#side-resize:focus-visible::after,
+body.resizing #side-resize::after { opacity: 1; }
+#side-resize:focus-visible { outline: none; }
+/* While dragging, nothing else should be selecting text or fighting the cursor. */
+body.resizing { cursor: col-resize; user-select: none; }
 /* Same fixed height as the header, so the two top bars line up across the
    sidebar border instead of each sizing to its own contents. */
 aside .head {
-  height: var(--bar); flex-shrink: 0; padding: 0 8px;
+  height: var(--bar); flex-shrink: 0; padding: 0 .5rem;
   display: flex; align-items: center; border-bottom: 1px solid var(--line);
 }
 aside .head button { width: 100%; }
 #chats { flex: 1; overflow-y: auto; }
 .chat-item {
-  display: flex; align-items: center; gap: 4px; padding: 5px 8px;
-  cursor: pointer; font-size: 12px; color: var(--muted); border-bottom: 1px solid transparent;
+  display: flex; align-items: center; gap: .25rem; padding: .375rem .5rem;
+  min-height: var(--tap); cursor: pointer; font-size: var(--fs-ui);
+  color: var(--muted); border-bottom: 1px solid transparent;
 }
 .chat-item:hover { background: var(--bg); color: var(--fg); }
 .chat-item.active { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
 .chat-item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-item .x { opacity: 0; border: 0; background: none; color: var(--faint); padding: 0 3px; }
-.chat-item:hover .x { opacity: 1; }
-.chat-item .x:hover { color: var(--err); }
-.empty { padding: 10px 8px; font-size: 11px; color: var(--faint); }
+/* The delete control used to appear on hover alone, which put it out of reach
+   of touch and of the keyboard. It is always present now, just quiet. */
+.chat-item .x {
+  flex-shrink: 0; width: 1.75rem; height: 1.75rem; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; background: none; color: var(--faint); font-size: var(--fs-body);
+}
+.chat-item .x:hover, .chat-item .x:focus-visible { color: var(--err); }
+.empty { padding: .625rem .5rem; font-size: var(--fs-ui); color: var(--muted); }
 
 /* main column */
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 header {
-  height: var(--bar); flex-shrink: 0; padding: 0 14px;
-  display: flex; align-items: center; gap: 8px;
+  height: var(--bar); flex-shrink: 0; padding: 0 .875rem;
+  display: flex; align-items: center; gap: .5rem;
   border-bottom: 1px solid var(--line);
 }
-header h1 { font-size: 13px; margin: 0; font-weight: 600; }
+header h1 { font-size: var(--fs-ui); margin: 0; font-weight: 600; }
 header .grow { flex: 1; }
-#status { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+#status { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
 #menu { display: none; }
 
 /* Settings takes the whole main column rather than squeezing the transcript. */
@@ -74,88 +121,196 @@ header .grow { flex: 1; }
 }
 #settings.open { display: flex; }
 .sec {
-  display: flex; flex-direction: column; gap: 9px;
-  padding: 16px 18px; max-width: 760px; width: 100%; margin: 0 auto;
+  display: flex; flex-direction: column; gap: .75rem;
+  padding: 1.125rem; max-width: 48rem; width: 100%; margin: 0 auto;
 }
 .sec + .sec { border-top: 1px solid var(--line); }
-.sec:last-child { padding-bottom: 22px; }
+.sec:last-child { padding-bottom: 1.5rem; }
 
 /* Action bar pinned to the bottom of the settings overlay. */
 .sec-bar {
   position: sticky; bottom: 0; margin-top: auto;
-  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
-  padding: 10px 18px; border-top: 1px solid var(--line); background: var(--panel);
+  display: flex; align-items: center; gap: .5rem; justify-content: flex-end;
+  padding: .625rem 1.125rem; border-top: 1px solid var(--line); background: var(--panel);
 }
 .sec-bar .usage { margin-right: auto; }
 .sec-h {
-  font-size: 11px; font-family: var(--mono); text-transform: uppercase;
-  letter-spacing: .08em; color: var(--fg); display: flex; gap: 8px; align-items: baseline;
+  font-size: var(--fs-ui); font-family: var(--mono); text-transform: uppercase;
+  letter-spacing: .08em; color: var(--fg); display: flex; gap: .5rem; align-items: baseline;
 }
 
 /* tool inspector */
-.tool-list { border: 1px solid var(--line); border-radius: 3px; background: var(--bg); }
+.tool-list { display: flex; flex-direction: column; gap: .625rem; }
+
+/* One group per source: the built-ins, and each MCP server. */
+.tool-group {
+  border: 1px solid var(--line); border-radius: 3px; background: var(--bg);
+  overflow: hidden;
+}
+.tool-group-h {
+  display: flex; align-items: center; gap: .5rem; padding: .4375rem .625rem;
+  min-height: var(--tap); background: var(--panel); border-bottom: 1px solid var(--line);
+  font-size: var(--fs-ui);
+}
+/* A group with nothing under it (built-ins with no doc, an empty server) has
+   no border to close, so the header's own bottom rule stands in for it. */
+.tool-group:not(:has(details, .empty)) .tool-group-h { border-bottom: 0; }
+.tool-group-h .name { font-family: var(--mono); color: var(--fg); font-weight: 500; }
+.tool-group-h .meta { color: var(--muted); font-size: var(--fs-meta); margin-left: auto; }
+.tool-group-err {
+  padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta);
+  font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
+}
+
+/* Connection health, read at a glance before the label is even parsed. */
+.tool-group .dot { width: .5rem; height: .5rem; border-radius: 50%; flex-shrink: 0; background: var(--faint); }
+.tool-group.server.ok .dot { background: var(--tool); }
+.tool-group.server.error .dot { background: var(--err); }
+.tool-group.server.disabled .dot,
+.tool-group.server.disabled .name { color: var(--faint); opacity: .7; }
+.tool-group.server.disabled .dot { background: var(--faint); }
+
+/* The switch that disables a tool or a whole server. Plain, like every other
+   control here -- this is not the app's one place for a styled toggle. */
+label.tgl { display: inline-flex; align-items: center; cursor: pointer; }
+label.tgl input { margin: 0; cursor: pointer; }
+
 details.tool + details.tool { border-top: 1px solid var(--line); }
 details.tool > summary {
-  cursor: pointer; list-style: none; padding: 4px 9px; display: flex;
-  align-items: baseline; gap: 8px; font-size: 12px;
+  cursor: pointer; list-style: none; padding: .4375rem .625rem; display: flex;
+  align-items: baseline; gap: .5rem; font-size: var(--fs-ui); min-height: var(--tap);
 }
 details.tool > summary::-webkit-details-marker { display: none; }
 details.tool > summary:hover { background: var(--panel); }
-.tool .srv { font-family: var(--mono); color: var(--faint); font-size: 11px; }
+/* A disabled tool stays fully legible -- dimming it away would make the one
+   state you are here to check on the hardest one to read. */
+details.tool.off { background: var(--panel); }
+details.tool.off .name, details.tool.off .desc { opacity: .6; }
 .tool .name { font-family: var(--mono); color: var(--tool); }
 .tool .desc {
-  color: var(--muted); font-size: 11px; flex: 1; min-width: 0;
+  color: var(--muted); font-size: var(--fs-meta); flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tool .doc {
-  padding: 8px 10px; border-top: 1px solid var(--line); background: var(--panel);
-  font-size: 12px; color: var(--muted); white-space: pre-wrap;
+  padding: .625rem .75rem; border-top: 1px solid var(--line); background: var(--panel);
+  font-size: var(--fs-ui); color: var(--muted); white-space: pre-wrap;
 }
 .tool .doc pre {
-  margin: 7px 0 0; font: 11.5px/1.5 var(--mono);
-  white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+  margin: .5rem 0 0; font: var(--fs-meta)/1.55 var(--mono);
+  white-space: pre-wrap; word-break: break-word; max-height: 15rem; overflow: auto;
 }
-.tool .params { margin-top: 7px; }
-.tool .param { display: flex; gap: 7px; font-family: var(--mono); font-size: 11.5px; padding: 1px 0; }
+.tool .params { margin-top: .5rem; }
+.tool .param {
+  display: flex; gap: .5rem; font-family: var(--mono);
+  font-size: var(--fs-meta); padding: .125rem 0;
+}
 .tool .param b { color: var(--fg); font-weight: 500; }
 .tool .param .ty { color: var(--faint); }
 .tool .param .req { color: var(--err); }
 .tool .param .d { color: var(--muted); flex: 1; min-width: 0; }
-.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.row > * { flex: 1 1 160px; }
+.row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
+.row > * { flex: 1 1 11rem; }
 
-#log { flex: 1; overflow-y: auto; padding: 18px 14px 6px; }
-.wrap { max-width: 740px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+#log { flex: 1; overflow-y: auto; padding: 1.25rem .875rem .5rem; }
+.wrap {
+  max-width: var(--measure); margin: 0 auto;
+  display: flex; flex-direction: column; gap: 1rem;
+}
 
-.who { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-bottom: 3px; }
+.who {
+  font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin-bottom: .25rem;
+}
 
 /* Three layers, visually distinct:
    1. the question     -- solid accent bar, full contrast
    2. the work         -- indented rail, dimmed, mono
    3. the final answer -- no rail, widest measure, normal prose */
 
-.msg.user { padding-top: 4px; }
-.msg.user + * { margin-top: 2px; }
+.msg.user { padding-top: .25rem; }
+.msg.user + * { margin-top: .125rem; }
 .msg.user .body {
   white-space: pre-wrap; border-left: 2px solid var(--accent);
-  padding-left: 10px; font-weight: 500;
+  padding-left: .75rem; font-weight: 500;
 }
 /* A hairline above every question but the first, so turns are countable. */
 .msg.user:not(:first-child)::before {
   content: ""; display: block; border-top: 1px solid var(--line);
-  margin: 6px 0 16px;
+  margin: .5rem 0 1.125rem;
 }
 
-.work {
-  display: flex; flex-direction: column; gap: 7px;
-  margin-left: 1px; padding: 2px 0 2px 13px;
+/* A chat working in the background. The dot is the only thing that says a turn
+   outlived the tab that started it, so it stays visible rather than subtle. */
+.chat-item .dot {
+  width: .4375rem; height: .4375rem; flex: none; border-radius: 50%;
+  background: var(--tool); margin-left: .375rem;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .chat-item .dot { animation: none; } }
+
+/* Send doubles as stop while a turn runs. */
+#send.stop { background: none; color: var(--err); border-color: var(--err); }
+
+/* Controls on a question. Kept out of the way until the question is hovered
+   or focused, so the transcript still reads as a transcript. */
+.msg-tools {
+  display: flex; gap: .75rem; margin-top: .375rem; padding-left: .75rem;
+  opacity: 0; transition: opacity .12s;
+}
+.msg.user:hover .msg-tools,
+.msg.user:focus-within .msg-tools { opacity: 1; }
+@media (hover: none) { .msg-tools { opacity: 1; } }
+
+button.linkish {
+  border: 0; background: none; padding: 0; min-height: 0;
+  color: var(--muted); font: var(--fs-meta) var(--mono);
+  text-transform: uppercase; letter-spacing: .06em; cursor: pointer;
+}
+button.linkish:hover { color: var(--fg); border-color: transparent; }
+
+.edit-box { margin-top: .5rem; padding-left: .75rem; }
+.edit-box textarea { width: 100%; font-size: var(--fs-body); }
+.edit-actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+/* The original text is hidden, not removed: cancel has to put it back. */
+.msg.user.editing .body { display: none; }
+
+.turn { display: flex; flex-direction: column; gap: 1rem; }
+
+/* The work is a disclosure: open and naming its current step while the turn
+   runs, collapsed to a recap once there is an answer to read instead. */
+details.work > summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: .5rem;
+  min-height: var(--tap);
+  color: var(--muted); font: var(--fs-ui)/1 var(--mono);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+details.work > summary::-webkit-details-marker { display: none; }
+details.work > summary::before { content: "+ "; white-space: pre; }
+details.work[open] > summary::before { content: "- "; white-space: pre; }
+details.work > summary:hover { color: var(--fg); }
+.work .act { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work .tally { margin-left: auto; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+/* In progress: the step name is the live status line, so it carries the accent
+   and the ellipsis that say this is still moving. */
+.work.live .act { color: var(--tool); text-transform: none; letter-spacing: 0; }
+.work.live .act::after { content: "\2026"; }
+
+.work-body {
+  display: flex; flex-direction: column; gap: .5rem;
+  margin-left: 1px; padding: .25rem 0 .25rem .875rem;
   border-left: 1px dashed var(--line);
 }
-.work .steps { background: none; }
+.work-body .steps { background: none; }
 
 /* The answer is the only block with no left rule -- that absence is what marks
    it as the result rather than another step. */
 .msg.assistant .md { padding-left: 0; }
+/* Narration that turned out not to be the answer: same words, quieter, and
+   filed under the work where it belongs. */
+.msg.assistant.note .md { color: var(--muted); font-size: var(--fs-ui); }
+.msg.assistant.final .who { color: var(--accent); }
 
 /* rendered markdown */
 .md > *:first-child { margin-top: 0; }
@@ -167,15 +322,15 @@ details.tool > summary:hover { background: var(--panel); }
 .md li { margin: .15em 0; }
 .md li > ul, .md li > ol { margin-bottom: 0; }
 .md a { color: var(--accent); }
-.md code { background: var(--panel); border-radius: 2px; padding: .1em .3em; font: .87em var(--mono); }
+.md code { background: var(--panel); border-radius: 2px; padding: .1em .3em; font: .9em var(--mono); }
 .md pre {
   background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
-  padding: 8px 10px; overflow-x: auto; margin: 0 0 .7em;
+  padding: .625rem .75rem; overflow-x: auto; margin: 0 0 .7em;
 }
-.md pre code { background: none; padding: 0; font-size: .85em; line-height: 1.5; }
+.md pre code { background: none; padding: 0; font-size: .9em; line-height: 1.55; }
 .md blockquote { margin: 0 0 .7em; padding-left: .8em; border-left: 2px solid var(--line); color: var(--muted); }
-.md table { border-collapse: collapse; margin: 0 0 .7em; font-size: .92em; display: block; overflow-x: auto; }
-.md th, .md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; }
+.md table { border-collapse: collapse; margin: 0 0 .7em; font-size: .95em; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: .25rem .5rem; text-align: left; }
 .md th { background: var(--panel); font-weight: 600; }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 
@@ -185,62 +340,70 @@ details.step > summary { cursor: pointer; list-style: none; }
 details.think > summary::-webkit-details-marker,
 details.step > summary::-webkit-details-marker { display: none; }
 details.think > summary {
-  color: var(--faint); font-size: 11px; font-family: var(--mono);
+  color: var(--muted); font-size: var(--fs-ui); font-family: var(--mono);
   text-transform: uppercase; letter-spacing: .06em;
+  min-height: var(--tap); display: flex; align-items: center;
 }
 details.think > summary:hover { color: var(--fg); }
-details.think > summary::before { content: "+ "; }
-details.think[open] > summary::before { content: "- "; }
+details.think > summary::before { content: "+ "; white-space: pre; }
+details.think[open] > summary::before { content: "- "; white-space: pre; }
 .think-body {
-  margin-top: 4px; padding-left: 10px; border-left: 1px solid var(--line);
-  color: var(--muted); white-space: pre-wrap; font-size: 12.5px;
-  max-height: 320px; overflow-y: auto;
+  margin-top: .25rem; padding-left: .75rem; border-left: 1px solid var(--line);
+  color: var(--muted); white-space: pre-wrap; font-size: var(--fs-ui);
+  max-height: 22rem; overflow-y: auto;
 }
 
 /* tool steps */
 .steps { border: 1px solid var(--line); border-radius: 3px; }
 details.step + details.step { border-top: 1px solid var(--line); }
 details.step > summary {
-  padding: 4px 9px; display: flex; align-items: baseline; gap: 7px;
-  font-size: 12px; font-family: var(--mono);
+  padding: .4375rem .625rem; display: flex; align-items: baseline; gap: .5rem;
+  font-size: var(--fs-ui); font-family: var(--mono); min-height: var(--tap);
 }
 details.step > summary:hover { background: var(--panel); }
 .step .name { color: var(--tool); }
 .step.bad .name { color: var(--err); }
 .step .arg { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.step .ms { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.step .ms { color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 .step pre {
-  margin: 0; padding: 7px 10px; background: var(--panel); border-top: 1px solid var(--line);
-  font: 11.5px/1.5 var(--mono); color: var(--muted);
-  white-space: pre-wrap; word-break: break-word; max-height: 280px; overflow: auto;
+  margin: 0; padding: .5rem .75rem; background: var(--panel); border-top: 1px solid var(--line);
+  font: var(--fs-ui)/1.55 var(--mono); color: var(--muted);
+  white-space: pre-wrap; word-break: break-word; max-height: 20rem; overflow: auto;
 }
 
-.usage { font-size: 11px; color: var(--faint); font-family: var(--mono); }
+.usage { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
 /* A compacted tool result: the model was sent a short stub, but the transcript
    still shows the full output, so the badge is the only visible difference. */
 .step.compacted .name::after {
   content: 'compacted';
-  margin-left: 6px;
-  padding: 0 4px;
+  margin-left: .375rem;
+  padding: 0 .25rem;
   border: 1px solid var(--line);
   border-radius: 3px;
-  color: var(--faint);
-  font-size: 10px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
 }
-.work > .usage { margin: 2px 0 6px; }
+.work-body > .usage { margin: .125rem 0 .375rem; }
 
-.err { color: var(--err); font-size: 12px; font-family: var(--mono); }
+.err { color: var(--err); font-size: var(--fs-ui); font-family: var(--mono); }
 .notice {
-  color: var(--muted); font-size: 11.5px; font-family: var(--mono);
-  border-left: 2px solid var(--err); padding-left: 10px;
+  color: var(--muted); font-size: var(--fs-ui); font-family: var(--mono);
+  border-left: 2px solid var(--err); padding-left: .75rem;
 }
 
-footer { border-top: 1px solid var(--line); padding: 10px 14px; flex-shrink: 0; }
-form { max-width: 740px; margin: 0 auto; display: flex; gap: 6px; align-items: flex-end; }
-#input { max-height: 190px; }
+footer { border-top: 1px solid var(--line); padding: .75rem .875rem; flex-shrink: 0; }
+form {
+  max-width: var(--measure); margin: 0 auto;
+  display: flex; gap: .5rem; align-items: flex-end;
+}
+#input { max-height: 13rem; font-size: var(--fs-body); }
+#send { min-width: 5rem; }
 
 @media (max-width: 720px) {
   aside { position: fixed; inset: 0 auto 0 0; z-index: 20; transform: translateX(-100%); }
   aside.open { transform: none; }
-  #menu { display: inline-block; }
+  /* An overlay drawer has no edge to drag against the content, so the handle
+     has nothing to mean here. */
+  #side-resize { display: none; }
+  #menu { display: inline-flex; align-items: center; justify-content: center; }
 }

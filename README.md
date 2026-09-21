@@ -60,10 +60,24 @@ the OpenRouter-specific request fields or ranking headers go to a non-OpenRouter
 `$TINYWEBUI_BASE_URL`, `model` from `$TINYWEBUI_MODEL`. Env wins over the file.
 
 `maxToolRounds` caps how many rounds of tool calls a single message may trigger (default
-12) — raise it for deep research, lower it to bound spend. Spending the budget does not
-abandon the turn: the next request goes out with `tool_choice: "none"` and a note telling
-the model to answer from what it has and say what it could not determine. The tool block
-itself stays in the request, so the cached prefix survives.
+12) — raise it for deep research, lower it to bound spend. One round is one reply that
+calls tools, however many calls it makes at once.
+
+The model is told its budget rather than left to discover it. Every request carries a
+short note: the full budget and what a round is on the first, a remaining count on each
+one after, and from two rounds left a warning to stop broadening and get ready to answer.
+Spending the budget does not abandon the turn — the next request goes out with
+`tool_choice: "none"` and a note telling the model to answer from what it has and say what
+it could not determine. The tool block itself stays in the request, so the cached prefix
+survives.
+
+That note is appended **after** the last message and never written to the store, which is
+what makes a per-round counter free. Written into the conversation it would sit inside
+every later prefix, and because the count changes each round it would move the divergence
+point back to wherever the note was and throw the cache away from there on. At the tail it
+is outside every future prefix instead: the next round rebuilds history from the store, so
+the previous note is simply not in it, and the two requests still share every byte of real
+history.
 
 `temperature` and `maxTokens` are optional and unset by default — leave them out and the
 provider's own defaults apply. That matters most for `maxTokens`: pinning it truncates
@@ -146,11 +160,15 @@ model, so TinyWebUI only speaks it where it has reason to believe it is understo
 - **Claude on OpenRouter** uses top-level automatic `cache_control`, which advances to the
   last cacheable block as the loop grows. This is the only shape that keeps caching across
   client-side tool results; a text-only breakpoint cannot move past a tool message.
-- **Anthropic-style breakpoints** (system + rolling content markers) are used for
-  Claude/Nova on a direct endpoint, and on OpenRouter for the Claude/Qwen/DeepSeek/Gemini
-  families, matched at the family level so a new release is not a code change. Pinning
-  `extraBody.provider` switches Claude from automatic to these, keeping Bedrock/Vertex-style
-  routes eligible.
+- **Anthropic-style breakpoints** (system + rolling content markers) are used for the
+  Claude/Nova families only, matched at the family level so a new release is not a code
+  change. Pinning `extraBody.provider` switches Claude from automatic to these, keeping
+  Bedrock/Vertex-style routes eligible. Qwen, DeepSeek and Gemini deliberately do *not*
+  get them: a marker turns the marked message's content into an array and the rolling
+  breakpoint unwraps it again the next round, which Anthropic ignores when prefix-matching
+  but a gateway matching the serialised request reads as a byte change mid-prefix — losing
+  every hit after it. Those families cache the prefix automatically, so layer 1 is strictly
+  better.
 - **Anything else — including every localhost or LAN endpoint — gets layer 1 only.** Markers
   there are pure downside: array-shaped content is exactly what strict OpenAI-compatible
   servers reject, and they buy nothing on a backend that already caches the prefix itself.
@@ -244,6 +262,35 @@ pinned Fireworks  call 1 Fireworks  cached 0     (cold, unavoidable)
                   call 3 Fireworks  cached 2486
 ```
 
+A later measurement showed that a *list* of providers is barely better than none. With
+`order: ["Fireworks", "DeepInfra"]` and fallbacks off, OpenRouter still picks freely between
+the two, and half the rounds flip:
+
+```
+order [Fireworks, DeepInfra]   r0 Fireworks -> r1 DeepInfra  cached 4608/4834  (flip)
+                               r0 Fireworks -> r1 Fireworks  cached 4912/4913  (100%)
+                               r0 DeepInfra -> r1 Fireworks  cached    0/4924  (flip, cold)
+
+order [Fireworks] only         r0 Fireworks -> r1 Fireworks  cached 4912/4913  (100%)
+                               ... with a trailing budget note  cached 4923/4924  (100%)
+
+order [DeepInfra] only         r0 DeepInfra -> r1 DeepInfra  cached 4608/4834  (ceiling)
+```
+
+Three things fall out of that. A flip costs the whole cache, because each provider keeps its
+own. The providers tokenize differently, so the same messages bill 4899 tokens on one and
+4834 on the other — which is why a jittering `in` count is itself a routing symptom. And
+DeepInfra caps its cached prefix around 4608 tokens, so even a stable DeepInfra route only
+ever partly hits. **Pin to exactly one provider**, or accept that the cache is a coin flip.
+
+Pinning has a cost the cache numbers do not show: one provider's rate limit becomes the
+whole budget. A transient refusal — 429, 408, 5xx, or a dropped connection — is now retried
+with backoff (honouring `Retry-After`) instead of ending the turn, and a pin that has been
+refused twice is released so the remaining attempts can be served anywhere. A cold cache is
+worth far more than a lost turn, and a provider rate-limited on a shared pool is usually
+limited for longer than any backoff worth sitting through. A 4xx that is not transient is
+still fatal on the first try: a bad request will not get better.
+
 Manual provider pinning is still available through `extraBody`, but it is now an explicit
 override rather than the default recommendation:
 
@@ -284,5 +331,21 @@ refused is remembered for the rest of the turn rather than re-probed every round
 Single-user. Conversations live in a local SQLite file, which holds every tool result in
 full and so grows faster than the context window does — delete chats you are done with. No
 auth — bind it to localhost or put your own proxy in front. No image or file upload yet.
+
+Any question in the transcript can be rewritten. Hovering it reveals **edit** and **retry**:
+edit opens it in place, retry resubmits it unchanged. Both rewind the conversation to that
+question — everything after it, answers and follow-ups alike, is dropped — and run forward
+again. There is no second branch kept to switch back to; the old answers are gone, which is
+also the only honest thing to do with answers to a question that no longer exists. Rewinding
+is the one operation that deliberately breaks the append-only rule, so it costs the prompt
+cache from the edited message onward, and a compaction boundary caught inside the cut is
+cleared with it. An edit is refused while that chat is still working — stop it first.
+
+A turn belongs to the server, not to the tab that started it. Closing the window, reloading
+or losing the connection detaches a viewer; the run keeps going and writes its answer to the
+store either way. Reopening the chat replays the settled part of the transcript and rejoins
+the live event stream for the rest, and the sidebar shows a dot against any chat still
+working. `POST /api/chats/:id/stop` is how you actually mean it — the send button becomes
+`stop` while a turn is in flight.
 
 Transcripts written by an earlier version are imported from `localStorage` on first load.

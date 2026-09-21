@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildBody, buildMessages } from '../src/llm.js';
+import { buildBody, buildMessages, budgetNote } from '../src/llm.js';
 import { Store, toWire } from '../src/store.js';
 
 const CLAUDE = { cache: true, model: 'anthropic/claude-sonnet-5', systemPrompt: 'sys', cacheTtl: '5m' };
@@ -142,9 +142,13 @@ test('Claude 1h TTL reaches the automatic OpenRouter cache directive', () => {
   assert.deepEqual(marks(body.messages), []);
 });
 
-test('OpenRouter Qwen and Gemini receive explicit cache breakpoints', () => {
-  assert.ok(marks(buildMessages(OPENROUTER_QWEN, convo)).length >= 2);
-  assert.ok(marks(buildMessages(OPENROUTER_GEMINI, convo)).length >= 2);
+test('OpenRouter Qwen and Gemini cache the prefix themselves and get no markers', () => {
+  // A marker makes the marked message's content an array; the rolling
+  // breakpoint moves off it next round and it reverts to a string. On a
+  // gateway that prefix-matches the serialised request that is a byte change
+  // mid-prefix, which costs more than the marker could ever buy.
+  assert.deepEqual(marks(buildMessages(OPENROUTER_QWEN, convo)), []);
+  assert.deepEqual(marks(buildMessages(OPENROUTER_GEMINI, convo)), []);
 });
 
 test('non-OpenRouter Gemini remains implicit and receives no OpenRouter-specific markers', () => {
@@ -167,14 +171,21 @@ test('explicitly routed OpenRouter Claude falls back to portable explicit breakp
   assert.ok(marks(body.messages).length >= 2);
 });
 
-test('OpenRouter deepseek is matched at the family level, not by exact model id', () => {
+test('OpenRouter deepseek gets no markers, and its prefix is stable across rounds', () => {
   const cfg = {
     cache: true,
     baseUrl: 'https://openrouter.ai/api/v1',
     model: 'deepseek/deepseek-v3.2',
     systemPrompt: 'sys'
   };
-  assert.ok(marks(buildMessages(cfg, convo)).length >= 2);
+  assert.deepEqual(marks(buildMessages(cfg, convo)), []);
+
+  // The regression this guards: with markers on, the newest text message is
+  // wrapped this round and unwrapped the next, so a message already sent once
+  // serialises differently the second time and every hit after it is lost.
+  const before = buildMessages(cfg, convo);
+  const after = buildMessages(cfg, [...convo, { role: 'user', content: 'and again?' }]);
+  assert.deepEqual(after.slice(0, before.length), before, 'the prefix may only be appended to');
 });
 
 
@@ -230,4 +241,52 @@ test('an unknown gateway serving an unknown model stays on the safe path', () =>
   assert.deepEqual(marks(body.messages), []);
   assert.equal(body.cache_control, undefined);
   assert.equal(body.session_id, undefined);
+});
+
+/* ---------- tool budget ---------- */
+
+test('the budget note counts down, warns near the end, and closes the door at zero', () => {
+  const at = (round, max = 12) => budgetNote(round, max).content;
+
+  assert.match(at(0), /12 rounds/, 'the opening note states the whole budget');
+  assert.match(at(0), /one final round with tools disabled/, 'and that running out is not the end of the turn');
+  assert.doesNotMatch(at(0), /stop broadening/, 'no warning while there is room');
+
+  assert.match(at(1), /11 rounds of 12 remaining/);
+  assert.match(at(5), /7 rounds of 12 remaining/);
+
+  assert.match(at(10), /stop broadening/, 'two rounds left is the warning threshold');
+  assert.match(at(11), /1 round of 12 remaining/, 'singular, not "1 rounds"');
+
+  assert.match(at(12), /budget for this message is spent/);
+  assert.match(at(12), /No further tool calls are possible/);
+
+  // A budget small enough that the opening note is also the warning.
+  assert.match(budgetNote(0, 2).content, /stop broadening/);
+});
+
+test('every budget note is a system message, so no breakpoint can land on it', () => {
+  for (const round of [0, 1, 11, 12]) {
+    assert.equal(budgetNote(round, 12).role, 'system');
+    assert.equal(typeof budgetNote(round, 12).content, 'string');
+  }
+});
+
+test('the budget note rides at the tail and leaves the cached prefix alone', () => {
+  const cfg = { cache: true, baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', systemPrompt: 'sys' };
+  // What two consecutive rounds of one turn actually put on the wire: the note
+  // is appended to a copy, never stored, so round two rebuilds history without
+  // round one's note.
+  const roundOne = buildMessages(cfg, [...convo, budgetNote(0, 12)]);
+  const grew = [...convo, { role: 'assistant', content: 'narration' }];
+  const roundTwo = buildMessages(cfg, [...grew, budgetNote(1, 12)]);
+
+  const shared = buildMessages(cfg, convo).length;
+  assert.deepEqual(
+    roundTwo.slice(0, shared),
+    roundOne.slice(0, shared),
+    'the history both rounds share must be byte-identical'
+  );
+  assert.equal(roundOne.at(-1).role, 'system', 'the note is last, not embedded in the history');
+  assert.equal(roundTwo.at(-1).role, 'system');
 });

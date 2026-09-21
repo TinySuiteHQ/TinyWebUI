@@ -20,7 +20,7 @@
     "start": "node bin/tinywebui.js",
     "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.js",
     "stop": "pkill -f 'bin/tinywebui.js' || true",
-    "test": "node --test 'test/*.test.js'"
+    "test": "node --test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0"

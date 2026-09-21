@@ -5,6 +5,11 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 
 const SEP = '__';
 
+/** One row of the inventory: what the settings UI needs to draw and toggle a tool. */
+function toRow(t, disabled) {
+  return { name: t.function.name, description: t.function.description, disabled: disabled.has(t.function.name) };
+}
+
 function transportFor(name, spec) {
   if (spec.command) {
     return new StdioClientTransport({
@@ -103,6 +108,46 @@ export class McpHub {
       }
     });
     stream.on('error', () => { /* the child is going away; nothing to report */ });
+  }
+
+  /**
+   * The tools actually sent to the model: everything the hub has, minus what
+   * the settings UI has switched off. The tool block still has to be stable
+   * for the cache to hold, so this filters `tools` in place rather than
+   * rebuilding or reordering it -- turning a tool back on or off is the one
+   * thing that is allowed to cost a cache miss, and only that turn's.
+   */
+  activeTools(disabledNames = []) {
+    if (!disabledNames?.length) return this.tools;
+    const disabled = new Set(disabledNames);
+    return this.tools.filter((t) => !disabled.has(t.function.name));
+  }
+
+  /**
+   * A structured view for the settings panel: which tools are ours, which came
+   * from which server, and that server's health -- connected, disabled, or
+   * failed to connect and why. Disabling here is advisory only, a flag drawn
+   * from `disabledNames`; `activeTools` is what actually enforces it.
+   */
+  inventory(disabledNames = []) {
+    const disabled = new Set(disabledNames);
+    const internal = this.tools
+      .filter((t) => this.locals.has(t.function.name))
+      .map((t) => toRow(t, disabled));
+
+    const servers = Object.keys(this.servers).sort().map((name) => {
+      const spec = this.servers[name];
+      const status = spec.disabled ? 'disabled' : this.clients.has(name) ? 'ok' : 'error';
+      // Errors are recorded as "name: message"; the name is stripped back off.
+      const error = this.errors.find((e) => e.startsWith(`${name}: `))?.slice(name.length + 2) ?? null;
+      return { name, status, error, tools: [] };
+    });
+    const byName = new Map(servers.map((row) => [row.name, row]));
+    for (const t of this.tools) {
+      const route = this.routes.get(t.function.name);
+      if (route) byName.get(route.server)?.tools.push(toRow(t, disabled));
+    }
+    return { internal, servers };
   }
 
   /** Returns a string, because that is all a tool result message can carry. */

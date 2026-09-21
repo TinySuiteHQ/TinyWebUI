@@ -87,6 +87,30 @@ export class Store {
     ).all(limit);
   }
 
+  /**
+   * Rewinds a conversation, dropping everything from `seq` onward.
+   *
+   * This is the one place that breaks the append-only rule on purpose. Editing
+   * a question means the answers that followed it were answers to a question
+   * that no longer exists, so they go with it -- and the prompt cache from that
+   * point on goes too, which is correct rather than unfortunate: the model must
+   * genuinely reconsider everything after the edit.
+   *
+   * Artifacts are left behind. They are addressed by id from a message that no
+   * longer exists, so nothing can reach them, and deleting them would be the
+   * one way to lose tool output that the transcript promises to keep.
+   */
+  truncateFrom(chatId, seq) {
+    const removed = this.db
+      .prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?')
+      .run(chatId, seq).changes;
+    // A frozen compaction boundary inside the cut no longer describes anything,
+    // so the pinned cache breakpoint it drives has to go with it.
+    const chat = this.getChat(chatId);
+    if (chat && chat.boundary_seq >= seq) this.touchChat(chatId, { boundary_seq: -1 });
+    return removed;
+  }
+
   deleteChat(id) {
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
@@ -188,6 +212,8 @@ export function toWire(row) {
 /** What the transcript shows: always the full text, stub or not. */
 export function toView(row) {
   const msg = base(row);
+  // The client needs a handle on each message to be able to rewind to one.
+  msg.seq = row.seq;
   msg.content = row.content ?? null;
   if (row.reasoning) msg.reasoning = row.reasoning;
   if (row.usage_json) msg.usage = JSON.parse(row.usage_json);

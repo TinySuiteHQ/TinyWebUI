@@ -70,6 +70,11 @@ const DEFAULTS = {
   maxInlineChars: 40000,
   // Cap on what one context_expand call may return.
   expandCharBudget: 8000,
+  // Flat tool names switched off from the settings panel -- built-in or an
+  // MCP server's, named exactly as buildBody sends them. Filtered out of what
+  // is offered to the model; a server can still be reached by name, so this
+  // is a per-tool block, not a substitute for disabling the whole server.
+  disabledTools: [],
 };
 
 export function configPath() {
@@ -142,7 +147,8 @@ export function loadConfig() {
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
 const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds',
-  'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars'
+  'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
+  'disabledTools'
 ]);
 
 export function saveConfig(patch) {

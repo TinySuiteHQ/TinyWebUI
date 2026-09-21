@@ -10,6 +10,78 @@ const wrap = $('wrap');
 let chat = null;   // { id, title, messages }
 let busy = false;
 
+/* ---------- sidebar width ---------- */
+
+/**
+ * A draggable sidebar, remembered per browser.
+ *
+ * The width lives in a CSS variable rather than an inline style so the
+ * stylesheet keeps ownership of the default: clearing the variable is what
+ * resets it, and nothing here needs to know what 15rem is.
+ */
+const SIDE_KEY = 'tinywebui.sideWidth';
+const SIDE_MIN = 176;
+const SIDE_MAX = 560;
+
+function setSideWidth(px) {
+  const clamped = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, px)));
+  document.documentElement.style.setProperty('--side-w', `${clamped}px`);
+  // Per-viewer convenience only, and blocked or full storage must not take the
+  // sidebar with it.
+  try { localStorage.setItem(SIDE_KEY, String(clamped)); } catch { /* not important enough to fail over */ }
+  return clamped;
+}
+
+function resetSideWidth() {
+  document.documentElement.style.removeProperty('--side-w');
+  try { localStorage.removeItem(SIDE_KEY); } catch { /* as above */ }
+}
+
+(function initSideResize() {
+  const side = $('side');
+  const grip = $('side-resize');
+  if (!side || !grip) return;
+
+  try {
+    const saved = Number(localStorage.getItem(SIDE_KEY));
+    if (Number.isFinite(saved) && saved > 0) setSideWidth(saved);
+  } catch { /* first run, or storage is unavailable; the stylesheet decides */ }
+
+  grip.addEventListener('pointerdown', (e) => {
+    // Pointer capture keeps the drag alive over the transcript, an iframe or
+    // off the window edge, which a plain mousemove listener would lose.
+    grip.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+    const startX = e.clientX;
+    const startW = side.getBoundingClientRect().width;
+
+    const move = (ev) => setSideWidth(startW + (ev.clientX - startX));
+    const done = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', done);
+      grip.removeEventListener('pointercancel', done);
+      document.body.classList.remove('resizing');
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', done);
+    grip.addEventListener('pointercancel', done);
+    e.preventDefault();
+  });
+
+  grip.addEventListener('dblclick', resetSideWidth);
+
+  // A drag is not reachable without a pointer, so the separator is operable
+  // from the keyboard too, which is also what its role promises.
+  grip.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 48 : 16;
+    if (e.key === 'ArrowLeft') setSideWidth(side.getBoundingClientRect().width - step);
+    else if (e.key === 'ArrowRight') setSideWidth(side.getBoundingClientRect().width + step);
+    else if (e.key === 'Home' || e.key === 'Escape') resetSideWidth();
+    else return;
+    e.preventDefault();
+  });
+}());
+
 /* ---------- history: server-side, newest first ---------- */
 
 const KEY = 'tinywebui.chats';
@@ -25,19 +97,39 @@ function renderChatList() {
   }
   for (const c of chats) {
     const row = el('div', 'chat-item' + (chat && c.id === chat.id ? ' active' : ''));
+    // A div with an onclick is unreachable without a mouse, so the row carries
+    // the button contract explicitly: focusable, named, and activated by key.
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    if (chat && c.id === chat.id) row.setAttribute('aria-current', 'true');
     const t = el('span', 't');
     t.textContent = c.title;
+    // A turn is the server's, not this tab's, so a chat can be working while
+    // nothing is watching it -- including a chat opened in another window.
+    if (c.running) {
+      const dot = el('span', 'dot');
+      dot.title = 'working';
+      dot.setAttribute('aria-label', 'working');
+      row.appendChild(dot);
+    }
     const x = el('button', 'x');
     x.textContent = '×';
-    x.title = 'Delete';
+    x.title = `Delete "${c.title}"`;
+    x.setAttribute('aria-label', `Delete "${c.title}"`);
     x.onclick = async (e) => {
       e.stopPropagation();
       await fetch(`/api/chats/${c.id}`, { method: 'DELETE' });
       await loadChats();
       if (chat && chat.id === c.id) newChat();
     };
-    row.append(t, x);
+    row.prepend(t);
+    row.append(x);
     row.onclick = () => openChat(c.id);
+    row.onkeydown = (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault(); // space would scroll the list instead
+      openChat(c.id);
+    };
     $('chats').appendChild(row);
   }
 }
@@ -81,44 +173,62 @@ async function openChat(id) {
   const found = await res.json();
   chat = { id: found.id, title: found.title };
   wrap.innerHTML = '';
+  // Mid-turn, the server hands back only the settled part of the transcript;
+  // the rest arrives as events, exactly as it did for the tab that started it.
   replay(found.messages);
   renderChatList();
   $('side').classList.remove('open');
+  if (found.running) rejoin(id);
+}
+
+/** Follows a turn already in flight, from the top of its event buffer. */
+async function rejoin(id) {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const res = await fetch(`/api/chats/${id}/stream?from=0`);
+    if (res.ok) await consume(res);
+  } catch { /* the transcript is in the store; reopening picks it up */ }
+  setBusy(false);
+  loadChats();
 }
 
 /** Rebuilds the transcript view from stored messages. */
 function replay(messages) {
   let steps = null;
-  let rail = null;
+  let turn = null;
   const groups = [];
+  const endTurn = () => { turn?.finish({ replayed: true }); turn = null; steps = null; };
   for (const m of messages) {
     if (m.role === 'user') {
-      steps = null;
-      rail = null;
-      addUser(m.content);
+      endTurn();
+      addUser(m.content, m.seq);
     } else if (m.role === 'assistant') {
+      turn ||= addTurn();
       if (m.reasoning) {
         steps = null;
-        rail ||= addRail();
-        addThinking(rail).set(m.reasoning, true);
+        turn.interrupt();
+        addThinking(turn.work()).set(m.reasoning, true);
       }
       if (m.tool_calls?.length) {
-        rail ||= addRail();
-        if (!steps) groups.push((steps = addSteps(rail)));
+        turn.interrupt();
+        if (!steps) groups.push((steps = addSteps(turn.work())));
         for (const tc of m.tool_calls) {
           let args = {};
           try { args = JSON.parse(tc.function.arguments || '{}'); } catch { /* keep {} */ }
           steps.add(tc.id, tc.function.name, args);
+          turn.step();
         }
       }
-      if (m.content) { steps = null; rail = null; addAssistant().set(m.content); }
+      if (m.content) { steps = null; turn.prose().set(m.content); }
       // Per-round usage is stored on the message now, so a reopened chat still
       // shows what each round cost and how much of it came back from cache.
-      if (m.usage) addUsage(tally([m.usage]), rail);
+      if (m.usage) addUsage(tally([m.usage]), turn.meta());
     } else if (m.role === 'tool' && steps) {
       steps.finish(m.tool_call_id, m.content, m.compacted);
     }
   }
+  endTurn();
   for (const g of groups) g.quiet();
   scroll();
 }
@@ -131,34 +241,211 @@ log.addEventListener('scroll', () => {
 });
 function scroll() { if (pinned) log.scrollTop = log.scrollHeight; }
 
-/** Groups a round's thinking and tool calls into one indented "work" rail, so
-    intermediate steps read as process rather than as answer. */
-function addRail() {
-  const r = el('div', 'work');
-  wrap.appendChild(r);
-  return r;
+/**
+ * One assistant turn: the work that led to the answer, and then the answer.
+ *
+ * Which prose block is the answer cannot be known while it streams -- narration
+ * between two tool calls looks exactly like a conclusion, and the model does
+ * not announce which is which. So the newest prose is held as the candidate
+ * answer and demoted into the work the moment another thought or tool call
+ * follows it. Whatever is still standing when the turn ends is the answer.
+ *
+ * The work is a disclosure rather than a plain rail: open and naming the step
+ * it is on while the turn runs, collapsed behind a one-line recap once there
+ * is an answer to read instead.
+ */
+function addTurn() {
+  const box = el('div', 'turn');
+  wrap.appendChild(box);
+
+  const work = el('details', 'work live');
+  work.open = true;
+  const sum = el('summary');
+  const act = el('span', 'act');
+  const tally = el('span', 'tally');
+  sum.append(act, tally);
+  const body = el('div', 'work-body');
+  work.append(sum, body);
+
+  const started = Date.now();
+  let steps = 0;
+  let mounted = false;
+  let candidate = null;
+
+  // The work only appears once there is work. A plain answer keeps the shape it
+  // always had, with no empty disclosure sitting above it.
+  const mount = () => {
+    if (!mounted) { box.appendChild(work); mounted = true; }
+    return body;
+  };
+
+  // Prose that turned out to be narration joins the work, in the order it was
+  // spoken, instead of staying up top competing with the real answer.
+  const demote = () => {
+    if (!candidate) return;
+    mount().appendChild(candidate);
+    candidate.classList.add('note');
+    candidate.querySelector('.who').textContent = 'note';
+    candidate = null;
+  };
+
+  const label = (text) => { act.textContent = text; scroll(); };
+  label('starting');
+
+  return {
+    el: box,
+    /** Container for thinking and tool steps; mounts the work on first use. */
+    work: mount,
+    /** Where a usage line goes: with the work when there is any, else inline. */
+    meta: () => (mounted ? body : box),
+    status: label,
+    step() {
+      steps++;
+      tally.textContent = `${steps} step${steps === 1 ? '' : 's'}`;
+    },
+    /** Something followed the last prose block, so it was never the answer. */
+    interrupt: demote,
+    prose() {
+      demote();
+      const a = addAssistant(box);
+      candidate = a.node;
+      return a;
+    },
+    finish({ replayed = false } = {}) {
+      if (candidate) {
+        candidate.classList.add('final');
+        candidate.querySelector('.who').textContent = 'answer';
+        candidate = null;
+      }
+      if (!mounted) return;
+      work.classList.remove('live');
+      work.open = false;
+      act.textContent = 'work';
+      const bits = [`${steps} step${steps === 1 ? '' : 's'}`];
+      // Elapsed time is real only for a turn we watched happen.
+      if (!replayed) bits.push(`${((Date.now() - started) / 1000).toFixed(1)}s`);
+      tally.textContent = bits.join(' \u00b7 ');
+    }
+  };
 }
 
-function addUser(text) {
+/** The live one-liner for the work summary: which tool, on what. */
+function statusOf(name, args) {
+  const short = name.replace(/^[^_]+__/, '');
+  const first = Object.values(args || {})[0];
+  if (first == null) return short;
+  const arg = String(typeof first === 'object' ? JSON.stringify(first) : first);
+  return arg ? `${short} ${arg}` : short;
+}
+
+function addUser(text, seq) {
   const m = el('div', 'msg user');
   m.innerHTML = '<div class="who">you</div>';
   const b = el('div', 'body');
   b.textContent = text;
   m.appendChild(b);
+
+  // A question that is in the store can be rewritten. One that has not been
+  // saved yet (the one being sent right now) cannot, so it gets no controls.
+  if (seq != null) {
+    const bar = el('div', 'msg-tools');
+    const edit = el('button', 'linkish');
+    edit.type = 'button';
+    edit.textContent = 'edit';
+    edit.title = 'Rewrite this question and answer it again';
+    edit.onclick = () => beginEdit(m, b, text, seq);
+
+    const again = el('button', 'linkish');
+    again.type = 'button';
+    again.textContent = 'retry';
+    again.title = 'Answer this question again from scratch';
+    // Resubmitting the same text at the same point. One mechanism for both
+    // buttons, so retry means "this question" rather than "the newest one".
+    again.onclick = () => rewind({ seq, message: text });
+
+    bar.append(edit, again);
+    m.appendChild(bar);
+  }
+
   wrap.appendChild(m);
   scroll();
 }
 
-function addAssistant() {
+/** Swaps a question for a textarea, in place. Escape or cancel puts it back. */
+function beginEdit(msg, body, text, seq) {
+  if (busy || msg.querySelector('textarea')) return;
+  const box = el('div', 'edit-box');
+  const area = el('textarea');
+  area.value = text;
+  area.rows = Math.min(12, text.split('\n').length + 1);
+
+  const save = el('button', 'primary');
+  save.type = 'button';
+  save.textContent = 'save & resubmit';
+  const cancel = el('button', 'linkish');
+  cancel.type = 'button';
+  cancel.textContent = 'cancel';
+
+  const close = () => { box.remove(); body.hidden = false; msg.classList.remove('editing'); };
+  cancel.onclick = close;
+  save.onclick = () => {
+    const next = area.value.trim();
+    if (!next) return;
+    if (next === text) return close();
+    return rewind({ seq, message: next });
+  };
+  area.onkeydown = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save.onclick(); }
+  };
+
+  const row = el('div', 'edit-actions');
+  row.append(save, cancel);
+  box.append(area, row);
+  body.hidden = true;
+  msg.classList.add('editing');
+  msg.appendChild(box);
+  area.focus();
+  area.setSelectionRange(area.value.length, area.value.length);
+}
+
+/**
+ * Rewinds the conversation and runs it forward again.
+ *
+ * Everything after the rewind point is gone -- there is no second branch kept
+ * to switch back to. Reopening the chat is what redraws it: the server has
+ * already truncated the transcript, and `openChat` replays what is left and
+ * rejoins the run that is now producing the rest.
+ */
+async function rewind(payload) {
+  if (busy || !chat.id) return;
+  const res = await fetch(`/api/chats/${chat.id}/edit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const out = await res.json().catch(() => ({ error: `${res.status}` }));
+  if (!res.ok) return addError(out.error);
+  // The run is already going; openChat replays the rewound transcript and
+  // attaches to it, exactly as a reload mid-turn would.
+  const id = chat.id;
+  await openChat(id);
+  return undefined;
+}
+
+function addAssistant(parent) {
   const m = el('div', 'msg assistant');
   m.innerHTML = '<div class="who">assistant</div>';
   const b = el('div', 'md');
   m.appendChild(b);
-  wrap.appendChild(m);
+  (parent || wrap).appendChild(m);
   let raw = '';
   let queued = false;
   const paint = () => { queued = false; b.innerHTML = renderMarkdown(raw); scroll(); };
   return {
+    // The turn moves this block between the work and the answer slot, so it
+    // hands out its element rather than assuming where it lives.
+    node: m,
     // Re-render on a frame rather than per token: markdown is whole-document,
     // and a fast stream would otherwise reparse hundreds of times a second.
     push(delta) {
@@ -257,8 +544,9 @@ function cacheWrites(u) {
 
 /** Folds one or more raw usage objects into the numbers we display. */
 function tally(raws) {
-  const t = { in: 0, out: 0, cached: 0, written: 0, discount: 0, reported: false, raw: raws };
+  const t = { in: 0, out: 0, cached: 0, written: 0, discount: 0, reported: false, raw: raws, provider: null };
   for (const u of raws) {
+    if (u.provider) t.provider = u.provider;
     t.in += u.prompt_tokens ?? u.input_tokens ?? 0;
     t.out += u.completion_tokens ?? u.output_tokens ?? 0;
     t.cached += cacheReads(u);
@@ -280,6 +568,9 @@ function addUsage(u, parent) {
   if (u.written) bits.push(`${u.written} written`);
   if (u.discount) bits.push(`cache saved ${u.discount.toFixed(4)}`);
   if (!u.cached && !u.written) bits.push(u.reported ? 'no cache hit' : 'cache not reported');
+  // Worth a line of its own: a round served by a different upstream has a cold
+  // cache through no fault of the prefix, and that is only visible here.
+  if (u.provider) bits.push(`via ${u.provider}`);
   const line = el('div', 'usage');
   line.textContent = bits.join(' / ');
   // The raw usage objects, for when a provider reports something we do not read.
@@ -288,41 +579,86 @@ function addUsage(u, parent) {
   scroll();
 }
 
-function addNotice(text) {
+function addNotice(text, parent) {
   const n = el('div', 'notice');
   n.textContent = text;
-  wrap.appendChild(n);
+  (parent || wrap).appendChild(n);
   scroll();
 }
 
-function addError(text) {
+function addError(text, parent) {
   const e = el('div', 'err');
   e.textContent = text;
-  wrap.appendChild(e);
+  (parent || wrap).appendChild(e);
   scroll();
 }
 
 /* ---------- config ---------- */
 
-/** One expandable row per tool: server, name, blurb; open for the full schema. */
-function showTools(tools) {
+/**
+ * The tools panel: built-ins first, then every MCP server with its own health
+ * and its tools under it. Each tool and each server carries a checkbox --
+ * unchecking a tool drops it from what the model is offered; unchecking a
+ * server disconnects it outright, which is one fewer live connection rather
+ * than just one the model is not shown.
+ *
+ * Rebuilt wholesale from a fresh /api/tools payload after every toggle, so the
+ * panel can never drift from what the server actually did with the request.
+ */
+function renderToolPanel(data) {
   const box = $('tools');
   box.innerHTML = '';
-  $('toolCount').textContent = `${tools.length} from ${new Set(tools.map(serverOf)).size} server(s)`;
-  if (!tools.length) {
-    box.innerHTML = '<div class="empty">no tools</div>';
-    return;
-  }
-  for (const t of tools) {
-    const d = el('details', 'tool');
+
+  const toggleTool = async (name, disabled) => {
+    const out = await (await fetch('/api/tools/toggle', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, disabled })
+    })).json();
+    renderToolPanel(out);
+  };
+
+  const toggleServer = async (name, disabled) => {
+    const res = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ disabled })
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) return addError(out.error || `${res.status}`);
+    renderToolPanel(out);
+    loadMcp(); // the raw editor's disabled: true/false has to catch up too
+  };
+
+  // A checkbox living inside a <summary> still triggers the details' native
+  // open/close on click, since that is the browser's default action for the
+  // element the click landed in, not a listener that stopPropagation alone
+  // would beat -- so the click itself has to be stopped from ever reaching it.
+  const checkbox = (checked, title, onToggle) => {
+    const label = el('label', 'tgl');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = checked;
+    cb.title = title;
+    cb.onclick = (e) => e.stopPropagation();
+    cb.onchange = () => { cb.disabled = true; onToggle(!cb.checked); };
+    label.appendChild(cb);
+    return label;
+  };
+
+  const toolRow = (t) => {
+    const d = el('details', 'tool' + (t.disabled ? ' off' : ''));
     const sum = el('summary');
-    const srv = el('span', 'srv');
-    srv.textContent = serverOf(t);
+    sum.appendChild(checkbox(
+      !t.disabled,
+      t.disabled ? 'Disabled -- click to let the model use this tool again' : 'Click to stop offering this tool to the model',
+      (disabled) => toggleTool(t.name, disabled)
+    ));
     const name = el('span', 'name');
     name.textContent = t.name.replace(/^[^_]+__/, '');
     const desc = el('span', 'desc');
     desc.textContent = (t.description || '').split('\n')[0];
-    sum.append(srv, name, desc);
+    sum.append(name, desc);
 
     const doc = el('div', 'doc');
     doc.textContent = t.description || '(no description)';
@@ -350,11 +686,72 @@ function showTools(tools) {
     doc.appendChild(raw);
 
     d.append(sum, doc);
-    box.appendChild(d);
+    return d;
+  };
+
+  const STATUS_LABEL = { ok: 'connected', disabled: 'disabled', error: 'failed to connect' };
+
+  const serverGroup = (s) => {
+    const grp = el('div', `tool-group server ${s.status}`);
+    const h = el('div', 'tool-group-h');
+    h.appendChild(checkbox(
+      s.status !== 'disabled',
+      s.status === 'disabled' ? 'Disabled -- click to reconnect' : 'Click to disconnect this server',
+      (disabled) => toggleServer(s.name, disabled)
+    ));
+    const dot = el('span', 'dot');
+    const name = el('span', 'name');
+    name.textContent = s.name;
+    const meta = el('span', 'meta');
+    meta.textContent = s.status === 'ok'
+      ? `${s.tools.length} tool${s.tools.length === 1 ? '' : 's'}`
+      : STATUS_LABEL[s.status];
+    h.append(dot, name, meta);
+    grp.appendChild(h);
+
+    if (s.status === 'error' && s.error) {
+      const err = el('div', 'tool-group-err');
+      err.textContent = s.error;
+      grp.appendChild(err);
+    }
+    if (s.status === 'ok') {
+      if (!s.tools.length) {
+        const empty = el('div', 'empty');
+        empty.textContent = 'no tools';
+        grp.appendChild(empty);
+      } else {
+        for (const t of s.tools) grp.appendChild(toolRow(t));
+      }
+    }
+    return grp;
+  };
+
+  const enabled = data.internal.filter((t) => !t.disabled).length
+    + data.servers.reduce((n, s) => n + s.tools.filter((t) => !t.disabled).length, 0);
+  const total = data.internal.length + data.servers.reduce((n, s) => n + s.tools.length, 0);
+  const up = data.servers.filter((s) => s.status === 'ok').length;
+  $('toolCount').textContent = total
+    ? `${enabled}/${total} enabled \u00b7 ${up}/${data.servers.length} server${data.servers.length === 1 ? '' : 's'} up`
+    : 'none';
+
+  if (data.internal.length) {
+    const grp = el('div', 'tool-group');
+    const h = el('div', 'tool-group-h');
+    h.textContent = 'built-in';
+    grp.appendChild(h);
+    for (const t of data.internal) grp.appendChild(toolRow(t));
+    box.appendChild(grp);
+  }
+  for (const s of data.servers) box.appendChild(serverGroup(s));
+
+  if (!data.internal.length && !data.servers.length) {
+    box.innerHTML = '<div class="empty">no tools</div>';
   }
 }
 
-const serverOf = (t) => (typeof t === 'string' ? t : t.name).split('__')[0];
+async function loadTools() {
+  renderToolPanel(await (await fetch('/api/tools')).json());
+}
 
 async function loadMcp() {
   const { path, text } = await (await fetch('/api/mcp')).json();
@@ -376,7 +773,7 @@ $('saveMcp').onclick = async () => {
     if (!res.ok) {
       $('mcpMsg').textContent = out.error;
     } else {
-      showTools(out.tools);
+      await loadTools();
       $('mcpMsg').textContent = out.mcpErrors?.length ? out.mcpErrors.join('; ') : 'connected';
       await loadConfig();
     }
@@ -397,7 +794,6 @@ async function loadConfig() {
   $('compactThreshold').value = cfg.compactThreshold ?? 0;
   $('keepTurns').value = cfg.keepTurns ?? 2;
   $('maxInlineChars').value = cfg.maxInlineChars ?? 0;
-  showTools(cfg.tools);
   const bits = [cfg.model, `${cfg.tools.length} tools`];
   if (!cfg.hasApiKey) bits.push('NO API KEY');
   if (cfg.mcpErrors?.length) bits.push(`${cfg.mcpErrors.length} mcp err`);
@@ -441,7 +837,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('settings').classList.contains('open')) toggleSettings(false);
 });
 $('new').onclick = newChat;
-$('menu').onclick = () => $('side').classList.toggle('open');
+$('menu').onclick = () => {
+  const open = $('side').classList.toggle('open');
+  $('menu').setAttribute('aria-expanded', String(open));
+};
 
 /* ---------- send ---------- */
 
@@ -454,34 +853,24 @@ input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('form').requestSubmit(); }
 });
 
-$('form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text || busy) return;
-  input.value = '';
-  input.style.height = 'auto';
-  busy = true;
-  $('send').disabled = true;
-
-  addUser(text);
-
+/**
+ * Renders one turn from a server event stream.
+ *
+ * Used both by the tab that sent the message and by a tab that rejoined a turn
+ * already in flight -- the events are the same either way, which is what lets a
+ * reload pick a run back up instead of starting over.
+ */
+async function consume(res) {
   let answer = null;
   let think = null;
   let steps = null;
-  let rail = null;
+  const turn = addTurn();
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
 
   try {
-    // Only the new turn goes up. The server replays the rest from its own copy,
-    // so a page-sized tool result crosses the wire once rather than every turn.
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chatId: chat.id, message: text })
-    });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -497,24 +886,25 @@ $('form').addEventListener('submit', async (e) => {
           // A fresh thought starts the next round, so close the open tool group:
           // otherwise later calls keep landing in a box further up the page while
           // each new thought appends at the bottom, and the order comes apart.
-          if (!think) { steps = null; answer = null; }
-          rail ||= addRail();
-          think ||= addThinking(rail);
+          if (!think) { steps = null; answer = null; turn.interrupt(); }
+          think ||= addThinking(turn.work());
           think.push(ev.delta);
+          turn.status('thinking');
         } else if (ev.type === 'text') {
           if (think) { think.done(); think = null; }
-          // Prose ends the intermediate work: the answer leaves the rail and is
-          // rendered at full width.
+          // Prose is written at full width as the answer-so-far. If more work
+          // follows, the turn demotes it into the work and this repeats.
           steps = null;
-          rail = null;
-          answer ||= addAssistant();
+          if (!answer) { answer = turn.prose(); turn.status('writing'); }
           answer.push(ev.delta);
         } else if (ev.type === 'tool_call') {
           if (think) { think.done(); think = null; }
           answer = null;
-          rail ||= addRail();
-          steps ||= addSteps(rail);
+          turn.interrupt();
+          steps ||= addSteps(turn.work());
           steps.add(ev.id, ev.name, ev.args);
+          turn.step();
+          turn.status(statusOf(ev.name, ev.args));
         } else if (ev.type === 'tool_result') {
           steps?.finish(ev.id, ev.result);
         } else if (ev.type === 'chat') {
@@ -525,7 +915,7 @@ $('form').addEventListener('submit', async (e) => {
           if (fresh) loadChats();
         } else if (ev.type === 'usage') {
           // One line per round, matching what a reopened transcript will show.
-          addUsage(tally([ev.usage]), rail);
+          addUsage(tally([ev.usage]), turn.meta());
         } else if (ev.type === 'compacted') {
           // Handled by the accompanying notice; nothing extra to draw.
         } else if (ev.type === 'done') {
@@ -534,26 +924,74 @@ $('form').addEventListener('submit', async (e) => {
           think = null;
           steps = null;
           answer = null;
-          rail = null;
-          addNotice(ev.text);
+          turn.interrupt();
+          addNotice(ev.text, turn.meta());
         } else if (ev.type === 'error') {
-          addError(ev.error);
+          addError(ev.error, turn.el);
         }
       }
     }
     if (think) think.done();
+  } catch (err) {
+    addError(err.message, turn.el);
+  } finally {
+    // Whatever prose is still standing was the answer; the work collapses
+    // behind its recap. A turn that failed mid-flight gets the same treatment,
+    // so the page is never left with the work stuck open.
+    turn.finish();
+  }
+}
+
+/** While a turn runs, send becomes stop -- the run outlives this tab either way. */
+function setBusy(on) {
+  busy = on;
+  $('send').textContent = on ? 'stop' : 'send';
+  $('send').classList.toggle('stop', on);
+  if (!on) input.focus();
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (busy) {
+    // Closing the tab no longer stops a turn, so there has to be a way to
+    // actually mean it.
+    if (chat.id) await fetch(`/api/chats/${chat.id}/stop`, { method: 'POST' });
+    return;
+  }
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  setBusy(true);
+
+  addUser(text);
+
+  try {
+    // Only the new turn goes up. The server replays the rest from its own copy,
+    // so a page-sized tool result crosses the wire once rather than every turn.
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chatId: chat.id, message: text })
+    });
+    await consume(res);
     loadChats();
   } catch (err) {
     addError(err.message);
   } finally {
-    busy = false;
-    $('send').disabled = false;
-    input.focus();
+    setBusy(false);
   }
 });
+
+// A run is the server's, so the dot in the sidebar can change without this tab
+// doing anything at all. Poll only while there is something to watch.
+setInterval(() => {
+  if (busy || chats.some((c) => c.running)) loadChats();
+}, 4000);
 
 newChat();
 loadConfig();
 loadMcp();
+loadTools();
 migrateLocal().then(loadChats);
 input.focus();
