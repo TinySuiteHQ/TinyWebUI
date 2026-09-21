@@ -54,6 +54,13 @@
     </div>
 
     <div class="sec">
+      <div class="sec-h">appearance</div>
+      <div class="row">
+        <div><label for="theme">theme</label><select id="theme"><option value="">default</option></select></div>
+      </div>
+    </div>
+
+    <div class="sec">
       <div class="sec-h">mcp servers <span id="mcpPath" class="usage"></span></div>
       <textarea id="mcpText" rows="9" spellcheck="false"></textarea>
       <div class="row">
@@ -84,6 +91,7 @@
 
 </div>
 
+<script type="module" src="themes/theme-loader.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

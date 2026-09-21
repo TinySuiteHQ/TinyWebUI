@@ -1,0 +1,5 @@
+{
+  "themes": [
+    { "id": "fall-fairy", "name": "Fall Fairy", "file": "fall-fairy.css", "js": "fall-fairy.js" }
+  ]
+}

@@ -1,0 +1,221 @@
+/* ============================================================================
+   Fall Fairy — a skin, not a fork.
+
+   Every rule here is scoped under [data-theme="fall-fairy"], and the core app
+   is untouched: no class, id, or attribute in this file is one that app.js
+   does not already produce for its own reasons.
+
+   The moving scenery lives in fall-fairy.js and paints on two canvases this
+   file positions: one behind the page, one in front of it. This half's job is
+   the part a canvas must not do — keep the transcript readable while a forest
+   is going on behind it.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ type */
+
+/* The one thing in this file that reaches outside the machine: four families
+   from Google Fonts. Every one of them has a full local fallback stack below,
+   so a TinyWebUI running on a box with no internet gets the same layout in
+   system faces rather than a blank page — nothing here is load-bearing. If you
+   would rather not call out at all, drop this @import and the stacks take
+   over; if you would rather it never call out, the four .woff2 files are small
+   enough to sit next to this file.
+
+   Grandstander  headings and the title  — bouncy, storybook, a bit game-like
+   Quicksand     everything you read     — rounded and very legible at 17px
+   Space Mono    the machine's own voice — timestamps, tools, code, status
+   Caveat        her line in the clearing — handwritten, used exactly once */
+@import url("https://fonts.googleapis.com/css2?family=Grandstander:wght@500;600;700&family=Quicksand:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Caveat:wght@500;600&display=swap");
+
+/* ---------------------------------------------------------------- palette */
+
+:root[data-theme="fall-fairy"] {
+  --bg: #fdf5e9; --panel: #f6e8d4; --line: #dcbd91; --fg: #40271a;
+  --muted: #77563a; --faint: #997750; --accent: #b5482e; --tool: #4f7a3f; --err: #9c3b3b;
+
+  /* Scene-only tokens. fall-fairy.js reads these off the root element, so the
+     canvas and the chrome are never two different autumns — and dark mode
+     below re-tints the whole forest by changing nothing but these lines. */
+  --ff-sky-hi: #f7dcac;
+  --ff-sky-lo: #e79a5c;
+  --ff-hill-far: #c08a63;
+  --ff-hill-mid: #a4663f;
+  --ff-hill-near: #7d452a;
+  --ff-tree: #5c3220;
+  --ff-canopy-a: #c85a24;
+  --ff-canopy-b: #d98b2b;
+  --ff-canopy-c: #9c6b2a;
+  --ff-leaf-a: #c0562c;
+  --ff-leaf-b: #dc9a33;
+  --ff-leaf-c: #8d7a2f;
+  --ff-glow: #ffdf9e;
+  --ff-wing: #fff6de;
+  --ff-star: #fff3d2;
+  --ff-stars: 0;        /* stars are a night thing; see the dark block */
+
+  --ff-scrim: 84%;      /* how solid the reading surfaces sit over the scene */
+
+  /* --mono is the app's own variable: overriding it here re-voices every
+     timestamp, tool name, code block and status line in one line, with no
+     rule in this file having to name any of them. */
+  --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ff-display: "Grandstander", "Iowan Old Style", Georgia, "Segoe UI", sans-serif;
+  --ff-body: "Quicksand", "Segoe UI Variable", ui-rounded, "Segoe UI", sans-serif;
+  --ff-hand: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="fall-fairy"] {
+    --bg: #1d1628; --panel: #281e35; --line: #4b3860; --fg: #f4e6d2;
+    --muted: #c7a8dc; --faint: #a184be; --accent: #f0a24a; --tool: #7fd9a8; --err: #f28b7d;
+
+    --ff-sky-hi: #211730; --ff-sky-lo: #4a2a3f;
+    --ff-hill-far: #33233f; --ff-hill-mid: #261a31; --ff-hill-near: #1b1224;
+    --ff-tree: #120c1a;
+    --ff-canopy-a: #40243a; --ff-canopy-b: #522e37; --ff-canopy-c: #33203a;
+    --ff-leaf-a: #8a3f2a; --ff-leaf-b: #9a6a2c; --ff-leaf-c: #5c4a2a;
+    --ff-glow: #ffd98a; --ff-wing: #dff3ff; --ff-star: #fff3d2;
+    --ff-stars: 1;
+    --ff-scrim: 88%;
+  }
+}
+
+/* --------------------------------------------------- the reading surfaces */
+
+/* body's own opaque background is the one thing standing between the page and
+   the scene behind it, so it goes — and every surface that carries text gets a
+   scrim of its own instead. Prose contrast is unchanged from the plain theme:
+   the forest is only ever allowed behind a wash, never behind a paragraph. */
+[data-theme="fall-fairy"] body { background: transparent; }
+
+[data-theme="fall-fairy"] #log,
+[data-theme="fall-fairy"] header,
+[data-theme="fall-fairy"] footer {
+  background: color-mix(in srgb, var(--bg) var(--ff-scrim), transparent);
+  backdrop-filter: blur(7px);
+}
+[data-theme="fall-fairy"] aside,
+[data-theme="fall-fairy"] #settings,
+[data-theme="fall-fairy"] .sec-bar {
+  background: color-mix(in srgb, var(--panel) 95%, transparent);
+  backdrop-filter: blur(12px);
+}
+/* These sit on --panel, which is translucent now; a mono block over a tree is
+   exactly the case the scrim above is not strong enough for. */
+[data-theme="fall-fairy"] .md pre,
+[data-theme="fall-fairy"] .step pre,
+[data-theme="fall-fairy"] .tool .doc,
+[data-theme="fall-fairy"] .tool-group,
+[data-theme="fall-fairy"] .md th {
+  background: color-mix(in srgb, var(--panel) 97%, transparent);
+}
+
+/* scene-kit places its own canvases inline — position, hit-testing and depth
+   are part of the runtime's contract, not something each skin restates. */
+
+/* ------------------------------------------------------------ typography */
+
+/* One rule re-voices the whole app: styles.css sets body's font in a shorthand
+   and everything else inherits it, either literally or through `font: inherit`
+   on the controls. Buttons, inputs, the composer, the sidebar and the settings
+   panel all follow from here without being named. */
+[data-theme="fall-fairy"] body {
+  font-family: var(--ff-body);
+  font-weight: 500;
+  letter-spacing: .005em;
+}
+/* Quicksand's lowercase runs small for its em, and the transcript is the one
+   place that has to stay comfortable for a long read. */
+[data-theme="fall-fairy"] #log { font-size: calc(var(--fs-body) * 1.04); }
+
+[data-theme="fall-fairy"] header h1,
+[data-theme="fall-fairy"] .sec-h,
+[data-theme="fall-fairy"] .md h1,
+[data-theme="fall-fairy"] .md h2,
+[data-theme="fall-fairy"] .md h3,
+[data-theme="fall-fairy"] .md h4,
+[data-theme="fall-fairy"] aside .head button,
+[data-theme="fall-fairy"] button.primary {
+  font-family: var(--ff-display);
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+/* .sec-h is uppercase mono in the base sheet; Grandstander is neither, so the
+   tracking that made the mono caps readable now just pulls it apart. */
+[data-theme="fall-fairy"] .sec-h { letter-spacing: .04em; text-transform: lowercase; }
+[data-theme="fall-fairy"] header h1 { font-size: 1.1rem; }
+[data-theme="fall-fairy"] header h1::after { content: " \1F342"; font-size: .8em; }
+
+/* The mono voice stays mono — Space Mono arrives through --mono above, which
+   the base sheet already points at for every one of these. It runs wide, so
+   the label-sized uses get their tracking wound back in. */
+[data-theme="fall-fairy"] .who,
+[data-theme="fall-fairy"] .hit-role,
+[data-theme="fall-fairy"] details.work > summary,
+[data-theme="fall-fairy"] details.think > summary,
+[data-theme="fall-fairy"] button.linkish,
+[data-theme="fall-fairy"] #status {
+  letter-spacing: .01em;
+}
+/* Space Mono's default weight is light for small caps on a scrim. */
+[data-theme="fall-fairy"] .usage,
+[data-theme="fall-fairy"] .step .ms,
+[data-theme="fall-fairy"] #status { font-weight: 700; }
+
+/* The question keeps its accent rail, lit like a lantern. */
+[data-theme="fall-fairy"] .msg.user .body {
+  box-shadow: -3px 0 10px -3px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+/* The answer landing is the payoff of the whole chase, so it gets the single
+   flourish in the transcript: the fairy who found it signs the line. */
+[data-theme="fall-fairy"] .msg.assistant.final .who::after {
+  content: " \2726";
+  color: var(--ff-glow);
+  text-shadow: 0 0 6px var(--ff-glow);
+}
+
+/* A step still running: the trailing ellipsis becomes her spark. */
+[data-theme="fall-fairy"] .work.live .act::after {
+  content: " \2726";
+  color: var(--ff-glow);
+  text-shadow: 0 0 6px var(--ff-glow);
+  animation: ff-twinkle 1.1s ease-in-out infinite;
+}
+@keyframes ff-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* A turn still running in a chat you are not looking at: one of them is still
+   out there with a lantern. */
+[data-theme="fall-fairy"] .chat-item .dot {
+  background: var(--ff-glow);
+  box-shadow: 0 0 6px var(--ff-glow);
+}
+
+/* ---------------------------------------------------------- the clearing */
+
+/* A brand-new chat is the one moment the app leaves an empty stage, and it
+   says so in markup all by itself: #wrap with no children. The canvas reads
+   the same state and seats a fairy on her pumpkin down there; this is the
+   room made for her, and the line she is waiting on. */
+[data-theme="fall-fairy"] #wrap:empty {
+  min-height: min(30rem, 62vh);
+  align-items: center; justify-content: flex-end;
+  padding-bottom: min(15rem, 34vh);
+}
+[data-theme="fall-fairy"] #wrap:empty::after {
+  content: "ask, and we'll go find it";
+  font-family: var(--ff-hand);
+  font-size: 1.85rem; font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--bg) 80%, transparent);
+  animation: ff-breathe 6s ease-in-out infinite;
+}
+@keyframes ff-breathe {
+  0%, 100% { opacity: .75; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="fall-fairy"] .work.live .act::after,
+  [data-theme="fall-fairy"] #wrap:empty::after { animation: none; }
+}
