@@ -353,12 +353,21 @@ export function mount() {
   function makeFairy(ctx, i) {
     return {
       x: rand(ctx.w * 0.2, ctx.w * 0.8), y: rand(ctx.h * 0.3, ctx.h * 0.7),
-      vx: 0, vy: 0, tx: ctx.w / 2, ty: ctx.h / 2,
+      // Flight is polar, not cartesian: she always moves along her heading,
+      // and the heading turns at a capped rate. vx/vy are derived from those
+      // two for the painter's banking, never integrated into.
+      heading: rand(0, TAU),
+      speed: 40,
+      vx: 0, vy: 0,
+      tx: ctx.w / 2, ty: ctx.h / 2,
+      wander: rand(0, TAU),
       s: rand(0.7, 1.15),
       flap: rand(0, TAU), bob: rand(0, TAU),
-      hold: 0, retarget: 0, trail: 0,
-      perch: null,        // { word, until, offset } while sitting on a word
-      startled: 0,        // seconds of "get away from the cursor"
+      retarget: 0, trail: 0,
+      circle: 0,        // seconds left loitering, which is a slow orbit
+      settle: 0,        // seconds before she will consider landing again
+      perch: null,      // { word, offset, landed, until }
+      startled: 0,
       idx: i,
     };
   }
@@ -369,31 +378,32 @@ export function mount() {
     return big ? 6 : ctx.mode === 'empty' ? 3 : 2;
   }
 
-  /** Where a fairy goes next when she is not sitting on anything. */
+  /** Where a fairy heads next. Targets are chosen rarely and far apart -- the
+   *  turn rate does the shaping, so picking a new one often just produces a
+   *  fairy that twitches. */
   function pickTarget(ctx, f) {
     const { w: W, h: H, pointer: p } = ctx;
+    f.circle = Math.random() < 0.35 ? rand(1.6, 3.4) : 0;
 
-    // A cursor that has come to rest is interesting; one that is being thrown
-    // around is not. This is the whole of "the fairies notice you".
+    // A cursor that has come to rest is interesting; one being thrown around
+    // is not. This is the whole of "the fairies notice you".
     const calm = p.inside && p.speed < 90;
-    if (calm && f.startled <= 0 && ctx.mode !== 'busy' && Math.random() < 0.5) {
+    if (calm && f.startled <= 0 && ctx.mode !== 'busy' && Math.random() < 0.45) {
       const a = rand(0, TAU);
-      const r = rand(46, 120);
-      f.tx = clamp(p.x + Math.cos(a) * r, 24, W - 24);
-      f.ty = clamp(p.y + Math.sin(a) * r * 0.8, 50, H - 30);
-      f.retarget = rand(0.8, 1.8);
-      f.hold = Math.random() < 0.5 ? rand(0.3, 0.9) : 0;
+      const r = rand(75, 155);
+      f.tx = clamp(p.x + Math.cos(a) * r, 45, W - 45);
+      f.ty = clamp(p.y + Math.sin(a) * r * 0.8, 65, H - 45);
+      f.retarget = rand(3, 5.5);
       return;
     }
 
     if (ctx.mode === 'busy') {
       const edge = Math.random() < 0.55;
       f.tx = edge
-        ? (Math.random() < 0.5 ? rand(0.04, 0.22) : rand(0.78, 0.96)) * W
-        : rand(0.1, 0.9) * W;
-      f.ty = rand(0.12, 0.85) * H;
-      f.retarget = rand(0.9, 2.4);
-      f.hold = Math.random() < 0.35 ? rand(0.3, 0.9) : 0;
+        ? (Math.random() < 0.5 ? rand(0.06, 0.24) : rand(0.76, 0.94)) * W
+        : rand(0.12, 0.88) * W;
+      f.ty = rand(0.14, 0.82) * H;
+      f.retarget = rand(2.6, 4.6);
       return;
     }
 
@@ -401,28 +411,27 @@ export function mount() {
       const r = ctx.anchor('transcript');
       const cx = r ? r.left + r.width / 2 : W / 2;
       const cy = r ? clamp(r.bottom - 60, 100, H - 120) : H / 2;
-      f.tx = cx + rand(-90, 90);
-      f.ty = cy + rand(-70, 40);
-      f.retarget = rand(0.5, 1.1);
-      f.hold = 0;
+      f.tx = cx + rand(-110, 110);
+      f.ty = cy + rand(-80, 40);
+      f.retarget = rand(1.8, 3.2);
       return;
     }
 
     const c = seat || { x: W / 2, y: H * 0.62 };
     const a = rand(0, TAU);
-    const r = rand(70, 190) * clamp(W / 900, 0.6, 1.2);
-    f.tx = clamp(c.x + Math.cos(a) * r, 40, W - 40);
-    f.ty = clamp(c.y - 60 + Math.sin(a) * r * 0.55, 80, H - 60);
-    f.retarget = rand(2.2, 4.5);
-    f.hold = Math.random() < 0.4 ? rand(0.6, 1.6) : 0;
+    const r = rand(80, 200) * clamp(W / 900, 0.6, 1.2);
+    f.tx = clamp(c.x + Math.cos(a) * r, 45, W - 45);
+    f.ty = clamp(c.y - 60 + Math.sin(a) * r * 0.55, 85, H - 60);
+    f.retarget = rand(4.5, 8);
   }
 
-  /** How long a fairy stays on a word, by what she is doing there. Skimming
-   *  for an answer is quick; there is nothing to read on an empty page. */
+  /** How long she stays on a word once she is down. Long enough to look like
+   *  she is reading it -- a fairy that lands and leaves within a second reads
+   *  as a glitch, not as a character. */
   function perchDwell(mode) {
-    if (mode === 'busy') return rand(0.45, 1.1);
-    if (mode === 'done') return rand(1.6, 3.4);
-    return rand(1.2, 3.2);
+    if (mode === 'busy') return rand(2.5, 5);     // skimming, but not frantic
+    if (mode === 'done') return rand(6, 11);      // this is the answer. sit.
+    return rand(5, 9);
   }
 
   function tryPerch(ctx, f) {
@@ -436,9 +445,11 @@ export function mount() {
       if (!r) continue;
       f.perch = {
         word,
-        until: ctx.t + perchDwell(ctx.mode),
-        // Where along the word she stands, so two fairies do not share a spot.
+        // Where along the word she stands, so two fairies never share a spot.
         offset: rand(0.2, 0.8),
+        // She has only chosen it. The clock starts when she is actually down.
+        landed: false,
+        until: 0,
       };
       return;
     }
@@ -450,57 +461,56 @@ export function mount() {
     while (fairies.length < want) fairies.push(makeFairy(ctx, fairies.length));
     if (fairies.length > want) fairies.length = want;
 
-    const speed = mode === 'busy' ? 1 : mode === 'done' ? 1.25 : 0.42;
-    const accel = mode === 'busy' ? 780 : mode === 'done' ? 900 : 260;
-    const drag = mode === 'empty' ? 2.6 : 1.9;
+    // The two numbers that decide whether this reads as flight: how fast she
+    // travels, and how fast she is allowed to change her mind about where.
+    const cruise = mode === 'busy' ? 150 : mode === 'done' ? 120 : 52;
+    const turn = mode === 'busy' ? 2.8 : 2.0;   // radians per second
 
     for (const f of fairies) {
       f.startled = Math.max(0, f.startled - dt);
+      f.settle = Math.max(0, f.settle - dt);
 
       // --- the cursor, up close ---------------------------------------
       if (p.inside) {
         const dx = f.x - p.x, dy = f.y - p.y;
         const d = Math.hypot(dx, dy) || 1;
-        if (d < 52 && p.speed > 140) {
-          // Swatted at. She bolts, and drops whatever she was sitting on.
-          f.startled = rand(0.9, 1.8);
+        if (d < 60 && p.speed > 150) {
+          // Swatted at. She veers off and opens the throttle for a moment --
+          // the heading turns and the speed lifts. Nothing is thrown.
+          if (f.startled <= 0 && sparks.length < 300) burst(f.x, f.y, 5, 70);
+          f.startled = rand(0.7, 1.3);
           f.perch = null;
-          f.hold = 0;
-          f.vx += (dx / d) * 520;
-          f.vy += (dy / d) * 420 - 60;
-          f.retarget = 0;
-          if (sparks.length < 300) burst(f.x, f.y, 6, 90);
-        } else if (d < 90 && f.startled <= 0 && p.speed < 60 && mode !== 'busy') {
-          // A still cursor gets hovered around rather than fled from.
-          f.vx += (-dx / d) * 40 * dt * 60 * 0.02;
-          f.vy += (-dy / d) * 40 * dt * 60 * 0.02;
+          f.circle = 0;
+          f.settle = rand(2, 4);
+          f.tx = clamp(f.x + (dx / d) * 200, 45, W - 45);
+          f.ty = clamp(f.y + (dy / d) * 160, 65, H - 45);
+          f.retarget = rand(1, 1.6);
         }
       }
 
       // --- sitting on a word -------------------------------------------
-      if (f.perch) {
+      if (f.perch && f.perch.landed) {
         const r = f.perch.word.rect();
         if (!r || ctx.t > f.perch.until || f.startled > 0) {
-          if (r && ctx.t > f.perch.until) {
-            // A clean take-off leaves a little dust on the word.
-            burst(f.x, f.y, 4, 60);
-          }
+          if (r && ctx.t > f.perch.until) burst(f.x, f.y, 4, 55);
           f.perch = null;
+          f.settle = rand(4, 8);   // she has just read one; give it a moment
+          f.speed = 0;             // and takes off from standing
           f.retarget = 0;
         } else {
           // She rides the word: its box is read fresh every frame, so
           // scrolling, editing or a re-render carries her with it.
           const tx = r.left + r.width * f.perch.offset;
           const ty = r.top - 2;
-          f.x = lerp(f.x, tx, clamp(dt * 9, 0, 1));
-          f.y = lerp(f.y, ty, clamp(dt * 9, 0, 1));
-          f.vx = lerp(f.vx, 0, clamp(dt * 8, 0, 1));
-          f.vy = lerp(f.vy, 0, clamp(dt * 8, 0, 1));
-          f.flap += dt * 5;
+          f.x = lerp(f.x, tx, clamp(dt * 8, 0, 1));
+          f.y = lerp(f.y, ty, clamp(dt * 8, 0, 1));
+          f.speed = 0;
+          f.vx = 0; f.vy = 0;
+          f.flap += dt * 4;
           f.trail -= dt;
           if (f.trail <= 0 && sparks.length < 260) {
-            f.trail = rand(0.18, 0.4);
-            sparks.push(newSpark(f.x + rand(-4, 4), f.y + rand(-1, 3), rand(-6, 6), rand(2, 10), rand(0.8, 1.6)));
+            f.trail = rand(0.25, 0.55);
+            sparks.push(newSpark(f.x + rand(-4, 4), f.y + rand(-1, 3), rand(-5, 5), rand(2, 9), rand(0.8, 1.6)));
           }
           continue;
         }
@@ -510,51 +520,72 @@ export function mount() {
       f.retarget -= dt;
       if (f.retarget <= 0) {
         pickTarget(ctx, f);
-        // Landing is a decision made between flights, and only when there is
-        // something under the cursor's world to land on.
         const wantsPerch =
-          f.startled <= 0 &&
-          mode !== 'empty' &&
-          Math.random() < (mode === 'busy' ? 0.3 : mode === 'done' ? 0.55 : 0.35);
+          f.startled <= 0 && f.settle <= 0 && mode !== 'empty' &&
+          Math.random() < (mode === 'busy' ? 0.35 : mode === 'done' ? 0.6 : 0.45);
         if (wantsPerch) tryPerch(ctx, f);
       }
 
+      // A chosen word is just a destination until she reaches it.
       if (f.perch) {
         const r = f.perch.word.rect();
         if (r) { f.tx = r.left + r.width * f.perch.offset; f.ty = r.top - 2; }
         else f.perch = null;
       }
 
-      if (f.hold > 0 && !f.perch) {
-        f.hold -= dt;
-        f.vx *= 1 - clamp(dt * 5, 0, 1);
-        f.vy *= 1 - clamp(dt * 5, 0, 1);
-      } else {
-        const dx = f.tx - f.x, dy = f.ty - f.y;
-        const d = Math.hypot(dx, dy) || 1;
-        if (d < 26 && !f.perch) pickTarget(ctx, f);
-        const push = f.startled > 0 ? accel * 0.4 : accel;
-        f.vx += (dx / d) * push * dt;
-        f.vy += (dy / d) * push * dt;
+      // Loitering is a slow orbit, not a stop. She never stops flying.
+      let tx = f.tx, ty = f.ty;
+      if (f.circle > 0 && !f.perch) {
+        f.circle -= dt;
+        const a = ctx.t * 1.1 + f.bob;
+        tx += Math.cos(a) * 46;
+        ty += Math.sin(a) * 30;
       }
 
-      f.vx -= f.vx * drag * dt;
-      f.vy -= f.vy * drag * dt;
-      const sp = f.startled > 0 ? speed * 1.6 : speed;
-      f.x += f.vx * dt * sp;
-      f.y += f.vy * dt * sp + Math.sin(ctx.t * 2.4 + f.bob) * 8 * dt;
+      const dx = tx - f.x, dy = ty - f.y;
+      const d = Math.hypot(dx, dy) || 1;
+
+      let heading = Math.atan2(dy, dx);
+      // Never a dead straight line.
+      f.wander += dt * 0.8;
+      heading += Math.sin(f.wander) * (f.perch ? 0.06 : 0.3);
+      // Edges are banked away from, not bounced off.
+      if (!f.perch && (f.x < 55 || f.x > W - 55 || f.y < 65 || f.y > H - 45)) {
+        heading = Math.atan2(H * 0.5 - f.y, W * 0.5 - f.x);
+      }
+      f.heading = turnToward(f.heading, heading, turn * (f.startled > 0 ? 1.5 : 1) * dt);
+
+      // Easing down on the approach is what turns an arrival into a settle,
+      // and a chosen word into a glide rather than a snap.
+      const approach = f.perch ? clamp(d / 80, 0.05, 1) : clamp(d / 150, 0.32, 1);
+      const cruising = cruise * approach * (f.startled > 0 ? 1.45 : 1);
+      f.speed = lerp(f.speed, cruising, clamp(dt * 2.2, 0, 1));
+
+      f.x += Math.cos(f.heading) * f.speed * dt;
+      f.y += Math.sin(f.heading) * f.speed * dt + Math.sin(ctx.t * 1.5 + f.bob) * 7 * dt;
+      f.vx = Math.cos(f.heading) * f.speed;
+      f.vy = Math.sin(f.heading) * f.speed;
+
+      // Touchdown. The dwell clock starts here, not when the word was chosen,
+      // so the time she is visibly sitting there is the time you asked for.
+      if (f.perch && !f.perch.landed && d < 9) {
+        f.perch.landed = true;
+        f.perch.until = ctx.t + perchDwell(mode);
+        f.speed = 0;
+      }
+
       f.x = clamp(f.x, 16, W - 16);
       f.y = clamp(f.y, 40, H - 24);
 
-      const effort = clamp(Math.hypot(f.vx, f.vy) / 260, 0.35, 1.8);
-      f.flap += dt * (22 + effort * 26);
+      const effort = clamp(f.speed / 150, 0.35, 1.6);
+      f.flap += dt * (20 + effort * 26);
 
       f.trail -= dt;
       if (f.trail <= 0 && sparks.length < 260) {
-        f.trail = mode === 'busy' ? 0.028 : 0.07;
+        f.trail = mode === 'busy' ? 0.03 : 0.075;
         sparks.push(newSpark(
           f.x + rand(-3, 3), f.y + rand(-2, 6),
-          -f.vx * 0.06 + rand(-8, 8), -f.vy * 0.06 + rand(4, 18),
+          -f.vx * 0.05 + rand(-8, 8), -f.vy * 0.05 + rand(4, 18),
           rand(0.5, 1.2) * f.s,
         ));
       }
@@ -628,7 +659,7 @@ export function mount() {
 
   function paintFairy(ctx, c, f) {
     const { pal } = ctx;
-    const perched = !!f.perch;
+    const perched = !!(f.perch && f.perch.landed);
     const s = f.s * clamp(ctx.h / 820, 0.8, 1.35) * 15;
     const beat = perched ? Math.sin(f.flap) * 0.25 : Math.sin(f.flap);
     const tilt = perched ? 0 : clamp(f.vx / 420, -0.5, 0.5);
@@ -784,6 +815,16 @@ export function mount() {
 /* ---------------------------------------------------------------- utils */
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+/** Turn `from` toward `to` by at most `step` radians, the short way round. A
+ *  capped turn rate is the entire difference between flying and teleporting:
+ *  a target ahead of her becomes a gentle curve, one behind her a wide bank. */
+function turnToward(from, to, step) {
+  let d = ((to - from + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  if (d > step) d = step;
+  else if (d < -step) d = -step;
+  return from + d;
+}
 
 function dot(c, x, y, r) {
   c.beginPath();
