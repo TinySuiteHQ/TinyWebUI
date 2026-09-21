@@ -44,6 +44,18 @@ Everything lives in `tinywebui.config.json` in the directory you run from
 }
 ```
 
+Any OpenAI-compatible endpoint works. For a local runtime, point `baseUrl` at it and
+leave `apiKey` out — no `Authorization` header is sent when there is no key, and none of
+the OpenRouter-specific request fields or ranking headers go to a non-OpenRouter host:
+
+```json
+{
+  "baseUrl": "http://localhost:8080/v1",
+  "model": "qwen3-coder-30b-a3b-instruct",
+  "maxToolRounds": 12
+}
+```
+
 `apiKey` also reads from `$TINYWEBUI_API_KEY` or `$OPENROUTER_API_KEY`, `baseUrl` from
 `$TINYWEBUI_BASE_URL`, `model` from `$TINYWEBUI_MODEL`. Env wins over the file.
 
@@ -57,7 +69,8 @@ itself stays in the request, so the cached prefix survives.
 provider's own defaults apply. That matters most for `maxTokens`: pinning it truncates
 replies on models that would happily write more.
 
-`cacheTtl` controls Anthropic cache lifetime: `"5m"` (default) or `"1h"`. The longer TTL
+`cacheMode` (default `"auto"`) picks the cache dialect from the endpoint and model; see
+**Prompt caching**. `cacheTtl` controls Anthropic cache lifetime: `"5m"` (default) or `"1h"`. The longer TTL
 costs more on the cache-write turn but survives pauses in long research sessions.
 
 `compactThreshold` (default 60000), `keepTurns` (2) and `maxInlineChars` (40000) control
@@ -117,22 +130,35 @@ shape deterministically, which makes regressions easy to test and avoids acciden
   provider simply bills for it. Only Anthropic's structured `reasoning_details` is echoed,
   because a follow-up tool request is rejected without it.
 
-Provider-specific handling sits on top of that stable prefix:
+That first layer is the whole story on most setups. Every local runtime worth using —
+llama.cpp, Ollama, vLLM, LM Studio — caches on prefix match with no request field
+involved, as do OpenAI, DeepSeek and Gemini. Nothing provider-specific is sent to any of
+them, and nothing needs to be.
 
-- **OpenRouter:** every conversation gets a stable `session_id`, so sticky routing starts
-  after the first successful request instead of waiting for OpenRouter to observe a cache hit.
-- **Claude on OpenRouter:** TinyWebUI uses top-level automatic `cache_control`, which advances
-  to the last cacheable block as the agent loop grows. This is important after client-side
-  tool results, where a text-only explicit breakpoint cannot move past a tool message.
-- **Claude/Nova portable fallback:** explicit system + rolling content breakpoints remain in
-  the request. If `extraBody.provider` explicitly routes OpenRouter to particular providers,
-  automatic Claude caching is withheld so Bedrock/Vertex-style routes remain eligible.
-- **Alibaba explicit-cache models:** the currently supported Qwen models and
-  `deepseek/deepseek-v3.2` get explicit content breakpoints on OpenRouter.
-- **Gemini on OpenRouter:** explicit content breakpoints are emitted as well; implicit caching
-  still benefits from the stable prefix where the selected Gemini endpoint supports it.
-- **OpenAI, DeepSeek and other implicit-cache providers:** no provider-specific marker is
-  required; keeping the prefix and tool block stable does the work.
+The second layer is for the gateways that bill cache writes separately and want to be
+told where to write. That is a wire dialect of the *endpoint*, not a property of the
+model, so TinyWebUI only speaks it where it has reason to believe it is understood:
+
+- **OpenRouter** gets a stable `session_id` per conversation, so sticky routing starts
+  after the first successful request rather than waiting for a cache hit to be observed.
+  It is not sent anywhere else — an unknown key is a 400 risk on a strict server, for a
+  field that would do nothing.
+- **Claude on OpenRouter** uses top-level automatic `cache_control`, which advances to the
+  last cacheable block as the loop grows. This is the only shape that keeps caching across
+  client-side tool results; a text-only breakpoint cannot move past a tool message.
+- **Anthropic-style breakpoints** (system + rolling content markers) are used for
+  Claude/Nova on a direct endpoint, and on OpenRouter for the Claude/Qwen/DeepSeek/Gemini
+  families, matched at the family level so a new release is not a code change. Pinning
+  `extraBody.provider` switches Claude from automatic to these, keeping Bedrock/Vertex-style
+  routes eligible.
+- **Anything else — including every localhost or LAN endpoint — gets layer 1 only.** Markers
+  there are pure downside: array-shaped content is exactly what strict OpenAI-compatible
+  servers reject, and they buy nothing on a backend that already caches the prefix itself.
+  The endpoint decides this, not the model name, so a GGUF repack that kept its upstream
+  name is still treated as local.
+
+`cacheMode` in the config overrides the guess when TinyWebUI has not been taught about your
+gateway: `"auto"` (default), `"implicit"` (layer 1 only), `"explicit"`, `"rolling"`, `"off"`.
 
 Token, cache-read and cache-write counts show under each round, and are stored with the
 message, so reopening a conversation still shows what it cost and how much came back from
@@ -140,8 +166,9 @@ cache. OpenAI/OpenRouter-style `prompt_tokens_details`, Responses-style
 `input_tokens_details`, Anthropic cache fields and DeepSeek cache-hit fields are normalized
 for display.
 
-Caching is on by default and deliberately not in the UI, since there is no reason to turn
-it off; set `"cache": false` in the config file if you ever need to.
+Caching is on by default; on an unrecognised or local endpoint that costs nothing and
+changes nothing about the request. Set `"cache": false` (or `"cacheMode": "off"`) to stop
+all of it.
 
 ## Context compaction
 

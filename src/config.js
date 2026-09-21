@@ -39,11 +39,19 @@ const DEFAULTS = {
   // yourself takes precedence over sticky routing, so only pin providers when
   // you deliberately want that behavior.
   extraBody: {},
-  // Prompt caching is on by default. Claude uses OpenRouter automatic caching
-  // when possible and portable explicit breakpoints as its fallback; supported
-  // Qwen/Gemini models get explicit breakpoints there; implicit-cache providers
-  // need only the stable prefix.
+  // Prompt caching is on by default, and for most backends -- including every
+  // local runtime -- that means nothing more than a stable request prefix,
+  // which costs nothing and needs no provider support.
   cache: true,
+  // Which cache dialect to speak. 'auto' infers it from the endpoint and model
+  // and is right for OpenRouter and for anything local; set it explicitly when
+  // you are on a gateway TinyWebUI has not been taught about.
+  //   'auto'     infer (default)
+  //   'implicit' stable prefix only, no cache fields on the wire
+  //   'explicit' Anthropic-style cache_control breakpoints in message content
+  //   'rolling'  OpenRouter top-level automatic cache_control
+  //   'off'      no cache shaping at all
+  cacheMode: 'auto',
   // Anthropic cache writes default to five minutes. One hour costs more to write
   // but is useful for research chats with pauses between turns.
   cacheTtl: '5m',
@@ -126,13 +134,15 @@ export function loadConfig() {
   const cfg = { ...DEFAULTS, ...file, ...env };
   cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
   if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
+  const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
+  if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
   return cfg;
 }
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
 const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds',
-  'cacheTtl', 'compactThreshold', 'keepTurns', 'maxInlineChars'
+  'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars'
 ]);
 
 export function saveConfig(patch) {

@@ -13,47 +13,86 @@ const BUDGET_SPENT = {
 };
 
 /**
- * Cache capabilities vary by model *and* gateway.
+ * Caching has two layers, and only the first one is universal.
  *
- * - Claude/Nova use Anthropic-style explicit content breakpoints as the
- *   portable baseline.
- * - OpenRouter additionally supports Claude automatic caching via a top-level
- *   cache_control field. That becomes the preferred rolling strategy because
- *   it advances over client tool results during an agentic loop. Explicit
- *   markers are the fallback when automatic mode cannot be used.
- * - OpenRouter's Qwen and Gemini adapters accept the same explicit content
- *   breakpoint shape. Other providers with implicit caching need no marker.
+ * Layer 1 -- the stable prefix -- is what `canonical`, append-only history and
+ * frozen compaction below give every backend for free. llama.cpp, Ollama,
+ * vLLM, LM Studio, DeepSeek, Gemini and OpenAI all cache on an exact prefix
+ * match with no request field involved, so keeping the front of the request
+ * byte-identical is where most of the saving comes from on most setups.
+ *
+ * Layer 2 -- explicit markers -- exists because a handful of gateways bill
+ * cache writes separately and want to be told where to write. That is a
+ * per-gateway wire dialect, not a fact about the model, so it lives in one
+ * table here and is off unless we have a reason to believe it is understood.
+ * An endpoint we do not recognise (which is every local runtime) gets layer 1
+ * only: markers there are pure downside -- array content is the part strict
+ * OpenAI-compatible servers reject, and they buy nothing on a backend that
+ * already caches the prefix automatically.
+ *
+ * `cacheMode` in the config overrides the guess, so a new model or a gateway
+ * we have never heard of is a config line, not a patch to this file.
+ *
+ *   'auto'     pick per the table below (default)
+ *   'implicit' layer 1 only -- stable prefix, no marker fields
+ *   'explicit' Anthropic-style cache_control breakpoints in message content
+ *   'rolling'  OpenRouter top-level automatic cache_control
+ *   'off'      no cache shaping at all
  */
 function isOpenRouter(cfg) {
   return /^https?:\/\/(?:[^/]+\.)?openrouter\.ai(?::\d+)?(?:\/|$)/i.test(cfg.baseUrl || '');
+}
+
+/** Loopback and LAN endpoints: a local runtime, whatever model it is serving. */
+function isLocal(cfg) {
+  let host = '';
+  try { host = new URL(cfg.baseUrl || '').hostname.toLowerCase(); } catch { return false; }
+  return host === 'localhost' || host === '::1' || host === 'host.docker.internal'
+    || host.endsWith('.local') || /^127\./.test(host)
+    || /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(host);
 }
 
 function isClaude(model) {
   return /claude|anthropic/i.test(model || '');
 }
 
-function isExplicitAlibabaCache(model) {
-  return /^(?:deepseek\/deepseek-v3\.2|qwen\/(?:qwen3-max|qwen-plus|qwen3\.6-plus|qwen3-coder-plus|qwen3-coder-flash))(?::|$)/i
-    .test(model || '');
-}
+/**
+ * Model families that bill cache writes and therefore want an explicit marker.
+ * Matched at the family level on purpose: pinning exact model ids means every
+ * new release needs a code change, and a marker on a sibling that does not
+ * need one is ignored rather than fatal.
+ */
+const EXPLICIT_FAMILIES = /claude|anthropic|amazon\.nova|nova-(?:lite|micro|pro|premier)|qwen|deepseek|gemini/i;
 
-function wantsBreakpoints(cfg) {
-  const model = cfg.model || '';
-  if (/claude|anthropic|amazon\.nova|nova-(lite|micro|pro|premier)/i.test(model)) return true;
-  if (!isOpenRouter(cfg)) return false;
-  return isExplicitAlibabaCache(model) || /gemini/i.test(model);
+/** The only case where a marker is worth sending to an unrecognised gateway. */
+const NATIVE_ANTHROPIC = /claude|anthropic|amazon\.nova|nova-(?:lite|micro|pro|premier)/i;
+
+/** Resolves config + endpoint + model to exactly one of the modes above. */
+export function cacheMode(cfg) {
+  const asked = cfg.cacheMode || 'auto';
+  if (cfg.cache === false) return 'off';
+  if (asked !== 'auto') return asked;
+
+  // A pinned provider route means the caller has taken routing into their own
+  // hands; automatic mode would quietly narrow it, so fall back to markers.
+  const pinned = Object.keys(cfg.extraBody?.provider || {}).length > 0;
+
+  if (isOpenRouter(cfg)) {
+    if (isClaude(cfg.model) && !pinned) return 'rolling';
+    return EXPLICIT_FAMILIES.test(cfg.model || '') ? 'explicit' : 'implicit';
+  }
+  // Local runtimes cache the prefix themselves and are the strictest about
+  // request shape. Never shape their wire.
+  if (isLocal(cfg)) return 'implicit';
+  // A direct Anthropic-compatible endpoint is the one remaining case worth
+  // marking; anything else we have not identified gets the safe path.
+  return NATIVE_ANTHROPIC.test(cfg.model || '') ? 'explicit' : 'implicit';
 }
 
 function cacheDirective(cfg) {
   const directive = { type: 'ephemeral' };
   if (isClaude(cfg.model) && cfg.cacheTtl === '1h') directive.ttl = '1h';
   return directive;
-}
-
-function wantsAutomaticClaude(cfg) {
-  const provider = cfg.extraBody?.provider;
-  const explicitlyRouted = provider && Object.keys(provider).length > 0;
-  return Boolean(cfg.cache && isClaude(cfg.model) && isOpenRouter(cfg) && !explicitlyRouted);
 }
 
 /**
@@ -104,9 +143,10 @@ function markBreakpoint(messages, from, directive) {
 }
 
 export function buildMessages(cfg, history, epochIndex = -1) {
-  // OpenRouter Claude automatic caching is the rolling strategy itself. Do not
-  // stack explicit breakpoints on top unless automatic mode is unavailable.
-  const bp = cfg.cache && wantsBreakpoints(cfg) && !wantsAutomaticClaude(cfg);
+  // Only 'explicit' shapes message content. 'rolling' is the strategy by
+  // itself and must not be stacked with markers; 'implicit' and 'off' send
+  // plain strings, which is what every strict OpenAI-compatible server wants.
+  const bp = cacheMode(cfg) === 'explicit';
   const directive = cacheDirective(cfg);
   const system = {
     role: 'system',
@@ -158,18 +198,16 @@ export function buildBody(cfg, { turn, tools, lastCall, epochIndex, chatId }, di
     stream: true
   };
 
-  // OpenRouter's explicit session key makes provider stickiness start after the
-  // first successful request, before a cache hit has happened. Respect an
-  // explicit caller override in extraBody, otherwise use the conversation id.
+  // session_id is an OpenRouter field. Sending it anywhere else risks a strict
+  // server rejecting an unknown key over something that would do nothing.
   if (isOpenRouter(cfg) && chatId && body.session_id == null) {
     body.session_id = String(chatId).slice(0, 256);
   }
 
-  // Claude automatic caching advances the breakpoint to the last cacheable
-  // block as the conversation grows. This is the piece that covers client tool
-  // results between MCP rounds; the explicit markers above remain as the
-  // portable fallback for Bedrock/Vertex-style routes and other gateways.
-  if (!disabled.has('cache') && wantsAutomaticClaude(cfg)) {
+  // Rolling mode: the gateway advances the breakpoint to the last cacheable
+  // block itself, which is the only shape that keeps caching across client-side
+  // tool results in an agentic loop.
+  if (!disabled.has('cache') && cacheMode(cfg) === 'rolling') {
     body.cache_control = cacheDirective(cfg);
   }
 
@@ -197,11 +235,17 @@ async function post(cfg, plan, signal, disabled, emit) {
     const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
       method: 'POST',
       signal,
+      // Local runtimes are usually keyless, and the ranking headers are
+      // OpenRouter's own -- neither belongs on a request to someone else.
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${cfg.apiKey}`,
-        'http-referer': 'https://github.com/TinySuiteHQ/tinywebui',
-        'x-title': 'TinyWebUI'
+        ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
+        ...(isOpenRouter(cfg)
+          ? {
+              'http-referer': 'https://github.com/TinySuiteHQ/tinywebui',
+              'x-title': 'TinyWebUI'
+            }
+          : {})
       },
       body: JSON.stringify(buildBody(cfg, plan, disabled))
     });

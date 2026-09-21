@@ -167,7 +167,7 @@ test('explicitly routed OpenRouter Claude falls back to portable explicit breakp
   assert.ok(marks(body.messages).length >= 2);
 });
 
-test('OpenRouter deepseek-v3.2 receives Alibaba explicit cache breakpoints', () => {
+test('OpenRouter deepseek is matched at the family level, not by exact model id', () => {
   const cfg = {
     cache: true,
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -175,4 +175,59 @@ test('OpenRouter deepseek-v3.2 receives Alibaba explicit cache breakpoints', () 
     systemPrompt: 'sys'
   };
   assert.ok(marks(buildMessages(cfg, convo)).length >= 2);
+});
+
+
+/* ---------- local backends: layer 1 only ---------- */
+
+const LOCAL = {
+  cache: true,
+  baseUrl: 'http://localhost:8080/v1',
+  model: 'qwen3-coder-30b-a3b-instruct',
+  systemPrompt: 'sys'
+};
+
+test('a local runtime gets plain string content and no cache fields', () => {
+  const out = buildMessages(LOCAL, convo);
+  assert.deepEqual(marks(out), [], 'array content is what strict local servers reject');
+  assert.equal(typeof out[0].content, 'string');
+  const body = buildBody(
+    LOCAL,
+    { turn: convo, tools: [], lastCall: false, epochIndex: 2, chatId: 'chat-1' },
+    new Set()
+  );
+  assert.equal(body.cache_control, undefined);
+  assert.equal(body.session_id, undefined, 'session_id is an OpenRouter field');
+});
+
+test('a local endpoint wins over a model name that looks like a hosted one', () => {
+  // GGUF repacks keep the upstream name; the endpoint is what decides the wire.
+  const out = buildMessages({ ...LOCAL, model: 'claude-sonnet-4.5-gguf' }, convo);
+  assert.deepEqual(marks(out), []);
+});
+
+test('LAN addresses count as local', () => {
+  assert.deepEqual(marks(buildMessages({ ...LOCAL, baseUrl: 'http://192.168.1.40:1234/v1' }, convo)), []);
+});
+
+test('cacheMode overrides the guess in both directions', () => {
+  assert.ok(
+    marks(buildMessages({ ...LOCAL, cacheMode: 'explicit' }, convo)).length >= 2,
+    'a local server that does understand breakpoints can be told so'
+  );
+  assert.deepEqual(
+    marks(buildMessages({ ...CLAUDE, cacheMode: 'implicit' }, convo)),
+    [],
+    'and a hosted one can be told to stop'
+  );
+});
+
+test('an unknown gateway serving an unknown model stays on the safe path', () => {
+  const cfg = { cache: true, baseUrl: 'https://gateway.internal/v1', model: 'house-model-v2', systemPrompt: 'sys' };
+  const body = buildBody(
+    cfg, { turn: convo, tools: [], lastCall: false, epochIndex: -1, chatId: 'c' }, new Set()
+  );
+  assert.deepEqual(marks(body.messages), []);
+  assert.equal(body.cache_control, undefined);
+  assert.equal(body.session_id, undefined);
 });
