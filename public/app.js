@@ -6,6 +6,7 @@ import { $ } from './dom.js';
 import { newChat } from './chat.js';
 import { loadChats } from './sidebar.js';
 import { loadConfig, loadMcp, loadTools } from './settings.js';
+import { loadUsage } from './usage.js';
 import './attachments.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
@@ -34,5 +35,6 @@ newChat();
 loadConfig();
 loadMcp();
 loadTools();
+loadUsage();
 migrateLocal().then(loadChats);
 $('input').focus();

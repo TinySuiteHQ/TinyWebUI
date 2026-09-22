@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS messages (
   reasoning_details_json TEXT,
   artifact_id            TEXT,
   stub_text              TEXT,
-  usage_json             TEXT
+  usage_json             TEXT,
+  model                  TEXT,
+  created_at             INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS messages_chat_seq ON messages(chat_id, seq);
 
@@ -194,6 +196,13 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
+    // `messages` may already exist from before these columns did --
+    // CREATE TABLE IF NOT EXISTS above is a no-op against a live table, so
+    // they're added here instead, self-repairing like the FTS backfill below.
+    const cols = this.db.prepare('PRAGMA table_info(messages)').all().map((c) => c.name);
+    if (!cols.includes('model')) this.db.exec('ALTER TABLE messages ADD COLUMN model TEXT');
+    if (!cols.includes('created_at')) this.db.exec('ALTER TABLE messages ADD COLUMN created_at INTEGER');
+    this.db.exec('CREATE INDEX IF NOT EXISTS messages_usage_ts ON messages(created_at) WHERE usage_json IS NOT NULL');
     // A tool row, or an assistant note later superseded within its own turn,
     // indexed under an earlier shape of the triggers above is corrected on
     // open rather than left to linger -- the triggers alone only ever
@@ -313,8 +322,9 @@ export class Store {
     this.db.prepare(`
       INSERT INTO messages
         (chat_id, seq, role, content, tool_call_id, tool_calls_json,
-         reasoning, reasoning_details_json, artifact_id, stub_text, usage_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         reasoning, reasoning_details_json, artifact_id, stub_text, usage_json,
+         model, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       chatId, seq, msg.role,
       msg.content ?? null,
@@ -324,7 +334,9 @@ export class Store {
       msg.reasoning_details ? JSON.stringify(msg.reasoning_details) : null,
       msg.artifact_id ?? null,
       msg.stub_text ?? null,
-      msg.usage ? JSON.stringify(msg.usage) : null
+      msg.usage ? JSON.stringify(msg.usage) : null,
+      msg.model ?? null,
+      Date.now()
     );
     return seq;
   }
@@ -343,6 +355,49 @@ export class Store {
    */
   setStub(messageId, stubText) {
     this.db.prepare('UPDATE messages SET stub_text = ? WHERE id = ?').run(stubText, messageId);
+  }
+
+  /**
+   * Rolls up token usage across every assistant round that has it, bucketed
+   * by local calendar day ('YYYY-MM-DD', via SQLite's julianday/strftime on
+   * created_at) and by model. Buckets are computed in SQL rather than in JS
+   * so a year of history doesn't have to be pulled across just to summarize
+   * it. Field-name variance across providers (prompt_tokens vs input_tokens,
+   * the several cache-token spellings) is normalized here the same way
+   * transcript.js's tally() does client-side for a single round.
+   */
+  usageRollup() {
+    const rows = this.db.prepare(`
+      SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') AS day,
+             model, usage_json
+      FROM messages
+      WHERE usage_json IS NOT NULL AND created_at IS NOT NULL
+    `).all();
+
+    const byDay = new Map();
+    for (const row of rows) {
+      let u;
+      try { u = JSON.parse(row.usage_json); } catch { continue; }
+      const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
+      const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
+      const cached = u.prompt_tokens_details?.cached_tokens
+        ?? u.cache_read_input_tokens
+        ?? u.cached_tokens
+        ?? 0;
+      const model = row.model || u.model || 'unknown';
+
+      if (!byDay.has(row.day)) byDay.set(row.day, { day: row.day, in: 0, out: 0, cached: 0, models: new Map() });
+      const d = byDay.get(row.day);
+      d.in += inTok; d.out += outTok; d.cached += cached;
+
+      if (!d.models.has(model)) d.models.set(model, { model, in: 0, out: 0, cached: 0 });
+      const m = d.models.get(model);
+      m.in += inTok; m.out += outTok; m.cached += cached;
+    }
+
+    return [...byDay.values()]
+      .map((d) => ({ ...d, models: [...d.models.values()] }))
+      .sort((a, b) => a.day.localeCompare(b.day));
   }
 
   /* ---------- artifacts ---------- */

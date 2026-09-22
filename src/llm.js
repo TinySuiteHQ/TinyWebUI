@@ -573,6 +573,10 @@ export async function runChat({ cfg, chatId, store, tools, hub, emit, signal }) 
     // was a cache read. Without that there is no way to tell whether any of the
     // caching or compaction work here is actually paying off.
     if (usage) assistant.usage = { ...usage, ...(provider ? { provider } : {}) };
+    // Snapshotted per-round rather than read back from config later -- the
+    // model can change between chats (or mid-session), and usage history
+    // should report what actually served the round, not whatever is current.
+    if (usage) assistant.model = cfg.model;
     working.push(assistant);
     appended.push(assistant);
     store.addMessage(chatId, assistant);

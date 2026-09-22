@@ -255,6 +255,10 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return json(res, 200, { results });
       }
 
+      if (req.method === 'GET' && (req.url || '').split('?')[0] === '/api/usage') {
+        return json(res, 200, { days: store.usageRollup() });
+      }
+
       if (req.method === 'GET' && req.url === '/api/chats') {
         // `running` is what puts the dot in the sidebar: a turn belongs to the
         // server, so a chat can be working while nothing is watching it.
