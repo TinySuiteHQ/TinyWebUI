@@ -79,10 +79,16 @@
     </div>
   </section>
 
-  <div id="log"><div class="wrap" id="wrap"></div></div>
+  <div id="log">
+    <div class="wrap" id="wrap"></div>
+    <aside id="chatDocs" class="chat-docs" hidden></aside>
+  </div>
 
   <footer>
+    <div id="attachments" class="attachments" hidden></div>
     <form id="form">
+      <input type="file" id="fileInput" multiple hidden>
+      <button type="button" id="attach" title="attach a file">📎</button>
       <textarea id="input" rows="1" placeholder="message (enter to send, shift+enter for newline)"></textarea>
       <button class="primary" id="send" type="submit">send</button>
     </form>

@@ -23,7 +23,9 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0"
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "mammoth": "^1.12.3",
+    "unpdf": "^1.8.1"
   },
   "license": "MIT"
 }

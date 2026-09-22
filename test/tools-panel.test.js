@@ -54,7 +54,7 @@ const post = async (path, body) => {
 
 test('the inventory lists the built-in and the toy server together, both healthy', async () => {
   const inv = await get('/api/tools');
-  assert.deepEqual(inv.internal.map((t) => t.name), ['context_expand']);
+  assert.deepEqual(inv.internal.map((t) => t.name), ['context_expand', 'read_document']);
 
   const toy = inv.servers.find((s) => s.name === 'toy');
   assert.ok(toy, 'the configured server shows up even before anything is toggled');

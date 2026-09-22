@@ -281,7 +281,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1 1 11rem; }
 
-#log { flex: 1; overflow-y: auto; padding: 1.25rem .875rem .5rem; }
+#log { flex: 1; overflow-y: auto; padding: 1.25rem .875rem .5rem; position: relative; }
 .wrap {
   max-width: var(--measure); margin: 0 auto;
   display: flex; flex-direction: column; gap: 1rem;
@@ -468,6 +468,52 @@ form {
 }
 #input { max-height: 13rem; font-size: var(--fs-body); }
 #send { min-width: 5rem; }
+#attach {
+  flex: 0 0 auto; min-width: 2.5rem; background: none; border: 1px solid var(--line);
+}
+.attachments {
+  max-width: var(--measure); margin: 0 auto .5rem; display: flex; flex-wrap: wrap; gap: .4rem;
+}
+.attachments:empty, .attachments[hidden] { display: none; }
+.attachment-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border: 1px solid var(--line); border-radius: 999px; padding: .2rem .65rem;
+  font-size: var(--fs-small); background: var(--bg-soft, transparent);
+}
+.attachment-chip.pending { opacity: .6; }
+.attachment-chip .remove { cursor: pointer; opacity: .6; }
+.attachment-chip .remove:hover { opacity: 1; }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
+
+/* A slim rail floating over the transcript's right margin -- present only
+   where there's room beside the centered .wrap column, never squeezing it. */
+.chat-docs {
+  position: absolute; top: 0; right: .875rem; width: 11rem;
+  display: flex; flex-direction: column; gap: .3rem;
+}
+.chat-docs[hidden] { display: none; }
+.chat-docs .label {
+  font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin-bottom: .15rem;
+}
+.chat-docs .doc-item {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  border-left: 2px solid var(--line); padding: .2rem 0 .2rem .5rem; margin: 0;
+  color: var(--fg); font-size: var(--fs-small); font-family: inherit; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-docs .doc-item:hover { border-left-color: var(--accent); color: var(--accent); }
+.chat-docs .doc-more {
+  align-self: flex-start; background: none; border: none; padding: .2rem 0 0 .5rem;
+  color: var(--muted); font-size: var(--fs-meta); font-family: inherit; cursor: pointer;
+}
+.chat-docs .doc-more:hover { color: var(--fg); }
+
+@media (max-width: 1040px) {
+  /* No room beside the measure column at this width -- would either overlap
+     the transcript or force it to shrink, so it steps aside instead. */
+  .chat-docs { display: none; }
+}
 
 #side-backdrop { display: none; }
 

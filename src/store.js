@@ -53,6 +53,34 @@ CREATE TABLE IF NOT EXISTS artifacts (
   created_at INTEGER NOT NULL
 );
 
+-- Attached documents. Full text is kept whole here, like artifacts.content;
+-- the FTS5 table below only ever holds chunks of it for retrieval.
+CREATE TABLE IF NOT EXISTS documents (
+  id         TEXT PRIMARY KEY,
+  chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  filename   TEXT NOT NULL,
+  mime       TEXT,
+  char_len   INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  content    TEXT NOT NULL
+);
+
+-- FTS5 can't carry the doc id / chunk index itself, so a plain map table sits
+-- next to it, keyed by the same rowid, the same split messages/messages_fts
+-- already uses.
+CREATE TABLE IF NOT EXISTS document_chunk_map (
+  chunk_rowid INTEGER PRIMARY KEY,
+  doc_id      TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  chat_id     TEXT NOT NULL,
+  chunk_idx   INTEGER NOT NULL,
+  char_start  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS document_chunk_map_doc ON document_chunk_map(doc_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks USING fts5(
+  body, tokenize='unicode61'
+);
+
 -- Full-text search over what was actually said, not how it got answered.
 -- Reasoning and tool results are the "work" the transcript shows collapsed,
 -- not the conversation, and are left out of the index by role alone -- a
@@ -250,6 +278,15 @@ export class Store {
   deleteChat(id) {
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
+    // FTS5 has no foreign keys of its own, so its rows are dropped by rowid
+    // before the map (and then the documents) that name them go with the chat.
+    this.db.prepare(`
+      DELETE FROM document_chunks WHERE rowid IN (
+        SELECT chunk_rowid FROM document_chunk_map WHERE chat_id = ?
+      )
+    `).run(id);
+    this.db.prepare('DELETE FROM document_chunk_map WHERE chat_id = ?').run(id);
+    this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
   }
 
@@ -321,6 +358,81 @@ export class Store {
 
   getArtifact(id) {
     return this.db.prepare('SELECT * FROM artifacts WHERE id = ?').get(id) || null;
+  }
+
+  /* ---------- documents ---------- */
+
+  /**
+   * Splits text into overlapping windows for retrieval. Naive on purpose --
+   * no tokenizer, no embeddings -- this only has to give `read_document`'s
+   * query mode something narrower than the whole file to rank with bm25().
+   * Breaks are nudged onto a paragraph or line boundary when one is nearby,
+   * so a chunk doesn't open or close mid-sentence more than it has to.
+   */
+  static chunkText(text, size = 1800, overlap = 200) {
+    const chunks = [];
+    let start = 0;
+    while (start < text.length) {
+      let end = Math.min(start + size, text.length);
+      if (end < text.length) {
+        const para = text.lastIndexOf('\n\n', end);
+        const line = text.lastIndexOf('\n', end);
+        const boundary = para > start + size * 0.5 ? para : (line > start + size * 0.5 ? line : -1);
+        if (boundary !== -1) end = boundary;
+      }
+      chunks.push({ start, text: text.slice(start, end) });
+      if (end >= text.length) break;
+      start = Math.max(end - overlap, start + 1);
+    }
+    return chunks;
+  }
+
+  addDocument(chatId, { filename, mime, content }) {
+    const id = randomBytes(4).toString('hex');
+    const createdAt = Date.now();
+    this.db.prepare(`
+      INSERT INTO documents (id, chat_id, filename, mime, char_len, created_at, content)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, chatId, filename, mime ?? null, content.length, createdAt, content);
+
+    const chunks = Store.chunkText(content);
+    const insertChunk = this.db.prepare('INSERT INTO document_chunks (body) VALUES (?)');
+    const insertMap = this.db.prepare(`
+      INSERT INTO document_chunk_map (chunk_rowid, doc_id, chat_id, chunk_idx, char_start)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    chunks.forEach((chunk, idx) => {
+      const { lastInsertRowid } = insertChunk.run(chunk.text);
+      insertMap.run(lastInsertRowid, id, chatId, idx, chunk.start);
+    });
+
+    return { id, filename, mime: mime ?? null, char_len: content.length, created_at: createdAt, chunks: chunks.length };
+  }
+
+  getDocument(id) {
+    return this.db.prepare('SELECT * FROM documents WHERE id = ?').get(id) || null;
+  }
+
+  listDocuments(chatId) {
+    return this.db.prepare(`
+      SELECT id, filename, mime, char_len, created_at
+      FROM documents WHERE chat_id = ? ORDER BY created_at ASC
+    `).all(chatId);
+  }
+
+  /** Ranked chunk search within one document's own chunks, via FTS5 bm25(). */
+  searchDocumentChunks(docId, query, limit = 5) {
+    const q = ftsQuery(query);
+    if (!q) return [];
+    return this.db.prepare(`
+      SELECT m.chunk_idx AS chunkIdx, m.char_start AS charStart,
+             document_chunks.body AS body, bm25(document_chunks) AS rank
+      FROM document_chunks
+      JOIN document_chunk_map m ON m.chunk_rowid = document_chunks.rowid
+      WHERE document_chunks MATCH ? AND m.doc_id = ?
+      ORDER BY rank
+      LIMIT ?
+    `).all(q, docId, limit);
   }
 
   /* ---------- search ---------- */

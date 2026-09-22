@@ -11,6 +11,8 @@ import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView } from './store.js';
 import { expandToolDef, callExpand } from './context_tool.js';
+import { documentToolDef, callReadDocument } from './document_tool.js';
+import { extractText } from './documents.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -54,7 +56,8 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
   // able to tell: it is registered onto the same hub and called the same way.
   const connectHub = async (servers) =>
     (await new McpHub(servers).connect())
-      .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }));
+      .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }))
+      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store }));
 
   let hub = await connectHub(loadMcpServers());
 
@@ -275,8 +278,52 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
           // replay the settled part and then play the run's events over the top,
           // instead of rendering the same rounds twice.
           messages: live ? messages.slice(0, run.baseCount) : messages,
-          running: Boolean(live)
+          running: Boolean(live),
+          documents: store.listDocuments(found.id)
         });
+      }
+
+      // Uploads (including the paste-as-file path) land here before the first
+      // message exists, so the chat is created lazily, the same way /api/chat
+      // creates one for a brand-new conversation.
+      const uploadDoc = /^\/api\/chats\/([\w.-]+)\/documents$/.exec(req.url || '');
+      if (uploadDoc && req.method === 'POST') {
+        const [, chatId] = uploadDoc;
+        const { filename, mime, dataBase64 } = await readJson(req);
+        if (!filename || typeof dataBase64 !== 'string') {
+          return json(res, 400, { error: 'filename and dataBase64 are required' });
+        }
+        let buf;
+        try {
+          buf = Buffer.from(dataBase64, 'base64');
+        } catch {
+          return json(res, 400, { error: 'dataBase64 is not valid base64' });
+        }
+        const MAX_BYTES = 5 * 1024 * 1024;
+        if (buf.length > MAX_BYTES) {
+          return json(res, 400, { error: `file exceeds ${MAX_BYTES.toLocaleString('en-US')} byte limit` });
+        }
+
+        let text;
+        try {
+          text = await extractText(buf, String(filename));
+        } catch (err) {
+          return json(res, 400, { error: err.message });
+        }
+        if (!text.trim()) return json(res, 400, { error: 'no extractable text in that file' });
+
+        const chat = store.getChat(chatId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) });
+        const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text });
+        return json(res, 200, { chatId: chat.id, document: doc });
+      }
+
+      // Lets the "files" rail open a document's full extracted text -- the
+      // same content the model reads via read_document, in a plain new tab.
+      const docContent = /^\/api\/documents\/([\w.-]+)$/.exec(req.url || '');
+      if (docContent && req.method === 'GET') {
+        const doc = store.getDocument(docContent[1]);
+        if (!doc) return json(res, 404, { error: 'no such document' });
+        return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
       }
 
       const stream = /^\/api\/chats\/([\w.-]+)\/stream$/.exec((req.url || '').split('?')[0]);
@@ -351,7 +398,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       }
 
       if (req.method === 'POST' && req.url === '/api/chat') {
-        const { chatId, message } = await readJson(req);
+        const { chatId, message, documentIds } = await readJson(req);
         if (!cfg.apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
         if (!message) return json(res, 400, { error: 'message is required' });
 
@@ -360,7 +407,18 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         // page-sized tool result from crossing the wire on every message.
         const chat = (chatId && store.getChat(chatId))
           || store.createChat({ id: chatId, title: String(message).slice(0, 60) });
-        store.addMessage(chat.id, { role: 'user', content: String(message) });
+
+        // Attachments are surfaced as plain text inline notes rather than a
+        // system-prompt change, the same idiom compact.js uses for a compacted
+        // artifact -- the model sees "[Attached document: ...]" in the message
+        // it's already reading and knows to call read_document on the id.
+        let content = String(message);
+        for (const id of Array.isArray(documentIds) ? documentIds : []) {
+          const doc = store.getDocument(id);
+          if (!doc || doc.chat_id !== chat.id) continue;
+          content += `\n\n[Attached document: "${doc.filename}" (id: ${doc.id}, ${doc.char_len.toLocaleString('en-US')} chars). Use read_document to search or read it.]`;
+        }
+        store.addMessage(chat.id, { role: 'user', content });
 
         // The turn is started, not awaited. Closing the tab detaches a
         // listener; it no longer kills the work, and the answer is in the store
