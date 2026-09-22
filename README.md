@@ -1,66 +1,52 @@
 # TinyWebUI
 
-An ultralight chat UI. You bring the hosting (OpenRouter, OpenAI, Groq, Ollama — anything
-OpenAI-compatible), your system prompt, and your MCP servers. TinyWebUI brings a chat box
-and a tool loop. That's the whole product.
+TinyWebUI is a local-first, bring-your-own-model chat workspace for OpenAI-compatible APIs and MCP tools. It gives a model a clean chat interface, durable conversations, document and image attachments, and a bounded tool loop—without requiring a hosted backend or account system.
 
-- One npm dependency (the MCP SDK). No build step, no bundler, no database.
-- Server-side agentic loop: the model can call your MCP tools and keep going.
-- Prompt caching is on by default and shaped so the prefix actually hits.
-- Context compaction keeps long research chats from growing without bound, without
-  breaking the cache or losing anything.
-- ~700 lines total. Read all of it in ten minutes.
+Bring an endpoint such as OpenRouter, OpenAI, Groq, Ollama, vLLM, or LM Studio; choose a model and system prompt; then connect the MCP servers you want the model to use.
+
+## What it includes
+
+- Persistent SQLite-backed chats, with edit, retry, delete, and full-text chat search.
+- Streaming answers, tool activity, reasoning display, per-round token usage, and cache-read/write usage when a provider reports it.
+- MCP over stdio, Streamable HTTP, or SSE, plus built-in `read_document` and `context_expand` tools.
+- Attachments: text-based files, PDFs with extractable text, DOCX files, and images for vision-capable models.
+- Long-chat controls: bounded tool turns, deterministic prompt-cache shaping, and compaction that preserves full tool output locally.
+- A settings panel for models, prompts, tools, MCP servers, token/context settings, usage, and themes.
+- Local themes, including the included Fall Fairy theme. See [theme authoring](public/themes/README.md).
+
+TinyWebUI is deliberately single-user and local-first. It is a personal workspace, not a multi-tenant hosted chat service.
 
 ## Run
 
+Requires Node.js 22 or later.
+
 ```bash
 npx tinywebui
-# or, from this directory
-npm install && npm start
 
-# restarts on changes under src/ and bin/
-npm run dev
+# Or from a clone of this repository:
+npm install
+npm start
 ```
 
-Editing anything in `public/` needs only a browser refresh — it is served straight
-from disk, with no build step.
+Open <http://127.0.0.1:7777>. Use `--port` and `--host` to change the listener:
 
-Then open http://127.0.0.1:7777.
-
-Flags: `--port 7777`, `--host 127.0.0.1`.
-
-## Configure
-
-Everything lives in `tinywebui.config.json` in the directory you run from
-(override with `$TINYWEBUI_CONFIG`). That file holds your API key and is gitignored, so
-start from the checked-in template:
-
+```bash
+npx tinywebui --port 8080 --host 127.0.0.1
 ```
+
+For development, `npm run dev` watches `src/` and `bin/`; files under `public/` are served directly and need only a browser refresh.
+
+## Configure a model
+
+Create a configuration file beside the directory where you run TinyWebUI:
+
+```bash
 cp example.tinywebui.config.json tinywebui.config.json
-cp example.mcp.json mcp.json          # only if you want MCP servers
 ```
 
-The template lists every tunable key at its default, minus `systemPrompt` — leave that out
-and the built-in prompt applies.
+`tinywebui.config.json` is gitignored. It may contain an API key, so do not commit it. You can place it elsewhere with `TINYWEBUI_CONFIG`; `TINYWEBUI_API_KEY`, `OPENROUTER_API_KEY`, `TINYWEBUI_BASE_URL`, and `TINYWEBUI_MODEL` override file values.
 
-`extraBody` is empty in the template on purpose: OpenRouter sticky routing via `session_id`
-is the default and usually the right one. Fill it in only to pin a single provider, which
-is worth doing when you care more about a warm cache than about availability:
-
-```json
-"extraBody": {
-  "provider": { "order": ["Fireworks"], "allow_fallbacks": false }
-}
-```
-
-See [Routing](#routing) for the measurements behind that, and for why a list of two
-providers is no better than none.
-
-One side effect to know about: pinning is read as "the caller owns routing", so on a Claude
-model over OpenRouter it drops `cacheMode` from `rolling` to explicit in-message breakpoints.
-That is deliberate, but rolling is the shape that survives client-side tool results best, so
-if you pin *and* run Claude, set `"cacheMode": "rolling"` to keep it. It does not apply to
-the default model. A minimal config is just:
+An OpenRouter example:
 
 ```json
 {
@@ -68,65 +54,44 @@ the default model. A minimal config is just:
   "apiKey": "sk-or-...",
   "model": "deepseek/deepseek-v4-flash-0731",
   "systemPrompt": "You are a terse, precise assistant.",
-  "maxToolRounds": 12
+  "maxToolRounds": 20
 }
 ```
 
-Any OpenAI-compatible endpoint works. For a local runtime, point `baseUrl` at it and
-leave `apiKey` out — no `Authorization` header is sent when there is no key, and none of
-the OpenRouter-specific request fields or ranking headers go to a non-OpenRouter host:
+For a local OpenAI-compatible runtime, point `baseUrl` at its API and omit `apiKey`:
 
 ```json
 {
   "baseUrl": "http://localhost:8080/v1",
-  "model": "qwen3-coder-30b-a3b-instruct",
-  "maxToolRounds": 12
+  "model": "qwen3-coder-30b-a3b-instruct"
 }
 ```
 
-`apiKey` also reads from `$TINYWEBUI_API_KEY` or `$OPENROUTER_API_KEY`, `baseUrl` from
-`$TINYWEBUI_BASE_URL`, `model` from `$TINYWEBUI_MODEL`. Env wins over the file.
+The Settings panel can change the model, prompt, generation settings, tool budget, context controls, and enabled tools. It never exposes the API key to the browser.
 
-`maxToolRounds` caps how many rounds of tool calls a single message may trigger (default
-12) — raise it for deep research, lower it to bound spend. One round is one reply that
-calls tools, however many calls it makes at once.
+### Important settings
 
-The model is told its budget rather than left to discover it. Every request carries a
-short note: the full budget and what a round is on the first, a remaining count on each
-one after, and from two rounds left a warning to stop broadening and get ready to answer.
-Spending the budget does not abandon the turn — the next request goes out with
-`tool_choice: "none"` and a note telling the model to answer from what it has and say what
-it could not determine. The tool block itself stays in the request, so the cached prefix
-survives.
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `maxToolRounds` | `20` | Shared tool-use budget for one user message. One model response that calls one or more tools uses one round. |
+| `cache` | `true` | Enables prompt-cache shaping where supported. |
+| `cacheMode` | `"auto"` | Selects implicit, explicit, or OpenRouter rolling cache behavior. |
+| `cacheTtl` | `"5m"` | Anthropic cache lifetime; `"1h"` is also available. |
+| `compactThreshold` | `20000` | Estimated prompt tokens at which older tool results are compacted; `0` disables it. |
+| `keepTurns` | `2` | Recent user turns whose tool results stay in the immediate context. |
+| `maxInlineChars` | `6000` | Tool-result size that triggers immediate stubbing for later turns. |
 
-That note is appended **after** the last message and never written to the store, which is
-what makes a per-round counter free. Written into the conversation it would sit inside
-every later prefix, and because the count changes each round it would move the divergence
-point back to wherever the note was and throw the cache away from there on. At the tail it
-is outside every future prefix instead: the next round rebuilds history from the store, so
-the previous note is simply not in it, and the two requests still share every byte of real
-history.
+The model sees the full tool budget on the first request, a remaining count on subsequent requests, and a warning for the final two rounds. Once spent, TinyWebUI makes one final model request with tools disabled so the model can answer from the evidence it already gathered.
 
-`temperature` and `maxTokens` are optional and unset by default — leave them out and the
-provider's own defaults apply. That matters most for `maxTokens`: pinning it truncates
-replies on models that would happily write more.
+## MCP tools
 
-`cacheMode` (default `"auto"`) picks the cache dialect from the endpoint and model; see
-**Prompt caching**. `cacheTtl` controls Anthropic cache lifetime: `"5m"` (default) or `"1h"`. The longer TTL
-costs more on the cache-write turn but survives pauses in long research sessions.
+MCP server definitions live in `mcp.json` next to the config file. Create one from the example if needed:
 
-`compactThreshold` (default 20000), `keepTurns` (2) and `maxInlineChars` (6000) control
-context compaction — see below. `dbPath` sets where conversations are stored (default
-`tinywebui.db` next to the config, or `$TINYWEBUI_DB`).
+```bash
+cp example.mcp.json mcp.json
+```
 
-The Settings panel edits the model, system prompt, temperature, max tokens, max tool turns
-and the compaction knobs, and writes them back to the config file. The API key is
-server-side only — the browser never sees it.
-
-### MCP servers
-
-MCP wiring lives in its own `mcp.json` next to the config (override with `$TINYWEBUI_MCP`),
-in the same shape Claude Desktop uses:
+TinyWebUI accepts the same general shape used by MCP desktop clients:
 
 ```json
 {
@@ -135,7 +100,7 @@ in the same shape Claude Desktop uses:
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
     },
-    "tinysearch": {
+    "research": {
       "url": "http://127.0.0.1:8000/mcp",
       "headers": { "Authorization": "Bearer ..." }
     }
@@ -143,282 +108,51 @@ in the same shape Claude Desktop uses:
 }
 ```
 
-The Settings panel edits this file directly. **Save & reconnect** validates it, writes it,
-then swaps the whole hub — old child processes are shut down before the new ones start, so
-you can add or rename a server without restarting TinyWebUI. A file that does not parse is
-rejected before anything is written.
+Stdio servers may use `command`, `args`, `env`, and `cwd`. Remote servers use `url`, optional `headers`, and optional `"transport": "sse"`; Streamable HTTP is the default remote transport. Set `"disabled": true` on a server to keep it disconnected.
 
-`command` + `args` (+ optional `env`, `cwd`) for stdio;
-`url` (+ optional `headers`, `"transport": "sse"`) for remote. Add `"disabled": true` to
-park one. Tools are exposed to the model as `server__tool`; connection failures are
-reported in the header instead of killing startup.
+The Settings panel validates and saves `mcp.json`, then reconnects the hub without restarting the app. You can also disable individual tools without disconnecting their server. MCP tools are presented to the model with stable `server__tool` names.
 
-## Prompt caching
+Two local tools are always available:
 
-`tiny` is meant to apply to the bill too, so the whole design point is that nothing
-is re-paid for that does not have to be.
+- `read_document` searches or reads an attached document.
+- `context_expand` searches or pages through the complete output behind a compacted tool result.
 
-Provider caches reuse a matching rendered prompt prefix, so most of the work is keeping
-the semantic request prefix stable between turns. TinyWebUI also serialises its own message
-shape deterministically, which makes regressions easy to test and avoids accidental churn:
+## Attachments and conversations
 
-- The system prompt is built the same way every request — one message, never reordered.
-- MCP servers and their tools are sorted, so the tool block is stable across restarts.
-- History is append-only within an epoch; see **Context compaction** below for the one
-  place it is rewritten, and why that is once rather than every turn.
-- Tool results go back verbatim, so a tool round extends the prefix instead of breaking it.
-- Reasoning text is **not** sent back. It is kept locally so the transcript can replay it,
-  but DeepSeek documents that `reasoning_content` must not be returned and every other
-  provider simply bills for it. Only Anthropic's structured `reasoning_details` is echoed,
-  because a follow-up tool request is rejected without it.
+Attach files by using the paperclip, dragging them onto the composer, or pasting a long block of text. Text files, source files, CSV/JSON, extractable PDFs, and DOCX files are stored as documents for the current chat; the model uses `read_document` to retrieve the relevant parts. Each document is limited to 5 MiB.
 
-That first layer is the whole story on most setups. Every local runtime worth using —
-llama.cpp, Ollama, vLLM, LM Studio — caches on prefix match with no request field
-involved, as do OpenAI, DeepSeek and Gemini. Nothing provider-specific is sent to any of
-them, and nothing needs to be.
+Image attachments are sent with the message to the configured model, up to eight images and 5 MiB each. Use a model and endpoint that accept OpenAI-style image content. Scanned/image-only PDFs are not OCR'd, and legacy `.doc` files are not supported.
 
-The second layer is for the gateways that bill cache writes separately and want to be
-told where to write. That is a wire dialect of the *endpoint*, not a property of the
-model, so TinyWebUI only speaks it where it has reason to believe it is understood:
+Chats, documents, full tool results, and usage are stored in `tinywebui.db` beside the config file by default. Set `dbPath` in the configuration or `TINYWEBUI_DB` to choose another location. Chat search indexes user messages and completed answers—not chain-of-thought, tool calls, or raw tool output—so results stay useful.
 
-- **OpenRouter** gets a stable `session_id` per conversation, so sticky routing starts
-  after the first successful request rather than waiting for a cache hit to be observed.
-  It is not sent anywhere else — an unknown key is a 400 risk on a strict server, for a
-  field that would do nothing.
-- **Claude on OpenRouter** uses top-level automatic `cache_control`, which advances to the
-  last cacheable block as the loop grows. This is the only shape that keeps caching across
-  client-side tool results; a text-only breakpoint cannot move past a tool message.
-- **Anthropic-style breakpoints** (system + rolling content markers) are used for the
-  Claude/Nova families only, matched at the family level so a new release is not a code
-  change. Pinning `extraBody.provider` switches Claude from automatic to these, keeping
-  Bedrock/Vertex-style routes eligible. Qwen, DeepSeek and Gemini deliberately do *not*
-  get them: a marker turns the marked message's content into an array and the rolling
-  breakpoint unwraps it again the next round, which Anthropic ignores when prefix-matching
-  but a gateway matching the serialised request reads as a byte change mid-prefix — losing
-  every hit after it. Those families cache the prefix automatically, so layer 1 is strictly
-  better.
-- **Anything else — including every localhost or LAN endpoint — gets layer 1 only.** Markers
-  there are pure downside: array-shaped content is exactly what strict OpenAI-compatible
-  servers reject, and they buy nothing on a backend that already caches the prefix itself.
-  The endpoint decides this, not the model name, so a GGUF repack that kept its upstream
-  name is still treated as local.
+A running turn belongs to the server rather than the browser tab: reloading or disconnecting does not cancel it. Reopen the chat to rejoin its stream, or use **stop** to cancel it.
 
-`cacheMode` in the config overrides the guess when TinyWebUI has not been taught about your
-gateway: `"auto"` (default), `"implicit"` (layer 1 only), `"explicit"`, `"rolling"`, `"off"`.
+## Keeping long tool chats practical
 
-Token, cache-read and cache-write counts show under each round, and are stored with the
-message, so reopening a conversation still shows what it cost and how much came back from
-cache. OpenAI/OpenRouter-style `prompt_tokens_details`, Responses-style
-`input_tokens_details`, Anthropic cache fields and DeepSeek cache-hit fields are normalized
-for display.
+Tool results can be much larger than the conversation itself. TinyWebUI keeps the complete result in SQLite, but avoids resending it indefinitely:
 
-Caching is on by default; on an unrecognised or local endpoint that costs nothing and
-changes nothing about the request. Set `"cache": false` (or `"cacheMode": "off"`) to stop
-all of it.
+1. Within a compacted context epoch, history is append-only and serialized deterministically so providers can reuse matching prompt prefixes.
+2. When the prompt crosses `compactThreshold`, older tool results are replaced once with compact stubs containing an artifact ID, a structural hint, and verbatim head/tail text.
+3. The model can recover exact content later through `context_expand`; the complete result remains available in the chat store.
 
-## Context compaction
+For OpenRouter, TinyWebUI sends a stable per-chat `session_id` to help provider sticky routing keep prompt caches warm. Claude on OpenRouter uses its automatic rolling cache directive; local and other compatible endpoints receive no OpenRouter-only fields. Set `cacheMode` explicitly only when your gateway needs a different cache dialect, or set `cache: false` to turn the feature off.
 
-Caching makes a long conversation cheap to re-read. It does nothing about the fact that it
-keeps growing. Tool results are the reason: a single page scrape is several thousand tokens,
-and a handful of research turns will put a six-figure prompt on every subsequent message.
+## Security and limits
 
-Compaction and caching pull against each other — shortening history means rewriting the
-prefix, and a rewritten prefix is a cache miss. Dropping the oldest turns each turn is the
-worst of both: it breaks the cache on *every* request and never caches anything. So the
-rewrite happens rarely and then stops.
+TinyWebUI has no authentication or multi-user isolation. Keep it bound to `127.0.0.1`, or put an authenticated reverse proxy in front of it before exposing it to a network. MCP servers run with the access you configure for them, so treat each configured server and its credentials as trusted local infrastructure.
 
-**Every tool result is stored whole** in SQLite as an artifact, whatever tool produced it.
-**When a request's prompt crosses `compactThreshold`**, tool results older than the last
-`keepTurns` user messages are replaced — once — by a short stub, and the new prefix is
-frozen. From then on it rebuilds byte-identically and caches again. One miss buys many
-cheap turns.
+The app does not provide OCR, cloud synchronization, user accounts, or branching chat history. Delete chats you no longer need; their associated documents and tool artifacts are deleted with them.
 
-A stub keeps the head and tail of the output verbatim, a generic shape hint, and the
-artifact id:
+## Development
 
-```
-[compacted: artifact 096111aa · tinysearch__search · 8,593 chars · tags: result×20, title×20, url×20]
-<search_results>
-<item index="1" status="ok">
-…
-… 7,709 chars elided …
-…
-[Full output retained. Read it with context_expand("096111aa", grep=... or offset/limit).]
+```bash
+npm test
 ```
 
-Nothing is lost. The **transcript still shows the full output** — only what the model is
-sent shrinks — and the model can read any of it back with `context_expand`, a built-in tool
-that greps or pages through the stored artifact.
+The test suite covers message serialization, cache behavior, compaction, tool routing, retries, chat editing, search, streaming/rejoin behavior, and settings/tool management.
 
-Two properties this depends on, and neither is negotiable:
+## License
 
-- **Deterministic.** A stub is a pure function of the artifact: no model call, no timestamp,
-  no counter. It is also stored rather than recomputed, so editing the digest later cannot
-  disturb an already-frozen prefix. An LLM-written summary would compress better and break
-  this.
-- **Tool-agnostic.** Tool output is an opaque blob from an arbitrary MCP server. Nothing in
-  this layer knows a tool's name or schema; the only structure inferred is generic — JSON,
-  XML-ish, or neither. It works the same for a tool added tomorrow.
-
-There is also a safety valve: a single result larger than `maxInlineChars` is stubbed the
-moment it arrives, so one oversized page cannot blow the window before a threshold is
-reached. Stubbing on arrival is an append, not a rewrite, so it costs no cache at all.
-
-Measured on a four-message research conversation that previously reached ~156k tokens:
-65% of tool text kept off the wire, each turn starting under 10k instead of climbing past
-60k, near-total cache hits within an epoch and a single miss at each boundary — with the
-model calling `context_expand` on its own to recover figures it needed from a compacted
-result.
-
-Set `"compactThreshold": 0` to turn it off and go back to unbounded append-only history.
-
-### Routing
-
-A prompt cache lives on one upstream provider. TinyWebUI now sends the chat id as OpenRouter's
-top-level `session_id` on every request. That gives a multi-round agent a stable sticky-routing
-key from its first successful request and avoids needless cold-provider hops.
-
-The earlier provider-pinning experiment on `deepseek-v4-flash` showed why routing matters:
-
-```
-unpinned          call 1 Relace     cached 0
-                  call 2 NextBit    cached 0
-                  call 3 StreamLake cached 0
-
-pinned Fireworks  call 1 Fireworks  cached 0     (cold, unavoidable)
-                  call 2 Fireworks  cached 2486  (of 2487)
-                  call 3 Fireworks  cached 2486
-```
-
-A later measurement showed that a *list* of providers is barely better than none. With
-`order: ["Fireworks", "DeepInfra"]` and fallbacks off, OpenRouter still picks freely between
-the two, and half the rounds flip:
-
-```
-order [Fireworks, DeepInfra]   r0 Fireworks -> r1 DeepInfra  cached 4608/4834  (flip)
-                               r0 Fireworks -> r1 Fireworks  cached 4912/4913  (100%)
-                               r0 DeepInfra -> r1 Fireworks  cached    0/4924  (flip, cold)
-
-order [Fireworks] only         r0 Fireworks -> r1 Fireworks  cached 4912/4913  (100%)
-                               ... with a trailing budget note  cached 4923/4924  (100%)
-
-order [DeepInfra] only         r0 DeepInfra -> r1 DeepInfra  cached 4608/4834  (ceiling)
-```
-
-Three things fall out of that. A flip costs the whole cache, because each provider keeps its
-own. The providers tokenize differently, so the same messages bill 4899 tokens on one and
-4834 on the other — which is why a jittering `in` count is itself a routing symptom. And
-DeepInfra caps its cached prefix around 4608 tokens, so even a stable DeepInfra route only
-ever partly hits. **Pin to exactly one provider**, or accept that the cache is a coin flip.
-
-Pinning has a cost the cache numbers do not show: one provider's rate limit becomes the
-whole budget. A transient refusal — 429, 408, 5xx, or a dropped connection — is now retried
-with backoff (honouring `Retry-After`) instead of ending the turn, and a pin that has been
-refused twice is released so the remaining attempts can be served anywhere. A cold cache is
-worth far more than a lost turn, and a provider rate-limited on a shared pool is usually
-limited for longer than any backoff worth sitting through. A 4xx that is not transient is
-still fatal on the first try: a bad request will not get better.
-
-Manual provider pinning is still available through `extraBody`, but it is now an explicit
-override rather than the default recommendation:
-
-```json
-"extraBody": {
-  "provider": { "order": ["Fireworks"], "allow_fallbacks": false }
-}
-```
-
-One name, fallbacks off. A longer `order` is the coin flip measured above — OpenRouter still
-picks freely within the list, so half the rounds land cold. `allow_fallbacks: true` reopens
-the same hole the moment the pinned provider is busy. If you want a pin, pin to one.
-
-OpenRouter's provider routing preferences take precedence over ordinary sticky routing, so
-use them when endpoint choice matters more than letting `session_id` keep the warm route.
-`extraBody` remains a plain passthrough for any other gateway-specific knob. Providers
-differ in cache quality even when pinned, so measure rather than assume. Cached tokens over
-three identical calls, prefix 2487 tokens:
-
-| provider    | call 1 | call 2 | call 3 |
-|-------------|--------|--------|--------|
-| Fireworks   |   2486 |   2486 |   2486 |
-| DeepInfra   |   2304 |   2304 |   2304 |
-| SiliconFlow |   2304 |   2304 |   2304 |
-| Novita      |   2048 |   2304 |   2048 |
-| Together    |      0 |   2486 |   2486 |
-| Baidu       |      0 |   2048 |      0 |
-| CoreWeave   |      0 |      0 |      0 |
-
-CoreWeave reports no cache at all on this model, and also serves it at 256k context rather
-than 1M — worth checking both before pinning anything.
-
-### Gateways that refuse things
-
-`cache_control`, `tool_choice` and `stream_options` are optional, and OpenAI-compatible
-endpoints vary in which they accept. None is worth failing a turn over, so a 4xx naming one
-causes it to be dropped and the request retried, with a note in the transcript. What was
-refused is remembered for the rest of the turn rather than re-probed every round.
-
-## Limits
-
-Single-user. Conversations live in a local SQLite file, which holds every tool result in
-full and so grows faster than the context window does — delete chats you are done with. No
-auth — bind it to localhost or put your own proxy in front. No image or file upload yet.
-
-Any question in the transcript can be rewritten. Hovering it reveals **edit** and **retry**:
-edit opens it in place, retry resubmits it unchanged. Both rewind the conversation to that
-question — everything after it, answers and follow-ups alike, is dropped — and run forward
-again. There is no second branch kept to switch back to; the old answers are gone, which is
-also the only honest thing to do with answers to a question that no longer exists. Rewinding
-is the one operation that deliberately breaks the append-only rule, so it costs the prompt
-cache from the edited message onward, and a compaction boundary caught inside the cut is
-cleared with it. An edit is refused while that chat is still working — stop it first.
-
-A turn belongs to the server, not to the tab that started it. Closing the window, reloading
-or losing the connection detaches a viewer; the run keeps going and writes its answer to the
-store either way. Reopening the chat replays the settled part of the transcript and rejoins
-the live event stream for the rest, and the sidebar shows a dot against any chat still
-working. `POST /api/chats/:id/stop` is how you actually mean it — the send button becomes
-`stop` while a turn is in flight.
-
-### Search
-
-The sidebar's search box (`GET /api/search?q=`) is full-text over every chat at once, via
-SQLite's FTS5, and returns one row per matching *chat* -- not one per matching message. A
-chat where the same word landed in five messages does not crowd out four others that only
-said it once; each chat's single best-ranked message stands for it in the results.
-
-It searches the conversation, not the process behind it: user messages and the assistant's
-actual answer, never reasoning, tool calls, tool results, or narration -- all of that is the
-"work" the transcript shows collapsed, not the conversation, and indexing it would make every
-search mostly noise from things nobody typed or read. Narration is the subtle one: "let me
-check the PDF" between two tool calls is a real, stored assistant message, indistinguishable
-by role alone from the answer that ends the turn. The index applies the same rule the UI
-already does -- a message is indexed provisionally, and retracted the moment a later message
-in the same turn proves it was narration, not the answer, so only whatever the transcript
-actually ended up calling the answer stays searchable. A chat still mid-turn is left out of
-the results entirely regardless, since its content hasn't settled and there's nowhere
-sensible for a click to land on it yet.
-
-Free text is turned into an AND-of-words query, quoted term by term, which is what makes
-typing something like `what's tuition cost?` search rather than throw a syntax error -- and
-the last word gets a trailing wildcard, so results narrow while you're still typing it. The
-index self-heals: opening the database backfills anything missing from it (a chat from before
-search existed, or any other drift), so there's no migration step.
-
-### Tool control
-
-The settings panel's tools section is grouped, not flat: built-ins first, then every MCP
-server as its own card with a health dot -- connected, disabled, or failed to connect (with
-the error) -- and that server's tools underneath. Every tool, built-in or MCP, carries a
-checkbox; unchecking it removes it from what the model is offered on the next turn, without
-touching the connection it came from. Unchecking a server is a different operation: it tears
-the connection down (`GET /api/tools`, `POST /api/tools/toggle`, `POST
-/api/mcp/servers/:name/toggle`), one fewer live child process or open connection rather than
-just one the model is not shown -- the same `disabled` flag the raw `mcp.json` editor already
-understood, now reachable without hand-editing JSON.
-
-Toggling either one is a request the current chat's tool block was built from, so it costs a
-cache miss on that chat's next turn, the same as changing `maxToolRounds` or `compactThreshold`
-would.
-
-Transcripts written by an earlier version are imported from `localStorage` on first load.
+GNU Affero General Public License v3.0 or later ([AGPL-3.0-or-later](LICENSE)).
+If you run a modified version for users over a network, you must offer them the
+Corresponding Source for that version.

@@ -473,6 +473,13 @@ details.step > summary:hover { background: var(--panel); }
 }
 
 .usage { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
+/* The whole turn's cost, under the answer rather than inside the collapsed
+   work: a rule above it separates it from the answer it is reporting on. */
+.usage-total {
+  margin-top: .5rem;
+  padding-top: .375rem;
+  border-top: 1px solid var(--line);
+}
 /* A compacted tool result: the model was sent a short stub, but the transcript
    still shows the full output, so the badge is the only visible difference. */
 .step.compacted .name::after {

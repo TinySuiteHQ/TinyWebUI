@@ -68,6 +68,43 @@ function outline(text) {
 }
 
 /**
+ * Where the substantial prose actually sits.
+ *
+ * A scraped page is mostly navigation, bylines and short boilerplate; the
+ * article itself is the handful of long lines among them. A stub that keeps
+ * only the ends leaves the model guessing at `offset=` values, which is the
+ * expensive failure -- each blind guess costs a whole round and comes back with
+ * sidebar links. Listing where the long lines start turns that into one aimed
+ * read.
+ *
+ * Character offsets, not line numbers, because that is what context_expand's
+ * `offset` takes. Generic and deterministic, like everything else here: it
+ * measures line lengths and nothing else, and never looks at what a tool is.
+ */
+export const MAP_MIN_LINE = 200;
+export const MAP_MAX_ENTRIES = 12;
+
+export function textMap(text) {
+  const rows = [];
+  let pos = 0;
+  for (const line of String(text ?? '').split('\n')) {
+    const len = line.trim().length;
+    if (len >= MAP_MIN_LINE) rows.push({ pos, len });
+    pos += line.length + 1;
+  }
+  if (!rows.length) return '';
+
+  // Longest first so the densest prose survives the cut, then back into reading
+  // order -- the model pages forward, so the list has to read forward too.
+  const top = rows.slice().sort((a, b) => b.len - a.len || a.pos - b.pos).slice(0, MAP_MAX_ENTRIES);
+  top.sort((a, b) => a.pos - b.pos);
+  const omitted = rows.length - top.length;
+
+  return `Long text at offset= ${top.map((r) => `${r.pos} (${r.len} chars)`).join(', ')}`
+    + (omitted > 0 ? `, +${omitted} more` : '');
+}
+
+/**
  * Builds the stub that replaces a tool result on the wire. Head and tail are
  * kept verbatim because the ends of a tool result are where the useful framing
  * usually is, and because a verbatim excerpt cannot hallucinate.
@@ -84,8 +121,13 @@ export function digest(artifact, { head = DIGEST_HEAD, tail = DIGEST_TAIL } = {}
   }
 
   const elided = len - head - tail;
+  // Only for prose: a JSON or XML outline already names its own structure, and
+  // the model greps those by key or tag rather than paging through them.
+  const shape = outline(text);
+  const map = shape.startsWith('plain text') ? textMap(text) : '';
   return [
-    `[compacted: artifact ${id} · ${name} · ${len.toLocaleString('en-US')} chars · ${outline(text)}]`,
+    `[compacted: artifact ${id} · ${name} · ${len.toLocaleString('en-US')} chars · ${shape}]`,
+    ...(map ? [map] : []),
     text.slice(0, head),
     `\n… ${elided.toLocaleString('en-US')} chars elided …\n`,
     text.slice(len - tail),
@@ -139,7 +181,7 @@ export function planEpoch(rows, { threshold, keepTurns, promptTokens }) {
 export function applyEpoch(store, chat, plan) {
   let saved = 0;
   for (const row of plan.targets) {
-    const artifact = store.getArtifact(row.artifact_id);
+    const artifact = store.getArtifact(row.artifact_id, chat.id);
     if (!artifact) continue;
     const stub = digest(artifact);
     if (stub.length >= (row.content?.length ?? 0)) continue;

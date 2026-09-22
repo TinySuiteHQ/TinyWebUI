@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { digest, planEpoch, applyEpoch, estimateTokens } from '../src/compact.js';
+import { digest, planEpoch, applyEpoch, estimateTokens, textMap } from '../src/compact.js';
 import { Store, toWire, toView } from '../src/store.js';
 import { callExpand } from '../src/context_tool.js';
 
@@ -178,7 +178,10 @@ test('context_expand greps, windows and refuses cross-chat reads', () => {
   assert.ok(win.includes('continue with offset='));
 
   const foreign = callExpand({ artifact_id: a1 }, { store, chatId: other.id, budget: 4000 });
-  assert.ok(foreign.includes('does not belong to this conversation'));
+  // Query is now scoped by chat_id at the SQL level, so a foreign chat gets the
+  // same "no artifact" error as a genuinely missing id -- it can't even learn
+  // that the id exists.
+  assert.ok(foreign.startsWith('Error: no artifact'));
 
   const missing = callExpand({ artifact_id: 'nope' }, { store, chatId: chat.id, budget: 4000 });
   assert.ok(missing.startsWith('Error: no artifact'));
@@ -192,4 +195,49 @@ test('context_expand respects the char budget', () => {
   const id = store.addArtifact(chat.id, { toolName: 't', args: {}, content: big(50000) });
   const out = callExpand({ artifact_id: id, limit: 999999 }, { store, chatId: chat.id, budget: 1000 });
   assert.ok(out.length < 1400, `budget honoured, got ${out.length}`);
+});
+
+
+/* ---------- the offset map: what turns blind paging into one aimed read ---------- */
+
+// A scraped page in miniature: nav boilerplate around one block of real prose.
+function scraped() {
+  const nav = Array.from({ length: 40 }, (_, i) => `Section ${i} | Home | About`).join('\n');
+  const body = 'The article itself. '.repeat(40);
+  return `${nav}\n${body}\n${nav}`;
+}
+
+test('textMap reports character offsets of the long lines, in reading order', () => {
+  const text = scraped();
+  const map = textMap(text);
+  const offsets = [...map.matchAll(/(\d+) \(/g)].map((m) => Number(m[1]));
+
+  assert.ok(offsets.length >= 1, 'the prose block should be listed');
+  assert.deepEqual(offsets, [...offsets].sort((a, b) => a - b), 'offsets read forward');
+  // The whole point: the offset must actually land on the prose, not the nav.
+  assert.ok(text.slice(offsets[0]).startsWith('The article itself.'));
+});
+
+test('textMap is empty when every line is short, and deterministic', () => {
+  assert.equal(textMap('short\nlines\nonly'), '');
+  assert.equal(textMap(scraped()), textMap(scraped()));
+});
+
+test('a prose stub carries the map; a json stub does not', () => {
+  const prose = digest(artifact(scraped()));
+  assert.match(prose, /Long text at offset= \d+/);
+
+  const rows = Array.from({ length: 300 }, (_, i) => ({ i }));
+  const json = digest(artifact(JSON.stringify({ items: rows })));
+  assert.doesNotMatch(json, /Long text at offset=/);
+});
+
+test('a failed grep returns the map instead of a bare miss', () => {
+  const store = new Store(':memory:');
+  const chat = store.createChat({ title: 'c' });
+  const id = store.addArtifact(chat.id, { toolName: 'srv__scrape', args: {}, content: scraped() });
+
+  const miss = callExpand({ artifact_id: id, grep: 'nothingmatchesthis' }, { store, chatId: chat.id, budget: 4000 });
+  assert.match(miss, /no match for/);
+  assert.match(miss, /Long text at offset= \d+/, 'the miss still tells the model where to read');
 });

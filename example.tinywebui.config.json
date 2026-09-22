@@ -5,7 +5,7 @@
 
   "temperature": null,
   "maxTokens": null,
-  "maxToolRounds": 12,
+  "maxToolRounds": 20,
 
   "cache": true,
   "cacheMode": "auto",

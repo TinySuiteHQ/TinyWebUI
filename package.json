@@ -27,5 +27,5 @@
     "mammoth": "^1.12.3",
     "unpdf": "^1.8.1"
   },
-  "license": "MIT"
+  "license": "AGPL-3.0-or-later"
 }

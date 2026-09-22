@@ -5,7 +5,7 @@
  * up instead of starting over.
  */
 import { state } from './state.js';
-import { addTurn, addThinking, addSteps, addUsage, addNotice, addError, tally, statusOf } from './transcript.js';
+import { addTurn, addThinking, addSteps, addNotice, addError, statusOf } from './transcript.js';
 import { loadChats } from './sidebar.js';
 
 export async function consume(res) {
@@ -63,7 +63,8 @@ export async function consume(res) {
           if (fresh) loadChats();
         } else if (ev.type === 'usage') {
           // One line per round, matching what a reopened transcript will show.
-          addUsage(tally([ev.usage]), turn.meta());
+          // The turn banks it too, and sums the rounds under the answer.
+          turn.usage(ev.usage);
         } else if (ev.type === 'compacted') {
           // Handled by the accompanying notice; nothing extra to draw.
         } else if (ev.type === 'done') {

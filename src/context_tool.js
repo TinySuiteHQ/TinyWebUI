@@ -13,6 +13,8 @@
  * so they never disturb the cached prefix.
  */
 
+import { textMap } from './compact.js';
+
 export const CONTEXT_EXPAND = 'context_expand';
 
 export function expandToolDef() {
@@ -76,7 +78,15 @@ function grepView(text, pattern, contextLines, budget, artifact) {
   const hits = [];
   for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) hits.push(i);
   if (!hits.length) {
-    return `${header(artifact, `no match for /${pattern}/i`)}\nTry a broader pattern, or read a window with offset/limit.`;
+    // A bare "no match" costs a full round and returns nothing to act on, so the
+    // miss carries the same offset map the stub does: the next call can aim at
+    // real text instead of guessing another pattern.
+    const map = textMap(text);
+    return [
+      header(artifact, `no match for /${pattern}/i`),
+      map || 'No long text blocks -- this artifact is short lines throughout.',
+      'Try a broader pattern, or read a window with offset/limit.'
+    ].join('\n');
   }
 
   // Merge overlapping context windows so a dense run of matches prints once.
@@ -125,11 +135,10 @@ export function callExpand(args, { store, chatId, budget = 8000 }) {
   const id = String(args?.artifact_id || '').trim();
   if (!id) return 'Error: artifact_id is required.';
 
-  const artifact = store.getArtifact(id);
+  // Scoped to the conversation that produced it at the query level: artifact ids
+  // are short, and one chat must not be able to read another's tool output by guessing.
+  const artifact = store.getArtifact(id, chatId);
   if (!artifact) return `Error: no artifact "${id}". Ids appear in the "[compacted: artifact <id> ...]" marker.`;
-  // Scoped to the conversation that produced it: artifact ids are short, and one
-  // chat must not be able to read another's tool output by guessing.
-  if (artifact.chat_id !== chatId) return `Error: artifact "${id}" does not belong to this conversation.`;
 
   if (args.grep) {
     const ctx = Number.isInteger(args.context_lines) ? Math.max(0, Math.min(args.context_lines, 20)) : 2;

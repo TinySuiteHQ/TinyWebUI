@@ -226,7 +226,7 @@ $('save').onclick = async () => {
       model: $('model').value.trim(),
       temperature: num($('temperature').value),
       maxTokens: num($('maxTokens').value),
-      maxToolRounds: Number($('maxToolRounds').value) || 12,
+      maxToolRounds: Number($('maxToolRounds').value) || 20,
       cacheTtl: $('cacheTtl').value,
       compactThreshold: Number($('compactThreshold').value) || 0,
       keepTurns: Number($('keepTurns').value) || 2,

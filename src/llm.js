@@ -168,7 +168,11 @@ function cacheDirective(cfg) {
  */
 function canonical(m, keepDetails) {
   const out = { role: m.role };
-  out.content = m.content ?? null;
+  // A tool-only assistant turn stores content as null, but some gateways (seen
+  // on DeepInfra via OpenRouter) reject a null text part outright and want an
+  // empty string instead. Only assistant+tool_calls hits this; every other
+  // role still sends null through unchanged.
+  out.content = (m.content == null && m.role === 'assistant' && m.tool_calls) ? '' : (m.content ?? null);
   if (m.tool_calls) out.tool_calls = m.tool_calls;
   if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
   if (keepDetails && m.reasoning_details) out.reasoning_details = m.reasoning_details;
@@ -465,7 +469,7 @@ export async function runChat({ cfg, chatId, store, tools, hub, emit, signal }) 
   // Optional request fields this endpoint has already refused, learned once.
   const disabled = new Set();
 
-  const maxRounds = Math.max(1, cfg.maxToolRounds || 12);
+  const maxRounds = Math.max(1, cfg.maxToolRounds || 20);
 
   let rows = store.messages(chatId);
   const chat = store.getChat(chatId);
@@ -506,6 +510,10 @@ export async function runChat({ cfg, chatId, store, tools, hub, emit, signal }) 
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;
   const toolCtx = { store, chatId, budget: cfg.expandCharBudget || 8000 };
+  // Same tool name + same args, seen earlier in this turn: the result can't have
+  // changed, so re-running it only burns a round. Tracked by round so the model
+  // can be told exactly when it already did this.
+  const seenCalls = new Map();
 
   // One extra pass past the budget: tools are mechanically refused there, so the
   // model spends it writing an answer instead of leaving the turn unfinished.
@@ -607,7 +615,18 @@ export async function runChat({ cfg, chatId, store, tools, hub, emit, signal }) 
       try { args = call.function.arguments ? JSON.parse(call.function.arguments) : {}; }
       catch { /* model emitted malformed JSON; the tool error will say so */ }
       emit({ type: 'tool_call', id: call.id, name: call.function.name, args });
-      const result = await hub.call(call.function.name, args, toolCtx);
+
+      const dupKey = `${call.function.name}:${JSON.stringify(args, Object.keys(args).sort())}`;
+      const seenRound = seenCalls.get(dupKey);
+      let result;
+      if (seenRound !== undefined) {
+        result = `Skipped: this is an identical call to "${call.function.name}" with the same `
+          + `arguments already made in round ${seenRound} of this turn. The result hasn't changed -- `
+          + `reuse what you got back then instead of calling it again.`;
+      } else {
+        seenCalls.set(dupKey, round);
+        result = await hub.call(call.function.name, args, toolCtx);
+      }
       emit({ type: 'tool_result', id: call.id, name: call.function.name, result });
 
       const text = String(result);
@@ -626,7 +645,13 @@ export async function runChat({ cfg, chatId, store, tools, hub, emit, signal }) 
         msg.stub_text = digest({ id: artifactId, tool_name: call.function.name, content: text });
       }
 
-      working.push(toWire(msg));
+      // The round that asked for a result reads it whole, stub or not. Stubbing on
+      // arrival hands the model a head and a tail with no way to aim a grep at the
+      // middle, and it pays for that in rounds of blind paging -- far more than the
+      // inline text ever cost in tokens. The stub is still stored, so every LATER
+      // turn sends it instead: one miss on the tail of this turn, which is the same
+      // trade an epoch makes, and the prefix is frozen from here on.
+      working.push(toWire({ ...msg, stub_text: null }));
       appended.push(msg.stub_text ? { ...msg, compacted: true } : msg);
       store.addMessage(chatId, msg);
     }

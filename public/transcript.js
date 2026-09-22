@@ -51,6 +51,10 @@ export function addTurn() {
   let steps = 0;
   let mounted = false;
   let candidate = null;
+  // Every round's raw usage, kept so the turn can be summed at the end. The
+  // per-round lines live inside the work, which is collapsed by default; what a
+  // multi-round turn actually cost is only visible once they are added up.
+  const raws = [];
 
   // The work only appears once there is work. A plain answer keeps the shape it
   // always had, with no empty disclosure sitting above it.
@@ -78,6 +82,11 @@ export function addTurn() {
     work: mount,
     /** Where a usage line goes: with the work when there is any, else inline. */
     meta: () => (mounted ? body : box),
+    /** One round's usage: shown where it happened, and banked for the total. */
+    usage(raw) {
+      raws.push(raw);
+      addUsage(tallyUsage([raw]), mounted ? body : box);
+    },
     status: label,
     step() {
       steps++;
@@ -96,6 +105,13 @@ export function addTurn() {
         candidate.classList.add('final');
         candidate.querySelector('.who').textContent = 'answer';
         candidate = null;
+      }
+      // Under the answer, not inside the work: a turn that replayed a growing
+      // prefix across N rounds costs far more than its last round suggests, and
+      // the last round is the only number the collapsed view would show.
+      if (raws.length > 1) {
+        const n = raws.length;
+        addUsage(tallyUsage(raws), box, { total: true, label: `turn total (${n} rounds)` });
       }
       if (!mounted) return;
       work.classList.remove('live');
@@ -350,9 +366,15 @@ function cacheWrites(u) {
 
 /** Folds one or more raw usage objects into the numbers we display. */
 export function tally(raws) {
-  const t = { in: 0, out: 0, cached: 0, written: 0, discount: 0, reported: false, raw: raws, provider: null };
+  const t = { in: 0, out: 0, cached: 0, written: 0, discount: 0, reported: false, raw: raws, provider: null, providers: [] };
   for (const u of raws) {
-    if (u.provider) t.provider = u.provider;
+    if (u.provider) {
+      t.provider = u.provider;
+      // Distinct upstreams, in the order they served. A turn split across two
+      // of them cannot cache between rounds, and summing would otherwise hide
+      // that behind whichever one happened to serve last.
+      if (!t.providers.includes(u.provider)) t.providers.push(u.provider);
+    }
     t.in += u.prompt_tokens ?? u.input_tokens ?? 0;
     t.out += u.completion_tokens ?? u.output_tokens ?? 0;
     t.cached += cacheReads(u);
@@ -365,19 +387,28 @@ export function tally(raws) {
   return t;
 }
 
-export function addUsage(u, parent) {
-  const bits = [`${u.in} in`, `${u.out} out`];
+const fmt = (n) => n.toLocaleString('en-US');
+
+// `addTurn` has a local `tally` (the step-count span), so it reaches this one
+// by alias rather than by name.
+const tallyUsage = tally;
+
+export function addUsage(u, parent, { label = null, total = false } = {}) {
+  const bits = [];
+  if (label) bits.push(label);
+  bits.push(`${fmt(u.in)} in`, `${fmt(u.out)} out`);
   if (u.cached) {
     const pct = u.in ? Math.round((u.cached / u.in) * 100) : 0;
-    bits.push(`${u.cached} cached (${pct}%)`);
+    bits.push(`${fmt(u.cached)} cached (${pct}%)`);
   }
-  if (u.written) bits.push(`${u.written} written`);
+  if (u.written) bits.push(`${fmt(u.written)} written`);
   if (u.discount) bits.push(`cache saved ${u.discount.toFixed(4)}`);
   if (!u.cached && !u.written) bits.push(u.reported ? 'no cache hit' : 'cache not reported');
   // Worth a line of its own: a round served by a different upstream has a cold
   // cache through no fault of the prefix, and that is only visible here.
-  if (u.provider) bits.push(`via ${u.provider}`);
-  const line = el('div', 'usage');
+  if (u.providers?.length) bits.push(`via ${u.providers.join(' + ')}`);
+  else if (u.provider) bits.push(`via ${u.provider}`);
+  const line = el('div', total ? 'usage usage-total' : 'usage');
   line.textContent = bits.join(' / ');
   // The raw usage objects, for when a provider reports something we do not read.
   line.title = JSON.stringify(u.raw, null, 2);
@@ -429,7 +460,7 @@ export function replay(messages) {
       if (m.content) { steps = null; turn.prose().set(m.content); }
       // Per-round usage is stored on the message now, so a reopened chat still
       // shows what each round cost and how much of it came back from cache.
-      if (m.usage) addUsage(tally([m.usage]), turn.meta());
+      if (m.usage) turn.usage(m.usage);
     } else if (m.role === 'tool' && steps) {
       steps.finish(m.tool_call_id, m.content, m.compacted);
     }

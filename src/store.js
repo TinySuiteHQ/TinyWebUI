@@ -414,8 +414,8 @@ export class Store {
     return id;
   }
 
-  getArtifact(id) {
-    return this.db.prepare('SELECT * FROM artifacts WHERE id = ?').get(id) || null;
+  getArtifact(id, chatId) {
+    return this.db.prepare('SELECT * FROM artifacts WHERE id = ? AND chat_id = ?').get(id, chatId) || null;
   }
 
   /* ---------- documents ---------- */
