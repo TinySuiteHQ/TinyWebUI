@@ -1,5 +1,5 @@
 {
   "themes": [
-    { "id": "fall-fairy", "name": "Fall Fairy", "file": "fall-fairy.css", "js": "fall-fairy.js" }
+    { "id": "fall-fairy", "name": "Fall Fairy", "file": "fall-fairy/fall-fairy.css", "js": "fall-fairy/fall-fairy.js" }
   ]
 }

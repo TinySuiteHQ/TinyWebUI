@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "tinysearch": {
+      "command": "/absolute/path/to/TinySearch/.venv/bin/python",
+      "args": ["servers/mcp_server.py"],
+      "cwd": "/absolute/path/to/TinySearch"
+    },
+    "tinycontext": {
+      "command": "/absolute/path/to/TinyContext/.venv/bin/python",
+      "args": ["servers/mcp_server.py"],
+      "cwd": "/absolute/path/to/TinyContext"
+    },
+    "an-http-server": {
+      "url": "https://example.com/mcp",
+      "headers": { "authorization": "Bearer REPLACE-ME" },
+      "disabled": true
+    }
+  }
+}

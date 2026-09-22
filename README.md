@@ -32,13 +32,41 @@ Flags: `--port 7777`, `--host 127.0.0.1`.
 ## Configure
 
 Everything lives in `tinywebui.config.json` in the directory you run from
-(override with `$TINYWEBUI_CONFIG`):
+(override with `$TINYWEBUI_CONFIG`). That file holds your API key and is gitignored, so
+start from the checked-in template:
+
+```
+cp example.tinywebui.config.json tinywebui.config.json
+cp example.mcp.json mcp.json          # only if you want MCP servers
+```
+
+The template lists every tunable key at its default, minus `systemPrompt` — leave that out
+and the built-in prompt applies.
+
+`extraBody` is empty in the template on purpose: OpenRouter sticky routing via `session_id`
+is the default and usually the right one. Fill it in only to pin a single provider, which
+is worth doing when you care more about a warm cache than about availability:
+
+```json
+"extraBody": {
+  "provider": { "order": ["Fireworks"], "allow_fallbacks": false }
+}
+```
+
+See [Routing](#routing) for the measurements behind that, and for why a list of two
+providers is no better than none.
+
+One side effect to know about: pinning is read as "the caller owns routing", so on a Claude
+model over OpenRouter it drops `cacheMode` from `rolling` to explicit in-message breakpoints.
+That is deliberate, but rolling is the shape that survives client-side tool results best, so
+if you pin *and* run Claude, set `"cacheMode": "rolling"` to keep it. It does not apply to
+the default model. A minimal config is just:
 
 ```json
 {
   "baseUrl": "https://openrouter.ai/api/v1",
   "apiKey": "sk-or-...",
-  "model": "anthropic/claude-sonnet-5",
+  "model": "deepseek/deepseek-v4-flash-0731",
   "systemPrompt": "You are a terse, precise assistant.",
   "maxToolRounds": 12
 }
@@ -296,9 +324,13 @@ override rather than the default recommendation:
 
 ```json
 "extraBody": {
-  "provider": { "order": ["Fireworks", "DeepInfra"], "allow_fallbacks": true }
+  "provider": { "order": ["Fireworks"], "allow_fallbacks": false }
 }
 ```
+
+One name, fallbacks off. A longer `order` is the coin flip measured above — OpenRouter still
+picks freely within the list, so half the rounds land cold. `allow_fallbacks: true` reopens
+the same hole the moment the pinned provider is busy. If you want a pin, pin to one.
 
 OpenRouter's provider routing preferences take precedence over ordinary sticky routing, so
 use them when endpoint choice matters more than letting `session_id` keep the warm route.

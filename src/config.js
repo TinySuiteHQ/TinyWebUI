@@ -13,7 +13,9 @@ const MCP_FILE = process.env.TINYWEBUI_MCP
 const DEFAULTS = {
   baseUrl: 'https://openrouter.ai/api/v1',
   apiKey: '',
-  model: 'anthropic/claude-sonnet-5',
+  // A cheap, fast, tool-capable default that caches well on a stable prefix and
+  // needs no cache_control fields. Any OpenAI-compatible model id works.
+  model: 'deepseek/deepseek-v4-flash-0731',
   systemPrompt: [
     'You are a direct, technically precise assistant.',
     '',

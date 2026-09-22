@@ -5,19 +5,21 @@ knows any theme exists, and adding one never changes either file.
 
 ```
 public/themes/
-  manifest.json     the list. one line per theme
-  theme-loader.js   the only bridge to the app
-  scene-kit.js      the runtime a moving theme is built on
-  fall-fairy.css    a theme
-  fall-fairy.js     ...and its scenery
+  manifest.json       the list. one line per theme
+  theme-loader.js     the only bridge to the app
+  drivers/
+    scene-kit.js      the runtime a moving theme is built on
+  fall-fairy/
+    fall-fairy.css    a theme
+    fall-fairy.js     ...and its scenery
 ```
 
 ## The smallest theme
 
-Drop a CSS file in here and add a line to `manifest.json`:
+Drop a folder with a CSS file in it and add a line to `manifest.json`:
 
 ```json
-{ "id": "dusk", "name": "Dusk", "file": "dusk.css" }
+{ "id": "dusk", "name": "Dusk", "file": "dusk/dusk.css" }
 ```
 
 The file reassigns the variables `styles.css` already reads. That is the whole
@@ -45,7 +47,7 @@ Name a module and it is mounted while your theme is selected, unmounted when it
 is not:
 
 ```json
-{ "id": "dusk", "name": "Dusk", "file": "dusk.css", "js": "dusk.js" }
+{ "id": "dusk", "name": "Dusk", "file": "dusk/dusk.css", "js": "dusk/dusk.js" }
 ```
 
 ```js
@@ -65,10 +67,12 @@ Don't write that module by hand. Every moving theme needs the same six
 unglamorous parts — canvases at the right depth, a device-pixel-correct resize,
 a frame loop that pauses itself when the tab is hidden, the reduced-motion
 path, the app's current state, and a teardown that leaves nothing behind.
-`scene-kit.js` is those parts, so your theme is only ever its own artwork.
+`drivers/scene-kit.js` is those parts, so your theme is only ever its own
+artwork. It is a driver, not a theme: nothing about it is specific to any one
+skin, and a new theme imports it rather than copying it.
 
 ```js
-import { createScene } from './scene-kit.js';
+import { createScene } from '../drivers/scene-kit.js';
 
 export function mount() {
   let dots = [];

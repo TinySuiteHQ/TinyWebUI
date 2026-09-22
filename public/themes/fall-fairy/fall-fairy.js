@@ -18,7 +18,7 @@
                    takes off when it is edited away.
    ========================================================================== */
 
-import { createScene } from './scene-kit.js';
+import { createScene } from '../drivers/scene-kit.js';
 
 const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);

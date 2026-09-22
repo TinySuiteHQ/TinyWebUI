@@ -14,7 +14,7 @@
 
    Contract, in full:
 
-     import { createScene } from './scene-kit.js';
+     import { createScene } from '../drivers/scene-kit.js';
 
      export function mount() {
        return createScene({
