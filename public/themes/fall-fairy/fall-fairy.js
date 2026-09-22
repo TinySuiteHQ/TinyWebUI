@@ -80,7 +80,7 @@ export function mount() {
 
     update(ctx, dt) {
       seat = measureSeat(ctx);
-      const wind = Math.sin(ctx.t * 0.21) * 0.7 + Math.sin(ctx.t * 0.07) * 0.4;
+      const wind = Math.sin(ctx.t * 0.14) * 0.7 + Math.sin(ctx.t * 0.045) * 0.4;
       stepLeaves(ctx, dt, wind);
       stepSparks(ctx, dt);
       stepFairies(ctx, dt);
@@ -278,7 +278,9 @@ export function mount() {
   /* ======================================================== weather ===== */
 
   function seedLeaves(ctx) {
-    const n = Math.round(clamp(ctx.w / 26, 14, 52));
+    // Leave more open sky between leaves: the motion should feel like a
+    // clearing, rather than a shower of confetti.
+    const n = Math.round(clamp(ctx.w / 42, 9, 32));
     return Array.from({ length: n }, () => newLeaf(ctx, rand(-ctx.h, ctx.h)));
   }
 
@@ -288,8 +290,8 @@ export function mount() {
       x: rand(-40, ctx.w + 40), y,
       s: lerp(5, 15, near), near,
       spin: rand(-2.2, 2.2), rot: rand(0, TAU),
-      sway: rand(0.6, 1.5), phase: rand(0, TAU),
-      vy: lerp(18, 58, near),
+      sway: rand(0.4, 1.05), phase: rand(0, TAU),
+      vy: lerp(10, 32, near),
       color: pick(ctx.pal.leaf),
       gust: 0,
     };
@@ -303,19 +305,19 @@ export function mount() {
       if (p.inside) {
         const dx = l.x - p.x, dy = l.y - p.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < 9000 && p.speed > 40) {
+        if (d2 < 9000 && p.speed > 70) {
           const d = Math.sqrt(d2) || 1;
           const push = (1 - d / 95) * clamp(p.speed / 900, 0, 1.4);
-          l.x += (dx / d) * push * 220 * dt;
-          l.y += (dy / d) * push * 140 * dt;
-          l.gust = Math.min(1.6, l.gust + push * 2.4 * dt);
-          l.spin += (dx / d) * push * 6 * dt;
+          l.x += (dx / d) * push * 90 * dt;
+          l.y += (dy / d) * push * 55 * dt;
+          l.gust = Math.min(0.8, l.gust + push * 1.2 * dt);
+          l.spin += (dx / d) * push * 2.5 * dt;
         }
       }
       l.y += (l.vy + l.gust * 40) * dt;
-      l.x += (Math.sin(ctx.t * l.sway + l.phase) * 22 + wind * lerp(14, 46, l.near)) * dt;
-      l.rot += l.spin * dt * (0.5 + l.gust);
-      l.gust = Math.max(0, l.gust - dt * 0.6);
+      l.x += (Math.sin(ctx.t * l.sway + l.phase) * 13 + wind * lerp(8, 28, l.near)) * dt;
+      l.rot += l.spin * dt * (0.32 + l.gust * 0.7);
+      l.gust = Math.max(0, l.gust - dt * 0.42);
       if (l.y > ctx.h + 30 || l.x < -60 || l.x > ctx.w + 60) Object.assign(l, newLeaf(ctx, -30));
     }
   }
@@ -324,7 +326,7 @@ export function mount() {
     c.save();
     c.translate(l.x, l.y);
     c.rotate(l.rot);
-    c.globalAlpha = lerp(0.45, 0.95, l.near);
+    c.globalAlpha = lerp(0.25, 0.62, l.near);
     c.fillStyle = l.color;
     c.beginPath();
     c.moveTo(0, l.s * 0.6);
@@ -463,8 +465,8 @@ export function mount() {
 
     // The two numbers that decide whether this reads as flight: how fast she
     // travels, and how fast she is allowed to change her mind about where.
-    const cruise = mode === 'busy' ? 150 : mode === 'done' ? 120 : 52;
-    const turn = mode === 'busy' ? 2.8 : 2.0;   // radians per second
+    const cruise = mode === 'busy' ? 92 : mode === 'done' ? 74 : 34;
+    const turn = mode === 'busy' ? 1.2 : 0.9;   // radians per second
 
     for (const f of fairies) {
       f.startled = Math.max(0, f.startled - dt);
@@ -474,17 +476,17 @@ export function mount() {
       if (p.inside) {
         const dx = f.x - p.x, dy = f.y - p.y;
         const d = Math.hypot(dx, dy) || 1;
-        if (d < 60 && p.speed > 150) {
+        if (d < 50 && p.speed > 200) {
           // Swatted at. She veers off and opens the throttle for a moment --
           // the heading turns and the speed lifts. Nothing is thrown.
           if (f.startled <= 0 && sparks.length < 300) burst(f.x, f.y, 5, 70);
-          f.startled = rand(0.7, 1.3);
+          f.startled = rand(0.9, 1.5);
           f.perch = null;
           f.circle = 0;
           f.settle = rand(2, 4);
-          f.tx = clamp(f.x + (dx / d) * 200, 45, W - 45);
-          f.ty = clamp(f.y + (dy / d) * 160, 65, H - 45);
-          f.retarget = rand(1, 1.6);
+          f.tx = clamp(f.x + (dx / d) * 120, 45, W - 45);
+          f.ty = clamp(f.y + (dy / d) * 90, 65, H - 45);
+          f.retarget = rand(1.8, 2.6);
         }
       }
 
@@ -502,8 +504,8 @@ export function mount() {
           // scrolling, editing or a re-render carries her with it.
           const tx = r.left + r.width * f.perch.offset;
           const ty = r.top - 2;
-          f.x = lerp(f.x, tx, clamp(dt * 8, 0, 1));
-          f.y = lerp(f.y, ty, clamp(dt * 8, 0, 1));
+          f.x = lerp(f.x, tx, clamp(dt * 5, 0, 1));
+          f.y = lerp(f.y, ty, clamp(dt * 5, 0, 1));
           f.speed = 0;
           f.vx = 0; f.vy = 0;
           f.flap += dt * 4;
@@ -537,7 +539,7 @@ export function mount() {
       let tx = f.tx, ty = f.ty;
       if (f.circle > 0 && !f.perch) {
         f.circle -= dt;
-        const a = ctx.t * 1.1 + f.bob;
+        const a = ctx.t * 0.7 + f.bob;
         tx += Math.cos(a) * 46;
         ty += Math.sin(a) * 30;
       }
@@ -547,7 +549,7 @@ export function mount() {
 
       let heading = Math.atan2(dy, dx);
       // Never a dead straight line.
-      f.wander += dt * 0.8;
+      f.wander += dt * 0.5;
       heading += Math.sin(f.wander) * (f.perch ? 0.06 : 0.3);
       // Edges are banked away from, not bounced off.
       if (!f.perch && (f.x < 55 || f.x > W - 55 || f.y < 65 || f.y > H - 45)) {
@@ -559,10 +561,10 @@ export function mount() {
       // and a chosen word into a glide rather than a snap.
       const approach = f.perch ? clamp(d / 80, 0.05, 1) : clamp(d / 150, 0.32, 1);
       const cruising = cruise * approach * (f.startled > 0 ? 1.45 : 1);
-      f.speed = lerp(f.speed, cruising, clamp(dt * 2.2, 0, 1));
+      f.speed = lerp(f.speed, cruising, clamp(dt * 1.3, 0, 1));
 
       f.x += Math.cos(f.heading) * f.speed * dt;
-      f.y += Math.sin(f.heading) * f.speed * dt + Math.sin(ctx.t * 1.5 + f.bob) * 7 * dt;
+      f.y += Math.sin(f.heading) * f.speed * dt + Math.sin(ctx.t * 0.9 + f.bob) * 4 * dt;
       f.vx = Math.cos(f.heading) * f.speed;
       f.vy = Math.sin(f.heading) * f.speed;
 
@@ -578,11 +580,11 @@ export function mount() {
       f.y = clamp(f.y, 40, H - 24);
 
       const effort = clamp(f.speed / 150, 0.35, 1.6);
-      f.flap += dt * (20 + effort * 26);
+      f.flap += dt * (12 + effort * 16);
 
       f.trail -= dt;
       if (f.trail <= 0 && sparks.length < 260) {
-        f.trail = mode === 'busy' ? 0.03 : 0.075;
+        f.trail = mode === 'busy' ? 0.06 : 0.14;
         sparks.push(newSpark(
           f.x + rand(-3, 3), f.y + rand(-2, 6),
           -f.vx * 0.05 + rand(-8, 8), -f.vy * 0.05 + rand(4, 18),
@@ -612,8 +614,8 @@ export function mount() {
       if (s.life <= 0) { sparks.splice(i, 1); continue; }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
-      s.vy += 26 * dt;
-      s.vx -= s.vx * 1.6 * dt;
+      s.vy += 16 * dt;
+      s.vx -= s.vx * 0.9 * dt;
     }
   }
 
@@ -646,7 +648,7 @@ export function mount() {
 
     for (const s of sparks) {
       const k = clamp(s.life / s.max, 0, 1);
-      fx.globalAlpha = k * 0.85;
+      fx.globalAlpha = k * 0.5;
       fx.fillStyle = ctx.pal.glow;
       dot(fx, s.x, s.y, s.r * (0.4 + k));
     }
@@ -669,12 +671,12 @@ export function mount() {
     c.rotate(tilt * 0.5);
 
     const halo = c.createRadialGradient(0, 0, 0, 0, 0, s * 3.6);
-    halo.addColorStop(0, withAlpha(pal.glow, ctx.mode === 'busy' ? 0.5 : 0.36));
+    halo.addColorStop(0, withAlpha(pal.glow, ctx.mode === 'busy' ? 0.3 : 0.22));
     halo.addColorStop(1, withAlpha(pal.glow, 0));
     c.fillStyle = halo;
     dot(c, 0, 0, s * 3.6);
 
-    c.fillStyle = withAlpha(pal.wing, perched ? 0.5 : 0.62);
+    c.fillStyle = withAlpha(pal.wing, perched ? 0.36 : 0.45);
     for (const dir of [-1, 1]) {
       c.save();
       c.scale(dir, 1);

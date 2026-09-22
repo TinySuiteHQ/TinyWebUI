@@ -179,7 +179,7 @@
   content: " \2726";
   color: var(--ff-glow);
   text-shadow: 0 0 6px var(--ff-glow);
-  animation: ff-twinkle 1.1s ease-in-out infinite;
+  animation: ff-twinkle 2s ease-in-out infinite;
 }
 @keyframes ff-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 
@@ -208,7 +208,7 @@
   color: var(--muted);
   text-align: center;
   text-shadow: 0 0 12px color-mix(in srgb, var(--bg) 80%, transparent);
-  animation: ff-breathe 6s ease-in-out infinite;
+  animation: ff-breathe 9s ease-in-out infinite;
 }
 @keyframes ff-breathe {
   0%, 100% { opacity: .75; }
