@@ -514,6 +514,11 @@ form {
 .attachment-chip .remove { cursor: pointer; opacity: .6; }
 .attachment-chip .remove:hover { opacity: 1; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
+.msg-images { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; }
+.msg-image-thumb {
+  max-width: 12rem; max-height: 12rem; border-radius: .5rem;
+  border: 1px solid var(--line); object-fit: contain;
+}
 
 /* Pinned to `main`, which never scrolls -- only #log's content does -- so this
    stays in view the whole time the user is reading back through a chat,

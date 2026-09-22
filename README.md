@@ -115,7 +115,7 @@ replies on models that would happily write more.
 **Prompt caching**. `cacheTtl` controls Anthropic cache lifetime: `"5m"` (default) or `"1h"`. The longer TTL
 costs more on the cache-write turn but survives pauses in long research sessions.
 
-`compactThreshold` (default 60000), `keepTurns` (2) and `maxInlineChars` (40000) control
+`compactThreshold` (default 20000), `keepTurns` (2) and `maxInlineChars` (6000) control
 context compaction — see below. `dbPath` sets where conversations are stored (default
 `tinywebui.db` next to the config, or `$TINYWEBUI_DB`).
 

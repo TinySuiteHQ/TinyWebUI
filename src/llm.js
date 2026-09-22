@@ -412,6 +412,19 @@ async function post(cfg, plan, signal, disabled, emit) {
       if (await backOff(res, `Provider returned ${res.status}`)) continue;
     }
 
+    // A model with no vision support rejects image content with a 4xx rather
+    // than any dedicated status code, and the raw provider text is often just
+    // an opaque "invalid content" -- naming the actual cause here is the
+    // difference between that and a clear, actionable error in the transcript.
+    const hasImage = plan.turn.some((m) => Array.isArray(m.content)
+      && m.content.some((p) => p?.type === 'image_url'));
+    if (hasImage && res.status >= 400 && res.status < 500) {
+      throw new Error(
+        `This model doesn't appear to support image input. `
+        + `Provider said: ${res.status} ${res.statusText}: ${text.slice(0, 300)}`
+      );
+    }
+
     throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 500)}`);
   }
 }

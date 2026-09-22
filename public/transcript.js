@@ -118,7 +118,7 @@ export function statusOf(name, args) {
   return arg ? `${short} ${arg}` : short;
 }
 
-export function addUser(text, seq, attachments) {
+export function addUser(text, seq, attachments, images) {
   const m = el('div', 'msg user');
   m.innerHTML = '<div class="who">you</div>';
   const b = el('div', 'body');
@@ -131,6 +131,21 @@ export function addUser(text, seq, attachments) {
       const chip = el('span', 'attachment-chip');
       chip.textContent = `${a.filename} (${a.char_len.toLocaleString('en-US')} chars)`;
       box.appendChild(chip);
+    }
+    m.appendChild(box);
+  }
+
+  if (images?.length) {
+    const box = el('div', 'msg-images');
+    for (const img of images) {
+      const thumb = el('img', 'msg-image-thumb');
+      // A freshly staged image carries its own base64 payload; one replayed
+      // from a reopened chat carries the stored {mime, data} shape instead.
+      thumb.src = img.dataBase64
+        ? `data:${img.mime};base64,${img.dataBase64}`
+        : `data:${img.mime};base64,${img.data}`;
+      thumb.alt = img.filename || 'attached image';
+      box.appendChild(thumb);
     }
     m.appendChild(box);
   }
@@ -393,7 +408,7 @@ export function replay(messages) {
   for (const m of messages) {
     if (m.role === 'user') {
       endTurn();
-      addUser(m.content, m.seq);
+      addUser(m.content, m.seq, null, m.images);
     } else if (m.role === 'assistant') {
       turn ||= addTurn();
       if (m.reasoning) {

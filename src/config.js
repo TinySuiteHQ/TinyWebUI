@@ -73,12 +73,14 @@ const DEFAULTS = {
   // tool results older than the last `keepTurns` user messages are demoted to
   // stubs -- once, and then frozen, so the cost is a single cache miss rather
   // than a rewritten prefix on every turn. Set the threshold to 0 to disable.
-  compactThreshold: 60000,
+  compactThreshold: 20000,
   keepTurns: 2,
   // Safety valve: a single result larger than this is stubbed the moment it
   // arrives, before it can blow the window on its own. Appending a stub costs
-  // no cache, so this is free -- it is high only to keep it out of the way.
-  maxInlineChars: 40000,
+  // no cache, so this is free -- kept low because a single web scrape or
+  // search result can otherwise run tens of thousands of chars and gets
+  // resent in full on every remaining round of a multi-round tool turn.
+  maxInlineChars: 6000,
   // Cap on what one context_expand call may return.
   expandCharBudget: 8000,
   // Flat tool names switched off from the settings panel -- built-in or an

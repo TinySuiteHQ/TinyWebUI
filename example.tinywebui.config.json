@@ -11,9 +11,9 @@
   "cacheMode": "auto",
   "cacheTtl": "5m",
 
-  "compactThreshold": 60000,
+  "compactThreshold": 20000,
   "keepTurns": 2,
-  "maxInlineChars": 40000,
+  "maxInlineChars": 6000,
   "expandCharBudget": 8000,
 
   "dbPath": "",

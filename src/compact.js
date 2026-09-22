@@ -98,6 +98,9 @@ export function estimateTokens(wireMessages) {
   let chars = 0;
   for (const m of wireMessages) {
     if (typeof m.content === 'string') chars += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const p of m.content) if (p.type === 'text') chars += p.text.length;
+    }
     if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
   }
   return Math.ceil(chars / 4);

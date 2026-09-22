@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS messages (
   stub_text              TEXT,
   usage_json             TEXT,
   model                  TEXT,
-  created_at             INTEGER
+  created_at             INTEGER,
+  images_json            TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS messages_chat_seq ON messages(chat_id, seq);
 
@@ -202,6 +203,7 @@ export class Store {
     const cols = this.db.prepare('PRAGMA table_info(messages)').all().map((c) => c.name);
     if (!cols.includes('model')) this.db.exec('ALTER TABLE messages ADD COLUMN model TEXT');
     if (!cols.includes('created_at')) this.db.exec('ALTER TABLE messages ADD COLUMN created_at INTEGER');
+    if (!cols.includes('images_json')) this.db.exec('ALTER TABLE messages ADD COLUMN images_json TEXT');
     this.db.exec('CREATE INDEX IF NOT EXISTS messages_usage_ts ON messages(created_at) WHERE usage_json IS NOT NULL');
     // A tool row, or an assistant note later superseded within its own turn,
     // indexed under an earlier shape of the triggers above is corrected on
@@ -323,8 +325,8 @@ export class Store {
       INSERT INTO messages
         (chat_id, seq, role, content, tool_call_id, tool_calls_json,
          reasoning, reasoning_details_json, artifact_id, stub_text, usage_json,
-         model, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         model, created_at, images_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       chatId, seq, msg.role,
       msg.content ?? null,
@@ -336,7 +338,8 @@ export class Store {
       msg.stub_text ?? null,
       msg.usage ? JSON.stringify(msg.usage) : null,
       msg.model ?? null,
-      Date.now()
+      Date.now(),
+      msg.images ? JSON.stringify(msg.images) : null
     );
     return seq;
   }
@@ -544,6 +547,7 @@ function base(row) {
   if (row.tool_call_id) msg.tool_call_id = row.tool_call_id;
   if (row.tool_calls_json) msg.tool_calls = JSON.parse(row.tool_calls_json);
   if (row.reasoning_details_json) msg.reasoning_details = JSON.parse(row.reasoning_details_json);
+  if (row.images_json) msg.images = JSON.parse(row.images_json);
   return msg;
 }
 
@@ -555,6 +559,19 @@ function base(row) {
 export function toWire(row) {
   const msg = base(row);
   msg.content = row.role === 'tool' ? (row.stub_text ?? row.content) : (row.content ?? null);
+  // A model that was sent images needs the OpenAI multimodal shape -- an array
+  // of parts rather than a plain string. Built only when there are images, so
+  // every text-only turn keeps sending the plain string it always has, which
+  // is what most of the caching machinery in llm.js assumes.
+  if (msg.images?.length) {
+    const parts = [];
+    if (msg.content) parts.push({ type: 'text', text: msg.content });
+    for (const img of msg.images) {
+      parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } });
+    }
+    msg.content = parts;
+  }
+  delete msg.images;
   return msg;
 }
 

@@ -118,10 +118,11 @@ $('form').addEventListener('submit', async (e) => {
   if (!state.chat.id) state.chat.id = 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   // This is the first point anything staged is actually uploaded, extracted
   // and written to the store -- removing a chip before now never touched it.
-  const attachments = await commitAttachments(state.chat.id);
-  if (!text && !attachments.length) { setBusy(false); return; }
+  const { docs, images } = await commitAttachments(state.chat.id);
+  if (!text && !docs.length && !images.length) { setBusy(false); return; }
 
-  addUser(text || '(attached document)', null, attachments);
+  const placeholder = !text ? (images.length ? '(attached image)' : '(attached document)') : text;
+  addUser(placeholder, null, docs, images);
 
   try {
     // Only the new turn goes up. The server replays the rest from its own copy,
@@ -129,7 +130,12 @@ $('form').addEventListener('submit', async (e) => {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chatId: state.chat.id, message: text || '(attached document)', documentIds: attachments.map((a) => a.id) }),
+      body: JSON.stringify({
+        chatId: state.chat.id,
+        message: placeholder,
+        documentIds: docs.map((a) => a.id),
+        images
+      }),
       signal: ctrl.signal
     });
     await consume(res);

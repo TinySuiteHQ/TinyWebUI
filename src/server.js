@@ -402,7 +402,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       }
 
       if (req.method === 'POST' && req.url === '/api/chat') {
-        const { chatId, message, documentIds } = await readJson(req);
+        const { chatId, message, documentIds, images } = await readJson(req);
         if (!cfg.apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
         if (!message) return json(res, 400, { error: 'message is required' });
 
@@ -422,7 +422,26 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
           if (!doc || doc.chat_id !== chat.id) continue;
           content += `\n\n[Attached document: "${doc.filename}" (id: ${doc.id}, ${doc.char_len.toLocaleString('en-US')} chars). Use read_document to search or read it.]`;
         }
-        store.addMessage(chat.id, { role: 'user', content });
+
+        // Images ride directly on the message as OpenAI multimodal content
+        // parts -- unlike a document there is no text to extract, so there is
+        // nothing for the model to look up later; the bytes have to go up
+        // with the turn that attached them. Capped on count and per-file size
+        // the same way document uploads are, since these never touch disk on
+        // their own path either.
+        const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+        const MAX_IMAGES = 8;
+        const imgs = [];
+        for (const img of Array.isArray(images) ? images.slice(0, MAX_IMAGES) : []) {
+          const mime = String(img?.mime || '');
+          if (!mime.startsWith('image/')) continue;
+          let buf;
+          try { buf = Buffer.from(String(img?.dataBase64 || ''), 'base64'); } catch { continue; }
+          if (!buf.length || buf.length > MAX_IMAGE_BYTES) continue;
+          imgs.push({ mime, data: buf.toString('base64') });
+        }
+
+        store.addMessage(chat.id, { role: 'user', content, ...(imgs.length ? { images: imgs } : {}) });
 
         // The turn is started, not awaited. Closing the tab detaches a
         // listener; it no longer kills the work, and the answer is in the store

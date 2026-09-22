@@ -104,15 +104,26 @@ export function stageAttachment(file) {
  * Uploads every staged file now that the message is actually being sent --
  * this is the first point any of it is extracted or written to the store.
  * A failed upload is reported and left out rather than blocking the rest.
+ *
+ * Images take a different path than every other file here: there is no text
+ * to extract, so there is nothing for read_document to look up later. They
+ * ride straight into the message as base64, the same call that sends the
+ * text, instead of going through the documents endpoint first.
  */
 export async function commitAttachments(chatId) {
   const staged = state.pendingAttachments;
   state.pendingAttachments = [];
   renderAttachments();
   const docs = [];
+  const images = [];
   for (const { file } of staged) {
+    const isImage = file.type.startsWith('image/');
     try {
       const dataBase64 = await toBase64(file);
+      if (isImage) {
+        images.push({ filename: file.name, mime: file.type, dataBase64 });
+        continue;
+      }
       // The chat may not exist yet -- the upload route creates it lazily, the
       // same way the first /api/chat call does.
       const res = await fetch(`/api/chats/${chatId}/documents`, {
@@ -131,7 +142,7 @@ export async function commitAttachments(chatId) {
     state.chatDocuments.push(...docs);
     renderChatDocs();
   }
-  return docs;
+  return { docs, images };
 }
 
 $('attach').addEventListener('click', () => $('fileInput').click());
