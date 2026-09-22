@@ -9,6 +9,12 @@ const wrap = $('wrap');
 
 let chat = null;   // { id, title, messages }
 let busy = false;
+// The run a chat is showing outlives the tab, but the fetch reading it belongs
+// to whichever view started it. Switching chats has to cancel that read --
+// otherwise `busy` stays pinned true by a turn on a chat that isn't even on
+// screen any more, and the chat now open can't rejoin its own run until the
+// old one finishes.
+let viewCtrl = null;
 
 /* ---------- sidebar width ---------- */
 
@@ -90,7 +96,22 @@ let chats = [];
 
 function renderChatList() {
   $('chats').innerHTML = '';
+  // The draft in progress isn't a chat on the server yet -- it gets a row
+  // only so the list shows where you are, never a second one on the next
+  // click. It disappears the moment the draft becomes a real chat or is
+  // abandoned for one that already exists.
+  if (chat && !chat.id) {
+    const row = el('div', 'chat-item active draft');
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-current', 'true');
+    const t = el('span', 't');
+    t.textContent = chat.title || 'New chat';
+    row.appendChild(t);
+    $('chats').appendChild(row);
+  }
   if (!chats.length) {
+    if (chat && !chat.id) return;
     const e = el('div', 'empty');
     e.textContent = 'no saved chats';
     return $('chats').appendChild(e);
@@ -262,7 +283,15 @@ async function migrateLocal() {
   } catch { /* the transcripts stay in localStorage; nothing is lost */ }
 }
 
+/** Cancels whatever stream read the view currently on screen owns. */
+function leaveView() {
+  viewCtrl?.abort();
+  viewCtrl = null;
+  if (busy) setBusy(false);
+}
+
 function newChat() {
+  leaveView();
   chat = { id: null, title: 'New chat' };
   wrap.innerHTML = '';
   // Starting fresh is a clear signal that browsing is done; a lingering
@@ -276,6 +305,7 @@ async function openChat(id) {
   const res = await fetch(`/api/chats/${id}`);
   if (!res.ok) return;
   const found = await res.json();
+  leaveView();
   chat = { id: found.id, title: found.title };
   wrap.innerHTML = '';
   // Mid-turn, the server hands back only the settled part of the transcript;
@@ -288,14 +318,23 @@ async function openChat(id) {
 
 /** Follows a turn already in flight, from the top of its event buffer. */
 async function rejoin(id) {
-  if (busy) return;
+  const ctrl = new AbortController();
+  viewCtrl = ctrl;
   setBusy(true);
   try {
-    const res = await fetch(`/api/chats/${id}/stream?from=0`);
+    const res = await fetch(`/api/chats/${id}/stream?from=0`, { signal: ctrl.signal });
     if (res.ok) await consume(res);
-  } catch { /* the transcript is in the store; reopening picks it up */ }
-  setBusy(false);
-  loadChats();
+  } catch (err) {
+    // Navigating away aborts this on purpose; anything else just means the
+    // transcript is in the store and reopening picks it up.
+  }
+  // A later navigation already swapped in its own controller and reset
+  // `busy` for its own view -- stepping on either here would be wrong.
+  if (viewCtrl === ctrl) {
+    viewCtrl = null;
+    setBusy(false);
+    loadChats();
+  }
 }
 
 /** Rebuilds the transcript view from stored messages. */
@@ -1063,7 +1102,9 @@ async function consume(res) {
     }
     if (think) think.done();
   } catch (err) {
-    addError(err.message, turn.el);
+    // Aborted on purpose by a navigation away from this chat -- the run is
+    // still going server-side, and reopening the chat picks it back up.
+    if (err.name !== 'AbortError') addError(err.message, turn.el);
   } finally {
     // Whatever prose is still standing was the answer; the work collapses
     // behind its recap. A turn that failed mid-flight gets the same treatment,
@@ -1093,6 +1134,8 @@ $('form').addEventListener('submit', async (e) => {
   input.value = '';
   input.style.height = 'auto';
   setBusy(true);
+  const ctrl = new AbortController();
+  viewCtrl = ctrl;
 
   addUser(text);
 
@@ -1102,14 +1145,20 @@ $('form').addEventListener('submit', async (e) => {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chatId: chat.id, message: text })
+      body: JSON.stringify({ chatId: chat.id, message: text }),
+      signal: ctrl.signal
     });
     await consume(res);
     loadChats();
   } catch (err) {
-    addError(err.message);
+    if (err.name !== 'AbortError') addError(err.message);
   } finally {
-    setBusy(false);
+    // A later navigation already swapped in its own controller and reset
+    // `busy` for its own view -- stepping on either here would be wrong.
+    if (viewCtrl === ctrl) {
+      viewCtrl = null;
+      setBusy(false);
+    }
   }
 });
 
