@@ -4,10 +4,11 @@
  */
 import { $ } from './dom.js';
 import { state } from './state.js';
-import { addUser, replay, addError } from './transcript.js';
+import { addUser, replay, addError, pinToBottom } from './transcript.js';
 import { consume } from './stream.js';
-import { renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
+import { commitAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
+import { resetOutline } from './outline.js';
 
 const input = $('input');
 
@@ -30,11 +31,13 @@ export function newChat() {
   leaveView();
   state.chat = { id: null, title: 'New chat' };
   $('wrap').innerHTML = '';
+  pinToBottom();
   state.pendingAttachments = [];
   renderAttachments();
   state.chatDocuments = [];
   resetChatDocsView();
   renderChatDocs();
+  resetOutline();
   // Starting fresh is a clear signal that browsing is done; a lingering
   // search would otherwise still be sitting over the sidebar underneath it,
   // and on mobile the drawer would otherwise still be covering the composer.
@@ -49,11 +52,13 @@ export async function openChat(id) {
   leaveView();
   state.chat = { id: found.id, title: found.title };
   $('wrap').innerHTML = '';
+  pinToBottom();
   state.pendingAttachments = [];
   renderAttachments();
   state.chatDocuments = found.documents || [];
   resetChatDocsView();
   renderChatDocs();
+  resetOutline();
   // Mid-turn, the server hands back only the settled part of the transcript;
   // the rest arrives as events, exactly as it did for the tab that started it.
   replay(found.messages);
@@ -100,18 +105,23 @@ $('form').addEventListener('submit', async (e) => {
     return;
   }
   const text = input.value.trim();
-  const attachments = state.pendingAttachments.filter((a) => !a.pending);
-  if (!text && !attachments.length) return;
-  if (state.pendingAttachments.some((a) => a.pending)) return; // let uploads finish first
+  const hasAttachments = state.pendingAttachments.length > 0;
+  if (!text && !hasAttachments) return;
   input.value = '';
   input.style.height = 'auto';
   setBusy(true);
   const ctrl = new AbortController();
   state.viewCtrl = ctrl;
 
+  // Assigned synchronously (before any await) so the upload below and the
+  // /api/chat call after it land on the same not-yet-created chat.
+  if (!state.chat.id) state.chat.id = 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  // This is the first point anything staged is actually uploaded, extracted
+  // and written to the store -- removing a chip before now never touched it.
+  const attachments = await commitAttachments(state.chat.id);
+  if (!text && !attachments.length) { setBusy(false); return; }
+
   addUser(text || '(attached document)', null, attachments);
-  state.pendingAttachments = [];
-  renderAttachments();
 
   try {
     // Only the new turn goes up. The server replays the rest from its own copy,

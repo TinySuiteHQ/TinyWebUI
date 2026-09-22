@@ -1,7 +1,8 @@
 /**
- * Document attachments: the chip row for what's queued to send, the strip of
- * everything ever attached to the open chat, and the upload path shared by
- * the paperclip button, drag-and-drop, and the paste-as-file shortcut.
+ * Document attachments: files picked, dropped, or pasted are only staged
+ * client-side -- nothing is uploaded, extracted, or written to the store
+ * until the message is actually sent. Before that, removing one just drops
+ * it from the local queue; there is nothing server-side to clean up.
  */
 import { $, el } from './dom.js';
 import { state } from './state.js';
@@ -31,22 +32,28 @@ export function renderChatDocs() {
   if (!state.chatDocuments.length) return;
 
   const label = el('span', 'label');
-  label.textContent = state.chatDocuments.length === 1 ? 'file' : 'files';
+  label.textContent = 'sources';
   box.appendChild(label);
 
   const shown = docsExpanded ? state.chatDocuments : state.chatDocuments.slice(0, DOC_PREVIEW_COUNT);
   for (const d of shown) {
-    const item = el('button', 'doc-item');
+    const item = el('button', 'rail-item');
     item.type = 'button';
     item.title = `${d.filename} · ${d.char_len.toLocaleString('en-US')} chars`;
-    item.textContent = d.filename;
+    const icon = el('span', 'icon');
+    icon.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">'
+      + '<path d="M4 1.5h5.5L12.5 4.5V14.5H4z"/><path d="M9.5 1.5V4.5H12.5"/>'
+      + '<path d="M5.75 8h4.5M5.75 10.25h4.5M5.75 12h3"/></svg>';
+    const name = el('span', 'text');
+    name.textContent = d.filename;
+    item.append(icon, name);
     item.onclick = () => openDocument(d.id);
     box.appendChild(item);
   }
 
   const hidden = state.chatDocuments.length - shown.length;
   if (hidden > 0 || docsExpanded && state.chatDocuments.length > DOC_PREVIEW_COUNT) {
-    const more = el('button', 'doc-more');
+    const more = el('button', 'rail-more');
     more.type = 'button';
     more.textContent = docsExpanded ? 'show less' : `+${hidden} more`;
     more.onclick = () => { docsExpanded = !docsExpanded; renderChatDocs(); };
@@ -64,8 +71,8 @@ export function renderAttachments() {
   box.innerHTML = '';
   box.hidden = state.pendingAttachments.length === 0;
   for (const a of state.pendingAttachments) {
-    const chip = el('span', 'attachment-chip' + (a.pending ? ' pending' : ''));
-    chip.textContent = a.pending ? `${a.filename}…` : `${a.filename} (${a.char_len.toLocaleString('en-US')} chars)`;
+    const chip = el('span', 'attachment-chip');
+    chip.textContent = a.file.name;
     const remove = el('span', 'remove');
     remove.textContent = '✕';
     remove.title = 'remove attachment';
@@ -87,40 +94,49 @@ function toBase64(file) {
   });
 }
 
-/** Uploads one file (or a pasted-text stand-in) and adds/updates its chip. */
-export async function uploadAttachment(file) {
-  const slot = { id: null, filename: file.name, char_len: 0, pending: true };
-  state.pendingAttachments.push(slot);
+/** Queues a file (or a pasted-text stand-in) client-side. No network yet. */
+export function stageAttachment(file) {
+  state.pendingAttachments.push({ file });
   renderAttachments();
-  // Assigned synchronously (before any await) so two files dropped together
-  // both land on the same not-yet-created chat rather than each creating one.
-  if (!state.chat.id) state.chat.id = 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  try {
-    const dataBase64 = await toBase64(file);
-    // The chat may not exist yet -- the upload route creates it lazily, the
-    // same way the first /api/chat call does.
-    const res = await fetch(`/api/chats/${state.chat.id}/documents`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ filename: file.name, mime: file.type, dataBase64 })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'upload failed');
-    slot.id = data.document.id;
-    slot.char_len = data.document.char_len;
-    slot.pending = false;
-    state.chatDocuments.push({ id: data.document.id, filename: data.document.filename, char_len: data.document.char_len });
-    renderChatDocs();
-  } catch (err) {
-    state.pendingAttachments = state.pendingAttachments.filter((x) => x !== slot);
-    addError(`attach "${file.name}": ${err.message}`);
+}
+
+/**
+ * Uploads every staged file now that the message is actually being sent --
+ * this is the first point any of it is extracted or written to the store.
+ * A failed upload is reported and left out rather than blocking the rest.
+ */
+export async function commitAttachments(chatId) {
+  const staged = state.pendingAttachments;
+  state.pendingAttachments = [];
+  renderAttachments();
+  const docs = [];
+  for (const { file } of staged) {
+    try {
+      const dataBase64 = await toBase64(file);
+      // The chat may not exist yet -- the upload route creates it lazily, the
+      // same way the first /api/chat call does.
+      const res = await fetch(`/api/chats/${chatId}/documents`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, mime: file.type, dataBase64 })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'upload failed');
+      docs.push(data.document);
+    } catch (err) {
+      addError(`attach "${file.name}": ${err.message}`);
+    }
   }
-  renderAttachments();
+  if (docs.length) {
+    state.chatDocuments.push(...docs);
+    renderChatDocs();
+  }
+  return docs;
 }
 
 $('attach').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', () => {
-  for (const f of $('fileInput').files) uploadAttachment(f);
+  for (const f of $('fileInput').files) stageAttachment(f);
   $('fileInput').value = '';
 });
 
@@ -129,7 +145,7 @@ for (const ev of ['dragover', 'dragenter']) {
 }
 $('form').addEventListener('drop', (e) => {
   e.preventDefault();
-  for (const f of e.dataTransfer.files) uploadAttachment(f);
+  for (const f of e.dataTransfer.files) stageAttachment(f);
 });
 
 // A long paste reads like ChatGPT's: it becomes an attachment instead of
@@ -139,6 +155,5 @@ input.addEventListener('paste', (e) => {
   const text = e.clipboardData?.getData('text/plain') || '';
   if (text.length < PASTE_AS_FILE_THRESHOLD) return;
   e.preventDefault();
-  const file = new File([text], 'pasted.txt', { type: 'text/plain' });
-  uploadAttachment(file);
+  stageAttachment(new File([text], 'pasted.txt', { type: 'text/plain' }));
 });

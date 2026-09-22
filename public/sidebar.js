@@ -80,6 +80,21 @@ function resetSideWidth() {
 
 /* ---------- history: server-side, newest first ---------- */
 
+/** ChatGPT-style buckets: today, yesterday, then widening rolling windows,
+    then by calendar month once a chat is old enough that "N days ago" stops
+    being a useful unit. */
+function bucketOf(updatedAt, now) {
+  const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const days = Math.round((startOfDay(now) - startOfDay(updatedAt)) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days <= 7) return 'Previous 7 days';
+  if (days <= 30) return 'Previous 30 days';
+  const d = new Date(updatedAt);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleDateString('en-US', sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
+}
+
 export function renderChatList() {
   $('chats').innerHTML = '';
   // The draft in progress isn't a chat on the server yet -- it gets a row
@@ -102,7 +117,18 @@ export function renderChatList() {
     e.textContent = 'no saved chats';
     return $('chats').appendChild(e);
   }
+  const now = Date.now();
+  let lastBucket = null;
   for (const c of state.chats) {
+    // The list is already newest-first, so a bucket only opens once, right
+    // where its first chat falls -- no separate grouping/sorting pass needed.
+    const bucket = bucketOf(c.updated_at, now);
+    if (bucket !== lastBucket) {
+      lastBucket = bucket;
+      const h = el('div', 'chat-group-h');
+      h.textContent = bucket;
+      $('chats').appendChild(h);
+    }
     const row = el('div', 'chat-item' + (state.chat && c.id === state.chat.id ? ' active' : ''));
     // A div with an onclick is unreachable without a mouse, so the row carries
     // the button contract explicitly: focusable, named, and activated by key.

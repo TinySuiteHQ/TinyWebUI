@@ -83,8 +83,9 @@ input, textarea, select {
 textarea#systemPrompt, textarea#mcpText { font-family: var(--mono); font-size: var(--fs-ui); }
 label { font-size: var(--fs-ui); color: var(--muted); display: block; margin-bottom: .25rem; }
 
-/* history sidebar */
-aside {
+/* history sidebar -- scoped to #side, not the bare tag: the right rail and
+   the outline minimap are <aside> too, and don't want the sidebar's chrome. */
+#side {
   /* Driven by the drag handle below; the fallback is the width it always had. */
   width: var(--side-w, 15rem);
   position: relative;
@@ -110,11 +111,11 @@ body.resizing #side-resize::after { opacity: 1; }
 body.resizing { cursor: col-resize; user-select: none; }
 /* Same fixed height as the header, so the two top bars line up across the
    sidebar border instead of each sizing to its own contents. */
-aside .head {
+#side .head {
   height: var(--bar); flex-shrink: 0; padding: 0 .5rem;
   display: flex; align-items: center; border-bottom: 1px solid var(--line);
 }
-aside .head button { width: 100%; }
+#side .head button { width: 100%; }
 
 .search-row {
   flex-shrink: 0; position: relative; padding: .5rem; border-bottom: 1px solid var(--line);
@@ -147,6 +148,12 @@ aside .head button { width: 100%; }
 }
 .chat-item .x:hover, .chat-item .x:focus-visible { color: var(--err); }
 .empty { padding: .625rem .5rem; font-size: var(--fs-ui); color: var(--muted); }
+
+.chat-group-h {
+  padding: .625rem .5rem .25rem; font-size: var(--fs-meta); text-transform: uppercase;
+  letter-spacing: .04em; color: var(--faint);
+}
+.chat-group-h:first-child { padding-top: .375rem; }
 
 /* A search result carries a title and a snippet, so it grows past the plain
    list's single line rather than truncating either one away. */
@@ -281,7 +288,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1 1 11rem; }
 
-#log { flex: 1; overflow-y: auto; padding: 1.25rem .875rem .5rem; position: relative; }
+#log { flex: 1; overflow-y: auto; padding: 1.25rem .875rem .5rem; }
 .wrap {
   max-width: var(--measure); margin: 0 auto;
   display: flex; flex-direction: column; gap: 1rem;
@@ -480,40 +487,85 @@ form {
   border: 1px solid var(--line); border-radius: 999px; padding: .2rem .65rem;
   font-size: var(--fs-small); background: var(--bg-soft, transparent);
 }
-.attachment-chip.pending { opacity: .6; }
 .attachment-chip .remove { cursor: pointer; opacity: .6; }
 .attachment-chip .remove:hover { opacity: 1; }
 .msg-attachments { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
 
-/* A slim rail floating over the transcript's right margin -- present only
-   where there's room beside the centered .wrap column, never squeezing it. */
-.chat-docs {
-  position: absolute; top: 0; right: .875rem; width: 11rem;
-  display: flex; flex-direction: column; gap: .3rem;
+/* Pinned to `main`, which never scrolls -- only #log's content does -- so this
+   stays in view the whole time the user is reading back through a chat,
+   instead of riding away with the transcript the way it used to. */
+.right-rail {
+  position: absolute; top: 1.25rem; right: .875rem; width: 12rem;
+  display: flex; flex-direction: column; gap: .6rem; pointer-events: none;
 }
-.chat-docs[hidden] { display: none; }
-.chat-docs .label {
+.right-rail > * { pointer-events: auto; }
+
+.rail-card {
+  border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
+  padding: .4rem;
+  display: flex; flex-direction: column; gap: .05rem;
+}
+.rail-card[hidden] { display: none; }
+.rail-card .label {
   font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .04em;
-  color: var(--muted); margin-bottom: .15rem;
+  color: var(--faint); margin: 0 0 .2rem .35rem;
 }
-.chat-docs .doc-item {
-  display: block; width: 100%; text-align: left; background: none; border: none;
-  border-left: 2px solid var(--line); padding: .2rem 0 .2rem .5rem; margin: 0;
-  color: var(--fg); font-size: var(--fs-small); font-family: inherit; cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.rail-card .rail-item {
+  display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left;
+  background: none; border: none; border-radius: 3px; padding: .3rem .35rem; margin: 0;
+  min-width: 0; min-height: 0; color: var(--muted); font-size: var(--fs-small);
+  font-family: inherit; line-height: 1.5; cursor: pointer; transition: background .1s, color .1s;
 }
-.chat-docs .doc-item:hover { border-left-color: var(--accent); color: var(--accent); }
-.chat-docs .doc-more {
-  align-self: flex-start; background: none; border: none; padding: .2rem 0 0 .5rem;
-  color: var(--muted); font-size: var(--fs-meta); font-family: inherit; cursor: pointer;
+.rail-card .rail-item:hover { background: var(--bg); color: var(--fg); }
+.rail-card .rail-item .icon {
+  flex-shrink: 0; width: 1em; height: 1em; display: flex; align-items: center;
+  justify-content: center; opacity: .6;
 }
-.chat-docs .doc-more:hover { color: var(--fg); }
+.rail-card .rail-item .icon svg { width: 100%; height: 100%; }
+.rail-card .rail-item .text {
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.rail-card .rail-more {
+  align-self: stretch; text-align: left; background: none; border: none; border-radius: 3px;
+  padding: .3rem .35rem; margin: 0; min-height: 0; color: var(--faint); font-size: var(--fs-meta);
+  font-family: inherit; line-height: 1.5; cursor: pointer; transition: background .1s, color .1s;
+}
+.rail-card .rail-more:hover { background: var(--bg); color: var(--muted); }
 
 @media (max-width: 1040px) {
   /* No room beside the measure column at this width -- would either overlap
      the transcript or force it to shrink, so it steps aside instead. */
-  .chat-docs { display: none; }
+  .right-rail, .outline-rail { display: none; }
 }
+
+/* The conversation minimap: one flat tick per question, vertically centered
+   like a scrollbar of turns rather than a list -- the text only exists on
+   hover, so at rest it reads as a mark, not a panel. */
+.outline-rail {
+  position: absolute; top: 50%; right: .875rem; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: flex-end; gap: .3rem;
+}
+.outline-rail[hidden] { display: none; }
+.outline-tick {
+  position: relative; background: none; border: none; padding: .2rem 0; margin: 0;
+  cursor: pointer; display: flex; align-items: center; justify-content: flex-end;
+}
+.outline-tick .bar {
+  width: 1.125rem; height: 2px; background: var(--line); border-radius: 1px;
+  transition: background .1s, width .1s;
+}
+.outline-tick:hover .bar, .outline-tick:focus-visible .bar {
+  background: var(--accent); width: 1.5rem;
+}
+.outline-tick .tip {
+  position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
+  margin-right: .5rem; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--panel); color: var(--fg); font-size: var(--fs-small);
+  padding: .3rem .55rem; white-space: nowrap; max-width: 16rem;
+  overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; pointer-events: none; transition: opacity .1s;
+}
+.outline-tick:hover .tip, .outline-tick:focus-visible .tip { opacity: 1; }
 
 #side-backdrop { display: none; }
 
@@ -522,11 +574,11 @@ form {
      button that opened it -- and the settings button beside it -- stay in
      place and tappable the whole time it is open, instead of vanishing
      behind an overlay the moment it appears. */
-  aside {
+  #side {
     position: fixed; top: var(--bar); bottom: 0; left: 0; width: min(85vw, 22rem);
     z-index: 20; transform: translateX(-100%); transition: transform .18s ease;
   }
-  aside.open { transform: none; }
+  #side.open { transform: none; }
   /* A fixed width here rather than var(--side-w): the drag handle that sets
      that variable is mouse-only and hidden on this path, and an overlay
      drawer has no edge to drag against the content anyway. */

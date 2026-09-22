@@ -7,6 +7,7 @@ import { renderMarkdown } from './md.js';
 import { $, el } from './dom.js';
 import { state } from './state.js';
 import { openChat } from './chat.js';
+import { addQuestion } from './outline.js';
 
 const log = $('log');
 const wrap = $('wrap');
@@ -16,6 +17,9 @@ log.addEventListener('scroll', () => {
   pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
 });
 export function scroll() { if (pinned) log.scrollTop = log.scrollHeight; }
+// Switching chats always lands on the newest message, regardless of whether
+// the chat left open before it had been scrolled up to read older ones.
+export function pinToBottom() { pinned = true; }
 
 /**
  * One assistant turn: the work that led to the answer, and then the answer.
@@ -154,6 +158,7 @@ export function addUser(text, seq, attachments) {
   }
 
   wrap.appendChild(m);
+  addQuestion(m, text);
   scroll();
 }
 
