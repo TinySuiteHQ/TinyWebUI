@@ -819,6 +819,15 @@ function renderToolPanel(data) {
       err.textContent = s.error;
       grp.appendChild(err);
     }
+    if (s.status === 'ok' && s.instructions) {
+      const note = el('details', 'tool-group-instructions');
+      const sum = el('summary');
+      sum.textContent = 'instructions';
+      const body = el('div', 'body');
+      body.textContent = s.instructions;
+      note.append(sum, body);
+      grp.appendChild(note);
+    }
     if (s.status === 'ok') {
       if (!s.tools.length) {
         const empty = el('div', 'empty');

@@ -219,6 +219,18 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
   padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta);
   font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
 }
+/* The server's own top-level guidance from MCP initialize -- prose, not a tool
+   doc, so it reads like a note rather than another row in the list. Often
+   long, so it starts collapsed, same as an individual tool's doc. */
+.tool-group-instructions { border-bottom: 1px solid var(--line); }
+.tool-group-instructions > summary {
+  cursor: pointer; list-style: none; padding: .375rem .625rem .375rem 2rem;
+  color: var(--muted); font-size: var(--fs-meta); font-style: italic;
+}
+.tool-group-instructions > .body {
+  padding: 0 .625rem .5rem 2rem; color: var(--muted); font-size: var(--fs-meta);
+  white-space: pre-wrap; word-break: break-word;
+}
 
 /* Connection health, read at a glance before the label is even parsed. */
 .tool-group .dot { width: .5rem; height: .5rem; border-radius: 50%; flex-shrink: 0; background: var(--faint); }

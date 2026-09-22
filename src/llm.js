@@ -442,6 +442,12 @@ async function* streamChunks(res) {
  * Returns the messages appended to the conversation.
  */
 export async function runChat({ cfg, chatId, store, tools, hub, emit, signal }) {
+  // Server-level MCP guidance (call order, when to prefer one tool over
+  // another) rides along with the system prompt the model already gets --
+  // the same block every round, so the cache prefix is unaffected.
+  const instructions = hub?.instructionsBlock?.();
+  if (instructions) cfg = { ...cfg, systemPrompt: `${cfg.systemPrompt}\n\n${instructions}` };
+
   const appended = [];
   // Optional request fields this endpoint has already refused, learned once.
   const disabled = new Set();

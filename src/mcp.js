@@ -7,7 +7,12 @@ const SEP = '__';
 
 /** One row of the inventory: what the settings UI needs to draw and toggle a tool. */
 function toRow(t, disabled) {
-  return { name: t.function.name, description: t.function.description, disabled: disabled.has(t.function.name) };
+  return {
+    name: t.function.name,
+    description: t.function.description,
+    parameters: t.function.parameters,
+    disabled: disabled.has(t.function.name)
+  };
 }
 
 function transportFor(name, spec) {
@@ -140,7 +145,8 @@ export class McpHub {
       const status = spec.disabled ? 'disabled' : this.clients.has(name) ? 'ok' : 'error';
       // Errors are recorded as "name: message"; the name is stripped back off.
       const error = this.errors.find((e) => e.startsWith(`${name}: `))?.slice(name.length + 2) ?? null;
-      return { name, status, error, tools: [] };
+      const instructions = this.clients.get(name)?.getInstructions() || null;
+      return { name, status, error, instructions, tools: [] };
     });
     const byName = new Map(servers.map((row) => [row.name, row]));
     for (const t of this.tools) {
@@ -148,6 +154,25 @@ export class McpHub {
       if (route) byName.get(route.server)?.tools.push(toRow(t, disabled));
     }
     return { internal, servers };
+  }
+
+  /**
+   * Every connected server's top-level `instructions` from MCP initialize,
+   * concatenated into one block the system prompt can carry. This is how a
+   * server tells the model things no single tool description covers -- call
+   * order, when to prefer one tool over another, workflow-level caveats.
+   * Clients are expected to surface it; leaving it out means the model never
+   * sees guidance the server author wrote specifically for it. Servers are
+   * iterated in the same sorted order used everywhere else so the block, and
+   * the prompt prefix built on it, stay stable run to run.
+   */
+  instructionsBlock() {
+    const parts = [];
+    for (const name of Object.keys(this.servers).sort()) {
+      const text = this.clients.get(name)?.getInstructions();
+      if (text) parts.push(`## ${name}\n${text}`);
+    }
+    return parts.join('\n\n');
   }
 
   /** Returns a string, because that is all a tool result message can carry. */
