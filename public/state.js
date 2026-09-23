@@ -19,8 +19,11 @@ export const state = {
   // upload doesn't block typing. Cleared once that turn is sent.
   pendingAttachments: [], // [{id, filename, char_len, pending}]
 
-  // Every document ever attached to the chat currently open, shown as a strip
-  // above the transcript. Not the same list as pendingAttachments, which is
-  // only what hasn't been sent yet.
-  chatDocuments: []       // [{id, filename, char_len}]
+  // Every document ever attached to the chat currently open, shown in the
+  // artifacts strip above the transcript. Not the same list as
+  // pendingAttachments, which is only what hasn't been sent yet.
+  chatDocuments: [],      // [{id, filename, char_len}]
+  // Every image ever attached to the chat currently open, shown in the same
+  // strip. Derived from message history rather than stored separately.
+  chatImages: []          // [{filename, mime, data}]
 };

@@ -25,34 +25,57 @@ async function openDocument(id) {
   }
 }
 
+const DOC_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">'
+  + '<path d="M4 1.5h5.5L12.5 4.5V14.5H4z"/><path d="M9.5 1.5V4.5H12.5"/>'
+  + '<path d="M5.75 8h4.5M5.75 10.25h4.5M5.75 12h3"/></svg>';
+const IMAGE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">'
+  + '<rect x="1.5" y="2.5" width="13" height="11" rx="1"/>'
+  + '<circle cx="5.5" cy="6.5" r="1.25"/><path d="M2 12l3.5-4 3 3.5 2-2.5L14 12"/></svg>';
+
+/** Opens an image attachment full-size in a new tab, from its stored bytes. */
+function openImage(img) {
+  window.open(`data:${img.mime};base64,${img.data}`, '_blank');
+}
+
+/** Every document and image ever attached to this chat, oldest first. */
+function artifacts() {
+  return [...state.chatDocuments.map((d) => ({ kind: 'doc', ...d })),
+    ...state.chatImages.map((i) => ({ kind: 'image', ...i }))];
+}
+
 export function renderChatDocs() {
   const box = $('chatDocs');
   box.innerHTML = '';
-  box.hidden = state.chatDocuments.length === 0;
-  if (!state.chatDocuments.length) return;
+  const items = artifacts();
+  box.hidden = items.length === 0;
+  if (!items.length) return;
 
   const label = el('span', 'label');
-  label.textContent = 'sources';
+  label.textContent = 'artifacts';
   box.appendChild(label);
 
-  const shown = docsExpanded ? state.chatDocuments : state.chatDocuments.slice(0, DOC_PREVIEW_COUNT);
-  for (const d of shown) {
+  const shown = docsExpanded ? items : items.slice(0, DOC_PREVIEW_COUNT);
+  for (const a of shown) {
     const item = el('button', 'rail-item');
     item.type = 'button';
-    item.title = `${d.filename} · ${d.char_len.toLocaleString('en-US')} chars`;
     const icon = el('span', 'icon');
-    icon.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">'
-      + '<path d="M4 1.5h5.5L12.5 4.5V14.5H4z"/><path d="M9.5 1.5V4.5H12.5"/>'
-      + '<path d="M5.75 8h4.5M5.75 10.25h4.5M5.75 12h3"/></svg>';
+    if (a.kind === 'doc') {
+      item.title = `${a.filename} · ${a.char_len.toLocaleString('en-US')} chars`;
+      icon.innerHTML = DOC_ICON;
+      item.onclick = () => openDocument(a.id);
+    } else {
+      item.title = a.filename || 'attached image';
+      icon.innerHTML = IMAGE_ICON;
+      item.onclick = () => openImage(a);
+    }
     const name = el('span', 'text');
-    name.textContent = d.filename;
+    name.textContent = a.filename || 'image';
     item.append(icon, name);
-    item.onclick = () => openDocument(d.id);
     box.appendChild(item);
   }
 
-  const hidden = state.chatDocuments.length - shown.length;
-  if (hidden > 0 || docsExpanded && state.chatDocuments.length > DOC_PREVIEW_COUNT) {
+  const hidden = items.length - shown.length;
+  if (hidden > 0 || docsExpanded && items.length > DOC_PREVIEW_COUNT) {
     const more = el('button', 'rail-more');
     more.type = 'button';
     more.textContent = docsExpanded ? 'show less' : `+${hidden} more`;
@@ -71,8 +94,17 @@ export function renderAttachments() {
   box.innerHTML = '';
   box.hidden = state.pendingAttachments.length === 0;
   for (const a of state.pendingAttachments) {
-    const chip = el('span', 'attachment-chip');
-    chip.textContent = a.file.name;
+    const chip = el('span', a.isImage ? 'attachment-chip attachment-chip-image' : 'attachment-chip');
+    if (a.isImage) {
+      const thumb = el('img', 'attachment-thumb');
+      thumb.alt = a.file.name;
+      thumb.title = a.error ? `${a.file.name}: ${a.error}` : a.file.name;
+      if (a.normalized) thumb.src = `data:${a.normalized.mime};base64,${a.normalized.data}`;
+      else thumb.classList.add(a.error ? 'broken' : 'pending');
+      chip.appendChild(thumb);
+    } else {
+      chip.appendChild(document.createTextNode(a.file.name));
+    }
     const remove = el('span', 'remove');
     remove.textContent = '✕';
     remove.title = 'remove attachment';
@@ -94,9 +126,45 @@ function toBase64(file) {
   });
 }
 
+// Some browsers report an empty type for HEIC/AVIF, so a name-based fallback
+// is what keeps those on the image path instead of the text-extraction one.
+const IMAGE_EXT = /\.(heic|heif|avif|jpe?g|png|webp|gif)$/i;
+function isImageFile(file) {
+  return file.type.startsWith('image/') || (!file.type && IMAGE_EXT.test(file.name));
+}
+
+/**
+ * Normalizes a staged image the moment it's picked, not when the message is
+ * sent -- that's what lets the composer preview it and the optimistic
+ * transcript thumbnail show real, decodable bytes instead of a HEIC/AVIF the
+ * browser can't render, which used to show broken until the turn finished
+ * and the chat reloaded with what the server had already converted.
+ */
+async function normalizeStaged(entry) {
+  try {
+    const dataBase64 = await toBase64(entry.file);
+    const res = await fetch('/api/images/normalize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mime: entry.file.type, dataBase64 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'could not read that image');
+    entry.normalized = data;
+  } catch (err) {
+    entry.error = err.message;
+  }
+  renderAttachments();
+}
+
 /** Queues a file (or a pasted-text stand-in) client-side. No network yet. */
 export function stageAttachment(file) {
-  state.pendingAttachments.push({ file });
+  const entry = { file };
+  if (isImageFile(file)) {
+    entry.isImage = true;
+    entry.ready = normalizeStaged(entry);
+  }
+  state.pendingAttachments.push(entry);
   renderAttachments();
 }
 
@@ -116,14 +184,16 @@ export async function commitAttachments(chatId) {
   renderAttachments();
   const docs = [];
   const images = [];
-  for (const { file } of staged) {
-    const isImage = file.type.startsWith('image/');
+  for (const entry of staged) {
+    const { file } = entry;
     try {
-      const dataBase64 = await toBase64(file);
-      if (isImage) {
-        images.push({ filename: file.name, mime: file.type, dataBase64 });
+      if (entry.isImage) {
+        await entry.ready;
+        if (!entry.normalized) throw new Error(entry.error || 'could not process that image');
+        images.push({ filename: file.name, mime: entry.normalized.mime, dataBase64: entry.normalized.data });
         continue;
       }
+      const dataBase64 = await toBase64(file);
       // The chat may not exist yet -- the upload route creates it lazily, the
       // same way the first /api/chat call does.
       const res = await fetch(`/api/chats/${chatId}/documents`, {
@@ -138,8 +208,11 @@ export async function commitAttachments(chatId) {
       addError(`attach "${file.name}": ${err.message}`);
     }
   }
-  if (docs.length) {
+  if (docs.length || images.length) {
     state.chatDocuments.push(...docs);
+    // The staged shape carries dataBase64; the artifacts rail reads the same
+    // {mime, data} shape everything replayed from the store uses.
+    state.chatImages.push(...images.map((i) => ({ filename: i.filename, mime: i.mime, data: i.dataBase64 })));
     renderChatDocs();
   }
   return { docs, images };

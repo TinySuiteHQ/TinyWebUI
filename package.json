@@ -23,7 +23,10 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@jsquash/avif": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "heic-convert": "^2.1.0",
+    "jpeg-js": "^0.4.4",
     "mammoth": "^1.12.3",
     "unpdf": "^1.8.1"
   },

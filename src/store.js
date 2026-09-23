@@ -478,6 +478,17 @@ export class Store {
     `).all(chatId);
   }
 
+  /** Drops one document and its FTS chunks. The rest of the chat is untouched. */
+  deleteDocument(id) {
+    this.db.prepare(`
+      DELETE FROM document_chunks WHERE rowid IN (
+        SELECT chunk_rowid FROM document_chunk_map WHERE doc_id = ?
+      )
+    `).run(id);
+    this.db.prepare('DELETE FROM document_chunk_map WHERE doc_id = ?').run(id);
+    return this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
+  }
+
   /** Ranked chunk search within one document's own chunks, via FTS5 bm25(). */
   searchDocumentChunks(docId, query, limit = 5) {
     const q = ftsQuery(query);

@@ -35,6 +35,7 @@ export function newChat() {
   state.pendingAttachments = [];
   renderAttachments();
   state.chatDocuments = [];
+  state.chatImages = [];
   resetChatDocsView();
   renderChatDocs();
   resetOutline();
@@ -56,6 +57,12 @@ export async function openChat(id) {
   state.pendingAttachments = [];
   renderAttachments();
   state.chatDocuments = found.documents || [];
+  // No dedicated images endpoint -- every image already rides inline on the
+  // user message that attached it, so the rail is built from the same
+  // history the transcript renders rather than a second round trip.
+  state.chatImages = (found.messages || [])
+    .filter((m) => m.role === 'user' && m.images?.length)
+    .flatMap((m) => m.images);
   resetChatDocsView();
   renderChatDocs();
   resetOutline();

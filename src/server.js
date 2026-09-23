@@ -13,6 +13,29 @@ import { Store, toView } from './store.js';
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { extractText } from './documents.js';
+import { normalizeImage } from './images.js';
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** The inline note that tells the model an id it can read_document on. */
+function attachmentNote(doc) {
+  return `\n\n[Attached document: "${doc.filename}" (id: ${doc.id}, ${doc.char_len.toLocaleString('en-US')} chars). Use read_document to search or read it.]`;
+}
+
+/** Decodes and normalizes one uploaded image; null on anything unusable. */
+async function normalizeUpload(mimeRaw, dataBase64) {
+  const mime = String(mimeRaw || '');
+  if (!mime.startsWith('image/') && mime !== '') return null;
+  let buf;
+  try { buf = Buffer.from(String(dataBase64 || ''), 'base64'); } catch { return null; }
+  if (!buf.length || buf.length > MAX_IMAGE_BYTES) return null;
+  try {
+    const normalized = await normalizeImage(buf, mime);
+    return normalized && { mime: normalized.mime, data: normalized.data.toString('base64') };
+  } catch {
+    return null;
+  }
+}
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -321,6 +344,18 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return json(res, 200, { chatId: chat.id, document: doc });
       }
 
+      // Converts one staged image to a wire-safe format before it's ever sent,
+      // so the composer's own preview and the optimistic thumbnail in the
+      // transcript show the same bytes the model (and the store) end up with,
+      // instead of a HEIC/AVIF the browser can't decode until the turn ends
+      // and the chat reloads with what the server stored.
+      if (req.method === 'POST' && req.url === '/api/images/normalize') {
+        const { mime, dataBase64 } = await readJson(req);
+        const normalized = await normalizeUpload(mime, dataBase64);
+        if (!normalized) return json(res, 400, { error: 'unrecognized or oversized image' });
+        return json(res, 200, normalized);
+      }
+
       // Lets the "files" rail open a document's full extracted text -- the
       // same content the model reads via read_document, in a plain new tab.
       const docContent = /^\/api\/documents\/([\w.-]+)$/.exec(req.url || '');
@@ -329,6 +364,10 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         if (!doc) return json(res, 404, { error: 'no such document' });
         return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
       }
+      // Artifacts have no delete route of their own: the rail is a record of
+      // what the conversation actually used, and the only way one goes away
+      // is editing the message that attached it and dropping it there -- see
+      // /edit below, which is the only place store.deleteDocument is called.
 
       const stream = /^\/api\/chats\/([\w.-]+)\/stream$/.exec((req.url || '').split('?')[0]);
       if (stream && req.method === 'GET') {
@@ -349,7 +388,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         // the run answering a question that no longer exists.
         if (isRunning(id)) return json(res, 409, { error: 'that chat is still working; stop it first' });
 
-        const { seq, message } = await readJson(req);
+        const { seq, message, documentIds, removeDocumentIds, images } = await readJson(req);
         const text = String(message ?? '').trim();
         if (!text) return json(res, 400, { error: 'message is required' });
         const target = store.messages(id).find((m) => m.seq === Number(seq));
@@ -358,7 +397,21 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         }
 
         store.truncateFrom(id, Number(seq));
-        store.addMessage(id, { role: 'user', content: text });
+        // A document is chat-scoped, not part of the message row that just got
+        // truncated, so dropping one during edit takes an explicit delete --
+        // this is the only place that happens. Nothing survives that would
+        // still reference it: truncateFrom already took every later message
+        // (the only other place a reference could live) with it.
+        for (const docId of Array.isArray(removeDocumentIds) ? removeDocumentIds : []) {
+          store.deleteDocument(docId);
+        }
+        let content = text;
+        for (const docId of Array.isArray(documentIds) ? documentIds : []) {
+          const doc = store.getDocument(docId);
+          if (doc) content += attachmentNote(doc);
+        }
+        const kept = Array.isArray(images) ? images.filter((img) => img?.mime && img?.data) : [];
+        store.addMessage(id, { role: 'user', content, ...(kept.length ? { images: kept } : {}) });
 
         // The run is started but not streamed back here. The client reloads the
         // rewound transcript and then attaches, the same path a reload takes,
@@ -420,7 +473,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         for (const id of Array.isArray(documentIds) ? documentIds : []) {
           const doc = store.getDocument(id);
           if (!doc || doc.chat_id !== chat.id) continue;
-          content += `\n\n[Attached document: "${doc.filename}" (id: ${doc.id}, ${doc.char_len.toLocaleString('en-US')} chars). Use read_document to search or read it.]`;
+          content += attachmentNote(doc);
         }
 
         // Images ride directly on the message as OpenAI multimodal content
@@ -429,16 +482,14 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         // with the turn that attached them. Capped on count and per-file size
         // the same way document uploads are, since these never touch disk on
         // their own path either.
-        const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
         const MAX_IMAGES = 8;
         const imgs = [];
         for (const img of Array.isArray(images) ? images.slice(0, MAX_IMAGES) : []) {
-          const mime = String(img?.mime || '');
-          if (!mime.startsWith('image/')) continue;
-          let buf;
-          try { buf = Buffer.from(String(img?.dataBase64 || ''), 'base64'); } catch { continue; }
-          if (!buf.length || buf.length > MAX_IMAGE_BYTES) continue;
-          imgs.push({ mime, data: buf.toString('base64') });
+          // Already normalized client-side in the common case (see
+          // /api/images/normalize); re-normalizing is just a cheap passthrough
+          // then, and a safety net for any caller that skipped that step.
+          const normalized = await normalizeUpload(img?.mime, img?.dataBase64);
+          if (normalized) imgs.push(normalized);
         }
 
         store.addMessage(chat.id, { role: 'user', content, ...(imgs.length ? { images: imgs } : {}) });

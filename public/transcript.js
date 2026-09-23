@@ -174,15 +174,16 @@ export function addUser(text, seq, attachments, images) {
     edit.type = 'button';
     edit.textContent = 'edit';
     edit.title = 'Rewrite this question and answer it again';
-    edit.onclick = () => beginEdit(m, b, text, seq);
+    edit.onclick = () => beginEdit(m, b, text, seq, attachments, images);
 
     const again = el('button', 'linkish');
     again.type = 'button';
     again.textContent = 'retry';
     again.title = 'Answer this question again from scratch';
-    // Resubmitting the same text at the same point. One mechanism for both
-    // buttons, so retry means "this question" rather than "the newest one".
-    again.onclick = () => rewind({ seq, message: text });
+    // Resubmitting the same text at the same point, with every artifact it
+    // already had -- retry means "this question again", not "this question
+    // stripped of what it was asked with".
+    again.onclick = () => rewind({ seq, message: text, ...artifactPayload(attachments, images) });
 
     bar.append(edit, again);
     m.appendChild(bar);
@@ -193,13 +194,57 @@ export function addUser(text, seq, attachments, images) {
   scroll();
 }
 
-/** Swaps a question for a textarea, in place. Escape or cancel puts it back. */
-function beginEdit(msg, body, text, seq) {
+/** The rewind payload for keeping every one of a message's artifacts as-is. */
+function artifactPayload(attachments, images) {
+  return {
+    documentIds: (attachments || []).map((a) => a.id),
+    images: (images || []).map((img) => ({ mime: img.mime, data: img.data ?? img.dataBase64 }))
+  };
+}
+
+/**
+ * Swaps a question for a textarea, in place. Escape or cancel puts it back
+ * with nothing changed -- artifact removal here is local-only until save, the
+ * same way the textarea's own edits are: nothing is deleted or rewound until
+ * "save & resubmit" actually fires.
+ */
+function beginEdit(msg, body, text, seq, attachments, images) {
   if (state.busy || msg.querySelector('textarea')) return;
   const box = el('div', 'edit-box');
   const area = el('textarea');
   area.value = text;
   area.rows = Math.min(12, text.split('\n').length + 1);
+
+  const keptDocs = new Set((attachments || []).map((a) => a.id));
+  const keptImages = new Set((images || []).map((_, i) => i));
+
+  let artifactsBox = null;
+  if (attachments?.length || images?.length) {
+    artifactsBox = el('div', 'edit-artifacts');
+    for (const a of attachments || []) {
+      const chip = el('span', 'attachment-chip removable');
+      chip.textContent = a.filename;
+      chip.title = 'click to drop this document from the resubmitted message';
+      chip.onclick = () => {
+        if (keptDocs.has(a.id)) { keptDocs.delete(a.id); chip.classList.add('removed'); }
+        else { keptDocs.add(a.id); chip.classList.remove('removed'); }
+      };
+      artifactsBox.appendChild(chip);
+    }
+    (images || []).forEach((img, i) => {
+      const chip = el('span', 'attachment-chip attachment-chip-image removable');
+      const thumb = el('img', 'attachment-thumb');
+      thumb.src = `data:${img.mime};base64,${img.data ?? img.dataBase64}`;
+      thumb.alt = img.filename || 'attached image';
+      chip.title = 'click to drop this image from the resubmitted message';
+      chip.appendChild(thumb);
+      chip.onclick = () => {
+        if (keptImages.has(i)) { keptImages.delete(i); chip.classList.add('removed'); }
+        else { keptImages.add(i); chip.classList.remove('removed'); }
+      };
+      artifactsBox.appendChild(chip);
+    });
+  }
 
   const save = el('button', 'primary');
   save.type = 'button';
@@ -213,8 +258,18 @@ function beginEdit(msg, body, text, seq) {
   save.onclick = () => {
     const next = area.value.trim();
     if (!next) return;
-    if (next === text) return close();
-    return rewind({ seq, message: next });
+    const docsChanged = keptDocs.size !== (attachments || []).length;
+    const imagesChanged = keptImages.size !== (images || []).length;
+    if (next === text && !docsChanged && !imagesChanged) return close();
+    return rewind({
+      seq,
+      message: next,
+      documentIds: (attachments || []).filter((a) => keptDocs.has(a.id)).map((a) => a.id),
+      removeDocumentIds: (attachments || []).filter((a) => !keptDocs.has(a.id)).map((a) => a.id),
+      images: (images || [])
+        .filter((_, i) => keptImages.has(i))
+        .map((img) => ({ mime: img.mime, data: img.data ?? img.dataBase64 }))
+    });
   };
   area.onkeydown = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
@@ -223,6 +278,7 @@ function beginEdit(msg, body, text, seq) {
 
   const row = el('div', 'edit-actions');
   row.append(save, cancel);
+  if (artifactsBox) box.append(artifactsBox);
   box.append(area, row);
   body.hidden = true;
   msg.classList.add('editing');
@@ -457,7 +513,11 @@ export function replay(messages) {
           turn.step();
         }
       }
-      if (m.content) { steps = null; turn.prose().set(m.content); }
+      // A whitespace-only content string ("\n\n") rides alongside tool_calls on
+      // some backends (DeepSeek/CoreWeave). Treating it as real prose would null
+      // `steps` right after creating it, so the tool result that follows never
+      // gets attached to its row -- it'd render but never show what it returned.
+      if (m.content?.trim()) { steps = null; turn.prose().set(m.content); }
       // Per-round usage is stored on the message now, so a reopened chat still
       // shows what each round cost and how much of it came back from cache.
       if (m.usage) turn.usage(m.usage);
