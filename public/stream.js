@@ -53,6 +53,22 @@ export async function consume(res) {
           steps.add(ev.id, ev.name, ev.args);
           turn.step();
           turn.status(statusOf(ev.name, ev.args));
+        } else if (ev.type === 'approval') {
+          const chatId = state.chat.id;
+          steps?.ask(ev.id, async (decision) => {
+            const r = await fetch(`/api/chats/${chatId}/approve`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ id: ev.id, decision })
+            });
+            // 409: already answered, e.g. from another tab -- its
+            // approval_done event will settle this row too.
+            if (!r.ok && r.status !== 409) throw new Error(`${r.status}`);
+          });
+          turn.status('waiting for approval');
+        } else if (ev.type === 'approval_done') {
+          steps?.settle(ev.id, ev.decision);
+          turn.status(statusOf(ev.name || '', {}));
         } else if (ev.type === 'tool_result') {
           steps?.finish(ev.id, ev.result);
         } else if (ev.type === 'chat') {

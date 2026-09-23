@@ -10,3 +10,6 @@ mcp.json
 tinywebui.db
 tinywebui.db-wal
 tinywebui.db-shm
+
+# Eval run records (evals/run.js).
+evals/results/

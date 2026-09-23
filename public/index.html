@@ -87,6 +87,7 @@
       <div class="row">
         <div><label for="compactThreshold" title="Conversation history size (system prompt and tool definitions excluded) at which old tool results are compacted out of the window. 0 disables it.">compact above (tokens)</label><input id="compactThreshold" type="number" min="0" step="1000"></div>
         <div><label for="keepTurns" title="Recent user turns whose tool results are always kept in full.">keep last turns</label><input id="keepTurns" type="number" min="1" max="20"></div>
+        <div><label for="toolApproval" title="Which MCP tool calls wait for you before they run. Built-in tools never ask. Scheduled runs refuse calls that would ask.">tool approval</label><select id="toolApproval"><option value="writes">ask before writes</option><option value="all">ask before every call</option><option value="off">never ask</option></select></div>
         <div><label for="maxInlineChars" title="A single tool result larger than this is stubbed for later turns; the turn that fetched it still reads it whole.">stub above (chars)</label><input id="maxInlineChars" type="number" min="0" step="1000"></div>
       </div>
     </div>

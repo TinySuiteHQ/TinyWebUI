@@ -770,3 +770,16 @@ form {
      all a notch smaller than that on the desktop type scale. */
   input, textarea, select { font-size: 16px; }
 }
+
+/* A tool call held for approval: the row stays open with its arguments and
+   the three answers under them until the server settles it. */
+details.step.waiting > summary .ms { color: var(--tool); }
+.step .approve {
+  display: flex; flex-wrap: wrap; gap: .4rem;
+  padding: .5rem .6rem; border-top: 1px solid var(--line);
+}
+.step .approve button { font-size: var(--fs-meta); }
+details.tool > summary select.approval {
+  margin-left: auto; flex-shrink: 0;
+  font-size: var(--fs-meta); max-width: 11rem;
+}

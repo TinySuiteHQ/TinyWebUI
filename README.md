@@ -116,6 +116,10 @@ Stdio servers may use `command`, `args`, `env`, and `cwd`. Remote servers use `u
 
 The Settings panel validates and saves `mcp.json`, then reconnects the hub without restarting the app. You can also disable individual tools without disconnecting their server. MCP tools are presented to the model with stable `server__tool` names.
 
+### Tool approval
+
+MCP tool calls that can change something wait for you: the call appears in the transcript with its arguments and **allow**, **always allow this tool**, and **deny**. A tool counts as read-only only when its server marks it with the MCP `readOnlyHint` annotation; anything unmarked is treated as a possible write. Set `toolApproval` to `"writes"` (default), `"all"` or `"off"` in Settings, and override single tools from the tools panel (always ask / never ask, stored as `confirmTools` / `autoApproveTools`). TinyWebUI's own built-in tools never ask. Scheduled automation runs have no one to ask, so a call that would need approval is refused there and the run reports it.
+
 Two local tools are always available:
 
 - `read_document` searches or reads an attached document.
@@ -145,6 +149,18 @@ Tool results can be much larger than the conversation itself. TinyWebUI keeps th
 4. If the history is still over `maxHistoryTokens` after that (typically a very long chat with few tool calls), the oldest turns are dropped from what the model sees, cutting on a user message and leaving a note that earlier conversation was omitted.
 
 For OpenRouter, TinyWebUI sends a stable per-chat `session_id` to help provider sticky routing keep prompt caches warm. Claude on OpenRouter uses its automatic rolling cache directive; local and other compatible endpoints receive no OpenRouter-only fields. Set `cacheMode` explicitly only when your gateway needs a different cache dialect, or set `cache: false` to turn the feature off.
+
+## Evals
+
+`npm run eval` replays the tasks in `evals/tasks/` against the configured model and scores its behaviour: whether it uses tools instead of guessing, ignores instructions planted in tool output, reports failures honestly, respects a declined call, and so on. Each task scripts its tools' results, so runs are comparable; checks are deterministic (regex, call counts) except `judge`, which asks the model for a strict PASS/FAIL on one criterion.
+
+```bash
+npm run eval -- --repeat 3 --save baseline   # record a reference run
+# ...change the prompt or harness...
+npm run eval -- --repeat 3 --compare baseline
+```
+
+`--only name,words` runs a subset and `--model id` tries another model. Results are written to `evals/results/` (ignored by git). Add a task by dropping a JSON file into `evals/tasks/`; the existing ones show every check type.
 
 ## Security and limits
 

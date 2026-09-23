@@ -53,6 +53,45 @@ function renderToolPanel(data) {
     return label;
   };
 
+  // What "default" resolves to for this tool under the global mode, so the
+  // select says what will actually happen rather than just "default".
+  const defaultLabel = (t) => {
+    const mode = data.toolApproval || 'writes';
+    if (mode === 'off') return 'never';
+    if (mode === 'all') return 'ask';
+    return t.readOnly === true ? 'never (read-only)' : 'ask (may write)';
+  };
+
+  const approvalSelect = (t) => {
+    const sel = el('select', 'approval');
+    sel.title = 'Whether calls to this tool wait for your approval';
+    for (const [value, label] of [
+      ['default', `approval: ${defaultLabel(t)}`],
+      ['ask', 'approval: always ask'],
+      ['auto', 'approval: never ask']
+    ]) {
+      const o = el('option');
+      o.value = value;
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+    sel.value = t.approval;
+    // Same reason as the checkbox: a click in a <summary> toggles the details.
+    sel.onclick = (e) => e.stopPropagation();
+    sel.onchange = async () => {
+      sel.disabled = true;
+      const res = await fetch('/api/tools/approval', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: t.name, policy: sel.value })
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) return addError(out.error || `${res.status}`);
+      renderToolPanel(out);
+    };
+    return sel;
+  };
+
   const toolRow = (t) => {
     const d = el('details', 'tool' + (t.disabled ? ' off' : ''));
     const sum = el('summary');
@@ -66,6 +105,8 @@ function renderToolPanel(data) {
     const desc = el('span', 'desc');
     desc.textContent = (t.description || '').split('\n')[0];
     sum.append(name, desc);
+    // MCP tools only: built-ins never ask, so they have no approval state.
+    if (t.approval) sum.appendChild(approvalSelect(t));
 
     const doc = el('div', 'doc');
     doc.textContent = t.description || '(no description)';
@@ -210,6 +251,7 @@ export async function loadConfig() {
   $('compactThreshold').value = cfg.compactThreshold ?? 0;
   $('keepTurns').value = cfg.keepTurns ?? 2;
   $('maxInlineChars').value = cfg.maxInlineChars ?? 0;
+  $('toolApproval').value = cfg.toolApproval ?? 'writes';
   const bits = [cfg.model, `${cfg.tools.length} tools`];
   if (!cfg.hasApiKey) bits.push('NO API KEY');
   if (cfg.mcpErrors?.length) bits.push(`${cfg.mcpErrors.length} mcp err`);
@@ -229,10 +271,12 @@ $('save').onclick = async () => {
       cacheTtl: $('cacheTtl').value,
       compactThreshold: Number($('compactThreshold').value) || 0,
       keepTurns: Number($('keepTurns').value) || 2,
-      maxInlineChars: Number($('maxInlineChars').value) || 0
+      maxInlineChars: Number($('maxInlineChars').value) || 0,
+      toolApproval: $('toolApproval').value
     })
   });
   await loadConfig();
+  await loadTools(); // the per-tool "default" labels follow the global mode
   $('saveMsg').textContent = 'saved';
   toggleSettings(false);
 };

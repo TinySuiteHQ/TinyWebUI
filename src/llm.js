@@ -1,4 +1,5 @@
 import { toWire } from './store.js';
+import { approvalFor } from './approval.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
 } from './compact.js';
@@ -528,7 +529,10 @@ function historyTokens(rows, cfg, tools) {
  * Returns the messages appended to the conversation.
  */
 export async function runChat({
-  cfg, chatId, store, tools, hub, emit, signal, historyFromSeq = null, unattended = false
+  cfg, chatId, store, tools, hub, emit, signal, historyFromSeq = null, unattended = false,
+  // (call) => Promise<'allow' | 'always' | 'deny'>. Asked for each call the
+  // approval policy stops; without it such calls are declined, never run.
+  approve = null
 }) {
   const maxRounds = Math.max(1, cfg.maxToolRounds || 20);
   const operatorPrompt = cfg.systemPrompt;
@@ -614,6 +618,21 @@ export async function runChat({
   // did this. Anything else -- a browser snapshot after a click, a list after a
   // create -- is run again, because its answer may well have changed.
   const seenCalls = new Map();
+  // "Always allow" is saved by the server, but this turn's cfg is a snapshot
+  // taken before it; remembered here so the next call in the turn doesn't ask.
+  const allowedNow = new Set();
+
+  /** Resolves one call against the approval policy: 'allow', 'deny' or 'unattended'. */
+  const gate = async (name, args, id) => {
+    if (allowedNow.has(name) || approvalFor(cfg, hub, name, args) === 'auto') return 'allow';
+    if (unattended) return 'unattended';
+    if (!approve) return 'deny';
+    emit({ type: 'approval', id, name, args });
+    const decision = await approve({ id, name, args });
+    emit({ type: 'approval_done', id, name, decision });
+    if (decision === 'always') allowedNow.add(name);
+    return decision === 'always' || decision === 'allow' ? 'allow' : 'deny';
+  };
 
   // One extra pass past the budget: tools are mechanically refused there, so the
   // model spends it writing an answer instead of leaving the turn unfinished.
@@ -752,8 +771,18 @@ export async function runChat({
             + ` already made in round ${seenRound + 1} of this turn, and this tool returns the same`
             + ' result for the same arguments. Reuse what you got back then.';
         } else {
-          seenCalls.set(dupKey, round);
-          result = await hub.call(name, args, toolCtx);
+          const decision = await gate(name, args, call.id);
+          if (decision === 'allow') {
+            seenCalls.set(dupKey, round);
+            result = await hub.call(name, args, toolCtx);
+          } else if (decision === 'unattended') {
+            result = `Error: "${name}" needs the user's approval before it runs, and this is an`
+              + ' unattended scheduled run with no one to ask, so it was not called. Finish what'
+              + ' you can without it and say in your result that it still needs doing.';
+          } else {
+            result = `The user declined this call to "${name}", so it was not run. Do not retry it`
+              + ' unless they ask; continue without it, or ask them how they would like to proceed.';
+          }
         }
       }
       emit({ type: 'tool_result', id: call.id, name, result });

@@ -1,0 +1,56 @@
+{
+  "name": "no-tool-needed",
+  "about": "A question the model can answer itself should not trigger tool calls just because tools exist.",
+  "prompt": "What is 17 * 23?",
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Current weather for a city.",
+      "readOnly": true,
+      "idempotent": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web. Returns result snippets.",
+      "readOnly": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "responses": [
+        {
+          "result": "no results"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "answer_matches",
+      "pattern": "391"
+    },
+    {
+      "type": "max_calls",
+      "tool": "*",
+      "value": 0
+    }
+  ]
+}

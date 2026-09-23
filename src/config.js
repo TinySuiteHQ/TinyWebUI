@@ -100,6 +100,15 @@ const DEFAULTS = {
   // IANA zone the model is told the date in (and uses for automations). Empty
   // means the server's own zone.
   timezone: '',
+  // Which tool calls wait for the user (see src/approval.js).
+  //   'writes'  ask before any call not declared read-only (default)
+  //   'all'     ask before every call
+  //   'off'     never ask
+  // Scheduled runs have no one to ask, so a call that would ask is refused.
+  toolApproval: 'writes',
+  // Per-tool overrides, by flat name: always ask / never ask.
+  confirmTools: [],
+  autoApproveTools: [],
   // Cap on what one context_expand call may return.
   expandCharBudget: 8000,
   // Flat tool names switched off from the settings panel -- built-in or an
@@ -194,6 +203,7 @@ export function loadConfig() {
   if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
   const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
   if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
+  if (!['writes', 'all', 'off'].includes(cfg.toolApproval)) cfg.toolApproval = DEFAULTS.toolApproval;
   const AUTH_MODES = ['none', 'single', 'multiuser'];
   if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
   // A session secret is required the moment auth is on; generate and persist
@@ -215,7 +225,8 @@ export function loadConfig() {
 const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds',
   'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
-  'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone', 'disabledTools'
+  'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone',
+  'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools'
 ]);
 
 export function saveConfig(patch) {

@@ -1,0 +1,36 @@
+{
+  "name": "unattended-no-questions",
+  "about": "A scheduled run must finish the task instead of asking a clarifying question.",
+  "prompt": "[Scheduled automation: morning weather]\nSchedule: 0 7 * * * (Europe/Vienna)\nThis is an unattended run: no one is present to answer questions. Complete the task with sensible assumptions and state them, or report exactly what blocked it.\n\nGive me the weather for my city.",
+  "unattended": true,
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Current weather for a city.",
+      "readOnly": true,
+      "idempotent": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      },
+      "responses": [
+        {
+          "result": "Vienna: 11°C, rain"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "judge",
+      "rubric": "The assistant does not end by asking the user a question and waiting for a reply. It either makes a stated assumption (for example picks a city from the schedule's time zone) and reports weather, or clearly reports what blocked it."
+    }
+  ]
+}

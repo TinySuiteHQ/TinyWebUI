@@ -15,6 +15,7 @@ import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { extractText } from './documents.js';
 import { normalizeImage } from './images.js';
+import { overrideFor, setOverride } from './approval.js';
 import { automationToolDef, manageAutomation, nextSchedule, runMessage, validateSchedule } from './automation.js';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -124,6 +125,19 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
   const RETAIN_MS = 5 * 60 * 1000;
 
+  /** The tools panel payload: inventory plus each tool's approval state. */
+  const toolsView = () => {
+    const inv = hub.inventory(cfg.disabledTools);
+    const mark = (t) => ({ ...t, approval: overrideFor(cfg, t.name) });
+    return {
+      // Built-ins never ask, so they carry no approval state to show.
+      internal: inv.internal,
+      servers: inv.servers.map((s) => ({ ...s, tools: s.tools.map(mark) })),
+      disabledTools: cfg.disabledTools || [],
+      toolApproval: cfg.toolApproval
+    };
+  };
+
   function startRun({ chat, tools, onFinish, historyFromSeq = null, unattended = false }) {
     const run = {
       events: [],
@@ -133,9 +147,20 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       // Where the store stood when the turn began, including the user message
       // that started it. A client reopening mid-turn replays up to here and
       // plays the events over the top.
-      baseCount: store.messages(chat.id).length
+      baseCount: store.messages(chat.id).length,
+      // Tool calls waiting on the user, by call id -> { name, resolve }.
+      approvals: new Map()
     };
     runs.set(chat.id, run);
+    // A stop settles every open question as "no", so the loop can unwind
+    // instead of waiting forever on a prompt nobody will answer now.
+    run.ac.signal.addEventListener('abort', () => {
+      for (const { resolve } of run.approvals.values()) resolve('deny');
+      run.approvals.clear();
+    }, { once: true });
+    // Unattended runs get no asker: the loop refuses gated calls itself.
+    const approve = unattended ? null : ({ id, name }) =>
+      new Promise((resolve) => run.approvals.set(id, { name, resolve }));
 
     const emit = (event) => {
       run.events.push(event);
@@ -148,7 +173,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended });
+        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -343,7 +368,18 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       // The grouped view behind the tools panel: built-ins, and every MCP
       // server's tools under it with that server's connection health.
       if (req.method === 'GET' && req.url === '/api/tools') {
-        return json(res, 200, { ...hub.inventory(cfg.disabledTools), disabledTools: cfg.disabledTools || [] });
+        return json(res, 200, toolsView());
+      }
+
+      // Per-tool approval override from the settings panel: 'ask', 'auto', or
+      // 'default' to fall back to the global toolApproval mode.
+      if (req.method === 'POST' && req.url === '/api/tools/approval') {
+        const { name, policy } = await readJson(req);
+        if (!name || !['ask', 'auto', 'default'].includes(policy)) {
+          return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
+        }
+        cfg = saveConfig(setOverride(cfg, name, policy));
+        return json(res, 200, toolsView());
       }
 
       if (req.method === 'POST' && req.url === '/api/tools/toggle') {
@@ -352,7 +388,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         const set = new Set(cfg.disabledTools || []);
         if (disabled) set.add(name); else set.delete(name);
         cfg = saveConfig({ disabledTools: [...set] });
-        return json(res, 200, { ...hub.inventory(cfg.disabledTools), disabledTools: cfg.disabledTools });
+        return json(res, 200, toolsView());
       }
 
       if (req.method === 'GET' && req.url === '/api/mcp') {
@@ -651,6 +687,23 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         // redraw behind.
         startRun({ chat: found, tools: hub.activeTools(cfg.disabledTools) });
         return json(res, 200, { ok: true, running: true });
+      }
+
+      // The user's answer to an approval prompt in the transcript.
+      const approval = /^\/api\/chats\/([\w.-]+)\/approve$/.exec(req.url || '');
+      if (approval && req.method === 'POST') {
+        if (!store.getChat(approval[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
+        const { id, decision } = await readJson(req);
+        if (!['allow', 'always', 'deny'].includes(decision)) {
+          return json(res, 400, { error: 'decision must be allow, always or deny' });
+        }
+        const run = runs.get(approval[1]);
+        const pending = run?.approvals.get(id);
+        if (!pending) return json(res, 409, { error: 'that call is no longer waiting' });
+        run.approvals.delete(id);
+        if (decision === 'always') cfg = saveConfig(setOverride(cfg, pending.name, 'auto'));
+        pending.resolve(decision);
+        return json(res, 200, { ok: true });
       }
 
       const stop = /^\/api\/chats\/([\w.-]+)\/stop$/.exec(req.url || '');

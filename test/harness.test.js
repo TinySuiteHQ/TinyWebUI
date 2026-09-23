@@ -352,3 +352,77 @@ test('flattened tool names never collide', () => {
 
   assert.equal(add('context_expand'), 'context_expand_2', 'a built-in name is never shadowed');
 });
+
+/* ---------- approval ---------- */
+
+function gatedHub({ readOnly = [], local = [] } = {}) {
+  return { ...fakeHub(), isReadOnly: (n) => readOnly.includes(n), isLocal: (n) => local.includes(n) };
+}
+
+async function gated(replies, { hub, cfg = {}, answers = [], unattended = false }) {
+  const provider = await scripted(replies);
+  const store = new Store(':memory:');
+  const chat = store.createChat({ title: 't' });
+  store.addMessage(chat.id, { role: 'user', content: 'go' });
+  const asked = [];
+  const events = [];
+  try {
+    await runChat({
+      cfg: { baseUrl: provider.baseUrl, apiKey: 'k', model: 'm', systemPrompt: 'sys', toolApproval: 'writes', ...cfg },
+      chatId: chat.id, store, tools: TOOLS, hub, unattended,
+      emit: (e) => events.push(e), signal: new AbortController().signal,
+      approve: async (call) => { asked.push(call.name); return answers.shift() ?? 'deny'; }
+    });
+  } finally {
+    provider.close();
+  }
+  return { asked, events, rows: store.messages(chat.id), calls: hub.calls };
+}
+
+test('a write waits for the user, and a denied call is never run', async () => {
+  const { asked, calls, rows, events } = await gated(
+    [{ calls: [['snapshot', '{}']] }, { text: 'ok' }],
+    { hub: gatedHub(), answers: ['deny'] }
+  );
+  assert.deepEqual(asked, ['snapshot']);
+  assert.equal(calls.length, 0);
+  assert.match(rows.find((r) => r.role === 'tool').content, /^The user declined this call/);
+  assert.deepEqual(events.filter((e) => e.type.startsWith('approval')).map((e) => e.type), ['approval', 'approval_done']);
+});
+
+test('"always allow" runs the call and stops asking for that tool within the turn', async () => {
+  const { asked, calls } = await gated(
+    [{ calls: [['snapshot', '{}']] }, { calls: [['snapshot', '{"x":1}']] }, { text: 'ok' }],
+    { hub: gatedHub(), answers: ['always'] }
+  );
+  assert.deepEqual(asked, ['snapshot'], 'asked once');
+  assert.equal(calls.length, 2);
+});
+
+test('read-only tools, overrides and the built-ins decide who asks', async () => {
+  const readOnly = await gated([{ calls: [['search', '{}']] }, { text: 'ok' }], { hub: gatedHub({ readOnly: ['search'] }) });
+  assert.deepEqual(readOnly.asked, [], 'a declared read never asks under "writes"');
+
+  const forced = await gated([{ calls: [['search', '{}']] }, { text: 'ok' }],
+    { hub: gatedHub({ readOnly: ['search'] }), cfg: { confirmTools: ['search'] }, answers: ['allow'] });
+  assert.deepEqual(forced.asked, ['search'], 'confirmTools wins over read-only');
+
+  const trusted = await gated([{ calls: [['snapshot', '{}']] }, { text: 'ok' }],
+    { hub: gatedHub(), cfg: { autoApproveTools: ['snapshot'] } });
+  assert.deepEqual(trusted.asked, []);
+
+  const builtin = await gated([{ calls: [['snapshot', '{}']] }, { text: 'ok' }],
+    { hub: gatedHub({ local: ['snapshot'] }), cfg: { toolApproval: 'all', confirmTools: ['snapshot'] } });
+  assert.deepEqual(builtin.asked, [], 'the harness\'s own tools never ask');
+  assert.equal(builtin.calls.length, 1);
+});
+
+test('a scheduled run refuses a call that would ask, without asking anyone', async () => {
+  const { asked, calls, rows } = await gated(
+    [{ calls: [['snapshot', '{}']] }, { text: 'ok' }],
+    { hub: gatedHub(), unattended: true }
+  );
+  assert.deepEqual(asked, []);
+  assert.equal(calls.length, 0);
+  assert.match(rows.find((r) => r.role === 'tool').content, /unattended scheduled run/);
+});

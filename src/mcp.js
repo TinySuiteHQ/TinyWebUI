@@ -30,9 +30,11 @@ export function uniqueName(raw, taken, reserved = RESERVED) {
 }
 
 /** One row of the inventory: what the settings UI needs to draw and toggle a tool. */
-function toRow(t, disabled) {
+function toRow(t, disabled, readOnly) {
   return {
     name: t.function.name,
+    // true, false, or 'partly' for a tool that only reads for some arguments.
+    readOnly,
     description: t.function.description,
     parameters: t.function.parameters,
     disabled: disabled.has(t.function.name)
@@ -77,7 +79,11 @@ export class McpHub {
     // Tools whose result depends only on their arguments, so a repeat call in
     // the same turn can be answered from the first one. Opt-in: a tool is
     // assumed to have side effects or a changing result unless it says not.
-    this.readOnly = new Set();
+    this.idempotent = new Set();
+    // Tools that change nothing, and so never wait for approval under the
+    // default policy: name -> true, or a function of the call's arguments.
+    // Same opt-in rule -- silence means "may write".
+    this.readOnly = new Map();
     this.errors = [];
   }
 
@@ -86,9 +92,10 @@ export class McpHub {
    * Registered after connect() so locals always land at the end of the block,
    * keeping the tool list byte-identical between runs.
    */
-  registerLocal(def, handler, { readOnly = false } = {}) {
+  registerLocal(def, handler, { readOnly = false, idempotent = readOnly === true } = {}) {
     this.locals.set(def.function.name, handler);
-    if (readOnly) this.readOnly.add(def.function.name);
+    if (readOnly) this.readOnly.set(def.function.name, readOnly);
+    if (idempotent) this.idempotent.add(def.function.name);
     this.tools.push(def);
     return this;
   }
@@ -113,7 +120,8 @@ export class McpHub {
           this.routes.set(flat, { server: name, tool: t.name });
           // Both hints, not just readOnly: a read-only tool can still return
           // something new each time (a clock, a browser snapshot, a queue).
-          if (t.annotations?.readOnlyHint && t.annotations?.idempotentHint) this.readOnly.add(flat);
+          if (t.annotations?.readOnlyHint) this.readOnly.set(flat, true);
+          if (t.annotations?.readOnlyHint && t.annotations?.idempotentHint) this.idempotent.add(flat);
           this.tools.push({
             type: 'function',
             function: {
@@ -170,7 +178,7 @@ export class McpHub {
     const disabled = new Set(disabledNames);
     const internal = this.tools
       .filter((t) => this.locals.has(t.function.name))
-      .map((t) => toRow(t, disabled));
+      .map((t) => toRow(t, disabled, this.readOnlyLabel(t.function.name)));
 
     const servers = Object.keys(this.servers).sort().map((name) => {
       const spec = this.servers[name];
@@ -183,7 +191,7 @@ export class McpHub {
     const byName = new Map(servers.map((row) => [row.name, row]));
     for (const t of this.tools) {
       const route = this.routes.get(t.function.name);
-      if (route) byName.get(route.server)?.tools.push(toRow(t, disabled));
+      if (route) byName.get(route.server)?.tools.push(toRow(t, disabled, this.readOnlyLabel(t.function.name)));
     }
     return { internal, servers };
   }
@@ -218,7 +226,23 @@ export class McpHub {
 
   /** True when a repeat of this call with the same arguments must return the same result. */
   isIdempotent(flatName) {
-    return this.readOnly.has(flatName);
+    return this.idempotent.has(flatName);
+  }
+
+  /** True for a tool this process implements rather than an MCP server. */
+  isLocal(flatName) {
+    return this.locals.has(flatName);
+  }
+
+  /** True when this call is declared to change nothing. */
+  isReadOnly(flatName, args) {
+    const v = this.readOnly.get(flatName);
+    return typeof v === 'function' ? Boolean(v(args || {})) : Boolean(v);
+  }
+
+  readOnlyLabel(flatName) {
+    const v = this.readOnly.get(flatName);
+    return typeof v === 'function' ? 'partly' : Boolean(v);
   }
 
   /** Returns a string, because that is all a tool result message can carry. */

@@ -391,6 +391,47 @@ export function addSteps(parent) {
       row.pre.textContent += '\n\n' + result;
       scroll();
     },
+    /**
+     * A call held for the user's approval: the row opens with its arguments
+     * showing and three buttons under them. `onDecide` sends the answer; the
+     * buttons stay until the server confirms it with approval_done, so a
+     * second tab watching the same run settles too.
+     */
+    ask(id, onDecide) {
+      const row = rows.get(id);
+      if (!row || row.ask) return;
+      row.d.open = true;
+      row.d.classList.add('waiting');
+      row.ms.textContent = 'needs approval';
+      const bar = el('div', 'approve');
+      const button = (label, decision, cls) => {
+        const b = el('button', cls);
+        b.textContent = label;
+        b.onclick = () => {
+          for (const x of bar.querySelectorAll('button')) x.disabled = true;
+          onDecide(decision).catch(() => { for (const x of bar.querySelectorAll('button')) x.disabled = false; });
+        };
+        return b;
+      };
+      bar.append(
+        button('allow', 'allow', 'primary'),
+        button('always allow this tool', 'always'),
+        button('deny', 'deny')
+      );
+      row.d.appendChild(bar);
+      row.ask = bar;
+      scroll();
+    },
+    settle(id, decision) {
+      const row = rows.get(id);
+      if (!row?.ask) return;
+      row.ask.remove();
+      row.ask = null;
+      row.d.classList.remove('waiting');
+      row.d.open = false;
+      row.ms.textContent = decision === 'deny' ? 'denied' : '…';
+      row.t0 = Date.now();
+    },
     // Timings are meaningless on a replayed transcript.
     quiet() { for (const r of rows.values()) r.ms.textContent = ''; }
   };

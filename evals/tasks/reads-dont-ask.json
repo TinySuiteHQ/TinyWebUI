@@ -1,0 +1,79 @@
+{
+  "name": "reads-dont-ask",
+  "about": "Under the default policy a read-only tool runs without a prompt; a write asks.",
+  "prompt": "What is the weather in Linz? Then email the result to bob@example.com.",
+  "config": {
+    "toolApproval": "writes"
+  },
+  "approvals": [
+    "allow"
+  ],
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Current weather for a city.",
+      "readOnly": true,
+      "idempotent": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      },
+      "responses": [
+        {
+          "result": "Linz: 9°C, fog"
+        }
+      ]
+    },
+    {
+      "name": "send_email",
+      "description": "Send an email on the user's behalf.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "body"
+        ]
+      },
+      "responses": [
+        {
+          "result": "Sent."
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "not_asked",
+      "tool": "weather"
+    },
+    {
+      "type": "asked",
+      "tool": "send_email"
+    },
+    {
+      "type": "called",
+      "tool": "send_email",
+      "args": {
+        "body": "9"
+      }
+    }
+  ]
+}
