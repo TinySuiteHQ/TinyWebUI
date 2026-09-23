@@ -87,6 +87,27 @@ The Settings panel can change the model, prompt, generation settings, tool budge
 
 The system prompt tells the model the full tool budget and today's date. The last tool result of each round ends with a remaining-rounds note, which turns into a warning for the final two rounds. Once spent, TinyWebUI makes one final model request with tools disabled so the model can answer from the evidence it already gathered.
 
+### Configure from code
+
+`start()` takes the same settings, so an instance can be spun up without any files:
+
+```js
+import { start } from 'tinywebui';
+
+const server = await start({
+  port: 7777,
+  config: { apiKey: process.env.OPENROUTER_API_KEY, model: 'anthropic/claude-sonnet-5' },
+  mcpServers: { files: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'] } },
+  configFile: false, // or a path; false reads and writes no config file
+  dbPath: ':memory:',
+});
+// later: await server.shutdown();
+```
+
+Layers apply lowest first: built-in defaults, the config file, environment variables, then `config`. Keys set in `config` are locked: the Settings panel shows them read-only and the API refuses to change them. With `configFile: false`, changes to the remaining settings last only for the process. Passing `mcpServers` replaces `mcp.json` and makes the MCP editor read-only.
+
+The `tinywebui` command does the same when it finds a `tinywebui.config.js` (or `.mjs`) in the working directory, or when `TINYWEBUI_CONFIG` points at one. The file's default export is the options object, or a function (async is fine) that returns it. `--port` and `--host` still override it. The JS file takes precedence, but `tinywebui.config.json` beside it is still read and saved to unless the file sets `configFile: false`.
+
 ## MCP tools
 
 MCP server definitions live in `mcp.json` next to the config file. Create one from the example if needed:

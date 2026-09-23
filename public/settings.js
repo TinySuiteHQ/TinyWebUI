@@ -211,9 +211,11 @@ export async function loadTools() {
 }
 
 export async function loadMcp() {
-  const { path, text } = await (await fetch('/api/mcp')).json();
+  const { path, text, locked } = await (await fetch('/api/mcp')).json();
   $('mcpText').value = text;
-  $('mcpPath').textContent = path;
+  $('mcpText').readOnly = Boolean(locked);
+  $('saveMcp').disabled = Boolean(locked);
+  $('mcpPath').textContent = locked ? 'set in code (read-only)' : path;
 }
 
 $('saveMcp').onclick = async () => {
@@ -240,8 +242,20 @@ $('saveMcp').onclick = async () => {
   }
 };
 
+const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheTtl',
+  'compactThreshold', 'keepTurns', 'maxInlineChars', 'toolApproval'];
+
+// Keys the server was started with in code; shown read-only and never posted.
+let lockedKeys = new Set();
+
 export async function loadConfig() {
   const cfg = await (await fetch('/api/config')).json();
+  lockedKeys = new Set(cfg.lockedKeys || []);
+  for (const id of FORM_KEYS) {
+    const locked = lockedKeys.has(id);
+    $(id).disabled = locked;
+    $(id).title = locked ? 'set in code' : '';
+  }
   $('systemPrompt').value = cfg.systemPrompt;
   $('model').value = cfg.model;
   $('temperature').value = cfg.temperature ?? '';
@@ -259,21 +273,23 @@ export async function loadConfig() {
 }
 
 $('save').onclick = async () => {
+  const patch = {
+    systemPrompt: $('systemPrompt').value,
+    model: $('model').value.trim(),
+    temperature: num($('temperature').value),
+    maxTokens: num($('maxTokens').value),
+    maxToolRounds: Number($('maxToolRounds').value) || 20,
+    cacheTtl: $('cacheTtl').value,
+    compactThreshold: Number($('compactThreshold').value) || 0,
+    keepTurns: Number($('keepTurns').value) || 2,
+    maxInlineChars: Number($('maxInlineChars').value) || 0,
+    toolApproval: $('toolApproval').value
+  };
+  for (const k of lockedKeys) delete patch[k];
   await fetch('/api/config', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      systemPrompt: $('systemPrompt').value,
-      model: $('model').value.trim(),
-      temperature: num($('temperature').value),
-      maxTokens: num($('maxTokens').value),
-      maxToolRounds: Number($('maxToolRounds').value) || 20,
-      cacheTtl: $('cacheTtl').value,
-      compactThreshold: Number($('compactThreshold').value) || 0,
-      keepTurns: Number($('keepTurns').value) || 2,
-      maxInlineChars: Number($('maxInlineChars').value) || 0,
-      toolApproval: $('toolApproval').value
-    })
+    body: JSON.stringify(patch)
   });
   await loadConfig();
   await loadTools(); // the per-tool "default" labels follow the global mode

@@ -2,6 +2,8 @@ node_modules/
 
 # Holds the API key and MCP wiring -- local only.
 tinywebui.config.json
+tinywebui.config.js
+tinywebui.config.mjs
 
 # Local MCP wiring (paths, tokens).
 mcp.json

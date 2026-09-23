@@ -3,10 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize } from 'node:path';
 
-import {
-  loadConfig, saveConfig, publicConfig, configPath,
-  mcpPath, readMcpFile, saveMcpFile, loadMcpServers, dbPath
-} from './config.js';
+import { createConfigSource, LockedError } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView } from './store.js';
@@ -74,8 +71,17 @@ async function serveStatic(req, res) {
   }
 }
 
-export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
-  let cfg = loadConfig();
+/**
+ * Starts an instance. Everything but port/host is optional and passed to
+ * createConfigSource: `config` (keys set here win and are locked in the UI),
+ * `configFile` (a path, or false for none), `mcpServers`, `mcpFile`, `dbPath`.
+ */
+export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } = {}) {
+  const source = createConfigSource(sourceOpts);
+  const saveConfig = (patch) => source.save(patch);
+  const publicConfig = (c) => source.public(c);
+  const { dbPath, readMcpFile, saveMcpFile } = source;
+  let cfg = source.load();
   const store = new Store(dbPath(cfg));
   let armScheduler = () => {};
   let triggerAutomation = async () => { throw new Error('manual triggering is unavailable'); };
@@ -94,10 +100,10 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return out;
       });
 
-  let hub = await connectHub(loadMcpServers());
+  let hub = await connectHub(source.loadMcpServers());
 
-  console.log(`[tinywebui] config: ${configPath()}`);
-  console.log(`[tinywebui] mcp:    ${mcpPath()}`);
+  console.log(`[tinywebui] config: ${source.path() || '(in code, no file)'}`);
+  console.log(`[tinywebui] mcp:    ${source.mcpPath() || '(in code)'}`);
   console.log(`[tinywebui] db:     ${dbPath(cfg)}`);
   console.log(`[tinywebui] model:  ${cfg.model} via ${cfg.baseUrl}`);
   console.log(`[tinywebui] tools:  ${hub.tools.length} from ${hub.clients.size} MCP server(s)`);
@@ -392,7 +398,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       }
 
       if (req.method === 'GET' && req.url === '/api/mcp') {
-        return json(res, 200, { path: mcpPath(), text: readMcpFile() });
+        return json(res, 200, { path: source.mcpPath(), text: readMcpFile(), locked: source.mcpLocked });
       }
 
       // Disabling a server tears its connection down rather than filtering its
@@ -416,7 +422,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         try {
           updated = saveMcpFile(JSON.stringify({ mcpServers: servers }, null, 2));
         } catch (err) {
-          return json(res, 400, { error: err.message });
+          return json(res, err instanceof LockedError ? 409 : 400, { error: err.message });
         }
         const old = hub;
         hub = await connectHub(updated);
@@ -431,7 +437,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         try {
           servers = saveMcpFile(text);
         } catch (err) {
-          return json(res, 400, { error: err.message });
+          return json(res, err instanceof LockedError ? 409 : 400, { error: err.message });
         }
         // Swap the hub wholesale: old child processes are shut down before the
         // new ones start, so a rename cannot leave an orphan behind.
@@ -701,7 +707,11 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         const pending = run?.approvals.get(id);
         if (!pending) return json(res, 409, { error: 'that call is no longer waiting' });
         run.approvals.delete(id);
-        if (decision === 'always') cfg = saveConfig(setOverride(cfg, pending.name, 'auto'));
+        if (decision === 'always') {
+          // Approval lists set in code cannot be saved to; allow this call only.
+          try { cfg = saveConfig(setOverride(cfg, pending.name, 'auto')); }
+          catch (err) { if (!(err instanceof LockedError)) throw err; }
+        }
         pending.resolve(decision);
         return json(res, 200, { ok: true });
       }
@@ -792,7 +802,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
       return serveStatic(req, res);
     } catch (err) {
-      if (!res.headersSent) json(res, 500, { error: err.message });
+      if (!res.headersSent) json(res, err instanceof LockedError ? 409 : 500, { error: err.message });
       else res.end();
     }
   });

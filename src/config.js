@@ -139,87 +139,126 @@ const DEFAULTS = {
   sessionTtlDays: 30,
 };
 
-export function configPath() {
-  return CONFIG_FILE;
-}
+/**
+ * One instance's view of its configuration.
+ *
+ * Layers, lowest first: DEFAULTS < config file < env vars < `opts.config`.
+ * Keys set in code are locked: the UI cannot change them, since a saved value
+ * would be shadowed on the very next load anyway. `configFile: false` means no
+ * file is read or written; UI changes then live in memory for this process.
+ * `mcpServers` in code likewise replaces mcp.json and locks the MCP editor.
+ */
+export function createConfigSource(opts = {}) {
+  const code = opts.config || {};
+  const file = opts.configFile === false ? null
+    : opts.configFile ? resolve(opts.configFile) : CONFIG_FILE;
+  const mcpFile = opts.mcpFile ? resolve(opts.mcpFile)
+    : file && file !== CONFIG_FILE ? resolve(dirname(file), 'mcp.json') : MCP_FILE;
+  const codeServers = opts.mcpServers || null;
+  const locked = new Set(Object.keys(code));
+  let memory = {}; // stands in for the file when there is none
 
-export function mcpPath() {
-  return MCP_FILE;
-}
-
-/** Conversation database, resolved next to the config unless one is set. */
-export function dbPath(cfg) {
-  const set = process.env.TINYWEBUI_DB || cfg?.dbPath;
-  return set ? resolve(set) : resolve(dirname(CONFIG_FILE), 'tinywebui.db');
-}
-
-/** Raw text of mcp.json, so the editor round-trips comments-free but verbatim. */
-export function readMcpFile() {
-  if (!existsSync(MCP_FILE)) return '{\n  "mcpServers": {}\n}\n';
-  return readFileSync(MCP_FILE, 'utf8');
-}
-
-export function loadMcpServers() {
-  try {
-    const parsed = JSON.parse(readMcpFile());
-    // Accept both {"mcpServers": {...}} and a bare {...} map.
-    return parsed.mcpServers || parsed || {};
-  } catch (err) {
-    console.error(`[tinywebui] ${MCP_FILE} is not valid JSON: ${err.message}`);
-    return {};
-  }
-}
-
-/** Validates before writing, so a typo cannot leave an unparseable file behind. */
-export function saveMcpFile(text) {
-  const parsed = JSON.parse(text);
-  const servers = parsed.mcpServers || parsed;
-  for (const [name, spec] of Object.entries(servers)) {
-    if (!spec || (!spec.command && !spec.url)) {
-      throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
-    }
-  }
-  writeFileSync(MCP_FILE, text.endsWith('\n') ? text : text + '\n');
-  return servers;
-}
-
-export function loadConfig() {
-  let file = {};
-  if (existsSync(CONFIG_FILE)) {
+  const readFile = () => {
+    if (!file) return { ...memory };
+    if (!existsSync(file)) return {};
     try {
-      file = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+      return JSON.parse(readFileSync(file, 'utf8'));
     } catch (err) {
-      throw new Error(`Bad config at ${CONFIG_FILE}: ${err.message}`);
+      throw new Error(`Bad config at ${file}: ${err.message}`);
     }
-  }
-  const env = {};
-  if (process.env.TINYWEBUI_BASE_URL) env.baseUrl = process.env.TINYWEBUI_BASE_URL;
-  if (process.env.TINYWEBUI_API_KEY) env.apiKey = process.env.TINYWEBUI_API_KEY;
-  if (process.env.OPENROUTER_API_KEY) env.apiKey = process.env.OPENROUTER_API_KEY;
-  if (process.env.TINYWEBUI_MODEL) env.model = process.env.TINYWEBUI_MODEL;
+  };
+  const writeFile = (obj) => {
+    if (!file) { memory = obj; return; }
+    writeFileSync(file, JSON.stringify(obj, null, 2) + '\n');
+  };
 
-  const cfg = { ...DEFAULTS, ...file, ...env };
-  cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
-  if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
-  const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
-  if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
-  if (!['writes', 'all', 'off'].includes(cfg.toolApproval)) cfg.toolApproval = DEFAULTS.toolApproval;
-  const AUTH_MODES = ['none', 'single', 'multiuser'];
-  if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
-  // A session secret is required the moment auth is on; generate and persist
-  // one rather than signing cookies with an empty key.
-  if (cfg.authMode !== 'none' && !cfg.sessionSecret) {
-    cfg.sessionSecret = randomBytes(32).toString('hex');
-    try {
-      const current = existsSync(CONFIG_FILE) ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) : {};
-      current.sessionSecret = cfg.sessionSecret;
-      writeFileSync(CONFIG_FILE, JSON.stringify(current, null, 2) + '\n');
-    } catch (err) {
-      console.error(`[tinywebui] could not persist generated sessionSecret: ${err.message}`);
+  function load() {
+    const env = {};
+    if (process.env.TINYWEBUI_BASE_URL) env.baseUrl = process.env.TINYWEBUI_BASE_URL;
+    if (process.env.TINYWEBUI_API_KEY) env.apiKey = process.env.TINYWEBUI_API_KEY;
+    if (process.env.OPENROUTER_API_KEY) env.apiKey = process.env.OPENROUTER_API_KEY;
+    if (process.env.TINYWEBUI_MODEL) env.model = process.env.TINYWEBUI_MODEL;
+
+    const cfg = { ...DEFAULTS, ...readFile(), ...env, ...code };
+    cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
+    if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
+    const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
+    if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
+    if (!['writes', 'all', 'off'].includes(cfg.toolApproval)) cfg.toolApproval = DEFAULTS.toolApproval;
+    const AUTH_MODES = ['none', 'single', 'multiuser'];
+    if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
+    // A session secret is required the moment auth is on; generate and persist
+    // one rather than signing cookies with an empty key.
+    if (cfg.authMode !== 'none' && !cfg.sessionSecret) {
+      cfg.sessionSecret = randomBytes(32).toString('hex');
+      try {
+        writeFile({ ...readFile(), sessionSecret: cfg.sessionSecret });
+      } catch (err) {
+        console.error(`[tinywebui] could not persist generated sessionSecret: ${err.message}`);
+      }
     }
+    return cfg;
   }
-  return cfg;
+
+  /** Applies the writable, unlocked part of `patch`; locked keys are an error. */
+  function save(patch) {
+    const blocked = Object.keys(patch).filter((k) => WRITABLE.has(k) && locked.has(k));
+    if (blocked.length) throw new LockedError(`set in code, not editable here: ${blocked.join(', ')}`);
+    const current = readFile();
+    for (const [k, v] of Object.entries(patch)) {
+      if (WRITABLE.has(k)) current[k] = v;
+    }
+    writeFile(current);
+    return load();
+  }
+
+  const readMcp = () => {
+    if (codeServers) return JSON.stringify({ mcpServers: codeServers }, null, 2) + '\n';
+    if (!existsSync(mcpFile)) return '{\n  "mcpServers": {}\n}\n';
+    return readFileSync(mcpFile, 'utf8');
+  };
+
+  return {
+    load,
+    save,
+    public: (cfg) => ({ ...publicConfig(cfg), lockedKeys: [...locked], mcpLocked: Boolean(codeServers) }),
+    path: () => file,
+    mcpPath: () => (codeServers ? null : mcpFile),
+    mcpLocked: Boolean(codeServers),
+    dbPath: (cfg) => {
+      const set = opts.dbPath || process.env.TINYWEBUI_DB || cfg?.dbPath;
+      if (set === ':memory:') return set;
+      return set ? resolve(set) : resolve(dirname(file || CONFIG_FILE), 'tinywebui.db');
+    },
+    /** Raw text of mcp.json, so the editor round-trips comments-free but verbatim. */
+    readMcpFile: readMcp,
+    loadMcpServers() {
+      try {
+        const parsed = JSON.parse(readMcp());
+        // Accept both {"mcpServers": {...}} and a bare {...} map.
+        return parsed.mcpServers || parsed || {};
+      } catch (err) {
+        console.error(`[tinywebui] ${mcpFile} is not valid JSON: ${err.message}`);
+        return {};
+      }
+    },
+    /** Validates before writing, so a typo cannot leave an unparseable file behind. */
+    saveMcpFile(text) {
+      if (codeServers) throw new LockedError('MCP servers are set in code, not editable here');
+      const parsed = JSON.parse(text);
+      const servers = parsed.mcpServers || parsed;
+      for (const [name, spec] of Object.entries(servers)) {
+        if (!spec || (!spec.command && !spec.url)) {
+          throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
+        }
+      }
+      writeFileSync(mcpFile, text.endsWith('\n') ? text : text + '\n');
+      return servers;
+    },
+  };
 }
+
+export class LockedError extends Error {}
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
 const WRITABLE = new Set([
@@ -229,17 +268,6 @@ const WRITABLE = new Set([
   'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools'
 ]);
 
-export function saveConfig(patch) {
-  const current = existsSync(CONFIG_FILE)
-    ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8'))
-    : {};
-  for (const [k, v] of Object.entries(patch)) {
-    if (WRITABLE.has(k)) current[k] = v;
-  }
-  writeFileSync(CONFIG_FILE, JSON.stringify(current, null, 2) + '\n');
-  return loadConfig();
-}
-
 export function publicConfig(cfg) {
   const { apiKey, authPassword, sessionSecret, googleClientSecret, ...rest } = cfg;
   return {
@@ -248,3 +276,14 @@ export function publicConfig(cfg) {
     hasGoogleAuth: Boolean(cfg.googleClientId),
   };
 }
+
+// The file-driven instance the CLI has always used, kept as plain functions.
+const fileSource = createConfigSource();
+export const configPath = () => fileSource.path();
+export const mcpPath = () => fileSource.mcpPath();
+export const dbPath = (cfg) => fileSource.dbPath(cfg);
+export const readMcpFile = () => fileSource.readMcpFile();
+export const loadMcpServers = () => fileSource.loadMcpServers();
+export const saveMcpFile = (text) => fileSource.saveMcpFile(text);
+export const loadConfig = () => fileSource.load();
+export const saveConfig = (patch) => fileSource.save(patch);
