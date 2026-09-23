@@ -605,13 +605,20 @@ export class Store {
    * it. Field-name variance across providers (prompt_tokens vs input_tokens,
    * the several cache-token spellings) is normalized here the same way
    * transcript.js's tally() does client-side for a single round.
+   *
+   * Rows predating model/timestamp tracking have neither column set and land
+   * in an 'unknown' day bucket instead of being dropped, so their tokens
+   * still show up here the same way their cost already does in
+   * usageStatistics() below.
    */
   usageRollup(userId = null) {
     const rows = this.db.prepare(`
-      SELECT strftime('%Y-%m-%d', m.created_at / 1000, 'unixepoch') AS day,
+      SELECT CASE WHEN m.created_at IS NOT NULL
+               THEN strftime('%Y-%m-%d', m.created_at / 1000, 'unixepoch')
+               ELSE 'unknown' END AS day,
              m.model, m.usage_json
       FROM messages m JOIN chats c ON c.id=m.chat_id
-      WHERE m.usage_json IS NOT NULL AND m.created_at IS NOT NULL AND c.user_id IS ?
+      WHERE m.usage_json IS NOT NULL AND c.user_id IS ?
     `).all(userId);
 
     const byDay = new Map();
@@ -651,14 +658,16 @@ export class Store {
     const rows = this.db.prepare(`SELECT m.chat_id,m.seq,m.role,m.content,m.tool_calls_json,m.model,m.usage_json
       FROM messages m JOIN chats c ON c.id=m.chat_id WHERE c.user_id IS ? ORDER BY m.chat_id,m.seq`).all(userId);
     const models = new Map();
+    const tools = new Map();
     const summary = { rounds: 0, pricedRounds: 0, reportedCost: 0, completedAnswers: 0,
-      pricedAnswers: 0, answerCostTotal: 0, answerTokens: 0, tokenAnswers: 0 };
+      pricedAnswers: 0, answerCostTotal: 0, answerTokens: 0, tokenAnswers: 0, toolCalls: 0 };
     let chatId = null;
     let answer = null;
     const finishAnswer = () => {
       if (!answer) return;
       if (answer.complete) {
         summary.completedAnswers++;
+        summary.answerRoundsTotal = (summary.answerRoundsTotal || 0) + answer.rounds;
         if (answer.rounds && answer.pricedRounds === answer.rounds) {
           summary.pricedAnswers++;
           summary.answerCostTotal += answer.cost;
@@ -678,6 +687,16 @@ export class Store {
       if (!models.has(model)) models.set(model, { model, in:0, out:0, cached:0, rounds:0, pricedRounds:0, cost:0 });
       const m = models.get(model);
       m.rounds++;
+      if (row.tool_calls_json) {
+        let calls = null;
+        try { calls = JSON.parse(row.tool_calls_json); } catch { /* ignore malformed historic tool_calls */ }
+        for (const call of calls || []) {
+          const name = call?.function?.name;
+          if (!name) continue;
+          summary.toolCalls++;
+          tools.set(name, (tools.get(name) || 0) + 1);
+        }
+      }
       if (usage) {
         const inTok = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
         const outTok = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
@@ -706,8 +725,12 @@ export class Store {
       pricedAnswers: summary.pricedAnswers,
       averageAnswerCost: summary.pricedAnswers ? summary.answerCostTotal / summary.pricedAnswers : null,
       averageAnswerTokens: summary.tokenAnswers ? summary.answerTokens / summary.tokenAnswers : null,
+      averageRoundsPerAnswer: summary.completedAnswers ? summary.answerRoundsTotal / summary.completedAnswers : null,
+      toolCalls: summary.toolCalls,
       models: [...models.values()].map((m) => ({ ...m, cost: m.pricedRounds ? m.cost : null }))
-        .sort((a,b) => b.in + b.out - a.in - a.out)
+        .sort((a,b) => b.in + b.out - a.in - a.out),
+      tools: [...tools.entries()].map(([name, calls]) => ({ name, calls }))
+        .sort((a, b) => b.calls - a.calls)
     };
   }
 

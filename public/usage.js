@@ -205,11 +205,14 @@ function renderCostStatistics(stats) {
   const summary = $('statisticsSummary');
   const coverage = $('statisticsCoverage');
   const modelsBox = $('statisticsCosts');
+  const toolsBox = $('statisticsTools');
   if (!summary || !coverage || !modelsBox) return;
   summary.replaceChildren(); modelsBox.replaceChildren();
+  if (toolsBox) toolsBox.replaceChildren();
   if (!stats || !stats.rounds) {
     summary.appendChild(el('div', 'empty')).textContent = 'No model usage recorded yet.';
     coverage.textContent = '';
+    if (toolsBox) toolsBox.appendChild(el('div', 'empty')).textContent = 'No tool calls recorded yet.';
     return;
   }
   const tile = (label, value) => {
@@ -222,7 +225,8 @@ function renderCostStatistics(stats) {
     tile('reported cost', costFmt(stats.reportedCost)),
     tile('average model request', costFmt(stats.averageRoundCost)),
     tile('average complete answer', costFmt(stats.averageAnswerCost)),
-    tile('average answer tokens (all rounds)', stats.averageAnswerTokens == null ? '—' : Math.round(stats.averageAnswerTokens).toLocaleString())
+    tile('average answer tokens (all rounds)', stats.averageAnswerTokens == null ? '—' : Math.round(stats.averageAnswerTokens).toLocaleString()),
+    tile('average rounds per answer', stats.averageRoundsPerAnswer == null ? '—' : stats.averageRoundsPerAnswer.toFixed(1))
   );
   coverage.textContent = `${stats.pricedRounds.toLocaleString()} of ${stats.rounds.toLocaleString()} model requests reported cost; `
     + `${stats.pricedAnswers.toLocaleString()} of ${stats.completedAnswers.toLocaleString()} completed answers had cost for every request. `
@@ -232,6 +236,23 @@ function renderCostStatistics(stats) {
     const name = el('span'); name.className = 'usage-model-name'; name.textContent = model.model; name.title = model.model;
     const amount = el('span'); amount.textContent = `${costFmt(model.cost)} · ${model.pricedRounds}/${model.rounds} priced requests`;
     row.append(name, amount); modelsBox.appendChild(row);
+  }
+  if (toolsBox) {
+    if (!stats.tools || !stats.tools.length) {
+      toolsBox.appendChild(el('div', 'empty')).textContent = 'No tool calls recorded yet.';
+    } else {
+      const maxCalls = Math.max(...stats.tools.map((t) => t.calls));
+      for (const tool of stats.tools) {
+        const row = el('div', 'statistics-tool-row');
+        const name = el('span', 'statistics-tool-name'); name.textContent = tool.name; name.title = tool.name;
+        const track = el('span', 'statistics-tool-track');
+        const bar = el('span', 'statistics-tool-bar');
+        bar.style.width = `${(tool.calls / maxCalls) * 100}%`;
+        track.appendChild(bar);
+        const count = el('span', 'statistics-tool-count'); count.textContent = `${tool.calls.toLocaleString()} calls`;
+        row.append(name, track, count); toolsBox.appendChild(row);
+      }
+    }
   }
 }
 

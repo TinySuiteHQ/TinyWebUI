@@ -6,7 +6,7 @@ const list = $('automation-list');
 const form = $('automation-create');
 let snapshot = { automations: [], chats: [] };
 
-function close() { panel.classList.remove('open'); }
+function close() { panel.classList.remove('open'); $('toggle-automations').classList.remove('active'); }
 function options(chats, selected) {
   const select = el('select'); select.name = 'chatId'; select.required = true;
   for (const chat of chats) {

@@ -47,6 +47,10 @@ header {
 }
 header h1 { font-size: var(--fs-ui); margin: 0; font-weight: 600; flex-shrink: 0; }
 header .grow { flex: 1; }
+header button.active {
+  background: var(--accent); border-color: var(--accent); color: var(--bg);
+}
+header button.active:hover { border-color: var(--accent); }
 /* #status is a long, dynamic string -- model id plus a tool count -- that
    fits fine on a wide header and does not on a narrow one. Flex items don't
    shrink past their own content width by default (min-width:auto), so
@@ -222,9 +226,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 /* Settings takes the whole main column rather than squeezing the transcript. */
 #settings {
   display: none; position: absolute; inset: 0; z-index: 10; padding: 0;
-  background: var(--bg); flex-direction: column; overflow-y: auto;
+  background: var(--bg); flex-direction: column; overflow: hidden;
 }
 #settings.open { display: flex; }
+.settings-content { overflow-y: auto; }
 #automations {
   display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
   flex-direction: column; overflow: hidden;
@@ -243,9 +248,15 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 .statistics-costs { display:flex; flex-direction:column; gap:.4rem; margin-top:.75rem; padding-top:.75rem; border-top:1px solid var(--line); }
 .statistics-cost-row { display:flex; gap:.75rem; align-items:center; font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); }
 .statistics-cost-row .usage-model-name { flex:1 1 auto; }
+.statistics-tool-row { display:flex; gap:.75rem; align-items:center; font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); }
+.statistics-tool-name { flex:0 0 auto; min-width:11rem; max-width:16rem; white-space:nowrap; color:var(--fg); }
+.statistics-tool-track { flex:1 1 auto; height:.5rem; border-radius:2px; background:var(--faint); overflow:hidden; }
+.statistics-tool-bar { display:block; height:100%; background:var(--accent); border-radius:2px; }
+.statistics-tool-count { flex:0 0 auto; width:4.5rem; text-align:right; font-variant-numeric:tabular-nums; }
 .automation-head { height: var(--bar); flex: 0 0 auto; padding: 0 1rem; display:flex; align-items:center; gap:.75rem; border-bottom:1px solid var(--line); }
 .automation-head h2 { margin:0; font-size:var(--fs-ui); }
 .automation-head button { margin-left:auto; }
+.automation-head button + button { margin-left:0; }
 .automation-content { overflow:auto; padding:1rem; }
 .automation-form, .automation-card { width:min(48rem,100%); margin:0 auto 1rem; padding:1rem; border:1px solid var(--line); border-radius:4px; background:var(--panel); }
 .automation-form h3, .automation-card h3 { margin:0; font-size:var(--fs-ui); }
@@ -268,13 +279,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 .sec + .sec { border-top: 1px solid var(--line); }
 .sec:last-child { padding-bottom: 1.5rem; }
 
-/* Action bar pinned to the bottom of the settings overlay. */
-.sec-bar {
-  position: sticky; bottom: 0; margin-top: auto;
-  display: flex; align-items: center; gap: .5rem; justify-content: flex-end;
-  padding: .625rem 1.125rem; border-top: 1px solid var(--line); background: var(--panel);
-}
-.sec-bar .usage { margin-right: auto; }
 .sec-h {
   font-size: var(--fs-ui); font-family: var(--mono); text-transform: uppercase;
   letter-spacing: .08em; color: var(--fg); display: flex; gap: .5rem; align-items: baseline;

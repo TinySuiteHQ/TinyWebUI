@@ -244,7 +244,7 @@ export function toggleSettings(open) {
   const on = open ?? !panel.classList.contains('open');
   panel.classList.toggle('open', on);
   if (on) { $('saveMsg').textContent = ''; }
-  $('toggle-settings').textContent = on ? 'close' : 'settings';
+  $('toggle-settings').classList.toggle('active', on);
   if (!on) $('input').focus();
 }
 

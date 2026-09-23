@@ -124,7 +124,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
   const RETAIN_MS = 5 * 60 * 1000;
 
-  function startRun({ chat, tools, onFinish }) {
+  function startRun({ chat, tools, onFinish, historyFromSeq = null }) {
     const run = {
       events: [],
       subs: new Set(),
@@ -148,7 +148,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal });
+        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -178,7 +178,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       return false;
     }
     if (isRunning(chat.id)) return false;
-    store.addMessage(chat.id, { role: 'user', content: runMessage(automation) });
+    const firstSeq = store.addMessage(chat.id, { role: 'user', content: runMessage(automation) });
     store.updateAutomationRun(runId, { status: 'running', startedAt: Date.now() });
     startRun({ chat, tools: hub.activeTools(cfg.disabledTools), onFinish: ({ ok, error, result }) => {
       store.updateAutomationRun(runId, {
@@ -186,7 +186,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         result: String(result || '').slice(0, 4000), error: error ? String(error).slice(0, 1000) : null
       });
       armScheduler();
-    } });
+    }, historyFromSeq: firstSeq });
     return true;
   }
 

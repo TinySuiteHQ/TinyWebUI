@@ -64,6 +64,13 @@
 
 <main>
   <section id="settings">
+    <div class="automation-head">
+      <h2>Settings</h2>
+      <span id="saveMsg" class="usage"></span>
+      <button id="cancel">close</button>
+      <button class="primary" id="save">save settings</button>
+    </div>
+    <div class="settings-content">
     <div class="sec">
       <div class="sec-h">model</div>
       <div>
@@ -103,10 +110,6 @@
         <div id="tools" class="tool-list"></div>
       </div>
     </div>
-    <div class="sec-bar">
-      <span id="saveMsg" class="usage"></span>
-      <button id="cancel">close</button>
-      <button class="primary" id="save">save settings</button>
     </div>
   </section>
 
@@ -124,6 +127,10 @@
         <div id="usageStats" class="row"></div>
         <div id="usageModels" class="usage-models"></div>
         <div id="usageBars" class="usage-bars"></div>
+      </section>
+      <section class="statistics-block">
+        <div class="sec-h">agentic <span class="usage">tool calls across all rounds</span></div>
+        <div id="statisticsTools" class="statistics-costs"></div>
       </section>
     </div>
   </section>
