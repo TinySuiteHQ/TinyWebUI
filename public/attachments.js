@@ -87,6 +87,7 @@ export function renderChatDocs() {
 /** Called when switching chats, so a new chat doesn't inherit the last one's state. */
 export function resetChatDocsView() {
   docsExpanded = false;
+  carried = { docs: [], images: [] };
 }
 
 export function renderAttachments() {
@@ -104,6 +105,10 @@ export function renderAttachments() {
       chip.appendChild(thumb);
     } else {
       chip.appendChild(document.createTextNode(a.file.name));
+      if (a.error) {
+        chip.classList.add('attachment-chip-error');
+        chip.title = `${a.file.name}: ${a.error}`;
+      }
     }
     const remove = el('span', 'remove');
     remove.textContent = '✕';
@@ -157,33 +162,70 @@ async function normalizeStaged(entry) {
   renderAttachments();
 }
 
+// Mirrors what src/documents.js can extract. The server stays authoritative;
+// this only exists so an obviously unusable file is flagged on its chip and
+// blocks sending, instead of being discovered after the message already went.
+const DOC_EXT = new Set([
+  '.pdf', '.docx',
+  '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.log',
+  '.js', '.ts', '.jsx', '.tsx', '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h',
+  '.css', '.html', '.xml', '.yaml', '.yml', '.sh', '.sql'
+]);
+function unsupportedReason(file) {
+  const i = file.name.lastIndexOf('.');
+  const ext = i === -1 ? '' : file.name.slice(i).toLowerCase();
+  if (ext === '' || DOC_EXT.has(ext)) return null;
+  if (ext === '.doc') return 'legacy .doc is not supported -- save it as .docx or .pdf';
+  return `unsupported file type "${ext}"`;
+}
+
 /** Queues a file (or a pasted-text stand-in) client-side. No network yet. */
 export function stageAttachment(file) {
   const entry = { file };
   if (isImageFile(file)) {
     entry.isImage = true;
     entry.ready = normalizeStaged(entry);
+  } else {
+    entry.error = unsupportedReason(file);
+    if (entry.error) addError(`attach "${file.name}": ${entry.error}`);
   }
   state.pendingAttachments.push(entry);
   renderAttachments();
 }
 
 /**
+ * Staged entries that can't be sent (unsupported type, image that failed to
+ * normalize). Waits for in-flight image normalization so the answer is final.
+ */
+export async function invalidAttachments() {
+  await Promise.all(state.pendingAttachments.map((e) => e.ready));
+  return state.pendingAttachments.filter((e) => e.error);
+}
+
+/**
  * Uploads every staged file now that the message is actually being sent --
  * this is the first point any of it is extracted or written to the store.
- * A failed upload is reported and left out rather than blocking the rest.
+ * If any upload fails, nothing is sent: the caller aborts and the failed
+ * files are put back on the composer.
  *
  * Images take a different path than every other file here: there is no text
  * to extract, so there is nothing for read_document to look up later. They
  * ride straight into the message as base64, the same call that sends the
  * text, instead of going through the documents endpoint first.
  */
+// Uploads that succeeded during a send that was then aborted because a sibling
+// failed. They're already in the store, so the retry reuses them rather than
+// uploading the same file twice.
+let carried = { docs: [], images: [] };
+
 export async function commitAttachments(chatId) {
   const staged = state.pendingAttachments;
   state.pendingAttachments = [];
   renderAttachments();
-  const docs = [];
-  const images = [];
+  const docs = [...carried.docs];
+  const images = [...carried.images];
+  carried = { docs: [], images: [] };
+  const failed = [];
   for (const entry of staged) {
     const { file } = entry;
     try {
@@ -205,8 +247,18 @@ export async function commitAttachments(chatId) {
       if (!res.ok) throw new Error(data.error || 'upload failed');
       docs.push(data.document);
     } catch (err) {
+      entry.error = err.message;
+      failed.push(entry);
       addError(`attach "${file.name}": ${err.message}`);
     }
+  }
+  if (failed.length) {
+    // Nothing is sent if any attachment failed: the failed ones go back on
+    // the composer (flagged) so the user can remove or replace them.
+    carried = { docs, images };
+    state.pendingAttachments = failed;
+    renderAttachments();
+    return { docs: [], images: [], failed };
   }
   if (docs.length || images.length) {
     state.chatDocuments.push(...docs);
@@ -215,7 +267,7 @@ export async function commitAttachments(chatId) {
     state.chatImages.push(...images.map((i) => ({ filename: i.filename, mime: i.mime, data: i.dataBase64 })));
     renderChatDocs();
   }
-  return { docs, images };
+  return { docs, images, failed };
 }
 
 // The + button opens the composer menu (composer.js); "Attach files" in it

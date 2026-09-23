@@ -28,9 +28,9 @@
       <button id="chatSearchClear" class="x" type="button" aria-label="Clear search" hidden>×</button>
     </div>
     <button id="toggle-automations" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Automations</span></button>
-    <button id="toggle-statistics" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statistics</span></button>
     <button id="toggle-mcp" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0Z"/><path d="M12 16v5"/></svg><span>MCP servers</span></button>
     <button id="toggle-settings" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
+    <button id="toggle-statistics" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statistics</span></button>
   </nav>
   <div class="side-label"><span>Recent conversations</span><button id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v4M10 13h4"/></svg></button></div>
   <div id="chats"></div>
@@ -159,18 +159,9 @@
   </section>
 
   <section id="automations" aria-label="Automations">
-    <div class="automation-head"><h2>Automations</h2><button id="close-automations">close</button></div>
+    <div class="automation-head"><h2>Automations</h2><button id="new-automation" class="primary" type="button">New automation</button><button id="close-automations">close</button></div>
     <div class="automation-content">
-      <form id="automation-create" class="automation-form">
-        <h3>New automation</h3>
-        <label>name<input name="name" required maxlength="120"></label>
-        <label>target chat<select name="chatId" required></select></label>
-        <label>schedule (five-field cron)<input name="cron" required placeholder="0 9 * * 1-5"></label>
-        <label>timezone (IANA)<input name="timezone" required placeholder="Europe/Berlin"></label>
-        <label>instructions<textarea name="prompt" required maxlength="12000" rows="5"></textarea></label>
-        <div class="automation-error" role="alert"></div>
-        <button class="primary" type="submit">create automation</button>
-      </form>
+      <div id="automation-create-slot"></div>
       <div id="automation-list" class="automation-list"></div>
     </div>
   </section>

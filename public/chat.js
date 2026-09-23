@@ -6,7 +6,7 @@ import { $ } from './dom.js';
 import { state } from './state.js';
 import { addUser, replay, addError, pinToBottom } from './transcript.js';
 import { consume } from './stream.js';
-import { commitAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
+import { commitAttachments, invalidAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
 
@@ -120,6 +120,13 @@ $('form').addEventListener('submit', async (e) => {
   const text = input.value.trim();
   const hasAttachments = state.pendingAttachments.length > 0;
   if (!text && !hasAttachments) return;
+  // A message must never go out without an attachment the user thinks is on
+  // it -- the model would act on the text alone.
+  const invalid = hasAttachments ? await invalidAttachments() : [];
+  if (invalid.length) {
+    addError(`remove ${invalid.map((a) => `"${a.file.name}"`).join(', ')} before sending`);
+    return;
+  }
   input.value = '';
   input.style.height = 'auto';
   setBusy(true);
@@ -131,7 +138,12 @@ $('form').addEventListener('submit', async (e) => {
   if (!state.chat.id) state.chat.id = 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   // This is the first point anything staged is actually uploaded, extracted
   // and written to the store -- removing a chip before now never touched it.
-  const { docs, images } = await commitAttachments(state.chat.id);
+  const { docs, images, failed } = await commitAttachments(state.chat.id);
+  if (failed.length) {
+    input.value = text;
+    setBusy(false);
+    return;
+  }
   if (!text && !docs.length && !images.length) { setBusy(false); return; }
 
   const placeholder = !text ? (images.length ? '(attached image)' : '(attached document)') : text;

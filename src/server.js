@@ -18,6 +18,14 @@ import { automationToolDef, manageAutomation, nextSchedule, runMessage, validate
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** The inline note that tells the model an id it can read_document on. */
+/** `newChatTitle` on an automation request: undefined when absent, false when
+ * present but unusable, otherwise the trimmed title. */
+function newChatTitleOf(body) {
+  if (body.newChatTitle === undefined || body.newChatTitle === null) return undefined;
+  const title = String(body.newChatTitle).trim();
+  return title && title.length <= 120 ? title : false;
+}
+
 function attachmentNote(doc) {
   return `\n\n[Attached document: "${doc.filename}" (id: ${doc.id}, ${doc.char_len.toLocaleString('en-US')} chars). Use read_document to search or read it.]`;
 }
@@ -241,7 +249,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     startRun({ chat, tools: hub.activeTools(cfg.disabledTools), onFinish: ({ ok, error, result }) => {
       store.updateAutomationRun(runId, {
         status: ok ? 'completed' : 'failed', finishedAt: Date.now(),
-        result: String(result || '').slice(0, 4000), error: error ? String(error).slice(0, 1000) : null
+        result: String(result || '').slice(0, 200000), error: error ? String(error).slice(0, 1000) : null
       });
       armScheduler();
     }, historyFromSeq: firstSeq, unattended: true });
@@ -526,8 +534,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
       if (req.method === 'POST' && req.url === '/api/automations') {
         const body = await readJson(req);
-        const chat = store.getChat(String(body.chatId || ''), auth.userId);
-        if (!chat) return json(res, 400, { error: 'a chat you own is required' });
+        const newChatTitle = newChatTitleOf(body);
+        if (newChatTitle === false) return json(res, 400, { error: 'the new chat needs a name (at most 120 characters)' });
+        let chat = newChatTitle ? null : store.getChat(String(body.chatId || ''), auth.userId);
+        if (!newChatTitle && !chat) return json(res, 400, { error: 'a chat you own is required' });
         const name = String(body.name || '').trim();
         const prompt = String(body.prompt || '').trim();
         if (!name || !prompt) return json(res, 400, { error: 'name and prompt are required' });
@@ -535,6 +545,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         let schedule;
         try { schedule = validateSchedule(body.cron, body.timezone); }
         catch (err) { return json(res, 400, { error: err.message }); }
+        if (newChatTitle) chat = store.createChat({ title: newChatTitle }, auth.userId);
         const automation = store.createAutomation({ ...schedule, chatId: chat.id, name, prompt, enabled: body.enabled !== false, source: 'user' }, auth.userId);
         armScheduler();
         return json(res, 201, { automation });
@@ -556,6 +567,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const body = await readJson(req);
         const patch = {};
         for (const key of ['name', 'prompt', 'cron', 'timezone', 'enabled', 'chatId']) if (body[key] !== undefined) patch[key] = body[key];
+        const newChatTitle = newChatTitleOf(body);
+        if (newChatTitle === false) return json(res, 400, { error: 'the new chat needs a name (at most 120 characters)' });
+        if (newChatTitle) delete patch.chatId;
         if (patch.chatId !== undefined) {
           const chat = store.getChat(String(patch.chatId), auth.userId);
           if (!chat) return json(res, 400, { error: 'a chat you own is required' });
@@ -569,6 +583,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
           catch (err) { return json(res, 400, { error: err.message }); }
           Object.assign(patch, schedule);
         }
+        if (newChatTitle) patch.chatId = store.createChat({ title: newChatTitle }, auth.userId).id;
         const automation = store.updateAutomation(automationRoute[1], patch, auth.userId);
         armScheduler();
         return json(res, 200, { automation });
