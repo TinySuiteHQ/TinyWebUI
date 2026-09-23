@@ -95,10 +95,16 @@ async function rejoin(id) {
   }
 }
 
+const SVG = (d) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const SEND_ICON = SVG('<path d="M12 19V5M5 12l7-7 7 7"/>');
+const STOP_ICON = SVG('<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>');
+
 /** While a turn runs, send becomes stop -- the run outlives this tab either way. */
 function setBusy(on) {
   state.busy = on;
-  $('send').textContent = on ? 'stop' : 'send';
+  // Icon-only button: the arrow sends, the square stops; the label says which.
+  $('send').innerHTML = on ? STOP_ICON : SEND_ICON;
+  $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
   $('send').classList.toggle('stop', on);
   if (!on) input.focus();
 }

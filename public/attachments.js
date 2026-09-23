@@ -218,7 +218,8 @@ export async function commitAttachments(chatId) {
   return { docs, images };
 }
 
-$('attach').addEventListener('click', () => $('fileInput').click());
+// The + button opens the composer menu (composer.js); "Attach files" in it
+// is what clicks the hidden input now.
 $('fileInput').addEventListener('change', () => {
   for (const f of $('fileInput').files) stageAttachment(f);
   $('fileInput').value = '';

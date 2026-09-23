@@ -132,6 +132,33 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const RETAIN_MS = 5 * 60 * 1000;
 
   /** The tools panel payload: inventory plus each tool's approval state. */
+  // Cached per endpoint for a few minutes: OpenRouter's list is large and the
+  // picker is opened far more often than the catalogue changes.
+  let modelCache = null;
+  const listModels = async () => {
+    const key = `${cfg.baseUrl}|${Boolean(cfg.apiKey)}`;
+    if (modelCache?.key === key && Date.now() - modelCache.at < 5 * 60_000) return modelCache.value;
+    let value;
+    try {
+      const r = await fetch(`${cfg.baseUrl}/models`, {
+        headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!r.ok) throw new Error(`${r.status} from ${cfg.baseUrl}/models`);
+      const body = await r.json();
+      const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
+      const models = rows
+        .map((m) => ({ id: m.id || m.name, name: m.name && m.name !== m.id ? m.name : null }))
+        .filter((m) => typeof m.id === 'string' && m.id)
+        .sort((a, b) => a.id.localeCompare(b.id));
+      value = { supported: models.length > 0, models };
+    } catch (err) {
+      value = { supported: false, models: [], error: err.message };
+    }
+    modelCache = { key, at: Date.now(), value };
+    return value;
+  };
+
   const toolsView = () => {
     const inv = hub.inventory(cfg.disabledTools);
     const mark = (t) => ({ ...t, approval: overrideFor(cfg, t.name) });
@@ -369,6 +396,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       if (req.method === 'POST' && req.url === '/api/config') {
         cfg = saveConfig(await readJson(req));
         return json(res, 200, publicConfig(cfg));
+      }
+
+      // The provider's own model list, for the composer's model picker. Not
+      // every OpenAI-compatible endpoint serves /models, so a failure is an
+      // answer too: the picker falls back to typing an id.
+      if (req.method === 'GET' && req.url === '/api/models') {
+        return json(res, 200, await listModels());
       }
 
       // The grouped view behind the tools panel: built-ins, and every MCP

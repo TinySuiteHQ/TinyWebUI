@@ -248,6 +248,9 @@ const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'maxTool
 // Keys the server was started with in code; shown read-only and never posted.
 let lockedKeys = new Set();
 
+/** Whether a setting is pinned in code, so the UI cannot change it. */
+export const isLocked = (key) => lockedKeys.has(key);
+
 export async function loadConfig() {
   const cfg = await (await fetch('/api/config')).json();
   lockedKeys = new Set(cfg.lockedKeys || []);
@@ -266,7 +269,9 @@ export async function loadConfig() {
   $('keepTurns').value = cfg.keepTurns ?? 2;
   $('maxInlineChars').value = cfg.maxInlineChars ?? 0;
   $('toolApproval').value = cfg.toolApproval ?? 'writes';
-  const bits = [cfg.model, `${cfg.tools.length} tools`];
+  // The chip is the model picker's button now; the tool count lives in the
+  // + menu, where the tools themselves are.
+  const bits = [cfg.model];
   if (!cfg.hasApiKey) bits.push('NO API KEY');
   if (cfg.mcpErrors?.length) bits.push(`${cfg.mcpErrors.length} mcp err`);
   $('status').textContent = bits.join(' · ');

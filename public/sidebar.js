@@ -428,10 +428,24 @@ function setSideDrawer(open) {
 }
 export const closeSideDrawer = () => setSideDrawer(false);
 
-$('menu').onclick = () => setSideDrawer(!$('side').classList.contains('open'));
+/**
+ * Desktop hides the sidebar outright instead of opening it as a drawer; the
+ * same #menu button brings it back, so it means "show sidebar" at any width.
+ */
+const COLLAPSE_KEY = 'tinywebui.side.collapsed';
+const narrow = () => matchMedia('(max-width: 720px)').matches;
+function setCollapsed(on) {
+  document.body.classList.toggle('side-collapsed', on);
+  try { on ? localStorage.setItem(COLLAPSE_KEY, '1') : localStorage.removeItem(COLLAPSE_KEY); } catch { /* per-viewer nicety only */ }
+}
+try { if (localStorage.getItem(COLLAPSE_KEY)) document.body.classList.add('side-collapsed'); } catch { /* as above */ }
+$('sideCollapse').onclick = () => (narrow() ? closeSideDrawer() : setCollapsed(true));
+$('menu').onclick = () => (narrow() ? setSideDrawer(!$('side').classList.contains('open')) : setCollapsed(false));
 $('side-backdrop').onclick = closeSideDrawer;
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();
 });
 
 $('new').onclick = newChat;
+// The logo and name go home, which here means a fresh chat.
+$('brandHome').onclick = newChat;

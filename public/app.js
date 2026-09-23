@@ -9,6 +9,7 @@ import { loadConfig, loadMcp, loadTools } from './settings.js';
 import './attachments.js';
 import './automations.js';
 import './panels.js';
+import './composer.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
 const OLD_CHATS_KEY = 'tinywebui.chats';

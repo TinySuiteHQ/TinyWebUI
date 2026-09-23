@@ -1,17 +1,20 @@
 import { $ } from './dom.js';
-import { toggleSettings } from './settings.js';
+import { toggleSettings, loadMcp, loadTools } from './settings.js';
 import { openAutomations } from './automations.js';
 import { loadUsage } from './usage.js';
 
 const settings = $('settings');
 const automations = $('automations');
 const statistics = $('statistics');
+const mcp = $('mcp');
+const mcpBtn = $('toggle-mcp');
 const automationsBtn = $('toggle-automations');
 const statisticsBtn = $('toggle-statistics');
 
 function closeOtherPanels(except) {
   if (except !== settings) toggleSettings(false);
   if (except !== automations) { automations.classList.remove('open'); automationsBtn.classList.remove('active'); }
+  if (except !== mcp) { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); }
   if (except !== statistics) { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); }
 }
 
@@ -37,7 +40,19 @@ $('toggle-statistics').onclick = async () => {
   if (opening) await loadUsage();
 };
 
+// MCP servers: the config editor and tool list, moved out of Settings.
+// Reloaded on open so it reflects any toggles made from the composer menu.
+$('toggle-mcp').onclick = async () => {
+  const opening = !mcp.classList.contains('open');
+  closeOtherPanels(mcp);
+  mcp.classList.toggle('open', opening);
+  mcpBtn.classList.toggle('active', opening);
+  if (opening) await Promise.all([loadMcp(), loadTools()]);
+};
+$('close-mcp').onclick = () => { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); };
+
 $('close-statistics').onclick = () => { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); };
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); }
   if (event.key === 'Escape') { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); }
 });
