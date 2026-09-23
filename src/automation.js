@@ -56,8 +56,15 @@ export function automationToolDef() {
   };
 }
 
-export async function manageAutomation(args, { store, chatId, triggerAutomation } = {}) {
+export async function manageAutomation(args, { store, chatId, triggerAutomation, unattended = false } = {}) {
   const action = String(args?.action || '');
+  // A scheduled run has nobody watching it. Letting it start more runs is how
+  // one trigger becomes an endless self-requeueing loop, and how text injected
+  // through a tool result turns into a standing schedule. Adjusting or removing
+  // an existing automation stays allowed -- "stop once X is done" is legitimate.
+  if (unattended && (action === 'create' || action === 'trigger')) {
+    return `Error: "${action}" is not available inside a scheduled run. Tell the user in your result if a new automation or run is needed.`;
+  }
   const chat = chatId ? store.getChat(chatId) : null;
   const userId = chat?.user_id ?? null;
   if (action === 'list') return JSON.stringify(store.listAutomations(userId));
@@ -96,5 +103,14 @@ export function nextSchedule(cron, timezone, now = Date.now()) {
 export function runMessage(automation) {
   const previous = automation.lastResult
     ? `\n\nPrevious run result (truncated):\n${automation.lastResult.slice(0, 2000)}` : '';
-  return `[Scheduled automation: ${automation.name}]\nSchedule: ${automation.cron} (${automation.timezone})\n\n${automation.prompt}${previous}`;
+  return [
+    `[Scheduled automation: ${automation.name}]`,
+    `Schedule: ${automation.cron} (${automation.timezone})`,
+    // Without this the model reads an ordinary user turn and may stop to ask a
+    // clarifying question that nobody will ever answer.
+    'This is an unattended run: no one is present to answer questions. Complete the task'
+      + ' with sensible assumptions and state them, or report exactly what blocked it.',
+    '',
+    automation.prompt
+  ].join('\n') + previous;
 }

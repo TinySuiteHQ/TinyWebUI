@@ -85,9 +85,9 @@
         <div><label for="cacheTtl" title="Anthropic cache lifetime. 1h costs more to write but survives longer pauses.">cache ttl</label><select id="cacheTtl"><option value="5m">5 min</option><option value="1h">1 hour</option></select></div>
       </div>
       <div class="row">
-        <div><label for="compactThreshold" title="Prompt size at which old tool results are compacted out of the window. 0 disables it.">compact above (tokens)</label><input id="compactThreshold" type="number" min="0" step="1000"></div>
+        <div><label for="compactThreshold" title="Conversation history size (system prompt and tool definitions excluded) at which old tool results are compacted out of the window. 0 disables it.">compact above (tokens)</label><input id="compactThreshold" type="number" min="0" step="1000"></div>
         <div><label for="keepTurns" title="Recent user turns whose tool results are always kept in full.">keep last turns</label><input id="keepTurns" type="number" min="1" max="20"></div>
-        <div><label for="maxInlineChars" title="A single tool result larger than this is stubbed on arrival.">stub above (chars)</label><input id="maxInlineChars" type="number" min="0" step="1000"></div>
+        <div><label for="maxInlineChars" title="A single tool result larger than this is stubbed for later turns; the turn that fetched it still reads it whole.">stub above (chars)</label><input id="maxInlineChars" type="number" min="0" step="1000"></div>
       </div>
     </div>
 

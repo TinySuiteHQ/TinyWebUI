@@ -77,11 +77,15 @@ The Settings panel can change the model, prompt, generation settings, tool budge
 | `cache` | `true` | Enables prompt-cache shaping where supported. |
 | `cacheMode` | `"auto"` | Selects implicit, explicit, or OpenRouter rolling cache behavior. |
 | `cacheTtl` | `"5m"` | Anthropic cache lifetime; `"1h"` is also available. |
-| `compactThreshold` | `20000` | Estimated prompt tokens at which older tool results are compacted; `0` disables it. |
+| `compactThreshold` | `60000` | History tokens (system prompt and tool definitions excluded) at which older tool results are compacted; `0` disables it. |
 | `keepTurns` | `2` | Recent user turns whose tool results stay in the immediate context. |
-| `maxInlineChars` | `6000` | Tool-result size that triggers immediate stubbing for later turns. |
+| `compactMinSaved` | `20000` | Minimum characters a compaction must remove to be worth its cache miss. |
+| `maxInlineChars` | `30000` | Tool-result size that triggers immediate stubbing for later turns. |
+| `maxTurnChars` | `120000` | Tool-result size that is stubbed even within the turn that fetched it. |
+| `maxHistoryTokens` | `100000` | Hard limit: past this, the oldest turns stop being sent to the model (they stay in the transcript); `0` disables it. |
+| `timezone` | `""` | IANA zone the model is told today's date in; empty uses the server's zone. |
 
-The model sees the full tool budget on the first request, a remaining count on subsequent requests, and a warning for the final two rounds. Once spent, TinyWebUI makes one final model request with tools disabled so the model can answer from the evidence it already gathered.
+The system prompt tells the model the full tool budget and today's date. The last tool result of each round ends with a remaining-rounds note, which turns into a warning for the final two rounds. Once spent, TinyWebUI makes one final model request with tools disabled so the model can answer from the evidence it already gathered.
 
 ## MCP tools
 
@@ -136,8 +140,9 @@ Create recurring automations from the **automations** view or ask the model to m
 Tool results can be much larger than the conversation itself. TinyWebUI keeps the complete result in SQLite, but avoids resending it indefinitely:
 
 1. Within a compacted context epoch, history is append-only and serialized deterministically so providers can reuse matching prompt prefixes.
-2. When the prompt crosses `compactThreshold`, older tool results are replaced once with compact stubs containing an artifact ID, a structural hint, and verbatim head/tail text.
+2. When the history crosses `compactThreshold`, older tool results are replaced once with compact stubs containing an artifact ID, a structural hint, and verbatim head/tail text, and older image attachments are replaced with a short note.
 3. The model can recover exact content later through `context_expand`; the complete result remains available in the chat store.
+4. If the history is still over `maxHistoryTokens` after that (typically a very long chat with few tool calls), the oldest turns are dropped from what the model sees, cutting on a user message and leaving a note that earlier conversation was omitted.
 
 For OpenRouter, TinyWebUI sends a stable per-chat `session_id` to help provider sticky routing keep prompt caches warm. Claude on OpenRouter uses its automatic rolling cache directive; local and other compatible endpoints receive no OpenRouter-only fields. Set `cacheMode` explicitly only when your gateway needs a different cache dialect, or set `cache: false` to turn the feature off.
 

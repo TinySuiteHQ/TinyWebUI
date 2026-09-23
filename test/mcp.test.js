@@ -17,7 +17,7 @@ function fixture() {
     beta: { command: 'x' },
     gamma: { command: 'x', disabled: true }
   });
-  hub.clients.set('alpha', {}); // "connected"
+  hub.clients.set('alpha', { getInstructions: () => null }); // "connected"
   // beta never got a client: connect() failed on it
   hub.errors.push('beta: spawn ENOENT');
 

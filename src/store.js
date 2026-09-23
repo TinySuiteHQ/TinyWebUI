@@ -291,6 +291,12 @@ export class Store {
     ensureColumn(this.db, 'chats', 'user_id', 'TEXT');
     ensureColumn(this.db, 'chats', 'folder', 'TEXT');
     ensureColumn(this.db, 'chats', 'tags_json', "TEXT NOT NULL DEFAULT '[]'");
+    // First message the model still sees once the hard window has moved; -1
+    // until it ever has. See planWindow in compact.js.
+    ensureColumn(this.db, 'chats', 'window_seq', 'INTEGER NOT NULL DEFAULT -1');
+    // Set once an epoch has taken a message's images off the wire; the images
+    // themselves stay in images_json for the transcript.
+    ensureColumn(this.db, 'messages', 'images_dropped', 'INTEGER NOT NULL DEFAULT 0');
     ensureColumn(this.db, 'documents', 'user_id', 'TEXT');
     ensureColumn(this.db, 'artifacts', 'user_id', 'TEXT');
     ensureColumn(this.db, 'automation_runs', 'trigger_type', "TEXT NOT NULL DEFAULT 'schedule'");
@@ -427,6 +433,9 @@ export class Store {
     // so the pinned cache breakpoint it drives has to go with it.
     const chat = this.getChat(chatId);
     if (chat && chat.boundary_seq >= seq) this.touchChat(chatId, { boundary_seq: -1 });
+    // Same for the hard window: a cut at or past the rewind point would hide
+    // the very question being asked again.
+    if (chat && chat.window_seq >= seq) this.touchChat(chatId, { window_seq: -1 });
     return removed;
   }
 
@@ -541,7 +550,7 @@ export class Store {
   touchChat(id, patch = {}) {
     const sets = ['updated_at = ?'];
     const vals = [Date.now()];
-    for (const key of ['title', 'epoch', 'boundary_seq']) {
+    for (const key of ['title', 'epoch', 'boundary_seq', 'window_seq']) {
       if (patch[key] !== undefined) { sets.push(`${key} = ?`); vals.push(patch[key]); }
     }
     vals.push(id);
@@ -595,6 +604,11 @@ export class Store {
    */
   setStub(messageId, stubText) {
     this.db.prepare('UPDATE messages SET stub_text = ? WHERE id = ?').run(stubText, messageId);
+  }
+
+  /** Takes a message's images off the wire at an epoch; the transcript keeps them. */
+  dropImages(messageId) {
+    this.db.prepare('UPDATE messages SET images_dropped = 1 WHERE id = ?').run(messageId);
   }
 
   /**
@@ -911,6 +925,13 @@ function automationView(row) {
 export function toWire(row) {
   const msg = base(row);
   msg.content = row.role === 'tool' ? (row.stub_text ?? row.content) : (row.content ?? null);
+  // An epoch took these images off the wire. The note is a pure function of
+  // the row, so every rebuild sends the same bytes.
+  if (row.images_dropped && msg.images?.length) {
+    const n = msg.images.length;
+    msg.content = `${msg.content ?? ''}\n\n[${n} image${n === 1 ? '' : 's'} attached here ${n === 1 ? 'was' : 'were'} removed from context to save space. Ask the user to re-attach if you need to look again.]`;
+    delete msg.images;
+  }
   // A model that was sent images needs the OpenAI multimodal shape -- an array
   // of parts rather than a plain string. Built only when there are images, so
   // every text-only turn keeps sending the plain string it always has, which

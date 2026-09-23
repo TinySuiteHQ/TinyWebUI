@@ -85,8 +85,8 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
   // able to tell: it is registered onto the same hub and called the same way.
   const connectHub = async (servers) =>
     (await new McpHub(servers).connect())
-      .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }))
-      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store }))
+      .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
+      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store }), { readOnly: true })
       .registerLocal(automationToolDef(), (args, ctx) => {
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation });
         armScheduler();
@@ -124,7 +124,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
   const RETAIN_MS = 5 * 60 * 1000;
 
-  function startRun({ chat, tools, onFinish, historyFromSeq = null }) {
+  function startRun({ chat, tools, onFinish, historyFromSeq = null, unattended = false }) {
     const run = {
       events: [],
       subs: new Set(),
@@ -148,7 +148,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq });
+        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -186,7 +186,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         result: String(result || '').slice(0, 4000), error: error ? String(error).slice(0, 1000) : null
       });
       armScheduler();
-    }, historyFromSeq: firstSeq });
+    }, historyFromSeq: firstSeq, unattended: true });
     return true;
   }
 

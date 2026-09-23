@@ -135,13 +135,26 @@ export function digest(artifact, { head = DIGEST_HEAD, tail = DIGEST_TAIL } = {}
   ].join('\n');
 }
 
+/** What one image is counted as, in characters of text (about 1.5k tokens). */
+export const IMAGE_CHARS = 6000;
+
+/** Rough size of a tool block, so a large MCP toolset isn't mistaken for history. */
+export function estimateToolTokens(tools = []) {
+  return tools.length ? Math.ceil(JSON.stringify(tools).length / 4) : 0;
+}
+
 /** Rough size of the wire payload, for when a provider reports no usage at all. */
 export function estimateTokens(wireMessages) {
   let chars = 0;
   for (const m of wireMessages) {
     if (typeof m.content === 'string') chars += m.content.length;
     else if (Array.isArray(m.content)) {
-      for (const p of m.content) if (p.type === 'text') chars += p.text.length;
+      for (const p of m.content) {
+        if (p.type === 'text') chars += p.text.length;
+        // Base64 length says nothing about what an image costs; providers bill
+        // a tile-based figure in the low thousands of tokens.
+        else if (p.type === 'image_url') chars += IMAGE_CHARS;
+      }
     }
     if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
   }
@@ -164,9 +177,12 @@ export function planEpoch(rows, { threshold, keepTurns, promptTokens }) {
   if (userSeqs.length <= keepTurns) return null;
   const boundarySeq = userSeqs[userSeqs.length - keepTurns];
 
-  const targets = rows.filter(
-    (r) => r.role === 'tool' && r.artifact_id && !r.stub_text && r.seq < boundarySeq
-  );
+  // Old images go the same way as old tool output: they are resent in full on
+  // every turn, and unlike text nothing ever shrinks them otherwise.
+  const targets = rows.filter((r) => r.seq < boundarySeq && (
+    (r.role === 'tool' && r.artifact_id && !r.stub_text)
+    || (r.images_json && !r.images_dropped)
+  ));
   // No candidates means bumping the epoch would cost a cache miss for nothing.
   if (!targets.length) return null;
 
@@ -178,18 +194,82 @@ export function planEpoch(rows, { threshold, keepTurns, promptTokens }) {
  * boundary. After this returns, the prefix up to `boundarySeq` is frozen --
  * stubs are persisted, so every later rebuild produces identical bytes.
  */
-export function applyEpoch(store, chat, plan) {
+export function applyEpoch(store, chat, plan, { minSaved = 0 } = {}) {
+  // Stubs are worked out before anything is written: an epoch costs a full
+  // cache miss, so one that would only shave a few hundred characters is not
+  // worth opening, and the check has to happen before the store is touched.
+  const stubs = [];
   let saved = 0;
+  const drops = [];
   for (const row of plan.targets) {
+    if (row.role !== 'tool') {
+      drops.push(row.id);
+      saved += JSON.parse(row.images_json).length * IMAGE_CHARS;
+      continue;
+    }
     const artifact = store.getArtifact(row.artifact_id, chat.id);
     if (!artifact) continue;
     const stub = digest(artifact);
     if (stub.length >= (row.content?.length ?? 0)) continue;
-    store.setStub(row.id, stub);
+    stubs.push([row.id, stub]);
     saved += (row.content?.length ?? 0) - stub.length;
   }
-  if (!saved) return null;
+  if (!saved || saved < minSaved) return null;
+  for (const [id, stub] of stubs) store.setStub(id, stub);
+  for (const id of drops) store.dropImages(id);
   const epoch = chat.epoch + 1;
   store.touchChat(chat.id, { epoch, boundary_seq: plan.boundarySeq });
   return { epoch, boundarySeq: plan.boundarySeq, saved };
+}
+
+/**
+ * The hard window: what happens when stubbing is not enough.
+ *
+ * Compaction only ever shrinks tool output and images, so a long conversation
+ * of plain text has nothing to give back and would grow until the provider
+ * refuses it outright. Past `maxTokens` the oldest turns leave the wire
+ * entirely. The cut always lands on a user message, so no tool call is ever
+ * separated from its result, and it moves back far enough to bring the history
+ * down to `targetTokens` -- a big step taken rarely, since every move is a full
+ * cache miss, the same trade an epoch makes. The last `keepTurns` turns are
+ * never cut, whatever they cost.
+ *
+ * Returns the new first visible seq, or null to leave the window where it is.
+ * `rows` must already be what the model would see (window applied, stubs in).
+ */
+export function planWindow(rows, { maxTokens, targetTokens, keepTurns, toWire }) {
+  if (!(maxTokens > 0)) return null;
+  const sizes = rows.map((r) => estimateTokens([toWire(r)]));
+  let total = sizes.reduce((a, b) => a + b, 0);
+  if (total <= maxTokens) return null;
+
+  const userIdx = rows.map((r, i) => (r.role === 'user' ? i : -1)).filter((i) => i >= 0);
+  if (userIdx.length <= keepTurns) return null;
+  const lastCut = userIdx[userIdx.length - keepTurns];
+
+  let cut = 0;
+  for (const i of userIdx) {
+    if (i === 0) continue;
+    if (i > lastCut) break;
+    for (let k = cut; k < i; k++) total -= sizes[k];
+    cut = i;
+    if (total <= targetTokens) break;
+  }
+  return cut > 0 ? rows[cut].seq : null;
+}
+
+/**
+ * Applies a window to stored rows: drops what is before it and marks the
+ * first remaining message so the model knows the conversation did not start
+ * there. Pure and deterministic, so every rebuild sends the same bytes.
+ */
+export function windowRows(rows, windowSeq) {
+  if (!(windowSeq >= 0)) return rows;
+  const kept = rows.filter((r) => r.seq >= windowSeq);
+  const dropped = rows.length - kept.length;
+  if (!dropped || !kept.length || kept[0].role !== 'user') return kept;
+  const note = `[Earlier conversation omitted: ${dropped} message${dropped === 1 ? '' : 's'} before this`
+    + ' point were removed to keep the conversation within the context window. If something'
+    + ' from before is needed and is not restated here, ask the user.]';
+  return [{ ...kept[0], content: `${note}\n\n${kept[0].content ?? ''}` }, ...kept.slice(1)];
 }

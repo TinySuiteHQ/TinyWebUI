@@ -73,18 +73,33 @@ const DEFAULTS = {
   // Where conversations live. Tool output is kept whole here and only the
   // compacted form goes on the wire, so this file grows faster than the window.
   dbPath: '',
-  // Context compaction. Once a request's prompt crosses `compactThreshold`,
-  // tool results older than the last `keepTurns` user messages are demoted to
-  // stubs -- once, and then frozen, so the cost is a single cache miss rather
-  // than a rewritten prefix on every turn. Set the threshold to 0 to disable.
-  compactThreshold: 20000,
+  // Context compaction. Once the conversation history (system prompt and tool
+  // definitions excluded) crosses `compactThreshold` tokens, tool results older
+  // than the last `keepTurns` user messages are demoted to stubs -- once, and
+  // then frozen, so the cost is a single cache miss rather than a rewritten
+  // prefix on every turn. Set the threshold to 0 to disable.
+  compactThreshold: 60000,
   keepTurns: 2,
-  // Safety valve: a single result larger than this is stubbed the moment it
-  // arrives, before it can blow the window on its own. Appending a stub costs
-  // no cache, so this is free -- kept low because a single web scrape or
-  // search result can otherwise run tens of thousands of chars and gets
-  // resent in full on every remaining round of a multi-round tool turn.
-  maxInlineChars: 6000,
+  // An epoch is a full cache miss, so it only happens when stubbing would
+  // remove at least this many characters from the window.
+  compactMinSaved: 20000,
+  // A single result larger than this is stubbed for every LATER turn the
+  // moment it arrives; the turn that fetched it still reads it whole. High
+  // enough that an ordinary page or search result stays readable for a
+  // follow-up question without a context_expand round.
+  maxInlineChars: 30000,
+  // Hard cap: a result larger than this is stubbed even for the turn that
+  // fetched it, since it would otherwise be resent in full on every remaining
+  // round and can blow the window on its own.
+  maxTurnChars: 120000,
+  // Hard window. If the history is still larger than this many tokens after
+  // compaction -- a long plain-text chat, where there is nothing to stub --
+  // the oldest turns stop being sent (they stay in the transcript), cutting
+  // back to half this size so it moves rarely. 0 disables it.
+  maxHistoryTokens: 100000,
+  // IANA zone the model is told the date in (and uses for automations). Empty
+  // means the server's own zone.
+  timezone: '',
   // Cap on what one context_expand call may return.
   expandCharBudget: 8000,
   // Flat tool names switched off from the settings panel -- built-in or an
@@ -200,7 +215,7 @@ export function loadConfig() {
 const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds',
   'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
-  'disabledTools'
+  'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone', 'disabledTools'
 ]);
 
 export function saveConfig(patch) {
