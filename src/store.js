@@ -18,6 +18,37 @@ import { dirname } from 'node:path';
  */
 
 const SCHEMA = `
+-- Optional auth/RBAC (config authMode 'single'/'multiuser'). Unused and
+-- empty when authMode is 'none', the default -- these tables cost nothing
+-- to have around.
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  email         TEXT UNIQUE,
+  google_sub    TEXT UNIQUE,
+  password_hash TEXT,
+  role          TEXT NOT NULL DEFAULT 'user',
+  status        TEXT NOT NULL DEFAULT 'pending',
+  created_at    INTEGER NOT NULL,
+  approved_at   INTEGER,
+  last_login_at INTEGER
+);
+
+-- Session tokens are stored hashed (sha256), never the raw cookie value, the
+-- same principle as password_hash above.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+-- One-time migration flags (e.g. backfilling user_id onto pre-auth rows),
+-- so a backfill never accidentally reruns and clobbers real ownership later.
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS chats (
   id           TEXT PRIMARY KEY,
   title        TEXT NOT NULL,
@@ -190,6 +221,18 @@ function ftsQuery(raw) {
     .join(' ');
 }
 
+/**
+ * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
+ * no-op against a live table, so a column added to a table's shape after
+ * installs already exist has to be self-repaired this way instead -- the
+ * same pattern `model`/`created_at`/`images_json` already use below for
+ * `messages`. `ALTER TABLE ADD COLUMN` itself has no IF NOT EXISTS form.
+ */
+function ensureColumn(db, table, col, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+}
+
 export class Store {
   constructor(path) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -197,6 +240,11 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
+    // Nullable everywhere: unused (null) when auth is off, the exact behavior
+    // installs already have; set only once per-user scoping is opted into.
+    ensureColumn(this.db, 'chats', 'user_id', 'TEXT');
+    ensureColumn(this.db, 'documents', 'user_id', 'TEXT');
+    ensureColumn(this.db, 'artifacts', 'user_id', 'TEXT');
     // `messages` may already exist from before these columns did --
     // CREATE TABLE IF NOT EXISTS above is a no-op against a live table, so
     // they're added here instead, self-repairing like the FTS backfill below.
@@ -244,22 +292,30 @@ export class Store {
 
   /* ---------- chats ---------- */
 
-  createChat({ id, title = 'New chat', createdAt = Date.now() } = {}) {
+  createChat({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = null) {
     const chatId = id || String(createdAt) + '-' + randomBytes(3).toString('hex');
     this.db.prepare(
-      'INSERT INTO chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)'
-    ).run(chatId, title, createdAt, createdAt);
-    return this.getChat(chatId);
+      'INSERT INTO chats (id, title, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)'
+    ).run(chatId, title, createdAt, createdAt, userId);
+    return this.getChat(chatId, userId);
   }
 
-  getChat(id) {
-    return this.db.prepare('SELECT * FROM chats WHERE id = ?').get(id) || null;
+  /** `userId` null means unscoped -- today's exact behavior, and how an
+   * admin's full-content view (Level 3) reaches any user's chat. */
+  getChat(id, userId = null) {
+    return userId
+      ? this.db.prepare('SELECT * FROM chats WHERE id = ? AND user_id = ?').get(id, userId) || null
+      : this.db.prepare('SELECT * FROM chats WHERE id = ?').get(id) || null;
   }
 
-  listChats(limit = 200) {
-    return this.db.prepare(
-      'SELECT id, title, updated_at, epoch, boundary_seq FROM chats ORDER BY updated_at DESC LIMIT ?'
-    ).all(limit);
+  listChats(limit = 200, userId = null) {
+    return userId
+      ? this.db.prepare(
+          'SELECT id, title, updated_at, epoch, boundary_seq FROM chats WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?'
+        ).all(userId, limit)
+      : this.db.prepare(
+          'SELECT id, title, updated_at, epoch, boundary_seq FROM chats ORDER BY updated_at DESC LIMIT ?'
+        ).all(limit);
   }
 
   /**

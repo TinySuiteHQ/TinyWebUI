@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
   ? resolve(process.env.TINYWEBUI_CONFIG)
@@ -91,6 +92,27 @@ const DEFAULTS = {
   // is offered to the model; a server can still be reached by name, so this
   // is a per-tool block, not a substitute for disabling the whole server.
   disabledTools: [],
+  // Optional auth/RBAC. Off by default -- TinyWebUI stays single-user and
+  // local-first unless this is deliberately opted into for a managed deploy.
+  //   'none'      no login, no changes (default)
+  //   'single'    one password gate, DB content encrypted at rest with a key
+  //               derived from that password
+  //   'multiuser' Google OAuth login, admin-approved accounts, per-user data
+  authMode: 'none',
+  // Level 'single': a password hash (never plaintext), set via setup, not the
+  // general /api/config PATCH.
+  authPassword: '',
+  // Signs session cookies. Auto-generated on first run when auth is enabled
+  // and this is empty; never sent to the frontend.
+  sessionSecret: '',
+  // Level 'multiuser': Google OAuth app credentials.
+  googleClientId: '',
+  googleClientSecret: '',
+  googleRedirectUri: '',
+  // Emails auto-approved as admin the first time they sign in -- how the
+  // first admin account is bootstrapped.
+  adminEmails: [],
+  sessionTtlDays: 30,
 };
 
 export function configPath() {
@@ -157,6 +179,20 @@ export function loadConfig() {
   if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
   const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
   if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
+  const AUTH_MODES = ['none', 'single', 'multiuser'];
+  if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
+  // A session secret is required the moment auth is on; generate and persist
+  // one rather than signing cookies with an empty key.
+  if (cfg.authMode !== 'none' && !cfg.sessionSecret) {
+    cfg.sessionSecret = randomBytes(32).toString('hex');
+    try {
+      const current = existsSync(CONFIG_FILE) ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) : {};
+      current.sessionSecret = cfg.sessionSecret;
+      writeFileSync(CONFIG_FILE, JSON.stringify(current, null, 2) + '\n');
+    } catch (err) {
+      console.error(`[tinywebui] could not persist generated sessionSecret: ${err.message}`);
+    }
+  }
   return cfg;
 }
 
@@ -179,6 +215,10 @@ export function saveConfig(patch) {
 }
 
 export function publicConfig(cfg) {
-  const { apiKey, ...rest } = cfg;
-  return { ...rest, hasApiKey: Boolean(apiKey) };
+  const { apiKey, authPassword, sessionSecret, googleClientSecret, ...rest } = cfg;
+  return {
+    ...rest,
+    hasApiKey: Boolean(apiKey),
+    hasGoogleAuth: Boolean(cfg.googleClientId),
+  };
 }

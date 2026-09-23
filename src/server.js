@@ -10,6 +10,7 @@ import {
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView } from './store.js';
+import { getSessionUser } from './auth.js';
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { extractText } from './documents.js';
@@ -169,8 +170,42 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
     return undefined;
   }
 
+  // Reachable without a session: the login/OAuth dance itself, plus static
+  // assets so the login page can load before there's anyone to authenticate.
+  const PRE_AUTH_PATHS = /^\/api\/auth\//;
+  function isPreAuthPath(pathname) {
+    return PRE_AUTH_PATHS.test(pathname) || !pathname.startsWith('/api/');
+  }
+
+  /**
+   * The one auth gate for the whole handler. A no-op when authMode is
+   * 'none' -- ctx.userId stays null, exactly today's unscoped behavior --
+   * so every existing route below is unaffected until auth is opted into.
+   */
+  function resolveAuth(req) {
+    if (cfg.authMode === 'none') return { userId: null, role: null, user: null };
+    const pathname = (req.url || '').split('?')[0];
+    const user = getSessionUser(req, store, cfg);
+    if (!user && !isPreAuthPath(pathname)) return { unauthorized: true };
+    if (user && user.status !== 'approved' && !isPreAuthPath(pathname)) return { pending: true };
+    return { userId: user?.id ?? null, role: user?.role ?? null, user };
+  }
+
   const server = createServer(async (req, res) => {
     try {
+      const auth = resolveAuth(req);
+      if (auth.unauthorized) return json(res, 401, { error: 'unauthorized' });
+      if (auth.pending) return json(res, 403, { error: 'pending_approval' });
+
+      if (req.method === 'GET' && req.url === '/api/auth/me') {
+        return json(res, 200, {
+          authMode: cfg.authMode,
+          user: auth.user
+            ? { id: auth.user.id, email: auth.user.email, role: auth.user.role, status: auth.user.status }
+            : null
+        });
+      }
+
       if (req.method === 'GET' && req.url === '/api/config') {
         return json(res, 200, {
           ...publicConfig(cfg),
