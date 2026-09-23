@@ -161,6 +161,9 @@ $('form').addEventListener('submit', async (e) => {
 
 // A run is the server's, so the dot in the sidebar can change without this tab
 // doing anything at all. Poll only while there is something to watch.
-setInterval(() => {
-  if (state.busy || state.chats.some((c) => c.running)) loadChats();
+setInterval(async () => {
+  if (!state.busy && !state.chats.some((c) => c.running)) return;
+  await loadChats();
+  const id = state.chat?.id;
+  if (!state.busy && id && state.chats.some((chat) => chat.id === id && chat.running)) rejoin(id);
 }, 4000);

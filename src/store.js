@@ -60,6 +60,39 @@ CREATE TABLE IF NOT EXISTS chats (
   tags_json    TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS automations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  cron TEXT NOT NULL,
+  timezone TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  next_run_at INTEGER,
+  last_run_at INTEGER,
+  last_status TEXT,
+  last_result TEXT,
+  source TEXT NOT NULL DEFAULT 'user',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS automations_due ON automations(enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS automations_user ON automations(user_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+  id TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+  scheduled_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER,
+  status TEXT NOT NULL,
+  trigger_type TEXT NOT NULL DEFAULT 'schedule',
+  result TEXT,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS automation_runs_recent ON automation_runs(automation_id, scheduled_at DESC);
+
 -- Folders exist as their own rows so an empty one -- created but nothing
 -- moved into it yet -- still shows up in the sidebar. A chat's folder
 -- column stores the name directly rather than an id: simple, and it already
@@ -260,6 +293,7 @@ export class Store {
     ensureColumn(this.db, 'chats', 'tags_json', "TEXT NOT NULL DEFAULT '[]'");
     ensureColumn(this.db, 'documents', 'user_id', 'TEXT');
     ensureColumn(this.db, 'artifacts', 'user_id', 'TEXT');
+    ensureColumn(this.db, 'automation_runs', 'trigger_type', "TEXT NOT NULL DEFAULT 'schedule'");
     // `messages` may already exist from before these columns did --
     // CREATE TABLE IF NOT EXISTS above is a no-op against a live table, so
     // they're added here instead, self-repairing like the FTS backfill below.
@@ -397,6 +431,7 @@ export class Store {
   }
 
   deleteChat(id) {
+    this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
     // FTS5 has no foreign keys of its own, so its rows are dropped by rowid
@@ -409,6 +444,98 @@ export class Store {
     this.db.prepare('DELETE FROM document_chunk_map WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
+  }
+
+  /* ---------- automations ---------- */
+
+  listAutomations(userId = null) {
+    const rows = userId
+      ? this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+          WHERE a.user_id=? ORDER BY a.updated_at DESC`).all(userId)
+      : this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+          WHERE a.user_id IS NULL ORDER BY a.updated_at DESC`).all();
+    return rows.map(automationView);
+  }
+
+  listAllAutomations() {
+    return this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+      ORDER BY a.updated_at DESC`).all().map(automationView);
+  }
+
+  getAutomation(id, userId = null) {
+    const row = userId
+      ? this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+          WHERE a.id=? AND a.user_id=?`).get(id, userId)
+      : this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+          WHERE a.id=? AND a.user_id IS NULL`).get(id);
+    return row ? automationView(row) : null;
+  }
+
+  createAutomation(data, userId = null) {
+    const id = randomBytes(12).toString('hex');
+    const now = Date.now();
+    this.db.prepare(`INSERT INTO automations
+      (id,user_id,chat_id,name,prompt,cron,timezone,enabled,next_run_at,source,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,userId,data.chatId,data.name,data.prompt,data.cron,data.timezone,
+      data.enabled === false ? 0 : 1,data.nextRunAt,data.source || 'user',now,now);
+    return this.getAutomation(id,userId);
+  }
+
+  updateAutomation(id, patch, userId = null) {
+    const current = this.getAutomation(id,userId);
+    if (!current) return null;
+    const fields = { chatId:'chat_id', name:'name', prompt:'prompt', cron:'cron', timezone:'timezone', enabled:'enabled', nextRunAt:'next_run_at', lastRunAt:'last_run_at', lastStatus:'last_status', lastResult:'last_result' };
+    const sets = ['updated_at=?'];
+    const values = [Date.now()];
+    for (const [key,col] of Object.entries(fields)) if (patch[key] !== undefined) {
+      sets.push(`${col}=?`); values.push(key === 'enabled' ? (patch[key] ? 1 : 0) : patch[key]);
+    }
+    values.push(id,userId);
+    this.db.prepare(`UPDATE automations SET ${sets.join(',')} WHERE id=? AND user_id IS ?`).run(...values);
+    return this.getAutomation(id,userId);
+  }
+
+  deleteAutomation(id, userId = null) {
+    return this.db.prepare('DELETE FROM automations WHERE id=? AND user_id IS ?').run(id,userId).changes > 0;
+  }
+
+  dueAutomations(now = Date.now()) {
+    return this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+      WHERE a.enabled=1 AND a.next_run_at<=? ORDER BY a.next_run_at`).all(now).map(automationView);
+  }
+
+  addAutomationRun(automationId, scheduledAt, status = 'queued', triggerType = 'schedule') {
+    const id = randomBytes(12).toString('hex');
+    this.db.prepare(`INSERT INTO automation_runs(id,automation_id,scheduled_at,status,trigger_type) VALUES(?,?,?,?,?)`)
+      .run(id,automationId,scheduledAt,status,triggerType);
+    return id;
+  }
+
+  updateAutomationRun(id, patch) {
+    const fields = { status:'status', startedAt:'started_at', finishedAt:'finished_at', result:'result', error:'error' };
+    const sets = []; const values = [];
+    for (const [key,col] of Object.entries(fields)) if (patch[key] !== undefined) { sets.push(`${col}=?`); values.push(patch[key]); }
+    if (sets.length) this.db.prepare(`UPDATE automation_runs SET ${sets.join(',')} WHERE id=?`).run(...values,id);
+    const row = this.db.prepare('SELECT * FROM automation_runs WHERE id=?').get(id);
+    const owner = this.db.prepare('SELECT user_id FROM automations WHERE id=?').get(row?.automation_id)?.user_id ?? null;
+    if (row) this.updateAutomation(row.automation_id, {
+      lastRunAt: row.started_at || row.scheduled_at, lastStatus: row.status,
+      ...(row.result !== null ? { lastResult: row.result.slice(0, 4000) } : {})
+    }, owner);
+  }
+
+  listAutomationRuns(automationId, userId = null, limit = 10) {
+    const owned = this.getAutomation(automationId,userId);
+    if (!owned) return null;
+    return this.db.prepare('SELECT id,scheduled_at,started_at,finished_at,status,trigger_type,result,error FROM automation_runs WHERE automation_id=? ORDER BY scheduled_at DESC LIMIT ?')
+      .all(automationId,Math.min(50,Math.max(1,limit)));
+  }
+
+  recoverAutomationRuns(now = Date.now()) {
+    const rows = this.db.prepare("SELECT id FROM automation_runs WHERE status IN ('queued','running')").all();
+    for (const row of rows) this.updateAutomationRun(row.id, {
+      status: 'failed', finishedAt: now, error: 'Server restarted during this run.'
+    });
   }
 
   touchChat(id, patch = {}) {
@@ -479,13 +606,13 @@ export class Store {
    * the several cache-token spellings) is normalized here the same way
    * transcript.js's tally() does client-side for a single round.
    */
-  usageRollup() {
+  usageRollup(userId = null) {
     const rows = this.db.prepare(`
-      SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') AS day,
-             model, usage_json
-      FROM messages
-      WHERE usage_json IS NOT NULL AND created_at IS NOT NULL
-    `).all();
+      SELECT strftime('%Y-%m-%d', m.created_at / 1000, 'unixepoch') AS day,
+             m.model, m.usage_json
+      FROM messages m JOIN chats c ON c.id=m.chat_id
+      WHERE m.usage_json IS NOT NULL AND m.created_at IS NOT NULL AND c.user_id IS ?
+    `).all(userId);
 
     const byDay = new Map();
     for (const row of rows) {
@@ -499,6 +626,7 @@ export class Store {
         ?? 0;
       const model = row.model || u.model || 'unknown';
 
+      const cost = u.cost != null && Number.isFinite(Number(u.cost)) ? Number(u.cost) : null;
       if (!byDay.has(row.day)) byDay.set(row.day, { day: row.day, in: 0, out: 0, cached: 0, models: new Map() });
       const d = byDay.get(row.day);
       d.in += inTok; d.out += outTok; d.cached += cached;
@@ -506,11 +634,81 @@ export class Store {
       if (!d.models.has(model)) d.models.set(model, { model, in: 0, out: 0, cached: 0 });
       const m = d.models.get(model);
       m.in += inTok; m.out += outTok; m.cached += cached;
+      if (cost !== null) {
+        d.cost = (d.cost || 0) + cost;
+        m.cost = (m.cost || 0) + cost;
+        d.pricedRounds = (d.pricedRounds || 0) + 1;
+        m.pricedRounds = (m.pricedRounds || 0) + 1;
+      }
     }
 
     return [...byDay.values()]
       .map((d) => ({ ...d, models: [...d.models.values()] }))
       .sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  usageStatistics(userId = null) {
+    const rows = this.db.prepare(`SELECT m.chat_id,m.seq,m.role,m.content,m.tool_calls_json,m.model,m.usage_json
+      FROM messages m JOIN chats c ON c.id=m.chat_id WHERE c.user_id IS ? ORDER BY m.chat_id,m.seq`).all(userId);
+    const models = new Map();
+    const summary = { rounds: 0, pricedRounds: 0, reportedCost: 0, completedAnswers: 0,
+      pricedAnswers: 0, answerCostTotal: 0, answerTokens: 0, tokenAnswers: 0 };
+    let chatId = null;
+    let answer = null;
+    const finishAnswer = () => {
+      if (!answer) return;
+      if (answer.complete) {
+        summary.completedAnswers++;
+        if (answer.rounds && answer.pricedRounds === answer.rounds) {
+          summary.pricedAnswers++;
+          summary.answerCostTotal += answer.cost;
+        }
+        if (answer.rounds && answer.usageRounds === answer.rounds) { summary.tokenAnswers++; summary.answerTokens += answer.tokens; }
+      }
+    };
+    for (const row of rows) {
+      if (row.chat_id !== chatId) { finishAnswer(); chatId = row.chat_id; answer = null; }
+      if (row.role === 'user') { finishAnswer(); answer = { rounds:0, usageRounds:0, pricedRounds:0, cost:0, tokens:0, complete:false }; continue; }
+      if (row.role !== 'assistant') continue;
+      summary.rounds++;
+      if (answer) answer.rounds++;
+      let usage = null;
+      try { if (row.usage_json) usage = JSON.parse(row.usage_json); } catch { /* ignore malformed historic usage */ }
+      const model = row.model || usage?.model || 'unknown';
+      if (!models.has(model)) models.set(model, { model, in:0, out:0, cached:0, rounds:0, pricedRounds:0, cost:0 });
+      const m = models.get(model);
+      m.rounds++;
+      if (usage) {
+        const inTok = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
+        const outTok = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
+        const cached = Number(usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? usage.cached_tokens ?? 0) || 0;
+        const costValue = usage.cost ?? usage.total_cost;
+        const cost = costValue !== undefined && costValue !== null && Number.isFinite(Number(costValue)) ? Number(costValue) : null;
+        m.in += inTok; m.out += outTok; m.cached += cached;
+        if (cost !== null) { m.cost += cost; m.pricedRounds++; summary.pricedRounds++; summary.reportedCost += cost; }
+        if (answer) {
+          answer.usageRounds++; answer.tokens += inTok + outTok;
+          if (cost !== null) { answer.pricedRounds++; answer.cost += cost; }
+        }
+      }
+      if (!row.tool_calls_json && String(row.content || '').trim()) {
+        if (answer) answer.complete = true;
+      }
+    }
+    finishAnswer();
+    return {
+      rounds: summary.rounds,
+      pricedRounds: summary.pricedRounds,
+      unpricedRounds: summary.rounds - summary.pricedRounds,
+      reportedCost: summary.pricedRounds ? summary.reportedCost : null,
+      averageRoundCost: summary.pricedRounds ? summary.reportedCost / summary.pricedRounds : null,
+      completedAnswers: summary.completedAnswers,
+      pricedAnswers: summary.pricedAnswers,
+      averageAnswerCost: summary.pricedAnswers ? summary.answerCostTotal / summary.pricedAnswers : null,
+      averageAnswerTokens: summary.tokenAnswers ? summary.answerTokens / summary.tokenAnswers : null,
+      models: [...models.values()].map((m) => ({ ...m, cost: m.pricedRounds ? m.cost : null }))
+        .sort((a,b) => b.in + b.out - a.in - a.out)
+    };
   }
 
   /* ---------- artifacts ---------- */
@@ -670,6 +868,16 @@ function base(row) {
   if (row.reasoning_details_json) msg.reasoning_details = JSON.parse(row.reasoning_details_json);
   if (row.images_json) msg.images = JSON.parse(row.images_json);
   return msg;
+}
+
+function automationView(row) {
+  return {
+    id: row.id, userId: row.user_id, chatId: row.chat_id, chatTitle: row.chat_title,
+    name: row.name, prompt: row.prompt, cron: row.cron, timezone: row.timezone,
+    enabled: Boolean(row.enabled), nextRunAt: row.next_run_at, lastRunAt: row.last_run_at,
+    lastStatus: row.last_status, lastResult: row.last_result, source: row.source,
+    createdAt: row.created_at, updatedAt: row.updated_at
+  };
 }
 
 /**

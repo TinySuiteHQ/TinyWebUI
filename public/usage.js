@@ -9,6 +9,7 @@ import { $, el } from './dom.js';
 
 let days = []; // raw daily rows from /api/usage
 let path = []; // drill-down breadcrumb, e.g. ['2026'] or ['2026', '2026-03']
+let statistics = null;
 
 const fmt = (n) => n.toLocaleString();
 
@@ -53,6 +54,7 @@ function bucket(rows, level) {
 }
 
 function render() {
+  renderCostStatistics(statistics);
   if (!days.length) {
     $('usageStats').innerHTML = '<div class="empty">no usage recorded yet</div>';
     $('usageModels').innerHTML = '';
@@ -197,9 +199,48 @@ function render() {
   }
 }
 
+const costFmt = (value) => value == null ? 'not reported' : `$${Number(value).toFixed(6)}`;
+
+function renderCostStatistics(stats) {
+  const summary = $('statisticsSummary');
+  const coverage = $('statisticsCoverage');
+  const modelsBox = $('statisticsCosts');
+  if (!summary || !coverage || !modelsBox) return;
+  summary.replaceChildren(); modelsBox.replaceChildren();
+  if (!stats || !stats.rounds) {
+    summary.appendChild(el('div', 'empty')).textContent = 'No model usage recorded yet.';
+    coverage.textContent = '';
+    return;
+  }
+  const tile = (label, value) => {
+    const box = el('div');
+    const name = el('label'); name.textContent = label;
+    const amount = el('div', 'usage-stat-value'); amount.textContent = value;
+    box.append(name, amount); return box;
+  };
+  summary.append(
+    tile('reported cost', costFmt(stats.reportedCost)),
+    tile('average model request', costFmt(stats.averageRoundCost)),
+    tile('average complete answer', costFmt(stats.averageAnswerCost)),
+    tile('average answer tokens (all rounds)', stats.averageAnswerTokens == null ? '—' : Math.round(stats.averageAnswerTokens).toLocaleString())
+  );
+  coverage.textContent = `${stats.pricedRounds.toLocaleString()} of ${stats.rounds.toLocaleString()} model requests reported cost; `
+    + `${stats.pricedAnswers.toLocaleString()} of ${stats.completedAnswers.toLocaleString()} completed answers had cost for every request. `
+    + 'Answer cost includes all model requests and tool-work rounds.';
+  for (const model of stats.models || []) {
+    const row = el('div', 'statistics-cost-row');
+    const name = el('span'); name.className = 'usage-model-name'; name.textContent = model.model; name.title = model.model;
+    const amount = el('span'); amount.textContent = `${costFmt(model.cost)} · ${model.pricedRounds}/${model.rounds} priced requests`;
+    row.append(name, amount); modelsBox.appendChild(row);
+  }
+}
+
 export async function loadUsage() {
-  const data = await (await fetch('/api/usage')).json();
+  const response = await fetch('/api/usage');
+  if (!response.ok) return;
+  const data = await response.json();
   days = data.days || [];
+  statistics = data.statistics || null;
   path = [];
   render();
 }

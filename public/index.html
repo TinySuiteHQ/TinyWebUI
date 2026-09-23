@@ -14,6 +14,8 @@
   <span id="status" role="status" aria-live="polite"></span>
   <span class="grow"></span>
   <button id="toggle-settings">settings</button>
+  <button id="toggle-automations">automations</button>
+  <button id="toggle-statistics">statistics</button>
 </header>
 
 <div id="shell">
@@ -101,16 +103,45 @@
         <div id="tools" class="tool-list"></div>
       </div>
     </div>
-    <div class="sec">
-      <div class="sec-h">token usage <span id="usageRange" class="usage"></span></div>
-      <div id="usageStats" class="row"></div>
-      <div id="usageModels" class="usage-models"></div>
-      <div id="usageBars" class="usage-bars"></div>
-    </div>
     <div class="sec-bar">
       <span id="saveMsg" class="usage"></span>
       <button id="cancel">close</button>
       <button class="primary" id="save">save settings</button>
+    </div>
+  </section>
+
+  <section id="statistics" aria-label="Statistics">
+    <div class="automation-head"><h2>Statistics</h2><button id="close-statistics">close</button></div>
+    <div class="statistics-content">
+      <section class="statistics-block">
+        <div class="sec-h">cost and averages <span class="usage">provider-reported costs only</span></div>
+        <div id="statisticsSummary" class="row"></div>
+        <div id="statisticsCoverage" class="usage"></div>
+        <div id="statisticsCosts" class="statistics-costs"></div>
+      </section>
+      <section class="statistics-block">
+        <div class="sec-h">token usage <span id="usageRange" class="usage"></span></div>
+        <div id="usageStats" class="row"></div>
+        <div id="usageModels" class="usage-models"></div>
+        <div id="usageBars" class="usage-bars"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="automations" aria-label="Automations">
+    <div class="automation-head"><h2>Automations</h2><button id="close-automations">close</button></div>
+    <div class="automation-content">
+      <form id="automation-create" class="automation-form">
+        <h3>New automation</h3>
+        <label>name<input name="name" required maxlength="120"></label>
+        <label>target chat<select name="chatId" required></select></label>
+        <label>schedule (five-field cron)<input name="cron" required placeholder="0 9 * * 1-5"></label>
+        <label>timezone (IANA)<input name="timezone" required placeholder="Europe/Berlin"></label>
+        <label>instructions<textarea name="prompt" required maxlength="12000" rows="5"></textarea></label>
+        <div class="automation-error" role="alert"></div>
+        <button class="primary" type="submit">create automation</button>
+      </form>
+      <div id="automation-list" class="automation-list"></div>
     </div>
   </section>
 

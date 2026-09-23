@@ -127,6 +127,10 @@ Chats, documents, full tool results, and usage are stored in `tinywebui.db` besi
 
 A running turn belongs to the server rather than the browser tab: reloading or disconnecting does not cancel it. Reopen the chat to rejoin its stream, or use **stop** to cancel it.
 
+## Automations
+
+Create recurring automations from the **automations** view or ask the model to manage them with `manage_automation`. Use **run now** or ask the model to trigger one for an immediate workflow run; manual triggers wait for the target chat's current turn to finish. Each automation adds its instructions to a selected chat on a five-field cron schedule and IANA timezone. Runs use the current model configuration and enabled tools, and appear in that chat and in the automation's run history. Automations run only while TinyWebUI is running; missed scheduled occurrences and scheduled occurrences during a busy chat are skipped. No external notifications are sent.
+
 ## Keeping long tool chats practical
 
 Tool results can be much larger than the conversation itself. TinyWebUI keeps the complete result in SQLite, but avoids resending it indefinitely:
@@ -139,7 +143,7 @@ For OpenRouter, TinyWebUI sends a stable per-chat `session_id` to help provider 
 
 ## Security and limits
 
-TinyWebUI has no authentication or multi-user isolation. Keep it bound to `127.0.0.1`, or put an authenticated reverse proxy in front of it before exposing it to a network. MCP servers run with the access you configure for them, so treat each configured server and its credentials as trusted local infrastructure.
+TinyWebUI is designed for a local workspace. Keep it bound to `127.0.0.1`, or configure its optional authentication before exposing it to a network. Automations are scoped to the signed-in user when authentication is enabled. MCP servers run with the access you configure for them, so treat each configured server and its credentials as trusted local infrastructure.
 
 The app does not provide OCR, cloud synchronization, user accounts, or branching chat history. Delete chats you no longer need; their associated documents and tool artifacts are deleted with them.
 

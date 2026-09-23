@@ -1,7 +1,6 @@
 /** The settings panel: model/runtime config, MCP servers, and the tools list. */
 import { $, el, num } from './dom.js';
 import { addError } from './transcript.js';
-import { loadUsage } from './usage.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health
@@ -244,12 +243,11 @@ export function toggleSettings(open) {
   const panel = $('settings');
   const on = open ?? !panel.classList.contains('open');
   panel.classList.toggle('open', on);
-  if (on) { $('saveMsg').textContent = ''; loadUsage(); }
+  if (on) { $('saveMsg').textContent = ''; }
   $('toggle-settings').textContent = on ? 'close' : 'settings';
   if (!on) $('input').focus();
 }
 
-$('toggle-settings').onclick = () => toggleSettings();
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('settings').classList.contains('open')) toggleSettings(false);
 });

@@ -15,6 +15,7 @@ import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { extractText } from './documents.js';
 import { normalizeImage } from './images.js';
+import { automationToolDef, manageAutomation, nextSchedule, runMessage, validateSchedule } from './automation.js';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -75,13 +76,22 @@ async function serveStatic(req, res) {
 export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
   let cfg = loadConfig();
   const store = new Store(dbPath(cfg));
+  let armScheduler = () => {};
+  let triggerAutomation = async () => { throw new Error('manual triggering is unavailable'); };
+  let drainManualTriggers = () => {};
+  const pendingManualTriggers = new Map();
 
   // context_expand is ours, not an MCP server's, but the model should not be
   // able to tell: it is registered onto the same hub and called the same way.
   const connectHub = async (servers) =>
     (await new McpHub(servers).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }))
-      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store }));
+      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store }))
+      .registerLocal(automationToolDef(), (args, ctx) => {
+        const out = manageAutomation(args, { ...ctx, store, triggerAutomation });
+        armScheduler();
+        return out;
+      });
 
   let hub = await connectHub(loadMcpServers());
 
@@ -114,7 +124,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
   const RETAIN_MS = 5 * 60 * 1000;
 
-  function startRun({ chat, tools }) {
+  function startRun({ chat, tools, onFinish }) {
     const run = {
       events: [],
       subs: new Set(),
@@ -144,16 +154,123 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       } finally {
         store.touchChat(chat.id);
         run.done = true;
+        try { onFinish?.({
+          ok: !run.events.some((event) => event.type === 'error') && !run.ac.signal.aborted,
+          error: run.events.find((event) => event.type === 'error')?.error || (run.ac.signal.aborted ? 'Stopped.' : null),
+          result: store.messages(chat.id).slice(run.baseCount).filter((m) => m.role === 'assistant').at(-1)?.content || ''
+        }); } catch { /* a run observer cannot disrupt chat teardown */ }
         for (const sub of run.subs) { try { sub.end(); } catch { /* already gone */ } }
         run.subs.clear();
         // Held briefly so a client reconnecting a second later still gets the
         // tail of the turn rather than a 404.
         setTimeout(() => { if (runs.get(chat.id) === run) runs.delete(chat.id); }, RETAIN_MS).unref();
+        queueMicrotask(() => drainManualTriggers(chat.id));
       }
     })();
 
     return run;
   }
+
+  function launchAutomationRun(automation, runId) {
+    const chat = store.getChat(automation.chatId, automation.userId);
+    if (!chat) {
+      store.updateAutomationRun(runId, { status: 'failed', finishedAt: Date.now(), error: 'Target chat no longer exists.' });
+      return false;
+    }
+    if (isRunning(chat.id)) return false;
+    store.addMessage(chat.id, { role: 'user', content: runMessage(automation) });
+    store.updateAutomationRun(runId, { status: 'running', startedAt: Date.now() });
+    startRun({ chat, tools: hub.activeTools(cfg.disabledTools), onFinish: ({ ok, error, result }) => {
+      store.updateAutomationRun(runId, {
+        status: ok ? 'completed' : 'failed', finishedAt: Date.now(),
+        result: String(result || '').slice(0, 4000), error: error ? String(error).slice(0, 1000) : null
+      });
+      armScheduler();
+    } });
+    return true;
+  }
+
+  triggerAutomation = async (automation, userId) => {
+    const owned = store.getAutomation(automation.id, userId);
+    if (!owned) throw new Error('no such automation');
+    const runId = store.addAutomationRun(owned.id, Date.now(), 'queued', 'manual');
+    if (isRunning(owned.chatId)) {
+      const queue = pendingManualTriggers.get(owned.chatId) || [];
+      queue.push({ automationId: owned.id, userId, runId });
+      pendingManualTriggers.set(owned.chatId, queue);
+      return { runId, status: 'queued', chatId: owned.chatId };
+    }
+    launchAutomationRun(owned, runId);
+    return { runId, status: 'running', chatId: owned.chatId };
+  };
+
+  drainManualTriggers = (chatId) => {
+    if (isRunning(chatId)) return;
+    const queue = pendingManualTriggers.get(chatId);
+    if (!queue?.length) return;
+    const next = queue.shift();
+    if (!queue.length) pendingManualTriggers.delete(chatId);
+    const automation = store.getAutomation(next.automationId, next.userId);
+    if (!automation) {
+      store.updateAutomationRun(next.runId, { status: 'failed', finishedAt: Date.now(), error: 'Automation no longer exists.' });
+      queueMicrotask(() => drainManualTriggers(chatId));
+      return;
+    }
+    if (!launchAutomationRun(automation, next.runId)) {
+      const remaining = pendingManualTriggers.get(chatId) || [];
+      remaining.unshift(next);
+      pendingManualTriggers.set(chatId, remaining);
+      return;
+    }
+    if (queue.length) pendingManualTriggers.set(chatId, queue);
+  };
+
+  let scheduleTimer = null;
+  let schedulerStopped = false;
+  const refreshSchedules = () => {
+    const now = Date.now();
+    for (const automation of store.listAllAutomations()) {
+      if (!automation.enabled) continue;
+      // Recompute stale timestamps on startup or after changes without replaying
+      // occurrences missed while the process was down.
+      if (!automation.nextRunAt || automation.nextRunAt <= now) {
+        try { store.updateAutomation(automation.id, { nextRunAt: nextSchedule(automation.cron, automation.timezone, now) }, automation.userId); }
+        catch (err) { store.updateAutomation(automation.id, { enabled: false, lastStatus: `invalid schedule: ${err.message}` }, automation.userId); }
+      }
+    }
+  };
+  const processDue = () => {
+    if (schedulerStopped) return;
+    const now = Date.now();
+    for (const automation of store.dueAutomations(now)) {
+      const scheduledAt = automation.nextRunAt;
+      const runId = store.addAutomationRun(automation.id, scheduledAt, 'queued');
+      let nextRunAt;
+      try { nextRunAt = nextSchedule(automation.cron, automation.timezone, scheduledAt); }
+      catch (err) {
+        store.updateAutomation(automation.id, { enabled: false, lastStatus: `invalid schedule: ${err.message}`, nextRunAt: null }, automation.userId);
+        store.updateAutomationRun(runId, { status: 'failed', finishedAt: now, error: err.message });
+        continue;
+      }
+      store.updateAutomation(automation.id, { nextRunAt }, automation.userId);
+      if (isRunning(automation.chatId)) {
+        store.updateAutomationRun(runId, { status: 'skipped', finishedAt: now, error: 'Target chat was already running.' });
+        continue;
+      }
+      launchAutomationRun(automation, runId);
+    }
+    armScheduler();
+  };
+  armScheduler = () => {
+    if (schedulerStopped) return;
+    if (scheduleTimer) clearTimeout(scheduleTimer);
+    refreshSchedules();
+    const next = store.db.prepare('SELECT MIN(next_run_at) AS due FROM automations WHERE enabled=1').get()?.due;
+    if (next == null) { scheduleTimer = null; return; }
+    scheduleTimer = setTimeout(processDue, Math.max(25, Math.min(2_147_000_000, next - Date.now())));
+    scheduleTimer.unref?.();
+  };
+  store.recoverAutomationRuns();
 
   /** Points one response at a run: the backlog from `from`, then the live rest. */
   function attach(run, res, from) {
@@ -314,7 +431,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       }
 
       if (req.method === 'GET' && (req.url || '').split('?')[0] === '/api/usage') {
-        return json(res, 200, { days: store.usageRollup() });
+        return json(res, 200, { days: store.usageRollup(auth.userId), statistics: store.usageStatistics(auth.userId) });
       }
 
       if (req.method === 'GET' && req.url === '/api/folders') {
@@ -328,17 +445,75 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return json(res, 200, { folder: created });
       }
 
+      if (req.method === 'GET' && req.url === '/api/automations') {
+        return json(res, 200, { automations: store.listAutomations(auth.userId), chats: store.listChats(200, auth.userId) });
+      }
+      if (req.method === 'POST' && req.url === '/api/automations') {
+        const body = await readJson(req);
+        const chat = store.getChat(String(body.chatId || ''), auth.userId);
+        if (!chat) return json(res, 400, { error: 'a chat you own is required' });
+        const name = String(body.name || '').trim();
+        const prompt = String(body.prompt || '').trim();
+        if (!name || !prompt) return json(res, 400, { error: 'name and prompt are required' });
+        if (name.length > 120 || prompt.length > 12000) return json(res, 400, { error: 'name or prompt is too long' });
+        let schedule;
+        try { schedule = validateSchedule(body.cron, body.timezone); }
+        catch (err) { return json(res, 400, { error: err.message }); }
+        const automation = store.createAutomation({ ...schedule, chatId: chat.id, name, prompt, enabled: body.enabled !== false, source: 'user' }, auth.userId);
+        armScheduler();
+        return json(res, 201, { automation });
+      }
+      const automationRoute = /^\/api\/automations\/([\w.-]+)(?:\/(runs|trigger))?$/.exec((req.url || '').split('?')[0]);
+      if (automationRoute && automationRoute[2] === 'runs' && req.method === 'GET') {
+        const runs = store.listAutomationRuns(automationRoute[1], auth.userId);
+        return runs ? json(res, 200, { runs }) : json(res, 404, { error: 'no such automation' });
+      }
+      if (automationRoute && automationRoute[2] === 'trigger' && req.method === 'POST') {
+        const automation = store.getAutomation(automationRoute[1], auth.userId);
+        if (!automation) return json(res, 404, { error: 'no such automation' });
+        const run = await triggerAutomation(automation, auth.userId);
+        return json(res, 202, { run });
+      }
+      if (automationRoute && !automationRoute[2] && req.method === 'PATCH') {
+        const existing = store.getAutomation(automationRoute[1], auth.userId);
+        if (!existing) return json(res, 404, { error: 'no such automation' });
+        const body = await readJson(req);
+        const patch = {};
+        for (const key of ['name', 'prompt', 'cron', 'timezone', 'enabled', 'chatId']) if (body[key] !== undefined) patch[key] = body[key];
+        if (patch.chatId !== undefined) {
+          const chat = store.getChat(String(patch.chatId), auth.userId);
+          if (!chat) return json(res, 400, { error: 'a chat you own is required' });
+          patch.chatId = chat.id;
+        }
+        if (patch.name !== undefined) { patch.name = String(patch.name).trim(); if (!patch.name || patch.name.length > 120) return json(res, 400, { error: 'name is required and must be at most 120 characters' }); }
+        if (patch.prompt !== undefined) { patch.prompt = String(patch.prompt).trim(); if (!patch.prompt || patch.prompt.length > 12000) return json(res, 400, { error: 'prompt is required and must be at most 12000 characters' }); }
+        if (patch.cron !== undefined || patch.timezone !== undefined) {
+          let schedule;
+          try { schedule = validateSchedule(patch.cron ?? existing.cron, patch.timezone ?? existing.timezone); }
+          catch (err) { return json(res, 400, { error: err.message }); }
+          Object.assign(patch, schedule);
+        }
+        const automation = store.updateAutomation(automationRoute[1], patch, auth.userId);
+        armScheduler();
+        return json(res, 200, { automation });
+      }
+      if (automationRoute && !automationRoute[2] && req.method === 'DELETE') {
+        if (!store.deleteAutomation(automationRoute[1], auth.userId)) return json(res, 404, { error: 'no such automation' });
+        armScheduler();
+        return json(res, 200, { ok: true });
+      }
+
       if (req.method === 'GET' && req.url === '/api/chats') {
         // `running` is what puts the dot in the sidebar: a turn belongs to the
         // server, so a chat can be working while nothing is watching it.
-        const list = store.listChats().map((c) => ({ ...c, running: isRunning(c.id) }));
+        const list = store.listChats(200, auth.userId).map((c) => ({ ...c, running: isRunning(c.id) }));
         return json(res, 200, { chats: list });
       }
 
       const organize = /^\/api\/chats\/([\w.-]+)\/organize$/.exec(req.url || '');
       if (organize && req.method === 'POST') {
         const { folder, tags } = await readJson(req);
-        const found = store.getChat(organize[1]);
+        const found = store.getChat(organize[1], auth.userId);
         if (!found) return json(res, 404, { error: 'no such chat' });
         if (folder) store.createFolder(folder);
         const updated = store.organizeChat(organize[1], { folder, tags });
@@ -347,7 +522,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
 
       const one = /^\/api\/chats\/([\w.-]+)$/.exec(req.url || '');
       if (one && req.method === 'GET') {
-        const found = store.getChat(one[1]);
+        const found = store.getChat(one[1], auth.userId);
         if (!found) return json(res, 404, { error: 'no such chat' });
         const run = runs.get(found.id);
         const live = run && !run.done;
@@ -396,7 +571,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         }
         if (!text.trim()) return json(res, 400, { error: 'no extractable text in that file' });
 
-        const chat = store.getChat(chatId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) });
+        const chat = store.getChat(chatId, auth.userId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
         const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text });
         return json(res, 200, { chatId: chat.id, document: doc });
       }
@@ -439,7 +614,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
       const rewind = /^\/api\/chats\/([\w.-]+)\/edit$/.exec(req.url || '');
       if (rewind && req.method === 'POST') {
         const [, id] = rewind;
-        const found = store.getChat(id);
+        const found = store.getChat(id, auth.userId);
         if (!found) return json(res, 404, { error: 'no such chat' });
         // Rewriting history under a turn that is still reading it would leave
         // the run answering a question that no longer exists.
@@ -484,6 +659,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return json(res, 200, { ok: true });
       }
       if (one && req.method === 'DELETE') {
+        if (!store.getChat(one[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
         store.deleteChat(one[1]);
         return json(res, 200, { ok: true });
       }
@@ -495,8 +671,8 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         const { chats = [] } = await readJson(req);
         let imported = 0;
         for (const c of chats) {
-          if (!c?.id || store.getChat(c.id)) continue;
-          store.createChat({ id: c.id, title: c.title || 'Imported chat', createdAt: c.updated || Date.now() });
+          if (!c?.id || store.getChat(c.id, auth.userId)) continue;
+          store.createChat({ id: c.id, title: c.title || 'Imported chat', createdAt: c.updated || Date.now() }, auth.userId);
           for (const m of c.messages || []) {
             const msg = { ...m };
             if (m.role === 'tool' && typeof m.content === 'string') {
@@ -508,7 +684,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
           }
           imported++;
         }
-        return json(res, 200, { imported, chats: store.listChats() });
+        return json(res, 200, { imported, chats: store.listChats(200, auth.userId) });
       }
 
       if (req.method === 'POST' && req.url === '/api/chat') {
@@ -519,8 +695,8 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         // The client no longer ships the transcript: it sends the new turn and
         // the server replays what it already holds. That is what stops a
         // page-sized tool result from crossing the wire on every message.
-        const chat = (chatId && store.getChat(chatId))
-          || store.createChat({ id: chatId, title: String(message).slice(0, 60) });
+        const chat = (chatId && store.getChat(chatId, auth.userId))
+          || store.createChat({ id: chatId, title: String(message).slice(0, 60) }, auth.userId);
 
         // Attachments are surfaced as plain text inline notes rather than a
         // system-prompt change, the same idiom compact.js uses for a compacted
@@ -569,6 +745,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
   });
 
   await new Promise((resolve) => server.listen(port, host, resolve));
+  armScheduler();
   console.log(`[tinywebui] http://${host}:${port}`);
 
   // Real teardown, reused two ways: on SIGINT/SIGTERM it exits the process, and
@@ -577,6 +754,8 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
   // platforms and exiting the test runner's own process is not what a test
   // closing its server wants anyway.
   const shutdown = async () => {
+    schedulerStopped = true;
+    if (scheduleTimer) clearTimeout(scheduleTimer);
     await hub.close();
     store.close();
     await new Promise((resolve) => server.close(resolve));
