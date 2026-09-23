@@ -12,6 +12,17 @@ let path = []; // drill-down breadcrumb, e.g. ['2026'] or ['2026', '2026-03']
 
 const fmt = (n) => n.toLocaleString();
 
+// Assigned the first time each model name is seen and kept for the rest of
+// the session, so a model's color stays the same whether you're looking at
+// "all time" or drilled into a single day -- switching levels would
+// otherwise reshuffle which color means which model.
+const MODEL_PALETTE = ['--accent', '--tool', '--err', '--muted', '--faint'];
+const modelColors = new Map();
+function colorForModel(model) {
+  if (!modelColors.has(model)) modelColors.set(model, MODEL_PALETTE[modelColors.size % MODEL_PALETTE.length]);
+  return `var(${modelColors.get(model)})`;
+}
+
 function sumModels(rows) {
   const totals = new Map();
   for (const row of rows) {
@@ -44,6 +55,7 @@ function bucket(rows, level) {
 function render() {
   if (!days.length) {
     $('usageStats').innerHTML = '<div class="empty">no usage recorded yet</div>';
+    $('usageModels').innerHTML = '';
     $('usageBars').innerHTML = '';
     $('usageRange').textContent = '';
     return;
@@ -74,9 +86,53 @@ function render() {
   stats.append(
     tile('tokens in', fmt(totalIn)),
     tile('tokens out', fmt(totalOut)),
-    tile('cached', fmt(totalCached)),
-    tile('by model', models.length ? models.map((m) => `${m.model} (${fmt(m.in + m.out)})`).join(', ') : '—')
+    tile('cached', fmt(totalCached))
   );
+
+  // Per-model breakdown, as its own list rather than crammed into a stat
+  // tile: a model name plus three counts doesn't fit next to "584,746" at
+  // the same width, and comma-joining every model into one string just wraps
+  // wherever it wraps, with no way to see a single model's in/out split.
+  const modelsBox = $('usageModels');
+  modelsBox.innerHTML = '';
+  if (models.length) {
+    // `cached` is a subset of `in` (a cache hit still counts as an input
+    // token), not a third bucket alongside it -- the API reports it that way
+    // too. So each bar is fresh-in + cached-in + out, in that stacking order.
+    // The bar itself is always full width: how one model's total compares to
+    // another's is already in the numbers (and in the totals below), and
+    // scaling bar length to that on top just makes small models unreadably
+    // thin. What the bar is for here is one model's own in/cached/out split.
+    for (const m of models) {
+      const row = el('div', 'usage-model-row');
+      const name = el('span', 'usage-model-name');
+      name.textContent = m.model;
+      name.title = m.model;
+      const total = m.in + m.out;
+      const cachedIn = Math.min(m.cached, m.in);
+      const freshIn = m.in - cachedIn;
+      const track = el('span', 'usage-model-track');
+      const bar = el('span', 'usage-model-bar');
+      for (const [cls, count] of [['fresh', freshIn], ['cached', cachedIn], ['out', m.out]]) {
+        if (!count) continue;
+        const seg = el('span', `usage-model-seg ${cls}`);
+        seg.style.width = `${(count / total) * 100}%`;
+        bar.appendChild(seg);
+      }
+      track.appendChild(bar);
+      const counts = el('span', 'usage-model-counts');
+      counts.textContent = `${fmt(m.in)} in · ${fmt(m.out)} out${m.cached ? ` · ${fmt(m.cached)} cached` : ''}`;
+      row.append(name, track, counts);
+      modelsBox.appendChild(row);
+    }
+    const legend = el('div', 'usage-model-legend');
+    for (const [cls, label] of [['fresh', 'in'], ['cached', 'cached'], ['out', 'out']]) {
+      const item = el('span', 'usage-model-legend-item');
+      item.append(el('span', `usage-model-swatch ${cls}`), document.createTextNode(label));
+      legend.appendChild(item);
+    }
+    modelsBox.appendChild(legend);
+  }
 
   // Breadcrumb.
   const crumbs = ['all time', ...path];
@@ -90,11 +146,14 @@ function render() {
     $('usageRange').appendChild(a);
   });
 
-  // Bars: years, or months in a year, or individual days.
+  // Bars: years, or months in a year, or individual days. This is the one
+  // place bar *length* means "more tokens than that other bar" -- so this is
+  // also where the per-model split belongs, as colored segments inside each
+  // bar, rather than on the fixed-width rows above.
   const box = $('usageBars');
   box.innerHTML = '';
   const buckets = level === 'day'
-    ? scoped.map((d) => ({ key: d.day, rows: [d], total: d.in + d.out })).sort((a, b) => a.key.localeCompare(b.key))
+    ? scoped.map((d) => ({ key: d.day, rows: [d], models: sumModels([d]), total: d.in + d.out })).sort((a, b) => a.key.localeCompare(b.key))
     : bucket(scoped, level);
   if (!buckets.length) {
     box.innerHTML = '<div class="empty">nothing here</div>';
@@ -108,6 +167,13 @@ function render() {
     const track = el('span', 'usage-bar-track');
     const fill = el('span', 'usage-bar-fill');
     fill.style.width = `${Math.max((b.total / max) * 100, 2)}%`;
+    for (const m of b.models) {
+      if (!m.in && !m.out) continue;
+      const seg = el('span', 'usage-bar-seg');
+      seg.style.width = `${((m.in + m.out) / b.total) * 100}%`;
+      seg.style.background = colorForModel(m.model);
+      fill.appendChild(seg);
+    }
     track.appendChild(fill);
     const count = el('span', 'usage-bar-count');
     count.textContent = fmt(b.total);
@@ -117,6 +183,17 @@ function render() {
       row.onclick = () => { path = [...path, b.key]; render(); };
     }
     box.appendChild(row);
+  }
+  if (models.length > 1) {
+    const legend = el('div', 'usage-model-legend');
+    for (const m of models) {
+      const item = el('span', 'usage-model-legend-item');
+      const swatch = el('span', 'usage-model-swatch');
+      swatch.style.background = colorForModel(m.model);
+      item.append(swatch, document.createTextNode(m.model));
+      legend.appendChild(item);
+    }
+    box.appendChild(legend);
   }
 }
 

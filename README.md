@@ -6,7 +6,7 @@ Bring an endpoint such as OpenRouter, OpenAI, Groq, Ollama, vLLM, or LM Studio; 
 
 ## What it includes
 
-- Persistent SQLite-backed chats, with edit, retry, delete, and full-text chat search.
+- Persistent SQLite-backed chats, with edit, retry, delete, full-text search, and folders.
 - Streaming answers, tool activity, reasoning display, per-round token usage, and cache-read/write usage when a provider reports it.
 - MCP over stdio, Streamable HTTP, or SSE, plus built-in `read_document` and `context_expand` tools.
 - Attachments: text-based files, PDFs with extractable text, DOCX files, and images for vision-capable models.

@@ -6,6 +6,13 @@ import { $, el } from './dom.js';
 import { state } from './state.js';
 import { openChat, newChat } from './chat.js';
 
+let organizingChatId = null;
+const expandedFolders = new Set();
+// Marks the draft row's slot in a folder's chat list -- a distinct object
+// rather than `null`, so it can't be confused with "no such folder" (a real
+// Map lookup miss) or any other falsy value a chat row might someday carry.
+const DRAFT = Symbol('draft');
+
 /* ---------- sidebar width ---------- */
 
 /**
@@ -80,54 +87,79 @@ function resetSideWidth() {
 
 /* ---------- history: server-side, newest first ---------- */
 
-/** ChatGPT-style buckets: today, yesterday, then widening rolling windows,
-    then by calendar month once a chat is old enough that "N days ago" stops
-    being a useful unit. */
-function bucketOf(updatedAt, now) {
-  const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
-  const days = Math.round((startOfDay(now) - startOfDay(updatedAt)) / 86400000);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days <= 7) return 'Previous 7 days';
-  if (days <= 30) return 'Previous 30 days';
-  const d = new Date(updatedAt);
-  const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return d.toLocaleDateString('en-US', sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
-}
-
 export function renderChatList() {
   $('chats').innerHTML = '';
-  // The draft in progress isn't a chat on the server yet -- it gets a row
-  // only so the list shows where you are, never a second one on the next
-  // click. It disappears the moment the draft becomes a real chat or is
-  // abandoned for one that already exists.
-  if (state.chat && !state.chat.id) {
-    const row = el('div', 'chat-item active draft');
-    row.tabIndex = 0;
-    row.setAttribute('role', 'button');
-    row.setAttribute('aria-current', 'true');
-    const t = el('span', 't');
-    t.textContent = state.chat.title || 'New chat';
-    row.appendChild(t);
-    $('chats').appendChild(row);
-  }
-  if (!state.chats.length) {
-    if (state.chat && !state.chat.id) return;
+  const isDraft = state.chat && !state.chat.id;
+  if (!state.chats.length && !isDraft && !state.folders.length) {
     const e = el('div', 'empty');
     e.textContent = 'no saved chats';
     return $('chats').appendChild(e);
   }
-  const now = Date.now();
-  let lastBucket = null;
+  const groups = new Map();
+  // A folder just created and not yet moved into is still a real folder --
+  // it needs a row of its own, not just a spot in the organize dropdown.
+  for (const name of state.folders) groups.set(name, []);
   for (const c of state.chats) {
-    // The list is already newest-first, so a bucket only opens once, right
-    // where its first chat falls -- no separate grouping/sorting pass needed.
+    const folder = (c.folder || '').trim() || null;
+    if (!groups.has(folder)) groups.set(folder, []);
+    groups.get(folder).push(c);
+  }
+  // The draft in progress isn't a chat on the server yet -- it gets a row
+  // only so the list shows where you are, never a second one on the next
+  // click. It disappears the moment the draft becomes a real chat or is
+  // abandoned for one that already exists. It always lands in the ungrouped
+  // "Today" bucket, never inside a folder it hasn't been organized into.
+  if (isDraft) {
+    if (!groups.has(null)) groups.set(null, []);
+    groups.get(null).unshift(DRAFT);
+  }
+  const folderNames = [...groups.keys()].sort((a, b) => a === null ? 1 : b === null ? -1 : a.localeCompare(b));
+  const now = Date.now();
+  for (const folder of folderNames) {
+    let contents = $('chats');
+    if (folder) {
+      // Every folder starts collapsed -- with more than a couple of them,
+      // auto-opening turns the sidebar into a wall of chats.
+      const section = el('details', 'chat-folder');
+      section.open = expandedFolders.has(folder);
+      section.addEventListener('toggle', () => {
+        if (section.open) expandedFolders.add(folder);
+        else expandedFolders.delete(folder);
+      });
+      const heading = el('summary', 'chat-folder-heading');
+      const name = el('span', 'chat-folder-name'); name.textContent = folder;
+      const count = el('span', 'chat-folder-count'); count.textContent = String(groups.get(folder).length);
+      heading.append(name, count);
+      section.appendChild(heading);
+      contents = el('div', 'chat-folder-content');
+      section.appendChild(contents);
+      $('chats').appendChild(section);
+    }
+    let lastBucket = null;
+    for (const c of groups.get(folder)) {
+      if (c === DRAFT) {
+        if (lastBucket !== 'Today') {
+          lastBucket = 'Today';
+          const dateHeading = el('div', 'chat-date-heading');
+          dateHeading.textContent = 'Today';
+          contents.appendChild(dateHeading);
+        }
+        const row = el('div', 'chat-item active draft');
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-current', 'true');
+        const t = el('span', 't');
+        t.textContent = state.chat.title || 'New chat';
+        row.appendChild(t);
+        contents.appendChild(row);
+        continue;
+      }
     const bucket = bucketOf(c.updated_at, now);
     if (bucket !== lastBucket) {
       lastBucket = bucket;
-      const h = el('div', 'chat-group-h');
-      h.textContent = bucket;
-      $('chats').appendChild(h);
+      const dateHeading = el('div', 'chat-date-heading');
+      dateHeading.textContent = bucket;
+      contents.appendChild(dateHeading);
     }
     const row = el('div', 'chat-item' + (state.chat && c.id === state.chat.id ? ' active' : ''));
     // A div with an onclick is unreachable without a mouse, so the row carries
@@ -145,26 +177,46 @@ export function renderChatList() {
       dot.setAttribute('aria-label', 'working');
       row.appendChild(dot);
     }
-    const x = el('button', 'x');
-    x.textContent = '×';
-    x.title = `Delete "${c.title}"`;
-    x.setAttribute('aria-label', `Delete "${c.title}"`);
-    x.onclick = async (e) => {
+    const organize = el('button', 'organize-chat');
+    organize.type = 'button';
+    organize.textContent = '⋯';
+    organize.title = 'Chat options';
+    organize.setAttribute('aria-label', `Options for "${c.title}"`);
+    organize.onclick = (e) => {
       e.stopPropagation();
-      await fetch(`/api/chats/${c.id}`, { method: 'DELETE' });
-      await loadChats();
-      if (state.chat && state.chat.id === c.id) newChat();
+      organizingChatId = c.id;
+      fillOrganizeFolders(c.folder || '');
+      $('organizeError').hidden = true;
+      $('organizeDelete').title = `Delete "${c.title}"`;
+      $('organizeDelete').setAttribute('aria-label', `Delete "${c.title}"`);
+      $('organizeDialog').showModal();
+      $('organizeFolder').focus();
     };
+    organize.onkeydown = (e) => e.stopPropagation();
     row.prepend(t);
-    row.append(x);
+    row.append(organize);
     row.onclick = () => openChat(c.id);
     row.onkeydown = (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault(); // space would scroll the list instead
       openChat(c.id);
     };
-    $('chats').appendChild(row);
+    contents.appendChild(row);
+    }
   }
+}
+
+/** Recent chats get familiar rolling buckets; older chats use calendar months. */
+function bucketOf(updatedAt, now) {
+  const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const days = Math.round((startOfDay(now) - startOfDay(updatedAt)) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days <= 7) return 'Previous 7 days';
+  if (days <= 30) return 'Previous 30 days';
+  const d = new Date(updatedAt);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleDateString('en-US', sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
 }
 
 export async function loadChats() {
@@ -172,6 +224,10 @@ export async function loadChats() {
     const res = await (await fetch('/api/chats')).json();
     state.chats = res.chats || [];
   } catch { state.chats = []; }
+  try {
+    const res = await (await fetch('/api/folders')).json();
+    state.folders = res.folders || [];
+  } catch { /* keep whatever folder list is already on screen */ }
   // A background poll (the running-dot refresh) must not clobber search
   // results the user is looking at with the plain chronological list.
   refreshSidebar();
@@ -265,6 +321,89 @@ $('chatSearch').addEventListener('keydown', (e) => {
   }
 });
 $('chatSearchClear').onclick = () => { clearSearch(); $('chatSearch').focus(); };
+/** Chats can only move into a folder that already exists -- create-then-move,
+ * not type-a-new-name-here -- so the dropdown is rebuilt from state.folders
+ * (plus the chat's own folder, in case it was removed from that list since). */
+function fillOrganizeFolders(current) {
+  const select = $('organizeFolder');
+  select.innerHTML = '';
+  const blank = el('option'); blank.value = ''; blank.textContent = '(no folder)';
+  select.appendChild(blank);
+  const names = current && !state.folders.includes(current)
+    ? [...state.folders, current].sort((a, b) => a.localeCompare(b))
+    : state.folders;
+  for (const name of names) {
+    const opt = el('option'); opt.value = name; opt.textContent = name;
+    select.appendChild(opt);
+  }
+  select.value = current;
+}
+
+$('newFolder').addEventListener('click', () => {
+  $('newFolderName').value = '';
+  $('newFolderError').hidden = true;
+  $('newFolderDialog').showModal();
+  $('newFolderName').focus();
+});
+$('newFolderCancel').addEventListener('click', () => $('newFolderDialog').close());
+$('newFolderForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const button = $('newFolderForm').querySelector('[type="submit"]');
+  button.disabled = true;
+  $('newFolderError').hidden = true;
+  try {
+    const name = $('newFolderName').value;
+    const response = await fetch('/api/folders', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Could not create folder.');
+    $('newFolderDialog').close();
+    // A freshly created folder starts open -- otherwise the workflow this
+    // exists for (create it, then move chats in) hides its own result.
+    expandedFolders.add(body.folder);
+    await loadChats();
+  } catch (err) {
+    $('newFolderError').textContent = err.message || 'Could not create folder.';
+    $('newFolderError').hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('organizeCancel').addEventListener('click', () => $('organizeDialog').close());
+$('organizeDelete').addEventListener('click', async () => {
+  if (!organizingChatId) return;
+  const id = organizingChatId;
+  await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+  $('organizeDialog').close();
+  organizingChatId = null;
+  await loadChats();
+  if (state.chat && state.chat.id === id) newChat();
+});
+$('organizeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!organizingChatId) return;
+  const button = $('organizeForm').querySelector('[type="submit"]');
+  button.disabled = true;
+  $('organizeError').hidden = true;
+  try {
+    const response = await fetch(`/api/chats/${organizingChatId}/organize`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ folder: $('organizeFolder').value })
+    });
+    if (!response.ok) throw new Error((await response.json()).error || 'Could not save chat organization.');
+    $('organizeDialog').close();
+    organizingChatId = null;
+    await loadChats();
+  } catch (err) {
+    $('organizeError').textContent = err.message || 'Could not save chat organization.';
+    $('organizeError').hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 export function clearSearch() {
   clearTimeout(searchDebounce);

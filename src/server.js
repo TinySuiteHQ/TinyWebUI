@@ -317,11 +317,32 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return json(res, 200, { days: store.usageRollup() });
       }
 
+      if (req.method === 'GET' && req.url === '/api/folders') {
+        return json(res, 200, { folders: store.listFolders() });
+      }
+
+      if (req.method === 'POST' && req.url === '/api/folders') {
+        const { name } = await readJson(req);
+        const created = store.createFolder(name);
+        if (!created) return json(res, 400, { error: 'folder name required' });
+        return json(res, 200, { folder: created });
+      }
+
       if (req.method === 'GET' && req.url === '/api/chats') {
         // `running` is what puts the dot in the sidebar: a turn belongs to the
         // server, so a chat can be working while nothing is watching it.
         const list = store.listChats().map((c) => ({ ...c, running: isRunning(c.id) }));
         return json(res, 200, { chats: list });
+      }
+
+      const organize = /^\/api\/chats\/([\w.-]+)\/organize$/.exec(req.url || '');
+      if (organize && req.method === 'POST') {
+        const { folder, tags } = await readJson(req);
+        const found = store.getChat(organize[1]);
+        if (!found) return json(res, 404, { error: 'no such chat' });
+        if (folder) store.createFolder(folder);
+        const updated = store.organizeChat(organize[1], { folder, tags });
+        return json(res, 200, { folder: updated.folder });
       }
 
       const one = /^\/api\/chats\/([\w.-]+)$/.exec(req.url || '');
@@ -334,6 +355,7 @@ export async function start({ port = 7777, host = '127.0.0.1' } = {}) {
         return json(res, 200, {
           id: found.id,
           title: found.title,
+          folder: found.folder || null,
           epoch: found.epoch,
           // A turn in flight has already written some of itself to the store.
           // Cutting the transcript back to where the turn began lets the client

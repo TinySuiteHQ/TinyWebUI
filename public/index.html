@@ -21,7 +21,7 @@
 <div id="side-backdrop"></div>
 
 <aside id="side" aria-label="Chat history">
-  <div class="head"><button id="new">+ new chat</button></div>
+  <div class="head"><button id="new">+ new chat</button><button id="newFolder">+ new folder</button></div>
   <div class="search-row">
     <input id="chatSearch" type="search" placeholder="search chats…" aria-label="Search chats" autocomplete="off" spellcheck="false">
     <button id="chatSearchClear" class="x" type="button" aria-label="Clear search" hidden>×</button>
@@ -30,6 +30,35 @@
   <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0"
        aria-label="Resize chat history" title="Drag to resize, double-click to reset"></div>
 </aside>
+
+<dialog id="organizeDialog" aria-labelledby="organizeTitle">
+  <form id="organizeForm">
+    <h2 id="organizeTitle">Chat options</h2>
+    <label for="organizeFolder">folder</label>
+    <select id="organizeFolder">
+      <option value="">(no folder)</option>
+    </select>
+    <div id="organizeError" class="organize-error" role="alert" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" id="organizeDelete" class="danger">delete chat</button>
+      <button type="button" id="organizeCancel">cancel</button>
+      <button type="submit" class="primary">save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="newFolderDialog" aria-labelledby="newFolderTitle">
+  <form id="newFolderForm">
+    <h2 id="newFolderTitle">New folder</h2>
+    <label for="newFolderName">name</label>
+    <input id="newFolderName" maxlength="40" autocomplete="off" placeholder="Folder name">
+    <div id="newFolderError" class="organize-error" role="alert" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" id="newFolderCancel">cancel</button>
+      <button type="submit" class="primary">create</button>
+    </div>
+  </form>
+</dialog>
 
 <main>
   <section id="settings">
@@ -75,6 +104,7 @@
     <div class="sec">
       <div class="sec-h">token usage <span id="usageRange" class="usage"></span></div>
       <div id="usageStats" class="row"></div>
+      <div id="usageModels" class="usage-models"></div>
       <div id="usageBars" class="usage-bars"></div>
     </div>
     <div class="sec-bar">

@@ -55,7 +55,20 @@ CREATE TABLE IF NOT EXISTS chats (
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL,
   epoch        INTEGER NOT NULL DEFAULT 0,
-  boundary_seq INTEGER NOT NULL DEFAULT -1
+  boundary_seq INTEGER NOT NULL DEFAULT -1,
+  folder       TEXT,
+  tags_json    TEXT NOT NULL DEFAULT '[]'
+);
+
+-- Folders exist as their own rows so an empty one -- created but nothing
+-- moved into it yet -- still shows up in the sidebar. A chat's folder
+-- column stores the name directly rather than an id: simple, and it already
+-- had to tolerate a folder that was renamed or removed out from under it.
+CREATE TABLE IF NOT EXISTS folders (
+  name       TEXT NOT NULL,
+  user_id    TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(name, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -243,6 +256,8 @@ export class Store {
     // Nullable everywhere: unused (null) when auth is off, the exact behavior
     // installs already have; set only once per-user scoping is opted into.
     ensureColumn(this.db, 'chats', 'user_id', 'TEXT');
+    ensureColumn(this.db, 'chats', 'folder', 'TEXT');
+    ensureColumn(this.db, 'chats', 'tags_json', "TEXT NOT NULL DEFAULT '[]'");
     ensureColumn(this.db, 'documents', 'user_id', 'TEXT');
     ensureColumn(this.db, 'artifacts', 'user_id', 'TEXT');
     // `messages` may already exist from before these columns did --
@@ -311,11 +326,50 @@ export class Store {
   listChats(limit = 200, userId = null) {
     return userId
       ? this.db.prepare(
-          'SELECT id, title, updated_at, epoch, boundary_seq FROM chats WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?'
+          'SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?'
         ).all(userId, limit)
       : this.db.prepare(
-          'SELECT id, title, updated_at, epoch, boundary_seq FROM chats ORDER BY updated_at DESC LIMIT ?'
+          'SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats ORDER BY updated_at DESC LIMIT ?'
         ).all(limit);
+  }
+
+  organizeChat(id, { folder = null, tags } = {}) {
+    const clean = (items, max) => [...new Set((Array.isArray(items) ? items : [])
+      .map((v) => String(v).trim().slice(0, max)).filter(Boolean))].slice(0, 10);
+    const cleanFolder = folder == null ? null : String(folder).trim().slice(0, 40) || null;
+    const tagsJson = tags === undefined ? null : JSON.stringify(clean(tags, 32));
+    const result = this.db.prepare('UPDATE chats SET folder = ?, tags_json = COALESCE(?, tags_json) WHERE id = ?')
+      .run(cleanFolder, tagsJson, id);
+    return result.changes ? this.getChat(id) : null;
+  }
+
+  /** Names only, sorted -- the create-then-move-chats-into-it workflow needs
+   * to list folders even when nothing has been organized into them yet. Also
+   * pulls in any folder name already sitting on a chat's `folder` column:
+   * chats organized before the `folders` table existed (or by anything else
+   * that writes that column directly) never ran through createFolder, so the
+   * table alone would silently drop them from this list. */
+  listFolders(userId = null) {
+    const own = userId
+      ? this.db.prepare('SELECT name FROM folders WHERE user_id = ?').all(userId)
+      : this.db.prepare('SELECT name FROM folders WHERE user_id IS NULL').all();
+    const used = userId
+      ? this.db.prepare("SELECT DISTINCT folder AS name FROM chats WHERE user_id = ? AND folder IS NOT NULL AND folder != ''").all(userId)
+      : this.db.prepare("SELECT DISTINCT folder AS name FROM chats WHERE folder IS NOT NULL AND folder != ''").all();
+    return [...new Set([...own, ...used].map((r) => r.name))].sort((a, b) => a.localeCompare(b));
+  }
+
+  createFolder(name, userId = null) {
+    const clean = String(name || '').trim().slice(0, 40);
+    if (!clean) return null;
+    const exists = userId
+      ? this.db.prepare('SELECT 1 FROM folders WHERE name = ? AND user_id = ?').get(clean, userId)
+      : this.db.prepare('SELECT 1 FROM folders WHERE name = ? AND user_id IS NULL').get(clean);
+    if (!exists) {
+      this.db.prepare('INSERT INTO folders (name, user_id, created_at) VALUES (?, ?, ?)')
+        .run(clean, userId, Date.now());
+    }
+    return clean;
   }
 
   /**
