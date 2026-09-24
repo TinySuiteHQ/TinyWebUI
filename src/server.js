@@ -7,7 +7,10 @@ import { createConfigSource, LockedError } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView, ALL_USERS } from './store.js';
-import { getSessionUser, resolveTrustedUser, destroyUserSessions, audit } from './auth.js';
+import {
+  getSessionUser, resolveTrustedUser, destroyUserSessions, audit, hashPassword, verifyPassword,
+  createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
+} from './auth.js';
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { extractText } from './documents.js';
@@ -100,7 +103,32 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   if (cfg.authMode === 'trusted-header' && !(Array.isArray(cfg.trustedProxyCidrs) && cfg.trustedProxyCidrs.length)) {
     throw new Error("authMode 'trusted-header' requires trustedProxyCidrs: identity headers are only believed from those peers");
   }
+  if (cfg.authMode === 'multiuser') {
+    throw new Error("authMode 'multiuser' has no login flow yet; use 'trusted-header' behind a gateway for Google/Apple/SSO sign-in");
+  }
+  // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
+  // (handy for containers). A plaintext authPassword is refused, not guessed at.
+  let passwordHash = null;
+  if (cfg.authMode === 'single') {
+    if (cfg.authPassword && !String(cfg.authPassword).startsWith('scrypt$')) {
+      throw new Error('authPassword must be a hash: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD');
+    }
+    passwordHash = cfg.authPassword || (process.env.TINYWEBUI_PASSWORD ? hashPassword(process.env.TINYWEBUI_PASSWORD) : null);
+    if (!passwordHash) throw new Error("authMode 'single' needs a password: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD");
+  }
   const store = new Store(dbPath(cfg));
+  // The one account behind a 'single' password. Sessions hang off it; data
+  // stays unowned (ALL_USERS), so switching between 'none' and 'single'
+  // never hides a chat.
+  const OWNER_ID = 'owner';
+  if (cfg.authMode === 'single') {
+    store.db.prepare(`INSERT INTO users (id, role, status, created_at, approved_at)
+      VALUES (?, 'admin', 'approved', ?, ?) ON CONFLICT(id) DO NOTHING`).run(OWNER_ID, Date.now(), Date.now());
+  }
+  // Failed logins per client address: 5 misses locks that address out for 15 minutes.
+  const loginFailures = new Map();
+  const LOGIN_MAX = 5;
+  const LOGIN_WINDOW_MS = 15 * 60_000;
   let armScheduler = () => {};
   let triggerAutomation = async () => { throw new Error('manual triggering is unavailable'); };
   let drainManualTriggers = () => {};
@@ -412,8 +440,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       if (user.status === 'disabled') return { disabled: true };
       if (user.status !== 'approved') return { pending: true };
     }
+    if (cfg.authMode === 'single') return { userId: ALL_USERS, role: 'admin', user, isAdmin: true };
     return { userId: user.id, role: user.role, user, isAdmin: user.role === 'admin' && user.status === 'approved' };
   }
+
+  // The user-management and oversight routes only mean something when there
+  // is more than one person; 'none' and 'single' are just you.
+  const multiUser = () => cfg.authMode === 'trusted-header';
 
   // Fields a non-admin never sees: credentials, and where the deployment's
   // trust boundary sits.
@@ -450,14 +483,43 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         return json(res, 200, { redirect: cfg.logoutUrl || null });
       }
 
+      if (cfg.authMode === 'single' && req.method === 'POST' && req.url === '/api/auth/login') {
+        const who = req.socket.remoteAddress || '?';
+        const now = Date.now();
+        const f = loginFailures.get(who);
+        if (f && now - f.first > LOGIN_WINDOW_MS) loginFailures.delete(who);
+        const entry = loginFailures.get(who);
+        if (entry && entry.count >= LOGIN_MAX) {
+          return json(res, 429, { error: 'too many attempts, try again later' });
+        }
+        const { password } = await readJson(req);
+        if (!verifyPassword(password, passwordHash)) {
+          loginFailures.set(who, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
+          audit('auth.rejected', { reason: 'bad_password' });
+          return json(res, 401, { error: 'wrong password' });
+        }
+        loginFailures.delete(who);
+        const token = createSession(store, OWNER_ID, cfg.sessionTtlDays);
+        audit('auth.login', { userId: OWNER_ID });
+        res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req) }));
+        return json(res, 200, { ok: true });
+      }
+
+      if (cfg.authMode === 'single' && req.method === 'POST' && req.url === '/api/auth/logout') {
+        const token = sessionToken(req, cfg);
+        if (token) destroySession(store, token);
+        res.setHeader('set-cookie', clearCookie({ secure: isSecureRequest(req) }));
+        return json(res, 200, { ok: true });
+      }
+
       if (req.url === '/api/admin/users' && req.method === 'GET') {
-        if (!auth.isAdmin || cfg.authMode === 'none') return adminOnly();
+        if (!auth.isAdmin || !multiUser()) return adminOnly();
         return json(res, 200, { users: store.listUsers().map(adminUserView) });
       }
 
       const adminUser = /^\/api\/admin\/users\/([\w-]+)$/.exec(req.url || '');
       if (adminUser && req.method === 'PATCH') {
-        if (!auth.isAdmin || cfg.authMode === 'none') return adminOnly();
+        if (!auth.isAdmin || !multiUser()) return adminOnly();
         const target = store.getUser(adminUser[1]);
         if (!target) return json(res, 404, { error: 'no such user' });
         const { role, status } = await readJson(req);
@@ -486,7 +548,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       const adminChat = /^\/api\/admin\/chats\/([\w.-]+)$/.exec(req.url || '');
       const adminDoc = /^\/api\/admin\/documents\/([\w.-]+)$/.exec(req.url || '');
       if ((adminChats || adminChat || adminDoc) && req.method === 'GET') {
-        if (!auth.isAdmin || cfg.authMode === 'none') return adminOnly();
+        if (!auth.isAdmin || !multiUser()) return adminOnly();
         if (adminChats) {
           const target = store.getUser(adminChats[1]);
           if (!target) return json(res, 404, { error: 'no such user' });

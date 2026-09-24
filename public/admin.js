@@ -11,14 +11,14 @@ let me = null;
 /** Reveals the Admin and Log out nav items for whoever is signed in. */
 export async function initAdmin() {
   try { me = await (await fetch('/api/auth/me')).json(); } catch { return; }
-  $('toggle-admin').hidden = !(me.isAdmin && me.authMode !== 'none');
-  if (me.logoutUrl) {
+  $('toggle-admin').hidden = !(me.isAdmin && me.authMode === 'trusted-header');
+  if (me.logoutUrl || me.authMode === 'single') {
     const btn = $('logout');
     btn.hidden = false;
     btn.onclick = async () => {
-      // The upstream gateway owns the session; ending it is its job.
       try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* going anyway */ }
-      location.href = me.logoutUrl;
+      // Behind a gateway, the gateway owns the session; ending it is its job.
+      if (me.logoutUrl) location.href = me.logoutUrl; else location.reload();
     };
   }
 }

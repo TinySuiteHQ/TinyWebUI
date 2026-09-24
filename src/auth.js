@@ -1,8 +1,9 @@
-import { randomBytes, createHmac, createHash, timingSafeEqual, randomUUID } from 'node:crypto';
+import { randomBytes, createHmac, createHash, timingSafeEqual, randomUUID, scryptSync } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
 
 /**
- * Session/cookie plumbing for the optional auth modes ('single'/'multiuser').
+ * Session/cookie plumbing for authMode 'single' (password login), plus the
+ * identity resolution for 'trusted-header' further down.
  * No framework, no dependency: a signed HTTP-only cookie names a session
  * token, and the token itself is looked up (by its hash, never the raw
  * value) against the `sessions` table. When authMode is 'none' none of this
@@ -61,6 +62,35 @@ export function clearCookie({ secure = false } = {}) {
   return parts.join('; ');
 }
 
+/* ---------- password (authMode 'single') ---------- */
+
+const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+
+/** `scrypt$<salt hex>$<hash hex>` -- what authPassword holds. Never plaintext. */
+export function hashPassword(password) {
+  const salt = randomBytes(16);
+  const hash = scryptSync(String(password), salt, 32, SCRYPT);
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+export function verifyPassword(password, stored) {
+  const [kind, saltHex, hashHex] = String(stored || '').split('$');
+  if (kind !== 'scrypt' || !saltHex || !hashHex) return false;
+  const expected = Buffer.from(hashHex, 'hex');
+  const actual = scryptSync(String(password ?? ''), Buffer.from(saltHex, 'hex'), expected.length, SCRYPT);
+  return timingSafeEqual(actual, expected);
+}
+
+/** The raw session token from a validly signed cookie, or null. */
+export function sessionToken(req, cfg) {
+  const raw = readCookie(req);
+  if (!raw) return null;
+  const dot = raw.lastIndexOf('.');
+  if (dot === -1) return null;
+  const token = raw.slice(0, dot);
+  return cfg.sessionSecret && verify(token, raw.slice(dot + 1), cfg.sessionSecret) ? token : null;
+}
+
 function readCookie(req) {
   const header = req.headers.cookie;
   if (!header) return null;
@@ -84,13 +114,8 @@ export function isSecureRequest(req) {
  * token's hash in `sessions` and checks expiry.
  */
 export function getSessionUser(req, store, cfg) {
-  const raw = readCookie(req);
-  if (!raw) return null;
-  const dot = raw.lastIndexOf('.');
-  if (dot === -1) return null;
-  const token = raw.slice(0, dot);
-  const signature = raw.slice(dot + 1);
-  if (!cfg.sessionSecret || !verify(token, signature, cfg.sessionSecret)) return null;
+  const token = sessionToken(req, cfg);
+  if (!token) return null;
 
   const session = store.db.prepare('SELECT * FROM sessions WHERE token_hash = ?').get(sha256(token));
   if (!session || session.expires_at < Date.now()) return null;

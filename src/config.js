@@ -118,18 +118,21 @@ const DEFAULTS = {
   disabledTools: [],
   // Optional auth/RBAC. Off by default -- TinyWebUI stays single-user and
   // local-first unless this is deliberately opted into for a managed deploy.
-  //   'none'      no login, no changes (default)
-  //   'single'    one password gate, DB content encrypted at rest with a key
-  //               derived from that password
-  //   'multiuser' Google OAuth login, admin-approved accounts, per-user data
+  //   'none'           no login: just you, on localhost (default)
+  //   'single'         just you, behind a password (authPassword or
+  //                    $TINYWEBUI_PASSWORD; set it with `tinywebui set-password`)
+  //   'trusted-header' many users: an upstream gateway (Cloudflare Access,
+  //                    oauth2-proxy, Authelia, ...) signs people in with
+  //                    Google, Apple, SSO etc. and passes identity headers
   authMode: 'none',
-  // Level 'single': a password hash (never plaintext), set via setup, not the
-  // general /api/config PATCH.
+  // Level 'single': an scrypt hash (never plaintext), from `tinywebui
+  // set-password`; never writable through /api/config.
   authPassword: '',
   // Signs session cookies. Auto-generated on first run when auth is enabled
   // and this is empty; never sent to the frontend.
   sessionSecret: '',
-  // Level 'multiuser': Google OAuth app credentials.
+  // Reserved for a native OAuth login ('multiuser'), not implemented yet --
+  // use 'trusted-header' behind a gateway for Google/Apple/SSO sign-in.
   googleClientId: '',
   googleClientSecret: '',
   googleRedirectUri: '',

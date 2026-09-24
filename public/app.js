@@ -34,10 +34,36 @@ async function migrateLocal() {
   } catch { /* the transcripts stay in localStorage; nothing is lost */ }
 }
 
-newChat();
-// Tools render read-only for non-admins, so they wait on the config.
-loadConfig().then(loadTools);
-loadMcp();
-initAdmin();
-migrateLocal().then(loadChats);
-$('input').focus();
+/** 'single' mode with no session: show the password screen and stop there. */
+async function needsLogin() {
+  let me;
+  try { me = await (await fetch('/api/auth/me')).json(); } catch { return false; }
+  if (me.authMode !== 'single' || me.user) return false;
+  const box = $('login');
+  box.hidden = false;
+  $('loginPassword').focus();
+  $('loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    $('loginMsg').textContent = '';
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: $('loginPassword').value })
+    });
+    if (res.ok) return location.reload();
+    const out = await res.json().catch(() => ({}));
+    $('loginMsg').textContent = out.error || `${res.status}`;
+    $('loginPassword').select();
+  };
+  return true;
+}
+
+if (!(await needsLogin())) {
+  newChat();
+  // Tools render read-only for non-admins, so they wait on the config.
+  loadConfig().then(loadTools);
+  loadMcp();
+  initAdmin();
+  migrateLocal().then(loadChats);
+  $('input').focus();
+}

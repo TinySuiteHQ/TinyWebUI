@@ -14,7 +14,7 @@ Bring an endpoint such as OpenRouter, OpenAI, Groq, Ollama, vLLM, or LM Studio; 
 - A settings panel for models, prompts, tools, MCP servers, token/context settings, usage, and themes.
 - Local themes, including the included Fall Fairy theme. See [theme authoring](public/themes/README.md).
 
-TinyWebUI is deliberately single-user and local-first. It is a personal workspace, not a multi-tenant hosted chat service.
+TinyWebUI is local-first: out of the box it is a personal workspace with no login. When you need more, it grows in [three tiers](#access-three-tiers): a password for just you, or many users signing in with Google, Apple or company SSO, with per-user data and an admin panel.
 
 ## Run
 
@@ -183,11 +183,66 @@ npm run eval -- --repeat 3 --compare baseline
 
 `--only name,words` runs a subset and `--model id` tries another model. Results are written to `evals/results/` (ignored by git). Add a task by dropping a JSON file into `evals/tasks/`; the existing ones show every check type.
 
+## Access: three tiers
+
+Pick one with `authMode`. Each tier keeps everything the one before it has.
+
+| Tier | `authMode` | Who | Sign-in |
+| --- | --- | --- | --- |
+| 1. Just you | `"none"` (default) | You, on your own machine | None |
+| 2. Just you, with auth | `"single"` | You, reachable over a network | A password |
+| 3. Users and admins | `"trusted-header"` | A team or organization | Google, Apple, SSO, etc., through a sign-in gateway |
+
+### Tier 1: just you
+
+The default. There is no login, and every chat, setting and tool belongs to whoever can reach the page. Keep it bound to `127.0.0.1`.
+
+### Tier 2: just you, with auth
+
+To reach your own instance from other devices, put a password in front of it:
+
+```bash
+npx tinywebui set-password   # prompts, then writes authMode "single" and a hash to your config
+npx tinywebui --host 0.0.0.0
+```
+
+The config file stores only an scrypt hash, never the password itself. In containers, set `"authMode": "single"` and pass the password in `TINYWEBUI_PASSWORD` instead. Sessions are HTTP-only signed cookies. After five wrong passwords, that address is locked out for 15 minutes. Running `set-password` again ends every existing session. Your chats are the same ones you had in tier 1; switching tiers never hides data. Serve it over HTTPS (for example behind a reverse proxy) whenever it leaves your machine.
+
+### Tier 3: users and admins
+
+For a team, TinyWebUI sits behind a **sign-in gateway** that handles the actual login, so any provider the gateway supports works: Google, Apple, Microsoft, GitHub, Okta or any OIDC/SAML SSO. It works with any gateway that can forward identity headers, such as Cloudflare Access, oauth2-proxy, Authelia or Authentik. The gateway verifies the person and passes their identity to TinyWebUI in request headers:
+
+```json
+{
+  "authMode": "trusted-header",
+  "trustedProxyCidrs": ["172.20.0.0/16"],
+  "trustedUserIdHeader": "x-tinysuite-user-id",
+  "trustedEmailHeader": "x-tinysuite-email",
+  "trustedNameHeader": "x-tinysuite-name",
+  "trustedRoleHeader": "x-tinysuite-role",
+  "trustedDefaultStatus": "approved",
+  "logoutUrl": "https://<team>.cloudflareaccess.com/cdn-cgi/access/logout"
+}
+```
+
+- **Accounts create themselves.** The first request from someone new creates their account, with no signup step. Accounts are keyed on the gateway's stable user ID, not on email, so a changed email address keeps the same account and data.
+- **Everyone's data is private.** Chats, documents, folders, search, automations and usage all belong to their user. The server refuses any request that reaches for another user's data by ID.
+- **Roles.** The gateway can send `admin` or `user` in the role header, and TinyWebUI follows it. A browser cannot promote itself.
+- **Admins** get an **Admin** menu item under Statistics, where they can:
+  - approve pending users (set `trustedDefaultStatus: "pending"` to require approval);
+  - disable accounts, which is an immediate 403 that also stops the user's automations;
+  - change roles;
+  - read any user's chats, documents and live turns. This view is read-only, and every view is recorded in the audit log.
+- **Settings belong to the operator.** For non-admins, the model, system prompt, tool approval rules and MCP servers are read-only, and credentials and the gateway address are hidden.
+- **Audit log.** Accounts created, rejected requests, role and status changes, config changes and admin views are written to stdout as `[tinywebui:audit]` JSON lines. Messages and secrets are never logged.
+
+Identity headers are believed **only** from the addresses in `trustedProxyCidrs`, based on the real network connection (`X-Forwarded-For` is ignored). TinyWebUI refuses to start in this mode without that list. The gateway must strip any identity headers a client sends, and TinyWebUI must be reachable only through the gateway: no published port.
+
 ## Security and limits
 
-TinyWebUI is designed for a local workspace. Keep it bound to `127.0.0.1`, or configure its optional authentication before exposing it to a network. Automations are scoped to the signed-in user when authentication is enabled. MCP servers run with the access you configure for them, so treat each configured server and its credentials as trusted local infrastructure.
+In tier 1, keep TinyWebUI bound to `127.0.0.1`. Use tier 2 or 3 before exposing it to a network. MCP servers run with the access you configure for them, so treat each configured server and its credentials as trusted infrastructure.
 
-The app does not provide OCR, cloud synchronization, user accounts, or branching chat history. Delete chats you no longer need; their associated documents and tool artifacts are deleted with them.
+The app does not provide OCR, cloud synchronization, or branching chat history. Delete chats you no longer need; their associated documents and tool artifacts are deleted with them.
 
 ## Development
 
@@ -195,7 +250,7 @@ The app does not provide OCR, cloud synchronization, user accounts, or branching
 npm test
 ```
 
-The test suite covers message serialization, cache behavior, compaction, tool routing, retries, chat editing, search, streaming/rejoin behavior, and settings/tool management.
+The test suite covers message serialization, cache behavior, compaction, tool routing, retries, chat editing, search, streaming/rejoin behavior, settings/tool management, password and gateway sign-in, and a tenant-isolation matrix in which one user attempts every route against another user's IDs.
 
 ## License
 

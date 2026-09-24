@@ -11,6 +11,7 @@ const flag = (name, fallback) => {
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`tinywebui [--port 7777] [--host 127.0.0.1]
+tinywebui set-password     turn on password login ("single" auth mode)
 
 Config comes from ./tinywebui.config.js if it exists, then
 ./tinywebui.config.json ($TINYWEBUI_CONFIG may point at either), and MCP
@@ -43,6 +44,12 @@ if (envPath && /\.[cm]?js$/.test(envPath)) {
     const p = resolve(process.cwd(), name);
     if (existsSync(p)) { jsPath = p; break; }
   }
+}
+
+if (args[0] === 'set-password') {
+  const { setPassword } = await import('../src/set-password.js');
+  try { await setPassword(); process.exit(0); }
+  catch (err) { console.error(`[tinywebui] ${err.message}`); process.exit(1); }
 }
 
 try {

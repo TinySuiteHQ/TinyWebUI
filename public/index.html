@@ -160,6 +160,16 @@
     </div>
   </section>
 
+  <div id="login" hidden>
+    <form id="loginForm" class="login-card">
+      <h2>TinyWebUI</h2>
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Sign in</button>
+      <div id="loginMsg" class="usage" role="alert"></div>
+    </form>
+  </div>
+
   <section id="admin" aria-label="Admin">
     <div class="automation-head"><h2>Admin</h2><button id="close-admin">close</button></div>
     <div class="statistics-content">
