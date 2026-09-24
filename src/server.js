@@ -479,6 +479,41 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         return json(res, 200, { user: adminUserView(updated) });
       }
 
+      // Admin oversight: read-only, every view audited. Reached through
+      // ALL_USERS on purpose -- this is the one place a user's scope is
+      // crossed, and it only exists when there are users to cross between.
+      const adminChats = /^\/api\/admin\/users\/([\w-]+)\/chats$/.exec(req.url || '');
+      const adminChat = /^\/api\/admin\/chats\/([\w.-]+)$/.exec(req.url || '');
+      const adminDoc = /^\/api\/admin\/documents\/([\w.-]+)$/.exec(req.url || '');
+      if ((adminChats || adminChat || adminDoc) && req.method === 'GET') {
+        if (!auth.isAdmin || cfg.authMode === 'none') return adminOnly();
+        if (adminChats) {
+          const target = store.getUser(adminChats[1]);
+          if (!target) return json(res, 404, { error: 'no such user' });
+          audit('admin.view_user_chats', { by: auth.userId, userId: target.id });
+          const chats = store.listChats(500, target.id).map((c) => ({ ...c, running: isRunning(c.id) }));
+          const stats = store.usageStatistics(target.id);
+          return json(res, 200, { user: adminUserView(target), chats, summary: stats.summary });
+        }
+        if (adminChat) {
+          const found = store.getChat(adminChat[1], ALL_USERS);
+          if (!found) return json(res, 404, { error: 'no such chat' });
+          audit('admin.view_chat', { by: auth.userId, chatId: found.id, owner: found.user_id });
+          const owner = found.user_id ? store.getUser(found.user_id) : null;
+          return json(res, 200, {
+            id: found.id, title: found.title, updatedAt: found.updated_at,
+            owner: owner ? adminUserView(owner) : null,
+            running: isRunning(found.id),
+            messages: store.messages(found.id).map(toView),
+            documents: store.listDocuments(found.id)
+          });
+        }
+        const doc = store.getDocument(adminDoc[1], ALL_USERS);
+        if (!doc) return json(res, 404, { error: 'no such document' });
+        audit('admin.view_document', { by: auth.userId, documentId: doc.id, chatId: doc.chat_id });
+        return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
+      }
+
       if (req.method === 'GET' && req.url === '/api/config') {
         return json(res, 200, {
           ...configFor(auth),

@@ -279,6 +279,17 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 .admin-row .admin-err { flex-basis:100%; color:var(--err); }
 .admin-row .admin-err:empty { display:none; }
 #adminMsg:empty { display:none; }
+.admin-note { margin-bottom:.75rem; }
+.admin-chat { display:flex; gap:.75rem; align-items:center; width:100%; text-align:left; padding:.45rem .5rem; border:0; border-top:1px solid var(--line); background:none; color:inherit; font:inherit; cursor:pointer; }
+.admin-chat:hover { background:var(--bg); }
+.admin-chat .usage { margin-left:auto; white-space:nowrap; }
+.admin-live { color:var(--accent, currentColor); font-weight:600; }
+.admin-msg { padding:.6rem 0; border-top:1px solid var(--line); }
+.admin-msg-role { font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); margin-bottom:.25rem; }
+.admin-msg-body { overflow-wrap:anywhere; }
+.admin-msg-body pre { white-space:pre-wrap; }
+.admin-msg details { font-size:var(--fs-meta); }
+.admin-msg details pre { max-height:20rem; overflow:auto; white-space:pre-wrap; }
 .statistics-content { overflow:auto; padding:1rem; }
 .statistics-block { width:min(52rem,100%); margin:0 auto 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
 .statistics-block .sec-h { margin-bottom:.75rem; }

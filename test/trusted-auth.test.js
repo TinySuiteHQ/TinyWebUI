@@ -134,3 +134,26 @@ test('scoped store reads refuse a missing scope', () => {
   assert.ok(store.getChat(chat.id, ALL_USERS));
   store.close();
 });
+
+test('admins can read any user\'s chats and documents; users cannot', async () => {
+  const hank = as({ id: 'sub-hank', email: 'hank@example.com' });
+  const hankId = (await hank('/api/auth/me')).data.user.id;
+  await hank('/api/chats/import', { method: 'POST', body: { chats: [{ id: 'hank-chat', title: 'Hank', messages: [{ role: 'user', content: 'hank says hi' }] }] } });
+  const doc = (await hank('/api/chats/hank-chat/documents', { method: 'POST', body: {
+    filename: 'h.txt', mime: 'text/plain', dataBase64: Buffer.from('hank doc').toString('base64')
+  } })).data.document;
+
+  const list = await admin(`/api/admin/users/${hankId}/chats`);
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.data.chats.map((c) => c.id), ['hank-chat']);
+  const chat = await admin('/api/admin/chats/hank-chat');
+  assert.equal(chat.data.messages[0].content, 'hank says hi');
+  assert.equal(chat.data.owner.email, 'hank@example.com');
+  assert.equal((await admin(`/api/admin/documents/${doc.id}`)).data.content, 'hank doc');
+
+  const other = as({ id: 'sub-ivy' });
+  assert.equal((await other(`/api/admin/users/${hankId}/chats`)).status, 403);
+  assert.equal((await other('/api/admin/chats/hank-chat')).status, 403);
+  assert.equal((await other(`/api/admin/documents/${doc.id}`)).status, 403);
+  assert.equal((await admin('/api/admin/chats/nope')).status, 404);
+});
