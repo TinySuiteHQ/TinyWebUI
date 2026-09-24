@@ -137,6 +137,19 @@ const DEFAULTS = {
   // first admin account is bootstrapped.
   adminEmails: [],
   sessionTtlDays: 30,
+  // Level 'trusted-header': an upstream gateway (Cloudflare Access, oauth2-
+  // proxy, ...) authenticates and injects identity headers on every request.
+  // Headers are believed only from peers inside trustedProxyCidrs; startup
+  // refuses an empty list. Users are provisioned on first sight.
+  trustedProxyCidrs: [],
+  trustedUserIdHeader: 'x-tinysuite-user-id',
+  trustedEmailHeader: 'x-tinysuite-email',
+  trustedNameHeader: 'x-tinysuite-name',
+  trustedRoleHeader: 'x-tinysuite-role',
+  // 'approved' or 'pending' -- the status a newly provisioned user starts in.
+  trustedDefaultStatus: 'approved',
+  // Where "log out" sends the browser (e.g. the Access logout URL).
+  logoutUrl: '',
 };
 
 /**
@@ -185,7 +198,7 @@ export function createConfigSource(opts = {}) {
     const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
     if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
     if (!['writes', 'all', 'off'].includes(cfg.toolApproval)) cfg.toolApproval = DEFAULTS.toolApproval;
-    const AUTH_MODES = ['none', 'single', 'multiuser'];
+    const AUTH_MODES = ['none', 'single', 'multiuser', 'trusted-header'];
     if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
     // A session secret is required the moment auth is on; generate and persist
     // one rather than signing cookies with an empty key.

@@ -5,7 +5,7 @@
  * never show a state the server has already moved past.
  */
 import { $, el } from './dom.js';
-import { loadConfig, loadMcp, loadTools, isLocked } from './settings.js';
+import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from './settings.js';
 import { addError } from './transcript.js';
 
 const form = $('form');
@@ -58,6 +58,8 @@ function toggle(on, label, onToggle) {
   sw.setAttribute('role', 'switch');
   sw.setAttribute('aria-checked', String(on));
   sw.setAttribute('aria-label', label);
+  // Tool and server switches are deployment config: admins only.
+  if (isReadOnly()) { sw.disabled = true; sw.title = 'Managed by your administrator'; }
   sw.onclick = async (e) => {
     e.stopPropagation();
     sw.disabled = true;
@@ -152,7 +154,9 @@ function renderTools(body, data) {
 async function buildModelMenu(pop) {
   const current = $('model').value;
   if (isLocked('model')) {
-    pop.appendChild(Object.assign(el('div', 'pop-note'), { textContent: 'The model is set in code and cannot be switched here.' }));
+    pop.appendChild(Object.assign(el('div', 'pop-note'), {
+      textContent: isReadOnly() ? 'The model is managed by your administrator.' : 'The model is set in code and cannot be switched here.'
+    }));
     return;
   }
 

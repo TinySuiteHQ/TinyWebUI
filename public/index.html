@@ -31,6 +31,8 @@
     <button id="toggle-mcp" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0Z"/><path d="M12 16v5"/></svg><span>MCP servers</span></button>
     <button id="toggle-settings" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
     <button id="toggle-statistics" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statistics</span></button>
+    <button id="toggle-admin" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/></svg><span>Admin</span></button>
+    <button id="logout" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Log out</span></button>
   </nav>
   <div class="side-label"><span>Recent conversations</span><button id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v4M10 13h4"/></svg></button></div>
   <div id="chats"></div>
@@ -154,6 +156,17 @@
       <section class="statistics-block">
         <div class="sec-h">agentic <span class="usage">tool calls across all rounds</span></div>
         <div id="statisticsTools" class="statistics-costs"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="admin" aria-label="Admin">
+    <div class="automation-head"><h2>Admin</h2><button id="close-admin">close</button></div>
+    <div class="statistics-content">
+      <section class="statistics-block">
+        <div class="sec-h">users <span id="adminCount" class="usage"></span></div>
+        <div id="adminMsg" class="usage"></div>
+        <div id="adminUsers" class="admin-users"></div>
       </section>
     </div>
   </section>

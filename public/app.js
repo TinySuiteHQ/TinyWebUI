@@ -9,6 +9,7 @@ import { loadConfig, loadMcp, loadTools } from './settings.js';
 import './attachments.js';
 import './automations.js';
 import './panels.js';
+import { initAdmin } from './admin.js';
 import './composer.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
@@ -34,8 +35,9 @@ async function migrateLocal() {
 }
 
 newChat();
-loadConfig();
+// Tools render read-only for non-admins, so they wait on the config.
+loadConfig().then(loadTools);
 loadMcp();
-loadTools();
+initAdmin();
 migrateLocal().then(loadChats);
 $('input').focus();

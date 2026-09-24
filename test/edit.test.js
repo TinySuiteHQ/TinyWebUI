@@ -131,7 +131,7 @@ test('truncating below a compaction boundary clears it', () => {
 
   store.truncateFrom(chat.id, 2);
   assert.equal(store.messages(chat.id).length, 2);
-  assert.equal(store.getChat(chat.id).boundary_seq, -1, 'a frozen prefix inside the cut is no longer frozen');
+  assert.equal(store.chatById(chat.id).boundary_seq, -1, 'a frozen prefix inside the cut is no longer frozen');
   store.close();
 });
 

@@ -1,3 +1,5 @@
+import { ALL_USERS } from './store.js';
+
 /**
  * read_document -- lets the model read text the user attached to the chat.
  *
@@ -90,7 +92,7 @@ export function callReadDocument(args, { store, chatId, budget = 8000 }) {
   const id = String(args?.document_id || '').trim();
   if (!id) return 'Error: document_id is required.';
 
-  const doc = store.getDocument(id);
+  const doc = store.getDocument(id, ALL_USERS);
   if (!doc) return `Error: no document "${id}". Ids appear in the "[Attached document: ...]" note.`;
   if (doc.chat_id !== chatId) return `Error: document "${id}" does not belong to this conversation.`;
 

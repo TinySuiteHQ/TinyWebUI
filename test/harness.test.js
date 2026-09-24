@@ -304,11 +304,11 @@ test('a long plain-text chat is windowed once and then stays put', async () => {
     const sent = provider.seen[0].messages;
     assert.equal(sent[1].role, 'user');
     assert.match(sent[1].content, /^\[Earlier conversation omitted/);
-    const windowAt = store.getChat(chat.id).window_seq;
+    const windowAt = store.chatById(chat.id).window_seq;
     assert.ok(windowAt > 0);
 
     await turn('again');
-    assert.equal(store.getChat(chat.id).window_seq, windowAt, 'no move while under the limit');
+    assert.equal(store.chatById(chat.id).window_seq, windowAt, 'no move while under the limit');
     const [a, b] = provider.seen.map((body) => body.messages);
     assert.deepEqual(b.slice(0, a.length), a, 'the second turn extends the first byte for byte');
   } finally {

@@ -560,10 +560,10 @@ export async function runChat({
   const load = () => {
     let all = store.messages(chatId);
     if (Number.isSafeInteger(historyFromSeq)) all = all.filter((row) => row.seq >= historyFromSeq);
-    return windowRows(all, store.getChat(chatId).window_seq);
+    return windowRows(all, store.chatById(chatId).window_seq);
   };
   let rows = load();
-  const chat = store.getChat(chatId);
+  const chat = store.chatById(chatId);
   const keepTurns = Math.max(1, cfg.keepTurns || 2);
 
   // Compaction is decided once, here, before the first request of the turn --
@@ -607,7 +607,7 @@ export async function runChat({
   const working = rows.map(toWire);
   // Index of the last message inside the frozen prefix, for the pinned
   // breakpoint. -1 before the first epoch, when there is nothing frozen yet.
-  const boundarySeq = store.getChat(chatId).boundary_seq;
+  const boundarySeq = store.chatById(chatId).boundary_seq;
   const epochIndex = boundarySeq >= 0
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;

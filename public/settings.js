@@ -12,6 +12,11 @@ import { addError } from './transcript.js';
  * Rebuilt wholesale from a fresh /api/tools payload after every toggle, so the
  * panel can never drift from what the server actually did with the request.
  */
+// Set from /api/config: a non-admin sees the deployment's settings but
+// cannot change them.
+let readOnly = false;
+export const isReadOnly = () => readOnly;
+
 function renderToolPanel(data) {
   const box = $('tools');
   box.innerHTML = '';
@@ -49,6 +54,7 @@ function renderToolPanel(data) {
     cb.title = title;
     cb.onclick = (e) => e.stopPropagation();
     cb.onchange = () => { cb.disabled = true; onToggle(!cb.checked); };
+    if (readOnly) cb.disabled = true;
     label.appendChild(cb);
     return label;
   };
@@ -76,6 +82,7 @@ function renderToolPanel(data) {
       sel.appendChild(o);
     }
     sel.value = t.approval;
+    if (readOnly) sel.disabled = true;
     // Same reason as the checkbox: a click in a <summary> toggles the details.
     sel.onclick = (e) => e.stopPropagation();
     sel.onchange = async () => {
@@ -211,11 +218,12 @@ export async function loadTools() {
 }
 
 export async function loadMcp() {
-  const { path, text, locked } = await (await fetch('/api/mcp')).json();
+  const { path, text, locked, readOnly: managed } = await (await fetch('/api/mcp')).json();
   $('mcpText').value = text;
   $('mcpText').readOnly = Boolean(locked);
   $('saveMcp').disabled = Boolean(locked);
-  $('mcpPath').textContent = locked ? 'set in code (read-only)' : path;
+  $('mcpPath').textContent = managed ? 'managed by your administrator'
+    : locked ? 'set in code (read-only)' : path;
 }
 
 $('saveMcp').onclick = async () => {
@@ -249,16 +257,19 @@ const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'maxTool
 let lockedKeys = new Set();
 
 /** Whether a setting is pinned in code, so the UI cannot change it. */
-export const isLocked = (key) => lockedKeys.has(key);
+export const isLocked = (key) => readOnly || lockedKeys.has(key);
 
 export async function loadConfig() {
   const cfg = await (await fetch('/api/config')).json();
   lockedKeys = new Set(cfg.lockedKeys || []);
+  readOnly = Boolean(cfg.readOnly);
   for (const id of FORM_KEYS) {
-    const locked = lockedKeys.has(id);
+    const locked = readOnly || lockedKeys.has(id);
     $(id).disabled = locked;
-    $(id).title = locked ? 'set in code' : '';
+    $(id).title = readOnly ? 'managed by your administrator' : locked ? 'set in code' : '';
   }
+  $('save').disabled = readOnly;
+  if (readOnly) $('saveMsg').textContent = 'managed by your administrator';
   $('systemPrompt').value = cfg.systemPrompt;
   $('model').value = cfg.model;
   $('temperature').value = cfg.temperature ?? '';
@@ -308,7 +319,7 @@ export function toggleSettings(open) {
   const panel = $('settings');
   const on = open ?? !panel.classList.contains('open');
   panel.classList.toggle('open', on);
-  if (on) { $('saveMsg').textContent = ''; }
+  if (on) { $('saveMsg').textContent = readOnly ? 'managed by your administrator' : ''; }
   $('toggle-settings').classList.toggle('active', on);
   if (!on) $('input').focus();
 }

@@ -82,7 +82,7 @@ test('search finds a chat whether the word is in the question or the answer', as
 
 test('one result per matching chat, never one per matching message', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-dedupe-'));
-  const { Store } = await import('../src/store.js');
+  const { Store, ALL_USERS } = await import('../src/store.js');
   const store = new Store(join(dir2, 'x.db'));
 
   // Three messages in one chat all say "lisbon" -- the question, and two
@@ -95,14 +95,14 @@ test('one result per matching chat, never one per matching message', async () =>
   store.addMessage(b.id, { role: 'user', content: 'is lisbon worth a weekend' });
   store.addMessage(b.id, { role: 'assistant', content: 'yes' });
 
-  const results = store.search('lisbon');
+  const results = store.search('lisbon', 30, ALL_USERS);
   assert.equal(results.length, 2, 'two distinct chats, not one row per matching message');
   assert.deepEqual(new Set(results.map((r) => r.chatId)), new Set([a.id, b.id]));
 });
 
 test('search does not reach into reasoning, tool calls, tool results, or narration', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-store-'));
-  const { Store } = await import('../src/store.js');
+  const { Store, ALL_USERS } = await import('../src/store.js');
   const store = new Store(join(dir2, 'x.db'));
   const chat = store.createChat({ title: 'probe' });
   // A round that opens a tool call: narration + reasoning, then the tool
@@ -118,10 +118,10 @@ test('search does not reach into reasoning, tool calls, tool results, or narrati
   store.addMessage(chat.id, { role: 'tool', tool_call_id: 't1', content: 'giantscrapeblob from a page' });
   store.addMessage(chat.id, { role: 'assistant', content: 'the visible answer' });
 
-  assert.deepEqual(store.search('secretlyunique'), [], 'reasoning is the work, not the conversation');
-  assert.deepEqual(store.search('giantscrapeblob'), [], 'a tool result is the work, not the conversation');
-  assert.deepEqual(store.search('narrationonly'), [], 'narration superseded by a later round is the work too');
-  assert.equal(store.search('visible').length, 1, 'the answer that actually stood is still found');
+  assert.deepEqual(store.search('secretlyunique', 30, ALL_USERS), [], 'reasoning is the work, not the conversation');
+  assert.deepEqual(store.search('giantscrapeblob', 30, ALL_USERS), [], 'a tool result is the work, not the conversation');
+  assert.deepEqual(store.search('narrationonly', 30, ALL_USERS), [], 'narration superseded by a later round is the work too');
+  assert.equal(store.search('visible', 30, ALL_USERS).length, 1, 'the answer that actually stood is still found');
   store.close();
 });
 

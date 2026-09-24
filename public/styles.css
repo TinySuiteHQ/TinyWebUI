@@ -264,6 +264,21 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
   flex-direction: column; overflow: hidden;
 }
 #statistics.open { display: flex; }
+#admin {
+  display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
+  flex-direction: column; overflow: hidden;
+}
+#admin.open { display: flex; }
+.admin-users { display:flex; flex-direction:column; gap:.4rem; }
+.admin-row { display:flex; flex-wrap:wrap; gap:.5rem .75rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--line); font-size:var(--fs-meta); }
+.admin-row:first-child { border-top:0; }
+.admin-who { flex:1 1 14rem; min-width:0; display:flex; flex-direction:column; }
+.admin-who strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-who .usage { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-row select { flex:0 0 auto; }
+.admin-row .admin-err { flex-basis:100%; color:var(--err); }
+.admin-row .admin-err:empty { display:none; }
+#adminMsg:empty { display:none; }
 .statistics-content { overflow:auto; padding:1rem; }
 .statistics-block { width:min(52rem,100%); margin:0 auto 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
 .statistics-block .sec-h { margin-bottom:.75rem; }

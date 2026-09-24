@@ -274,6 +274,29 @@ function ftsQuery(raw) {
  * same pattern `model`/`created_at`/`images_json` already use below for
  * `messages`. `ALTER TABLE ADD COLUMN` itself has no IF NOT EXISTS form.
  */
+/**
+ * Every read of user-owned rows names whose rows it wants. There is no
+ * default: `undefined` throws, so a caller that forgot to pass the
+ * authenticated user fails loudly instead of silently seeing everyone's data.
+ *   string     that user's rows
+ *   null       rows with no owner (legacy / pre-auth rows)
+ *   ALL_USERS  no filter -- authMode 'none', admin views, internal plumbing
+ */
+export const ALL_USERS = Symbol('all-users');
+
+function scope(userId, col = 'user_id') {
+  if (userId === ALL_USERS) return { sql: '1=1', params: [] };
+  if (userId === null) return { sql: `${col} IS NULL`, params: [] };
+  if (typeof userId === 'string' && userId) return { sql: `${col} = ?`, params: [userId] };
+  throw new TypeError('store: a user scope is required (pass a user id, null, or ALL_USERS)');
+}
+
+/** The owner to write onto a new row: ALL_USERS (no auth) owns as null. */
+function ownerOf(userId) {
+  if (userId === ALL_USERS || userId === null || userId === undefined) return null;
+  return String(userId);
+}
+
 function ensureColumn(db, table, col, decl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
@@ -300,6 +323,11 @@ export class Store {
     ensureColumn(this.db, 'documents', 'user_id', 'TEXT');
     ensureColumn(this.db, 'artifacts', 'user_id', 'TEXT');
     ensureColumn(this.db, 'automation_runs', 'trigger_type', "TEXT NOT NULL DEFAULT 'schedule'");
+    // Trusted-header auth: the gateway's immutable subject. Email and name are
+    // metadata reconciled from the gateway; external_id decides who owns what.
+    ensureColumn(this.db, 'users', 'external_id', 'TEXT');
+    ensureColumn(this.db, 'users', 'name', 'TEXT');
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_external_id ON users(external_id)');
     // `messages` may already exist from before these columns did --
     // CREATE TABLE IF NOT EXISTS above is a no-op against a live table, so
     // they're added here instead, self-repairing like the FTS backfill below.
@@ -347,40 +375,42 @@ export class Store {
 
   /* ---------- chats ---------- */
 
-  createChat({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = null) {
+  createChat({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = ALL_USERS) {
     const chatId = id || String(createdAt) + '-' + randomBytes(3).toString('hex');
     this.db.prepare(
       'INSERT INTO chats (id, title, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(chatId, title, createdAt, createdAt, userId);
-    return this.getChat(chatId, userId);
+    ).run(chatId, title, createdAt, createdAt, ownerOf(userId));
+    return this.chatById(chatId);
   }
 
-  /** `userId` null means unscoped -- today's exact behavior, and how an
-   * admin's full-content view (Level 3) reaches any user's chat. */
-  getChat(id, userId = null) {
-    return userId
-      ? this.db.prepare('SELECT * FROM chats WHERE id = ? AND user_id = ?').get(id, userId) || null
-      : this.db.prepare('SELECT * FROM chats WHERE id = ?').get(id) || null;
+  /** Scoped lookup for anything reached from a request. See scope(). */
+  getChat(id, userId) {
+    const s = scope(userId);
+    return this.db.prepare(`SELECT * FROM chats WHERE id = ? AND ${s.sql}`).get(id, ...s.params) || null;
   }
 
-  listChats(limit = 200, userId = null) {
-    return userId
-      ? this.db.prepare(
-          'SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?'
-        ).all(userId, limit)
-      : this.db.prepare(
-          'SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats ORDER BY updated_at DESC LIMIT ?'
-        ).all(limit);
+  /** Unscoped lookup for internal plumbing that already holds a chat id it
+   * got from a scoped path (the chat loop, compaction, automation runs). */
+  chatById(id) {
+    return this.db.prepare('SELECT * FROM chats WHERE id = ?').get(id) || null;
   }
 
-  organizeChat(id, { folder = null, tags } = {}) {
+  listChats(limit, userId) {
+    const s = scope(userId);
+    return this.db.prepare(
+      `SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
+    ).all(...s.params, limit);
+  }
+
+  organizeChat(id, { folder = null, tags } = {}, userId) {
+    if (!this.getChat(id, userId)) return null;
     const clean = (items, max) => [...new Set((Array.isArray(items) ? items : [])
       .map((v) => String(v).trim().slice(0, max)).filter(Boolean))].slice(0, 10);
     const cleanFolder = folder == null ? null : String(folder).trim().slice(0, 40) || null;
     const tagsJson = tags === undefined ? null : JSON.stringify(clean(tags, 32));
     const result = this.db.prepare('UPDATE chats SET folder = ?, tags_json = COALESCE(?, tags_json) WHERE id = ?')
       .run(cleanFolder, tagsJson, id);
-    return result.changes ? this.getChat(id) : null;
+    return result.changes ? this.chatById(id) : null;
   }
 
   /** Names only, sorted -- the create-then-move-chats-into-it workflow needs
@@ -389,25 +419,24 @@ export class Store {
    * chats organized before the `folders` table existed (or by anything else
    * that writes that column directly) never ran through createFolder, so the
    * table alone would silently drop them from this list. */
-  listFolders(userId = null) {
-    const own = userId
-      ? this.db.prepare('SELECT name FROM folders WHERE user_id = ?').all(userId)
-      : this.db.prepare('SELECT name FROM folders WHERE user_id IS NULL').all();
-    const used = userId
-      ? this.db.prepare("SELECT DISTINCT folder AS name FROM chats WHERE user_id = ? AND folder IS NOT NULL AND folder != ''").all(userId)
-      : this.db.prepare("SELECT DISTINCT folder AS name FROM chats WHERE folder IS NOT NULL AND folder != ''").all();
+  listFolders(userId) {
+    const s = scope(userId);
+    const own = this.db.prepare(`SELECT name FROM folders WHERE ${s.sql}`).all(...s.params);
+    const used = this.db.prepare(
+      `SELECT DISTINCT folder AS name FROM chats WHERE ${s.sql} AND folder IS NOT NULL AND folder != ''`
+    ).all(...s.params);
     return [...new Set([...own, ...used].map((r) => r.name))].sort((a, b) => a.localeCompare(b));
   }
 
-  createFolder(name, userId = null) {
+  createFolder(name, userId) {
     const clean = String(name || '').trim().slice(0, 40);
     if (!clean) return null;
-    const exists = userId
-      ? this.db.prepare('SELECT 1 FROM folders WHERE name = ? AND user_id = ?').get(clean, userId)
-      : this.db.prepare('SELECT 1 FROM folders WHERE name = ? AND user_id IS NULL').get(clean);
+    const owner = ownerOf(userId);
+    const s = scope(owner);
+    const exists = this.db.prepare(`SELECT 1 FROM folders WHERE name = ? AND ${s.sql}`).get(clean, ...s.params);
     if (!exists) {
       this.db.prepare('INSERT INTO folders (name, user_id, created_at) VALUES (?, ?, ?)')
-        .run(clean, userId, Date.now());
+        .run(clean, owner, Date.now());
     }
     return clean;
   }
@@ -431,7 +460,7 @@ export class Store {
       .run(chatId, seq).changes;
     // A frozen compaction boundary inside the cut no longer describes anything,
     // so the pinned cache breakpoint it drives has to go with it.
-    const chat = this.getChat(chatId);
+    const chat = this.chatById(chatId);
     if (chat && chat.boundary_seq >= seq) this.touchChat(chatId, { boundary_seq: -1 });
     // Same for the hard window: a cut at or past the rewind point would hide
     // the very question being asked again.
@@ -439,7 +468,8 @@ export class Store {
     return removed;
   }
 
-  deleteChat(id) {
+  deleteChat(id, userId) {
+    if (!this.getChat(id, userId)) return false;
     this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
@@ -453,17 +483,15 @@ export class Store {
     this.db.prepare('DELETE FROM document_chunk_map WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
+    return true;
   }
 
   /* ---------- automations ---------- */
 
-  listAutomations(userId = null) {
-    const rows = userId
-      ? this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
-          WHERE a.user_id=? ORDER BY a.updated_at DESC`).all(userId)
-      : this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
-          WHERE a.user_id IS NULL ORDER BY a.updated_at DESC`).all();
-    return rows.map(automationView);
+  listAutomations(userId) {
+    const s = scope(userId, 'a.user_id');
+    return this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+      WHERE ${s.sql} ORDER BY a.updated_at DESC`).all(...s.params).map(automationView);
   }
 
   listAllAutomations() {
@@ -471,26 +499,25 @@ export class Store {
       ORDER BY a.updated_at DESC`).all().map(automationView);
   }
 
-  getAutomation(id, userId = null) {
-    const row = userId
-      ? this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
-          WHERE a.id=? AND a.user_id=?`).get(id, userId)
-      : this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
-          WHERE a.id=? AND a.user_id IS NULL`).get(id);
+  getAutomation(id, userId) {
+    const s = scope(userId, 'a.user_id');
+    const row = this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
+      WHERE a.id=? AND ${s.sql}`).get(id, ...s.params);
     return row ? automationView(row) : null;
   }
 
-  createAutomation(data, userId = null) {
+  createAutomation(data, userId) {
+    scope(userId);
     const id = randomBytes(12).toString('hex');
     const now = Date.now();
     this.db.prepare(`INSERT INTO automations
       (id,user_id,chat_id,name,prompt,cron,timezone,enabled,next_run_at,source,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,userId,data.chatId,data.name,data.prompt,data.cron,data.timezone,
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,ownerOf(userId),data.chatId,data.name,data.prompt,data.cron,data.timezone,
       data.enabled === false ? 0 : 1,data.nextRunAt,data.source || 'user',now,now);
     return this.getAutomation(id,userId);
   }
 
-  updateAutomation(id, patch, userId = null) {
+  updateAutomation(id, patch, userId) {
     const current = this.getAutomation(id,userId);
     if (!current) return null;
     const fields = { chatId:'chat_id', name:'name', prompt:'prompt', cron:'cron', timezone:'timezone', enabled:'enabled', nextRunAt:'next_run_at', lastRunAt:'last_run_at', lastStatus:'last_status', lastResult:'last_result' };
@@ -499,13 +526,14 @@ export class Store {
     for (const [key,col] of Object.entries(fields)) if (patch[key] !== undefined) {
       sets.push(`${col}=?`); values.push(key === 'enabled' ? (patch[key] ? 1 : 0) : patch[key]);
     }
-    values.push(id,userId);
-    this.db.prepare(`UPDATE automations SET ${sets.join(',')} WHERE id=? AND user_id IS ?`).run(...values);
+    values.push(id);
+    this.db.prepare(`UPDATE automations SET ${sets.join(',')} WHERE id=?`).run(...values);
     return this.getAutomation(id,userId);
   }
 
-  deleteAutomation(id, userId = null) {
-    return this.db.prepare('DELETE FROM automations WHERE id=? AND user_id IS ?').run(id,userId).changes > 0;
+  deleteAutomation(id, userId) {
+    const s = scope(userId);
+    return this.db.prepare(`DELETE FROM automations WHERE id=? AND ${s.sql}`).run(id, ...s.params).changes > 0;
   }
 
   dueAutomations(now = Date.now()) {
@@ -533,7 +561,7 @@ export class Store {
     }, owner);
   }
 
-  listAutomationRuns(automationId, userId = null, limit = 10) {
+  listAutomationRuns(automationId, userId, limit = 10) {
     const owned = this.getAutomation(automationId,userId);
     if (!owned) return null;
     return this.db.prepare('SELECT id,scheduled_at,started_at,finished_at,status,trigger_type,result,error FROM automation_runs WHERE automation_id=? ORDER BY scheduled_at DESC LIMIT ?')
@@ -625,15 +653,16 @@ export class Store {
    * still show up here the same way their cost already does in
    * usageStatistics() below.
    */
-  usageRollup(userId = null) {
+  usageRollup(userId) {
+    const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`
       SELECT CASE WHEN m.created_at IS NOT NULL
                THEN strftime('%Y-%m-%d', m.created_at / 1000, 'unixepoch')
                ELSE 'unknown' END AS day,
              m.model, m.usage_json
       FROM messages m JOIN chats c ON c.id=m.chat_id
-      WHERE m.usage_json IS NOT NULL AND c.user_id IS ?
-    `).all(userId);
+      WHERE m.usage_json IS NOT NULL AND ${s.sql}
+    `).all(...s.params);
 
     const byDay = new Map();
     for (const row of rows) {
@@ -668,9 +697,10 @@ export class Store {
       .sort((a, b) => a.day.localeCompare(b.day));
   }
 
-  usageStatistics(userId = null) {
+  usageStatistics(userId) {
+    const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`SELECT m.chat_id,m.seq,m.role,m.content,m.tool_calls_json,m.model,m.usage_json
-      FROM messages m JOIN chats c ON c.id=m.chat_id WHERE c.user_id IS ? ORDER BY m.chat_id,m.seq`).all(userId);
+      FROM messages m JOIN chats c ON c.id=m.chat_id WHERE ${s.sql} ORDER BY m.chat_id,m.seq`).all(...s.params);
     const models = new Map();
     const tools = new Map();
     const summary = { rounds: 0, pricedRounds: 0, reportedCost: 0, completedAnswers: 0,
@@ -812,8 +842,12 @@ export class Store {
     return { id, filename, mime: mime ?? null, char_len: content.length, created_at: createdAt, chunks: chunks.length };
   }
 
-  getDocument(id) {
-    return this.db.prepare('SELECT * FROM documents WHERE id = ?').get(id) || null;
+  /** Scoped through the owning chat: a document is its chat's user's. */
+  getDocument(id, userId) {
+    const s = scope(userId, 'c.user_id');
+    return this.db.prepare(
+      `SELECT d.* FROM documents d JOIN chats c ON c.id = d.chat_id WHERE d.id = ? AND ${s.sql}`
+    ).get(id, ...s.params) || null;
   }
 
   listDocuments(chatId) {
@@ -824,7 +858,8 @@ export class Store {
   }
 
   /** Drops one document and its FTS chunks. The rest of the chat is untouched. */
-  deleteDocument(id) {
+  deleteDocument(id, userId) {
+    if (!this.getDocument(id, userId)) return false;
     this.db.prepare(`
       DELETE FROM document_chunks WHERE rowid IN (
         SELECT chunk_rowid FROM document_chunk_map WHERE doc_id = ?
@@ -865,7 +900,8 @@ export class Store {
    * function's own ORDER BY) is what keeps them legal here -- SQLite raises
    * "unable to use function bm25 in the requested context" otherwise.
    */
-  search(query, limit = 30) {
+  search(query, limit, userId) {
+    const s = scope(userId, 'c.user_id');
     const q = ftsQuery(query);
     if (!q) return [];
     return this.db.prepare(`
@@ -881,7 +917,7 @@ export class Store {
         FROM messages_fts
         JOIN messages m ON m.id = messages_fts.rowid
         JOIN chats c ON c.id = m.chat_id
-        WHERE messages_fts MATCH ?
+        WHERE messages_fts MATCH ? AND ${s.sql}
       ),
       ranked AS (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY chatId ORDER BY rank) AS rn
@@ -892,7 +928,33 @@ export class Store {
       WHERE rn = 1
       ORDER BY rank
       LIMIT ?
-    `).all(q, limit);
+    `).all(q, ...s.params, limit);
+  }
+
+  /* ---------- users ---------- */
+
+  getUser(id) {
+    return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
+  }
+
+  listUsers() {
+    return this.db.prepare(`
+      SELECT u.id, u.email, u.name, u.role, u.status, u.external_id, u.created_at, u.last_login_at,
+             (SELECT COUNT(*) FROM chats c WHERE c.user_id = u.id) AS chat_count
+      FROM users u ORDER BY u.created_at ASC
+    `).all();
+  }
+
+  /** Admin-side changes only: role in (admin,user), status in (pending,approved,disabled). */
+  updateUser(id, { role, status } = {}) {
+    const sets = []; const vals = [];
+    if (role !== undefined) { sets.push('role = ?'); vals.push(role); }
+    if (status !== undefined) {
+      sets.push('status = ?'); vals.push(status);
+      if (status === 'approved') { sets.push('approved_at = COALESCE(approved_at, ?)'); vals.push(Date.now()); }
+    }
+    if (sets.length) this.db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
+    return this.getUser(id);
   }
 }
 

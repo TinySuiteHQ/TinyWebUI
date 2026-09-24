@@ -1,4 +1,5 @@
-import { randomBytes, createHmac, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHmac, createHash, timingSafeEqual, randomUUID } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 
 /**
  * Session/cookie plumbing for the optional auth modes ('single'/'multiuser').
@@ -95,4 +96,95 @@ export function getSessionUser(req, store, cfg) {
   if (!session || session.expires_at < Date.now()) return null;
 
   return store.db.prepare('SELECT * FROM users WHERE id = ?').get(session.user_id) || null;
+}
+
+/* ---------- trusted-header mode ---------- */
+
+/**
+ * One JSON line per security-relevant event, on stdout for the deployment's
+ * log collector. Never pass content, prompts, tokens or raw header values.
+ */
+export function audit(event, fields = {}) {
+  console.log(`[tinywebui:audit] ${JSON.stringify({ ts: new Date().toISOString(), event, ...fields })}`);
+}
+
+/** Parsed once per cidr list; `::ffff:1.2.3.4` peers are checked as IPv4. */
+const blockLists = new WeakMap();
+export function ipInCidrs(ip, cidrs) {
+  if (!ip || !Array.isArray(cidrs) || !cidrs.length) return false;
+  let list = blockLists.get(cidrs);
+  if (!list) {
+    list = new BlockList();
+    for (const cidr of cidrs) {
+      const [addr, bits] = String(cidr).split('/');
+      const family = isIP(addr) === 6 ? 'ipv6' : 'ipv4';
+      const prefix = bits === undefined ? (family === 'ipv6' ? 128 : 32) : Number(bits);
+      list.addSubnet(addr, prefix, family);
+    }
+    blockLists.set(cidrs, list);
+  }
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (mapped) return list.check(mapped[1], 'ipv4');
+  return list.check(ip, isIP(ip) === 6 ? 'ipv6' : 'ipv4');
+}
+
+const HEADER_ROLES = new Set(['admin', 'user']);
+const LOGIN_TOUCH_MS = 60_000;
+
+function header(req, name) {
+  const v = req.headers[String(name).toLowerCase()];
+  const s = Array.isArray(v) ? v[0] : v;
+  return typeof s === 'string' ? s.trim() : '';
+}
+
+/**
+ * Resolves (and on first sight provisions) the user an upstream gateway has
+ * vouched for. Returns { user } or { reject: reason }.
+ *
+ * Headers are believed only from a peer inside trustedProxyCidrs, judged by
+ * the socket address -- never X-Forwarded-For, which the client controls.
+ * The external id is the identity; email and name are metadata that follow
+ * the gateway. Role follows the gateway when it sends one; status is only
+ * ever set here on creation and otherwise belongs to TinyWebUI admins.
+ */
+export function resolveTrustedUser(req, store, cfg) {
+  if (!ipInCidrs(req.socket?.remoteAddress, cfg.trustedProxyCidrs)) return { reject: 'untrusted_peer' };
+  const externalId = header(req, cfg.trustedUserIdHeader).slice(0, 256);
+  if (!externalId) return { reject: 'missing_identity' };
+  const email = header(req, cfg.trustedEmailHeader).slice(0, 320).toLowerCase() || null;
+  const name = header(req, cfg.trustedNameHeader).slice(0, 200) || null;
+  const rawRole = header(req, cfg.trustedRoleHeader).toLowerCase();
+  const role = HEADER_ROLES.has(rawRole) ? rawRole : null;
+
+  const db = store.db;
+  const now = Date.now();
+  const status = cfg.trustedDefaultStatus === 'pending' ? 'pending' : 'approved';
+  // The unique index on external_id makes this the atomic provision step:
+  // concurrent first requests race to insert, exactly one wins, all read it.
+  const inserted = db.prepare(`
+    INSERT INTO users (id, external_id, role, status, created_at, approved_at, last_login_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(external_id) DO NOTHING
+  `).run(randomUUID(), externalId, role || 'user', status, now, status === 'approved' ? now : null, now);
+  let user = db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId);
+  if (inserted.changes) audit('user.provisioned', { userId: user.id, role: user.role, status: user.status });
+
+  const sets = []; const vals = [];
+  if (email !== user.email) {
+    // Emails are unique; one held by another account is dropped, never merged.
+    const holder = email && db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, user.id);
+    const next = holder ? null : email;
+    if (next !== user.email) { sets.push('email = ?'); vals.push(next); }
+  }
+  if (name !== user.name) { sets.push('name = ?'); vals.push(name); }
+  if (role && role !== user.role) {
+    sets.push('role = ?'); vals.push(role);
+    audit('user.role_changed', { userId: user.id, from: user.role, to: role, by: 'gateway' });
+  }
+  if (!user.last_login_at || now - user.last_login_at > LOGIN_TOUCH_MS) { sets.push('last_login_at = ?'); vals.push(now); }
+  if (sets.length) {
+    db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, user.id);
+    user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  }
+  return { user };
 }

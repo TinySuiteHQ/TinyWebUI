@@ -65,7 +65,7 @@ export async function manageAutomation(args, { store, chatId, triggerAutomation,
   if (unattended && (action === 'create' || action === 'trigger')) {
     return `Error: "${action}" is not available inside a scheduled run. Tell the user in your result if a new automation or run is needed.`;
   }
-  const chat = chatId ? store.getChat(chatId) : null;
+  const chat = chatId ? store.chatById(chatId) : null;
   const userId = chat?.user_id ?? null;
   if (action === 'list') return JSON.stringify(store.listAutomations(userId));
   if (action === 'create') {

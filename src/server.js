@@ -6,8 +6,8 @@ import { dirname, join, normalize } from 'node:path';
 import { createConfigSource, LockedError } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
-import { Store, toView } from './store.js';
-import { getSessionUser } from './auth.js';
+import { Store, toView, ALL_USERS } from './store.js';
+import { getSessionUser, resolveTrustedUser, destroyUserSessions, audit } from './auth.js';
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { extractText } from './documents.js';
@@ -84,12 +84,22 @@ async function serveStatic(req, res) {
  * createConfigSource: `config` (keys set here win and are locked in the UI),
  * `configFile` (a path, or false for none), `mcpServers`, `mcpFile`, `dbPath`.
  */
+function adminUserView(u) {
+  return {
+    id: u.id, email: u.email, name: u.name ?? null, role: u.role, status: u.status,
+    createdAt: u.created_at, lastLoginAt: u.last_login_at, chatCount: u.chat_count ?? null
+  };
+}
+
 export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } = {}) {
   const source = createConfigSource(sourceOpts);
   const saveConfig = (patch) => source.save(patch);
   const publicConfig = (c) => source.public(c);
   const { dbPath, readMcpFile, saveMcpFile } = source;
   let cfg = source.load();
+  if (cfg.authMode === 'trusted-header' && !(Array.isArray(cfg.trustedProxyCidrs) && cfg.trustedProxyCidrs.length)) {
+    throw new Error("authMode 'trusted-header' requires trustedProxyCidrs: identity headers are only believed from those peers");
+  }
   const store = new Store(dbPath(cfg));
   let armScheduler = () => {};
   let triggerAutomation = async () => { throw new Error('manual triggering is unavailable'); };
@@ -238,6 +248,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   }
 
   function launchAutomationRun(automation, runId) {
+    // Nobody is at the keyboard to be turned away, so a disabled or pending
+    // owner is checked here: their schedules stop the moment their access does.
+    if (automation.userId && store.getUser(automation.userId)?.status !== 'approved') {
+      store.updateAutomationRun(runId, { status: 'skipped', finishedAt: Date.now(), error: 'Owner account is not active.' });
+      return true;
+    }
     const chat = store.getChat(automation.chatId, automation.userId);
     if (!chat) {
       store.updateAutomationRun(runId, { status: 'failed', finishedAt: Date.now(), error: 'Target chat no longer exists.' });
@@ -360,38 +376,112 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     return PRE_AUTH_PATHS.test(pathname) || !pathname.startsWith('/api/');
   }
 
+  // In trusted-header mode the gateway owns login and logout; these two are
+  // the only /api/auth routes that exist, and both need the resolved user.
+  const TRUSTED_AUTH_PATHS = new Set(['/api/auth/me', '/api/auth/logout']);
+  // Still answered for a pending/disabled user, so the UI can say why.
+  const STATUS_EXEMPT_PATHS = TRUSTED_AUTH_PATHS;
+
   /**
-   * The one auth gate for the whole handler. A no-op when authMode is
-   * 'none' -- ctx.userId stays null, exactly today's unscoped behavior --
-   * so every existing route below is unaffected until auth is opted into.
+   * The one auth gate for the whole handler. Fails closed: with auth on, a
+   * request either resolves to a real user or carries `userId: undefined`,
+   * which every scoped store method refuses. 'none' is a single-person
+   * install and sees everything, exactly as before auth existed.
    */
   function resolveAuth(req) {
-    if (cfg.authMode === 'none') return { userId: null, role: null, user: null };
+    if (cfg.authMode === 'none') return { userId: ALL_USERS, role: null, user: null, isAdmin: true };
     const pathname = (req.url || '').split('?')[0];
-    const user = getSessionUser(req, store, cfg);
-    if (!user && !isPreAuthPath(pathname)) return { unauthorized: true };
-    if (user && user.status !== 'approved' && !isPreAuthPath(pathname)) return { pending: true };
-    return { userId: user?.id ?? null, role: user?.role ?? null, user };
+    let user;
+    if (cfg.authMode === 'trusted-header') {
+      if (!pathname.startsWith('/api/')) return { userId: undefined, user: null, isAdmin: false };
+      if (pathname.startsWith('/api/auth/') && !TRUSTED_AUTH_PATHS.has(pathname)) return { notFound: true };
+      const result = resolveTrustedUser(req, store, cfg);
+      if (result.reject) {
+        audit('auth.rejected', { reason: result.reject, path: pathname });
+        return { unauthorized: true };
+      }
+      user = result.user;
+    } else {
+      user = getSessionUser(req, store, cfg);
+      if (!user) {
+        if (!isPreAuthPath(pathname)) return { unauthorized: true };
+        return { userId: undefined, user: null, isAdmin: false };
+      }
+    }
+    if (!STATUS_EXEMPT_PATHS.has(pathname) && !(cfg.authMode !== 'trusted-header' && isPreAuthPath(pathname))) {
+      if (user.status === 'disabled') return { disabled: true };
+      if (user.status !== 'approved') return { pending: true };
+    }
+    return { userId: user.id, role: user.role, user, isAdmin: user.role === 'admin' && user.status === 'approved' };
+  }
+
+  // Fields a non-admin never sees: credentials, and where the deployment's
+  // trust boundary sits.
+  const ADMIN_ONLY_FIELDS = /^(apiKey|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails)/;
+  function configFor(auth) {
+    const pub = publicConfig(cfg);
+    if (auth.isAdmin) return pub;
+    const out = {};
+    for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
+    return { ...out, readOnly: true };
   }
 
   const server = createServer(async (req, res) => {
     try {
       const auth = resolveAuth(req);
+      if (auth.notFound) return json(res, 404, { error: 'not found' });
       if (auth.unauthorized) return json(res, 401, { error: 'unauthorized' });
+      if (auth.disabled) return json(res, 403, { error: 'disabled' });
       if (auth.pending) return json(res, 403, { error: 'pending_approval' });
+      const adminOnly = () => json(res, 403, { error: 'admin_only' });
 
       if (req.method === 'GET' && req.url === '/api/auth/me') {
         return json(res, 200, {
           authMode: cfg.authMode,
+          logoutUrl: cfg.logoutUrl || '',
+          isAdmin: Boolean(auth.isAdmin),
           user: auth.user
-            ? { id: auth.user.id, email: auth.user.email, role: auth.user.role, status: auth.user.status }
+            ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
             : null
         });
       }
 
+      if (req.method === 'POST' && req.url === '/api/auth/logout' && cfg.authMode === 'trusted-header') {
+        return json(res, 200, { redirect: cfg.logoutUrl || null });
+      }
+
+      if (req.url === '/api/admin/users' && req.method === 'GET') {
+        if (!auth.isAdmin || cfg.authMode === 'none') return adminOnly();
+        return json(res, 200, { users: store.listUsers().map(adminUserView) });
+      }
+
+      const adminUser = /^\/api\/admin\/users\/([\w-]+)$/.exec(req.url || '');
+      if (adminUser && req.method === 'PATCH') {
+        if (!auth.isAdmin || cfg.authMode === 'none') return adminOnly();
+        const target = store.getUser(adminUser[1]);
+        if (!target) return json(res, 404, { error: 'no such user' });
+        const { role, status } = await readJson(req);
+        if (role !== undefined && !['admin', 'user'].includes(role)) return json(res, 400, { error: 'role must be admin or user' });
+        if (status !== undefined && !['pending', 'approved', 'disabled'].includes(status)) {
+          return json(res, 400, { error: 'status must be pending, approved or disabled' });
+        }
+        if (target.id === auth.userId && ((role && role !== 'admin') || (status && status !== 'approved'))) {
+          return json(res, 400, { error: 'you cannot demote or disable your own account' });
+        }
+        const updated = store.updateUser(target.id, { role, status });
+        if (role !== undefined && role !== target.role) {
+          audit('user.role_changed', { userId: target.id, from: target.role, to: role, by: auth.userId });
+        }
+        if (status !== undefined && status !== target.status) {
+          audit('user.status_changed', { userId: target.id, from: target.status, to: status, by: auth.userId });
+          if (status !== 'approved') destroyUserSessions(store, target.id);
+        }
+        return json(res, 200, { user: adminUserView(updated) });
+      }
+
       if (req.method === 'GET' && req.url === '/api/config') {
         return json(res, 200, {
-          ...publicConfig(cfg),
+          ...configFor(auth),
           tools: hub.tools.map((t) => ({
             name: t.function.name,
             description: t.function.description,
@@ -402,8 +492,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/config') {
+        if (!auth.isAdmin) return adminOnly();
         cfg = saveConfig(await readJson(req));
-        return json(res, 200, publicConfig(cfg));
+        audit('admin.config_changed', { by: auth.userId ?? null });
+        return json(res, 200, configFor(auth));
       }
 
       // The provider's own model list, for the composer's model picker. Not
@@ -422,6 +514,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // Per-tool approval override from the settings panel: 'ask', 'auto', or
       // 'default' to fall back to the global toolApproval mode.
       if (req.method === 'POST' && req.url === '/api/tools/approval') {
+        if (!auth.isAdmin) return adminOnly();
         const { name, policy } = await readJson(req);
         if (!name || !['ask', 'auto', 'default'].includes(policy)) {
           return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
@@ -431,6 +524,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/tools/toggle') {
+        if (!auth.isAdmin) return adminOnly();
         const { name, disabled } = await readJson(req);
         if (!name) return json(res, 400, { error: 'name is required' });
         const set = new Set(cfg.disabledTools || []);
@@ -440,6 +534,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'GET' && req.url === '/api/mcp') {
+        // mcp.json can hold server credentials (env, headers): admins only.
+        if (!auth.isAdmin) return json(res, 200, { path: null, text: '', locked: true, readOnly: true });
         return json(res, 200, { path: source.mcpPath(), text: readMcpFile(), locked: source.mcpLocked });
       }
 
@@ -448,6 +544,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // open connection, not just one the model happens not to be offered.
       const serverToggle = /^\/api\/mcp\/servers\/([^/]+)\/toggle$/.exec(req.url || '');
       if (serverToggle && req.method === 'POST') {
+        if (!auth.isAdmin) return adminOnly();
         const name = decodeURIComponent(serverToggle[1]);
         const { disabled } = await readJson(req);
         let servers;
@@ -474,6 +571,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/mcp') {
+        if (!auth.isAdmin) return adminOnly();
         const { text } = await readJson(req);
         let servers;
         try {
@@ -508,7 +606,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // not built to land a click in the middle of a live stream. Overfetch
         // and filter rather than ask the store to know about runs, which is a
         // server-only concept it has no business importing.
-        const results = store.search(q, limit * 2)
+        const results = store.search(q, limit * 2, auth.userId)
           .filter((r) => !isRunning(r.chatId))
           .slice(0, limit);
         return json(res, 200, { results });
@@ -519,12 +617,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'GET' && req.url === '/api/folders') {
-        return json(res, 200, { folders: store.listFolders() });
+        return json(res, 200, { folders: store.listFolders(auth.userId) });
       }
 
       if (req.method === 'POST' && req.url === '/api/folders') {
         const { name } = await readJson(req);
-        const created = store.createFolder(name);
+        const created = store.createFolder(name, auth.userId);
         if (!created) return json(res, 400, { error: 'folder name required' });
         return json(res, 200, { folder: created });
       }
@@ -606,8 +704,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const { folder, tags } = await readJson(req);
         const found = store.getChat(organize[1], auth.userId);
         if (!found) return json(res, 404, { error: 'no such chat' });
-        if (folder) store.createFolder(folder);
-        const updated = store.organizeChat(organize[1], { folder, tags });
+        if (folder) store.createFolder(folder, auth.userId);
+        const updated = store.organizeChat(organize[1], { folder, tags }, auth.userId);
         return json(res, 200, { folder: updated.folder });
       }
 
@@ -662,6 +760,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         }
         if (!text.trim()) return json(res, 400, { error: 'no extractable text in that file' });
 
+        if (!store.getChat(chatId, auth.userId) && store.chatById(chatId)) return json(res, 404, { error: 'no such chat' });
         const chat = store.getChat(chatId, auth.userId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
         const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text });
         return json(res, 200, { chatId: chat.id, document: doc });
@@ -683,7 +782,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // same content the model reads via read_document, in a plain new tab.
       const docContent = /^\/api\/documents\/([\w.-]+)$/.exec(req.url || '');
       if (docContent && req.method === 'GET') {
-        const doc = store.getDocument(docContent[1]);
+        const doc = store.getDocument(docContent[1], auth.userId);
         if (!doc) return json(res, 404, { error: 'no such document' });
         return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
       }
@@ -694,6 +793,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       const stream = /^\/api\/chats\/([\w.-]+)\/stream$/.exec((req.url || '').split('?')[0]);
       if (stream && req.method === 'GET') {
+        if (!store.getChat(stream[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
         const run = runs.get(stream[1]);
         if (!run) return json(res, 404, { error: 'nothing running' });
         const from = Number(new URL(req.url, 'http://x').searchParams.get('from')) || 0;
@@ -726,12 +826,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // still reference it: truncateFrom already took every later message
         // (the only other place a reference could live) with it.
         for (const docId of Array.isArray(removeDocumentIds) ? removeDocumentIds : []) {
-          store.deleteDocument(docId);
+          const doc = store.getDocument(docId, auth.userId);
+          if (doc?.chat_id === id) store.deleteDocument(docId, auth.userId);
         }
         let content = text;
         for (const docId of Array.isArray(documentIds) ? documentIds : []) {
-          const doc = store.getDocument(docId);
-          if (doc) content += attachmentNote(doc);
+          const doc = store.getDocument(docId, auth.userId);
+          if (doc?.chat_id === id) content += attachmentNote(doc);
         }
         const kept = Array.isArray(images) ? images.filter((img) => img?.mime && img?.data) : [];
         store.addMessage(id, { role: 'user', content, ...(kept.length ? { images: kept } : {}) });
@@ -767,12 +868,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       const stop = /^\/api\/chats\/([\w.-]+)\/stop$/.exec(req.url || '');
       if (stop && req.method === 'POST') {
+        if (!store.getChat(stop[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
         runs.get(stop[1])?.ac.abort();
         return json(res, 200, { ok: true });
       }
       if (one && req.method === 'DELETE') {
         if (!store.getChat(one[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
-        store.deleteChat(one[1]);
+        store.deleteChat(one[1], auth.userId);
         return json(res, 200, { ok: true });
       }
 
@@ -783,7 +885,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const { chats = [] } = await readJson(req);
         let imported = 0;
         for (const c of chats) {
-          if (!c?.id || store.getChat(c.id, auth.userId)) continue;
+          if (!c?.id || store.chatById(c.id)) continue;
           store.createChat({ id: c.id, title: c.title || 'Imported chat', createdAt: c.updated || Date.now() }, auth.userId);
           for (const m of c.messages || []) {
             const msg = { ...m };
@@ -807,8 +909,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // The client no longer ships the transcript: it sends the new turn and
         // the server replays what it already holds. That is what stops a
         // page-sized tool result from crossing the wire on every message.
-        const chat = (chatId && store.getChat(chatId, auth.userId))
-          || store.createChat({ id: chatId, title: String(message).slice(0, 60) }, auth.userId);
+        const owned = chatId && store.getChat(chatId, auth.userId);
+        // Someone else's id is "no such chat", never a primary-key clash.
+        if (chatId && !owned && store.chatById(chatId)) return json(res, 404, { error: 'no such chat' });
+        const chat = owned || store.createChat({ id: chatId, title: String(message).slice(0, 60) }, auth.userId);
 
         // Attachments are surfaced as plain text inline notes rather than a
         // system-prompt change, the same idiom compact.js uses for a compacted
@@ -816,7 +920,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // it's already reading and knows to call read_document on the id.
         let content = String(message);
         for (const id of Array.isArray(documentIds) ? documentIds : []) {
-          const doc = store.getDocument(id);
+          const doc = store.getDocument(id, auth.userId);
           if (!doc || doc.chat_id !== chat.id) continue;
           content += attachmentNote(doc);
         }
