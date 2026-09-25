@@ -269,8 +269,10 @@ export async function loadConfig() {
     $(id).disabled = locked;
     $(id).title = readOnly ? 'managed by your administrator' : locked ? 'set in code' : '';
   }
-  $('save').disabled = readOnly;
+  $('save').disabled = readOnly || Boolean(cfg.frozen);
   if (readOnly) $('saveMsg').textContent = 'managed by your administrator';
+  else if (cfg.frozen) $('saveMsg').textContent = 'frozen deployment: settings are managed in its files';
+  if (cfg.frozen) for (const id of FORM_KEYS) $(id).title = 'frozen deployment: change the config file';
   $('systemPrompt').value = cfg.systemPrompt;
   $('model').value = cfg.model;
   $('temperature').value = cfg.temperature ?? '';
@@ -322,7 +324,7 @@ export function toggleSettings(open) {
   const panel = $('settings');
   const on = open ?? !panel.classList.contains('open');
   panel.classList.toggle('open', on);
-  if (on) { $('saveMsg').textContent = readOnly ? 'managed by your administrator' : ''; }
+  if (on && !$('save').disabled) $('saveMsg').textContent = '';
   $('toggle-settings').classList.toggle('active', on);
   if (!on) $('input').focus();
 }

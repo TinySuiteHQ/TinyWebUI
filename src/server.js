@@ -4,10 +4,10 @@ import { watch, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize } from 'node:path';
 
-import { createConfigSource, LockedError } from './config.js';
+import { createConfigSource, LockedError, configProblems } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
-import { Store, toView, ALL_USERS } from './store.js';
+import { Store, toView, ALL_USERS, SCHEMA_VERSION } from './store.js';
 import { validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess } from './policy.js';
 import {
   getSessionUser, resolveTrustedUser, destroyUserSessions, audit, hashPassword, verifyPassword, applyAccessPolicy,
@@ -58,6 +58,8 @@ function json(res, code, payload) {
   res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
   res.end(body);
 }
+
+const VERSION = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 /** An error that carries its own HTTP status to the handler's catch. */
 class HttpError extends Error {
@@ -152,6 +154,7 @@ async function serveStatic(req, res) {
 // (or anyone, for the pre-auth routes the auth gate lets through).
 const ROUTES = [
   ['GET', /^\/api\/auth\/me$/, null],
+  ['GET', /^\/api\/meta$/, null],
   ['POST', /^\/api\/auth\/(login|logout)$/, null],
   ['GET', /^\/api\/config$/, null],
   ['POST', /^\/api\/config$/, 'settings'],
@@ -201,14 +204,17 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const publicConfig = (c) => source.public(c);
   const { dbPath, readMcpFile, saveMcpFile } = source;
   let cfg = source.load();
-  const problems = validateConfig(cfg);
+  const problems = configProblems(cfg);
   if (problems.length) throw new Error(problems.join('\n'));
   // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
   // (handy for containers). validateConfig above already refused a plaintext one.
   let passwordHash = cfg.authMode === 'single'
     ? cfg.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD)
     : null;
-  const store = new Store(dbPath(cfg));
+  const store = new Store(dbPath(cfg), { migrate: cfg.autoMigrate !== false });
+  if (store.migratedFrom !== null && store.migratedFrom < SCHEMA_VERSION) {
+    console.log(`[tinywebui] migrated database from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
+  }
   if (cfg.authMode === 'trusted-header') applyAccessPolicy(store, cfg);
   // The one account behind a 'single' password. Sessions hang off it; data
   // stays unowned (ALL_USERS), so switching between 'none' and 'single'
@@ -596,6 +602,16 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         audit('request.cross_site_rejected', { method: req.method, path: (req.url || '').split('?')[0] });
         return json(res, 403, { error: 'cross-site request refused' });
       }
+      // Probes for orchestrators: no auth, nothing sensitive. /healthz says
+      // the process answers; /readyz that it can serve (database reachable),
+      // and which build and config it serves.
+      const probe = (req.url || '').split('?')[0];
+      if (req.method === 'GET' && probe === '/healthz') return json(res, 200, { ok: true });
+      if (req.method === 'GET' && probe === '/readyz') {
+        let dbOk = false;
+        try { dbOk = store.ping(); } catch { /* not ready */ }
+        return json(res, dbOk ? 200 : 503, { ready: dbOk, version: VERSION, fingerprint: fingerprint(cfg, source.loadMcpServers()) });
+      }
       const auth = resolveAuth(req);
       if (auth.notFound) return json(res, 404, { error: 'not found' });
       if (auth.unauthorized) return json(res, 401, { error: 'unauthorized' });
@@ -765,6 +781,19 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         if (!doc) return json(res, 404, { error: 'no such document' });
         audit('admin.view_document', { by: auth.userId, documentId: doc.id, chatId: doc.chat_id });
         return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
+      }
+
+      // Non-secret facts about this deployment, for scripts verifying what is
+      // running: build, config hash, database schema, auth, MCP server names.
+      if (req.method === 'GET' && req.url === '/api/meta') {
+        return json(res, 200, {
+          version: VERSION,
+          schemaVersion: store.schemaVersion(),
+          fingerprint: fingerprint(cfg, source.loadMcpServers()),
+          configMode: source.isFrozen() ? 'frozen' : 'editable',
+          authMode: cfg.authMode,
+          mcpServers: Object.keys(source.loadMcpServers()).sort()
+        });
       }
 
       if (req.method === 'GET' && req.url === '/api/config') {
@@ -1255,6 +1284,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       return serveStatic(req, res);
     } catch (err) {
+      if (err instanceof HttpError && err.status === 413) req.resume?.();
       if (!res.headersSent) json(res, err instanceof HttpError ? err.status : err instanceof LockedError ? 409 : 500, { error: err.message });
       else res.end();
     }
@@ -1291,7 +1321,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       audit('config.reload_rejected', { reason, problems: [err.message] });
       return false;
     }
-    const problems = validateConfig(next);
+    const problems = configProblems(next);
     if (next.authMode !== cfg.authMode) problems.push('authMode changes need a restart');
     if (problems.length) {
       console.error(`[tinywebui] reload rejected (${reason}):\n  ${problems.join('\n  ')}`);

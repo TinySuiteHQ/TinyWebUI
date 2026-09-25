@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { createConfigSource, DEFAULTS, WRITABLE } from './config.js';
+import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config.js';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS
@@ -54,7 +54,7 @@ const commands = {
     const raw = source.readFile();
     const shadowed = raw.access === undefined ? []
       : validateConfig({ authMode: 'none', access: raw.access }).map((p) => `config.json: ${p}`);
-    const problems = [...validateConfig(cfg), ...shadowed, ...(mcpError ? [mcpError] : mcpProblems(servers))];
+    const problems = [...configProblems(cfg), ...shadowed, ...(mcpError ? [mcpError] : mcpProblems(servers))];
     if (problems.length) {
       for (const p of problems) process.stderr.write(`error: ${p}\n`);
       return 1;

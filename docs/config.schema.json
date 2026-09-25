@@ -180,6 +180,14 @@
       "type": "array",
       "x-change": "file-only"
     },
+    "autoMigrate": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "frozen": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
     "access": {
       "type": "object",
       "additionalProperties": false,

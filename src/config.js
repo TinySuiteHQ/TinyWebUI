@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { FILE_ONLY, mergeAccess, keyClass } from './policy.js';
+import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from './policy.js';
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
   ? resolve(process.env.TINYWEBUI_CONFIG)
@@ -157,6 +157,12 @@ export const DEFAULTS = {
   // Extra origins allowed to send state-changing requests (e.g. an admin
   // tool on another host). The page's own origin is always allowed.
   allowedOrigins: [],
+  // false: refuse to start on a database that needs migrating; run
+  // `tinywebui migrate` as its own deployment step instead.
+  autoMigrate: true,
+  // true: nothing in the control plane can change from the UI or API --
+  // settings, tools, MCP servers. Change the files and reload instead.
+  frozen: false,
 };
 
 /**
@@ -202,13 +208,10 @@ export function createConfigSource(opts = {}) {
     const fromFile = readFile();
     const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
-    cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
-    if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
-    const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
-    if (!MODES.includes(cfg.cacheMode)) cfg.cacheMode = DEFAULTS.cacheMode;
-    if (!['writes', 'all', 'off'].includes(cfg.toolApproval)) cfg.toolApproval = DEFAULTS.toolApproval;
-    const AUTH_MODES = ['none', 'single', 'multiuser', 'trusted-header'];
-    if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
+    // No silent fallbacks: a bad value is reported by configProblems() and
+    // refuses to start, rather than quietly becoming a default (a mistyped
+    // authMode used to become 'none').
+    if (typeof cfg.baseUrl === 'string') cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
     // A session secret is required the moment auth is on; generate and persist
     // one rather than signing cookies with an empty key.
     if (cfg.authMode !== 'none' && !cfg.sessionSecret && persistSecret) {
@@ -224,6 +227,7 @@ export function createConfigSource(opts = {}) {
 
   /** Applies the writable, unlocked part of `patch`; locked keys are an error. */
   function save(patch) {
+    if (isFrozen()) throw new LockedError('this deployment is frozen: change its files instead');
     const fileOnly = Object.keys(patch).filter((k) => FILE_ONLY.has(k));
     if (fileOnly.length) throw new LockedError(`set in files only, not editable here: ${fileOnly.join(', ')}`);
     const blocked = Object.keys(patch).filter((k) => WRITABLE.has(k) && locked.has(k));
@@ -232,9 +236,19 @@ export function createConfigSource(opts = {}) {
     for (const [k, v] of Object.entries(patch)) {
       if (WRITABLE.has(k)) current[k] = v;
     }
+    // Validate what the file would become before writing it.
+    const problems = configProblems({ ...DEFAULTS, ...current, ...code });
+    if (problems.length) throw new Error(problems.join('; '));
     writeFile(current);
     return load();
   }
+
+  // `frozen` may be set in code or in the file; code wins, like any key.
+  function isFrozen() {
+    if (code.frozen !== undefined) return Boolean(code.frozen);
+    try { return Boolean(readFile().frozen); } catch { return false; }
+  }
+  const lockedNow = () => (isFrozen() ? new Set([...locked, ...WRITABLE]) : locked);
 
   const readMcp = () => {
     if (codeServers) return JSON.stringify({ mcpServers: codeServers }, null, 2) + '\n';
@@ -246,10 +260,10 @@ export function createConfigSource(opts = {}) {
     load,
     save,
     public: (cfg) => ({
-      ...publicConfig(cfg), lockedKeys: [...locked], mcpLocked: Boolean(codeServers),
-      keyClasses: Object.fromEntries([...WRITABLE, ...FILE_ONLY].map((k) => [k, keyClass(k, locked)]))
+      ...publicConfig(cfg), lockedKeys: [...lockedNow()], mcpLocked: Boolean(codeServers) || isFrozen(),
+      keyClasses: Object.fromEntries([...WRITABLE, ...FILE_ONLY].map((k) => [k, keyClass(k, lockedNow())]))
     }),
-    lockedKeys: () => new Set(locked),
+    lockedKeys: () => new Set(lockedNow()),
     /** The raw mcp.json (or code) server map, throwing on bad JSON -- for tooling that must not guess. */
     strictMcpServers() {
       const parsed = JSON.parse(readMcp());
@@ -262,7 +276,8 @@ export function createConfigSource(opts = {}) {
     writeFile,
     path: () => file,
     mcpPath: () => (codeServers ? null : mcpFile),
-    mcpLocked: Boolean(codeServers),
+    get mcpLocked() { return Boolean(codeServers) || isFrozen(); },
+    isFrozen,
     dbPath: (cfg) => {
       const set = opts.dbPath || process.env.TINYWEBUI_DB || cfg?.dbPath;
       if (set === ':memory:') return set;
@@ -283,6 +298,7 @@ export function createConfigSource(opts = {}) {
     /** Validates before writing, so a typo cannot leave an unparseable file behind. */
     saveMcpFile(text) {
       if (codeServers) throw new LockedError('MCP servers are set in code, not editable here');
+      if (isFrozen()) throw new LockedError('this deployment is frozen: change mcp.json instead');
       const parsed = JSON.parse(text);
       const servers = parsed.mcpServers || parsed;
       for (const [name, spec] of Object.entries(servers)) {
@@ -297,6 +313,46 @@ export function createConfigSource(opts = {}) {
 }
 
 export class LockedError extends Error {}
+
+// Keys that are not in DEFAULTS but are still settings.
+const EXTRA_KEYS = new Set(['access']);
+const ENUMS = {
+  authMode: ['none', 'single', 'multiuser', 'trusted-header'],
+  cacheTtl: ['5m', '1h'],
+  cacheMode: ['auto', 'implicit', 'explicit', 'rolling', 'off'],
+  toolApproval: ['writes', 'all', 'off'],
+};
+const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
+/**
+ * Every problem with a loaded config: unknown keys (usually typos), values of
+ * the wrong type or outside their allowed set, plus the policy checks in
+ * validateConfig(). Startup, reload, save and `tinywebui validate` all refuse
+ * a config with any.
+ */
+export function configProblems(cfg) {
+  const problems = [];
+  for (const [key, value] of Object.entries(cfg)) {
+    if (!(key in DEFAULTS) && !EXTRA_KEYS.has(key)) { problems.push(`unknown setting "${key}"`); continue; }
+    if (ENUMS[key]) {
+      if (!ENUMS[key].includes(value)) problems.push(`${key} must be one of ${ENUMS[key].join(', ')} (got ${JSON.stringify(value)})`);
+      continue;
+    }
+    if (key === 'frozen' || key === 'autoMigrate') {
+      if (typeof value !== 'boolean') problems.push(`${key} must be true or false`);
+      continue;
+    }
+    if (!(key in DEFAULTS)) continue;
+    const want = kind(DEFAULTS[key]);
+    const got = kind(value);
+    // A null default is an optional number (temperature, maxTokens).
+    const ok = want === 'null' ? got === 'null' || (got === 'number' && Number.isFinite(value))
+      : want === 'number' ? got === 'number' && Number.isFinite(value)
+      : got === want;
+    if (!ok) problems.push(`${key} must be ${want === 'null' ? 'a number or null' : `a${want === 'array' || want === 'object' ? 'n' : ''} ${want}`} (got ${got})`);
+  }
+  return [...problems, ...validateConfig(cfg)];
+}
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
 export const WRITABLE = new Set([

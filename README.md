@@ -254,6 +254,10 @@ Everything about a deployment, down to what each user sees, can be set up and ch
 | **Frozen**: anything set in `tinywebui.config.js` (including `mcpServers`) | `tinywebui.config.js` | No. Shown read-only. |
 | **Editable**: everything else | `tinywebui.config.json`, `mcp.json` | Yes, and every UI change is **written back to the file**. |
 
+**Freeze the whole control plane** with `frozen: true` (in either file). Then nothing about settings, tools or MCP servers can change from the UI or API, and the UI shows it all as managed. Change the files and let them reload instead. User data (chats, documents, folders, automations) and admins' user decisions stay live.
+
+**Mistakes fail loudly.** An unknown key (usually a typo), a value of the wrong type or one outside its allowed set stops startup, reload, a UI save and `tinywebui validate`, with every problem named. Nothing silently falls back to a default.
+
 Admin decisions are recorded the same way. Approving, disabling or changing someone's role writes `access.users` in `tinywebui.config.json` before touching the database. The files outrank the database: delete the database and restart, and every approval and ban is still in force.
 
 **A complete tier-3 setup:**

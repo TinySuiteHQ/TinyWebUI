@@ -284,6 +284,16 @@ function ftsQuery(raw) {
  */
 export const ALL_USERS = Symbol('all-users');
 
+/**
+ * Bumped whenever the constructor's migrations change the shape of the
+ * database. Stored in SQLite's user_version, so deployments can see where a
+ * file stands and run migrations deliberately (`tinywebui migrate`).
+ */
+export const SCHEMA_VERSION = 2;
+
+/** Thrown when a database is behind and migrating was not allowed. */
+export class MigrationRequiredError extends Error {}
+
 function scope(userId, col = 'user_id') {
   if (userId === ALL_USERS) return { sql: '1=1', params: [] };
   if (userId === null) return { sql: `${col} IS NULL`, params: [] };
@@ -303,9 +313,25 @@ function ensureColumn(db, table, col, decl) {
 }
 
 export class Store {
-  constructor(path) {
+  /**
+   * `migrate: false` refuses to touch an existing database that is behind
+   * SCHEMA_VERSION instead of upgrading it on open; a brand-new file is
+   * always created at the current version.
+   */
+  constructor(path, { migrate = true } = {}) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
+    const found = this.db.prepare('PRAGMA user_version').get().user_version;
+    const fresh = !this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='chats'").get();
+    if (!fresh && found > SCHEMA_VERSION) {
+      this.db.close();
+      throw new MigrationRequiredError(`database is at schema ${found}, newer than this TinyWebUI (${SCHEMA_VERSION}); upgrade TinyWebUI`);
+    }
+    if (!fresh && found < SCHEMA_VERSION && !migrate) {
+      this.db.close();
+      throw new MigrationRequiredError(`database is at schema ${found}, needs ${SCHEMA_VERSION}: run \`tinywebui migrate\``);
+    }
+    this.migratedFrom = fresh ? null : found;
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
@@ -375,6 +401,16 @@ export class Store {
           AND id NOT IN (SELECT rowid FROM messages_fts)
       `);
     }
+    this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  }
+
+  schemaVersion() {
+    return this.db.prepare('PRAGMA user_version').get().user_version;
+  }
+
+  /** Cheap liveness probe of the database, for /readyz. */
+  ping() {
+    return this.db.prepare('SELECT 1 AS ok').get().ok === 1;
   }
 
   close() {
