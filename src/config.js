@@ -204,6 +204,8 @@ export function createConfigSource(opts = {}) {
     if (process.env.TINYWEBUI_API_KEY) env.apiKey = process.env.TINYWEBUI_API_KEY;
     if (process.env.OPENROUTER_API_KEY) env.apiKey = process.env.OPENROUTER_API_KEY;
     if (process.env.TINYWEBUI_MODEL) env.model = process.env.TINYWEBUI_MODEL;
+    // Secrets can come from the environment, so committed config never holds them.
+    if (process.env.TINYWEBUI_SESSION_SECRET) env.sessionSecret = process.env.TINYWEBUI_SESSION_SECRET;
 
     const fromFile = readFile();
     const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };

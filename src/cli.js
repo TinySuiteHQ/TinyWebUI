@@ -4,7 +4,7 @@ import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS
 } from './policy.js';
-import { Store } from './store.js';
+import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store.js';
 
 /**
  * The scriptable side of TinyWebUI: everything an agent (or a person) needs
@@ -169,6 +169,108 @@ const commands = {
   schema() {
     out(configSchema());
     return 0;
+  },
+
+  config(args, opts) {
+    if (args[0] !== 'show') { process.stderr.write('usage: tinywebui config show [--role user|admin]\n'); return 1; }
+    return commands.effective(args.slice(1), opts);
+  },
+
+  /**
+   * Brings the database to the current schema, as a deliberate deployment
+   * step (pair it with autoMigrate: false). --check changes nothing and
+   * exits 1 when a migration is due.
+   */
+  migrate(args, opts) {
+    const { source, cfg } = loadAll(opts);
+    const file = source.dbPath(cfg);
+    if (file === ':memory:') { out('in-memory database: nothing to migrate'); return 0; }
+    if (args.includes('--check')) {
+      if (!existsSync(file)) { out(`no database yet at ${file}; it will be created at schema ${SCHEMA_VERSION}`); return 0; }
+      try {
+        new Store(file, { migrate: false }).close();
+        out(`up to date: schema ${SCHEMA_VERSION}`);
+        return 0;
+      } catch (err) {
+        if (!(err instanceof MigrationRequiredError)) throw err;
+        process.stderr.write(`${err.message}\n`);
+        return 1;
+      }
+    }
+    const store = new Store(file);
+    try {
+      out(store.migratedFrom === null ? `created ${file} at schema ${SCHEMA_VERSION}`
+        : store.migratedFrom === SCHEMA_VERSION ? `up to date: schema ${SCHEMA_VERSION}`
+        : `migrated ${file} from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
+    } finally { store.close(); }
+    return 0;
+  },
+
+  /**
+   * Checks everything a deployment depends on, one line per check, and
+   * exits 1 if any failed: node version, config, database, the model
+   * endpoint, and each enabled MCP server (connected, then closed).
+   */
+  async doctor(args, opts) {
+    const checks = [];
+    const check = async (name, fn) => {
+      try { const detail = await fn(); checks.push({ check: name, ok: true, ...(detail ? { detail } : {}) }); }
+      catch (err) { checks.push({ check: name, ok: false, detail: err.message }); }
+    };
+    let loaded;
+    await check('node', () => {
+      // node:sqlite is available without a flag from 22.13.
+      const [major, minor] = process.versions.node.split('.').map(Number);
+      if (major < 22 || (major === 22 && minor < 13)) throw new Error(`node ${process.versions.node}; TinyWebUI needs 22.13 or later`);
+      return process.versions.node;
+    });
+    await check('config', () => {
+      loaded = loadAll(opts);
+      const problems = [...configProblems(loaded.cfg), ...(loaded.mcpError ? [loaded.mcpError] : mcpProblems(loaded.servers))];
+      if (problems.length) throw new Error(problems.join('; '));
+      return `fingerprint ${fingerprint(loaded.cfg, loaded.servers)}`;
+    });
+    if (loaded) {
+      const { source, cfg, servers } = loaded;
+      await check('database', () => {
+        const file = source.dbPath(cfg);
+        if (file === ':memory:') return 'in memory';
+        if (!existsSync(file)) return `${file} will be created`;
+        let store;
+        try { store = new Store(file, { migrate: false }); } catch (err) {
+          // Behind is fine when startup is allowed to migrate; it is only a
+          // failure for deployments that migrate as a separate step.
+          if (err instanceof MigrationRequiredError && cfg.autoMigrate !== false && !/newer/.test(err.message)) {
+            return `${err.message.split(':')[0]}; will migrate on start (autoMigrate)`;
+          }
+          throw err;
+        }
+        try { return `${file} at schema ${store.schemaVersion()}`; } finally { store.close(); }
+      });
+      await check('model endpoint', async () => {
+        const r = await fetch(`${cfg.baseUrl}/models`, {
+          headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
+          signal: AbortSignal.timeout(8000)
+        });
+        // Some OpenAI-compatible servers have no /models; reachable is what counts.
+        if (r.status >= 500) throw new Error(`${r.status} from ${cfg.baseUrl}/models`);
+        if (r.status === 401 || r.status === 403) throw new Error(`${r.status} from ${cfg.baseUrl}: check apiKey`);
+        return `${cfg.baseUrl} answered ${r.status}`;
+      });
+      const { McpHub } = await import('./mcp.js');
+      for (const [name, spec] of Object.entries(servers)) {
+        if (spec?.disabled) { checks.push({ check: `mcp ${name}`, ok: true, detail: 'disabled' }); continue; }
+        await check(`mcp ${name}`, async () => {
+          const hub = await new McpHub({ [name]: spec }).connect();
+          try {
+            if (hub.errors.length) throw new Error(hub.errors.join('; '));
+            return `${hub.tools.length} tool(s)`;
+          } finally { await hub.close(); }
+        });
+      }
+    }
+    for (const c of checks) out(JSON.stringify(c));
+    return checks.every((c) => c.ok) ? 0 : 1;
   }
 };
 

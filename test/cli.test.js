@@ -75,3 +75,39 @@ test('the checked-in schema matches the code', () => {
   const onDisk = JSON.parse(readFileSync(new URL('../docs/config.schema.json', import.meta.url), 'utf8'));
   assert.deepEqual(onDisk, configSchema(), 'run: node bin/tinywebui.js schema > docs/config.schema.json');
 });
+
+test('migrate creates, then reports up to date; --check flags an old database', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'tinywebui-migrate-'));
+  writeFileSync(join(d, 'tinywebui.config.json'), JSON.stringify({ dbPath: join(d, 'x.db'), autoMigrate: false }));
+  const go = (...args) => spawnSync(process.execPath, [BIN, ...args, '--config', join(d, 'tinywebui.config.json')], { encoding: 'utf8' });
+  assert.match(go('migrate').stdout, /created .* at schema \d+/);
+  assert.match(go('migrate').stdout, /up to date/);
+  // Roll the file back to schema 0: --check fails and a start refuses it.
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(d, 'x.db')); db.exec('PRAGMA user_version = 0'); db.close();
+  const check = go('migrate', '--check');
+  assert.equal(check.status, 1);
+  assert.match(check.stderr, /run `tinywebui migrate`/);
+  const { start } = await import('../src/server.js');
+  await assert.rejects(start({ port: 0, configFile: join(d, 'tinywebui.config.json'), mcpServers: {} }), /tinywebui migrate/);
+  assert.match(go('migrate').stdout, /migrated .* from schema 0/);
+  assert.equal(go('migrate', '--check').status, 0);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('doctor reports each check as a JSON line and fails on an unreachable model', () => {
+  const d = mkdtempSync(join(tmpdir(), 'tinywebui-doctor-'));
+  writeFileSync(join(d, 'tinywebui.config.json'), JSON.stringify({ dbPath: ':memory:', baseUrl: 'http://127.0.0.1:9/v1' }));
+  writeFileSync(join(d, 'mcp.json'), '{ "mcpServers": {} }');
+  const r = spawnSync(process.execPath, [BIN, 'doctor', '--config', join(d, 'tinywebui.config.json')], { encoding: 'utf8' });
+  const lines = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => l.check), ['node', 'config', 'database', 'model endpoint']);
+  assert.equal(lines.find((l) => l.check === 'model endpoint').ok, false);
+  assert.equal(r.status, 1);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('config show is effective; unknown commands fail', () => {
+  assert.deepEqual(JSON.parse(run('config', 'show', '--role', 'user').out).features, ['chat']);
+  assert.equal(run('nonsense').code, 1);
+});

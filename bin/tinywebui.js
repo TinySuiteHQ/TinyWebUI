@@ -9,10 +9,19 @@ const flag = (name, fallback) => {
   return i === -1 ? fallback : args[i + 1];
 };
 
+// `--config <path>` (or `validate <path>`) points every command at a config
+// file, JS or JSON, exactly like $TINYWEBUI_CONFIG does.
+const configArg = flag('config') ?? (args[0] === 'validate' && args[1] && !args[1].startsWith('--') ? args[1] : undefined);
+if (configArg) process.env.TINYWEBUI_CONFIG = resolve(configArg);
+
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`tinywebui [--port 7777] [--host 127.0.0.1]
+  console.log(`tinywebui [start] [--port 7777] [--host 127.0.0.1] [--config path]
 tinywebui set-password     turn on password login ("single" auth mode)
-tinywebui validate         check the config files; prints the fingerprint, exits 1 on problems
+tinywebui validate [path]  check the config files; prints the fingerprint, exits 1 on problems
+tinywebui migrate [--check]
+                           bring the database to the current schema (--check: exit 1 if behind)
+tinywebui doctor           check config, database, model endpoint and MCP servers
+tinywebui config show      same as effective
 tinywebui effective [--role user|admin]
                            what is in effect and how each setting can change
 tinywebui fingerprint      the config's fingerprint (secrets never included)
@@ -69,10 +78,14 @@ try {
     // stderr, so a command's stdout stays pure JSON for scripts.
     console.error(`[tinywebui] options: ${jsPath}`);
   }
-  const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema'];
+  const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config'];
   if (COMMANDS.includes(args[0])) {
     const { runCli } = await import('../src/cli.js');
     process.exit(await runCli(args[0], args.slice(1), opts));
+  }
+  if (args[0] && !args[0].startsWith('--') && args[0] !== 'start') {
+    console.error(`[tinywebui] unknown command "${args[0]}" (see --help)`);
+    process.exit(1);
   }
   const { start } = await import('../src/server.js');
   // Command-line flags beat the file; the file beats the built-in defaults.

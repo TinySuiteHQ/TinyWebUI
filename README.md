@@ -18,7 +18,7 @@ TinyWebUI is local-first: out of the box it is a personal workspace with no logi
 
 ## Run
 
-Requires Node.js 22 or later.
+Requires Node.js 22.13 or later.
 
 ```bash
 npx tinywebui
@@ -303,6 +303,14 @@ tinywebui users list                # users, with decisions pinned in the files
 tinywebui users set <id> --status disabled   # recorded in tinywebui.config.json
 tinywebui fingerprint               # hash of the effective config (secrets never included)
 tinywebui schema                    # JSON Schema for the config (also in docs/config.schema.json)
+```
+
+**Deploying from scripts:** [docs/deploy.md](docs/deploy.md) walks through a complete container deployment: validate, migrate, doctor, start, and verify the running fingerprint. The image ships a `Dockerfile` with a `/readyz` health check, a read-only config mount, a `/data` volume, and secrets taken from the environment.
+
+```bash
+tinywebui migrate [--check]         # schema migrations as an explicit, repeatable step
+tinywebui doctor                    # node, config, database, model endpoint, each MCP server
+curl http://127.0.0.1:7777/readyz   # {"ready":true,"version":"…","fingerprint":"…"}
 ```
 
 **Audit trail.**
