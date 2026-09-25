@@ -20,6 +20,7 @@
     </button>
     <button id="sideCollapse" class="icon-btn" type="button" aria-label="Hide sidebar" title="Hide sidebar"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
   </div>
+  <div class="side-scroll">
   <nav class="nav">
     <button id="new" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>New chat</span></button>
     <div class="search-row nav-item">
@@ -36,6 +37,7 @@
   </nav>
   <div class="side-label"><span>Recent conversations</span><button id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v4M10 13h4"/></svg></button></div>
   <div id="chats"></div>
+  </div>
   <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0"
        aria-label="Resize chat history" title="Drag to resize, double-click to reset"></div>
 </aside>
@@ -85,6 +87,7 @@
         <div class="span-2"><label for="model">Model id</label><input id="model" spellcheck="false"><small>Also switchable from the model pill in the message box.</small></div>
         <div><label for="temperature">Temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="Provider default"></div>
         <div><label for="maxTokens">Max output tokens</label><input id="maxTokens" type="number" min="1" placeholder="No limit"></div>
+        <div class="span-2"><label for="timezone">Timezone</label><select id="timezone"><option value="">Server's timezone</option></select><small>The zone the model is told today's date in.</small></div>
       </div>
     </section>
 
@@ -107,7 +110,11 @@
         <div><label for="compactThreshold">Compact history above</label><input id="compactThreshold" type="number" min="0" step="1000"><small>Tokens. Old tool results are stubbed past this. 0 turns it off.</small></div>
         <div><label for="keepTurns">Always keep last</label><input id="keepTurns" type="number" min="1" max="20"><small>Recent turns whose tool results stay in full.</small></div>
         <div><label for="maxInlineChars">Stub single results above</label><input id="maxInlineChars" type="number" min="0" step="1000"><small>Characters. The turn that fetched it still reads it whole.</small></div>
+        <div><label for="maxTurnChars">Stub even this turn above</label><input id="maxTurnChars" type="number" min="0" step="10000"><small>Characters. A result this big is stubbed right away, even for the turn that fetched it.</small></div>
+        <div><label for="compactMinSaved">Only compact if it saves</label><input id="compactMinSaved" type="number" min="0" step="1000"><small>Characters. Compacting costs one cache miss, so small savings are skipped.</small></div>
+        <div><label for="maxHistoryTokens">Hard history limit</label><input id="maxHistoryTokens" type="number" min="0" step="10000"><small>Tokens. Past this, the oldest turns stop being sent (they stay visible). 0 turns it off.</small></div>
         <div><label for="cacheTtl">Prompt cache lifetime</label><select id="cacheTtl"><option value="5m">5 minutes</option><option value="1h">1 hour</option></select><small>Anthropic models. 1 hour costs more to write, survives longer pauses.</small></div>
+        <div><label for="cacheMode">Cache style</label><select id="cacheMode"><option value="auto">Automatic</option><option value="implicit">Stable prefix only</option><option value="explicit">Anthropic cache_control</option><option value="rolling">OpenRouter automatic</option><option value="off">Off</option></select><small>Automatic is right for OpenRouter and local models; set it for other gateways.</small></div>
       </div>
     </section>
 

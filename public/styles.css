@@ -1101,6 +1101,17 @@ button.nav-item:active:not(:disabled) { transform: none; }
 .side-label .icon-btn { width: 1.75rem; height: 1.75rem; }
 .side-label .ic { width: 1rem; height: 1rem; }
 #chats { padding: 0; margin: 0 -.125rem; }
+
+/* Nav, label and chat list scroll together, as one column under the pinned
+   brand row: scrolling down moves the nav away and brings the chats up. */
+.side-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 -.5rem; padding: 0 .5rem;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.side-scroll::-webkit-scrollbar { width: .5rem; }
+.side-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 1rem; }
+.side-scroll #chats { flex: none; overflow: visible; }
 .chat-item { padding-left: .5rem; }
 .chat-item.active { background: var(--accent-soft); box-shadow: none; }
 .chat-date-heading { padding: .625rem .5rem .25rem; font-weight: 500; }

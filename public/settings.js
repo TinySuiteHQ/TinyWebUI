@@ -251,8 +251,21 @@ $('saveMcp').onclick = async () => {
   }
 };
 
-const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheTtl',
-  'compactThreshold', 'keepTurns', 'maxInlineChars', 'toolApproval'];
+const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'cacheTtl',
+  'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
+  'maxHistoryTokens', 'toolApproval'];
+
+// The browser's IANA zones, plus whatever the config holds if the browser
+// doesn't list it, so a saved value is never silently swapped for another.
+function fillTimezones(current) {
+  const sel = $('timezone');
+  if (sel.options.length === 1) {
+    for (const tz of Intl.supportedValuesOf?.('timeZone') ?? []) sel.appendChild(Object.assign(el('option'), { value: tz, textContent: tz }));
+  }
+  if (current && ![...sel.options].some((o) => o.value === current)) {
+    sel.appendChild(Object.assign(el('option'), { value: current, textContent: current }));
+  }
+}
 
 // Keys the server was started with in code; shown read-only and never posted.
 let lockedKeys = new Set();
@@ -282,6 +295,12 @@ export async function loadConfig() {
   $('compactThreshold').value = cfg.compactThreshold ?? 0;
   $('keepTurns').value = cfg.keepTurns ?? 2;
   $('maxInlineChars').value = cfg.maxInlineChars ?? 0;
+  $('maxTurnChars').value = cfg.maxTurnChars ?? 0;
+  $('compactMinSaved').value = cfg.compactMinSaved ?? 0;
+  $('maxHistoryTokens').value = cfg.maxHistoryTokens ?? 0;
+  $('cacheMode').value = cfg.cacheMode ?? 'auto';
+  fillTimezones(cfg.timezone);
+  $('timezone').value = cfg.timezone ?? '';
   $('toolApproval').value = cfg.toolApproval ?? 'writes';
   // The chip is the model picker's button now; the tool count lives in the
   // + menu, where the tools themselves are.
@@ -304,14 +323,24 @@ $('save').onclick = async () => {
     compactThreshold: Number($('compactThreshold').value) || 0,
     keepTurns: Number($('keepTurns').value) || 2,
     maxInlineChars: Number($('maxInlineChars').value) || 0,
+    maxTurnChars: Number($('maxTurnChars').value) || 0,
+    compactMinSaved: Number($('compactMinSaved').value) || 0,
+    maxHistoryTokens: Number($('maxHistoryTokens').value) || 0,
+    cacheMode: $('cacheMode').value,
+    timezone: $('timezone').value,
     toolApproval: $('toolApproval').value
   };
   for (const k of lockedKeys) delete patch[k];
-  await fetch('/api/config', {
+  const res = await fetch('/api/config', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch)
   });
+  if (!res.ok) {
+    const out = await res.json().catch(() => ({}));
+    $('saveMsg').textContent = out.error || `save failed (${res.status})`;
+    return;
+  }
   await loadConfig();
   await loadTools(); // the per-tool "default" labels follow the global mode
   $('saveMsg').textContent = 'saved';
