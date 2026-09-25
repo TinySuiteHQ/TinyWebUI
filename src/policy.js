@@ -165,7 +165,12 @@ function canonical(value) {
  */
 export function fingerprint(cfg, mcpServers = {}) {
   const redacted = {};
-  for (const [k, v] of Object.entries(cfg)) redacted[k] = SECRET_KEYS.has(k) ? Boolean(v) : v;
+  for (const [k, v] of Object.entries(cfg)) {
+    // The session secret is operational (it is generated on first start),
+    // not policy; leaving it out keeps the CLI and the server in agreement.
+    if (k === 'sessionSecret') continue;
+    redacted[k] = SECRET_KEYS.has(k) ? Boolean(v) : v;
+  }
   return createHash('sha256').update(canonical({ config: redacted, mcpServers })).digest('hex').slice(0, 16);
 }
 

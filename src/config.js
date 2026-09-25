@@ -12,7 +12,7 @@ const MCP_FILE = process.env.TINYWEBUI_MCP
   ? resolve(process.env.TINYWEBUI_MCP)
   : resolve(dirname(CONFIG_FILE), 'mcp.json');
 
-const DEFAULTS = {
+export const DEFAULTS = {
   baseUrl: 'https://openrouter.ai/api/v1',
   apiKey: '',
   // A cheap, fast, tool-capable default that caches well on a stable prefix and
@@ -189,7 +189,7 @@ export function createConfigSource(opts = {}) {
     writeFileSync(file, JSON.stringify(obj, null, 2) + '\n');
   };
 
-  function load() {
+  function load({ persistSecret = true } = {}) {
     const env = {};
     if (process.env.TINYWEBUI_BASE_URL) env.baseUrl = process.env.TINYWEBUI_BASE_URL;
     if (process.env.TINYWEBUI_API_KEY) env.apiKey = process.env.TINYWEBUI_API_KEY;
@@ -208,7 +208,7 @@ export function createConfigSource(opts = {}) {
     if (!AUTH_MODES.includes(cfg.authMode)) cfg.authMode = DEFAULTS.authMode;
     // A session secret is required the moment auth is on; generate and persist
     // one rather than signing cookies with an empty key.
-    if (cfg.authMode !== 'none' && !cfg.sessionSecret) {
+    if (cfg.authMode !== 'none' && !cfg.sessionSecret && persistSecret) {
       cfg.sessionSecret = randomBytes(32).toString('hex');
       try {
         writeFile({ ...readFile(), sessionSecret: cfg.sessionSecret });
@@ -247,6 +247,11 @@ export function createConfigSource(opts = {}) {
       keyClasses: Object.fromEntries([...WRITABLE, ...FILE_ONLY].map((k) => [k, keyClass(k, locked)]))
     }),
     lockedKeys: () => new Set(locked),
+    /** The raw mcp.json (or code) server map, throwing on bad JSON -- for tooling that must not guess. */
+    strictMcpServers() {
+      const parsed = JSON.parse(readMcp());
+      return parsed.mcpServers || parsed;
+    },
     /** Users pinned in code's access.users: admins cannot overrule these. */
     codeAccessUsers: () => ({ ...(code.access?.users || {}) }),
     /** Low-level access for the policy write-back: read and replace the JSON file. */
@@ -291,7 +296,7 @@ export function createConfigSource(opts = {}) {
 export class LockedError extends Error {}
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
-const WRITABLE = new Set([
+export const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds',
   'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
   'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone',

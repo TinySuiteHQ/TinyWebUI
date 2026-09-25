@@ -12,6 +12,14 @@ const flag = (name, fallback) => {
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`tinywebui [--port 7777] [--host 127.0.0.1]
 tinywebui set-password     turn on password login ("single" auth mode)
+tinywebui validate         check the config files; prints the fingerprint, exits 1 on problems
+tinywebui effective [--role user|admin]
+                           what is in effect and how each setting can change
+tinywebui fingerprint      the config's fingerprint (secrets never included)
+tinywebui users list       users and the decisions pinned in the files
+tinywebui users set <id> [--role admin|user] [--status pending|approved|disabled] [--clear]
+                           record a decision in config.json (a running server reloads it)
+tinywebui schema           JSON Schema for the config file
 
 Config comes from ./tinywebui.config.js if it exists, then
 ./tinywebui.config.json ($TINYWEBUI_CONFIG may point at either), and MCP
@@ -58,7 +66,13 @@ try {
     const mod = await import(pathToFileURL(jsPath).href);
     const exported = mod.default ?? mod;
     opts = (typeof exported === 'function' ? await exported() : exported) || {};
-    console.log(`[tinywebui] options: ${jsPath}`);
+    // stderr, so a command's stdout stays pure JSON for scripts.
+    console.error(`[tinywebui] options: ${jsPath}`);
+  }
+  const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema'];
+  if (COMMANDS.includes(args[0])) {
+    const { runCli } = await import('../src/cli.js');
+    process.exit(await runCli(args[0], args.slice(1), opts));
   }
   const { start } = await import('../src/server.js');
   // Command-line flags beat the file; the file beats the built-in defaults.

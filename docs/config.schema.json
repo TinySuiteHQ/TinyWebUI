@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TinyWebUI configuration",
+  "type": "object",
+  "properties": {
+    "baseUrl": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "apiKey": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "model": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "systemPrompt": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "temperature": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxTokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxToolRounds": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "extraBody": {
+      "type": "object",
+      "x-change": "file-only"
+    },
+    "cache": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "cacheMode": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "cacheTtl": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "dbPath": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "compactThreshold": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "keepTurns": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "compactMinSaved": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxInlineChars": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxTurnChars": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxHistoryTokens": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "timezone": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "toolApproval": {
+      "enum": [
+        "writes",
+        "all",
+        "off"
+      ],
+      "x-change": "editable (UI writes it back here)"
+    },
+    "confirmTools": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "autoApproveTools": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "expandCharBudget": {
+      "type": "number",
+      "x-change": "file-only"
+    },
+    "disabledTools": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "authMode": {
+      "enum": [
+        "none",
+        "single",
+        "trusted-header"
+      ],
+      "x-change": "file-only"
+    },
+    "authPassword": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "sessionSecret": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "googleClientId": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "googleClientSecret": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "googleRedirectUri": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "adminEmails": {
+      "type": "array",
+      "x-change": "file-only"
+    },
+    "sessionTtlDays": {
+      "type": "number",
+      "x-change": "file-only"
+    },
+    "trustedProxyCidrs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "x-change": "file-only"
+    },
+    "trustedUserIdHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedEmailHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedNameHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedRoleHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedDefaultStatus": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "logoutUrl": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-change": "file-only (admins write access.users back)",
+      "properties": {
+        "bootstrapAdmins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Gateway user ids that are always approved admins."
+        },
+        "newUsers": {
+          "enum": [
+            "approved",
+            "pending"
+          ]
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "admin": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "features": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "chat",
+                          "attachments",
+                          "images",
+                          "search",
+                          "folders",
+                          "automations",
+                          "statistics",
+                          "model-picker",
+                          "tools",
+                          "settings",
+                          "mcp",
+                          "admin",
+                          "oversight"
+                        ]
+                      },
+                      "uniqueItems": true
+                    }
+                  ]
+                },
+                "models": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "user": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "features": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "chat",
+                          "attachments",
+                          "images",
+                          "search",
+                          "folders",
+                          "automations",
+                          "statistics",
+                          "model-picker",
+                          "tools",
+                          "settings",
+                          "mcp",
+                          "admin",
+                          "oversight"
+                        ]
+                      },
+                      "uniqueItems": true
+                    }
+                  ]
+                },
+                "models": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "users": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "enum": [
+                  "admin",
+                  "user"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "approved",
+                  "disabled"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

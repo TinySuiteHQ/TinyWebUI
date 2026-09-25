@@ -220,23 +220,90 @@ For a team, TinyWebUI sits behind a **sign-in gateway** that handles the actual 
   "trustedEmailHeader": "x-tinysuite-email",
   "trustedNameHeader": "x-tinysuite-name",
   "trustedRoleHeader": "x-tinysuite-role",
-  "trustedDefaultStatus": "approved",
-  "logoutUrl": "https://<team>.cloudflareaccess.com/cdn-cgi/access/logout"
+  "logoutUrl": "https://<team>.cloudflareaccess.com/cdn-cgi/access/logout",
+  "access": {
+    "bootstrapAdmins": ["<your gateway user id>"],
+    "newUsers": "approved"
+  }
 }
 ```
 
 - **Accounts create themselves.** The first request from someone new creates their account, with no signup step. Accounts are keyed on the gateway's stable user ID, not on email, so a changed email address keeps the same account and data.
 - **Everyone's data is private.** Chats, documents, folders, search, automations and usage all belong to their user. The server refuses any request that reaches for another user's data by ID.
-- **Roles.** The gateway can send `admin` or `user` in the role header, and TinyWebUI follows it. A browser cannot promote itself.
+- **The first admin comes from the config.** Anyone listed in `access.bootstrapAdmins` is always an approved admin, so there is no manual setup step.
+- **Roles and features.** Each role gets a list of features (see [Driving TinyWebUI from code](#driving-tinywebui-from-code)). For example, users can be limited to chatting, while admins set up the models and MCP servers. The gateway can also send `admin` or `user` in the role header, but a decision recorded in the files outranks it. A browser cannot promote itself.
 - **Admins** get an **Admin** menu item under Statistics, where they can:
-  - approve pending users (set `trustedDefaultStatus: "pending"` to require approval);
+  - approve pending users (set `access.newUsers: "pending"` to require approval);
   - disable accounts, which is an immediate 403 that also stops the user's automations;
   - change roles;
   - read any user's chats, documents and live turns. This view is read-only, and every view is recorded in the audit log.
-- **Settings belong to the operator.** For non-admins, the model, system prompt, tool approval rules and MCP servers are read-only, and credentials and the gateway address are hidden.
+- **Settings belong to the operator.** Without the `settings` feature, the model, system prompt and tool approval rules are read-only, and credentials and the gateway address are hidden. Without `mcp`, the MCP servers are hidden. Each person picks their own model from their role's allowed list; this never changes anyone else's model.
 - **Audit log.** Accounts created, rejected requests, role and status changes, config changes and admin views are written to stdout as `[tinywebui:audit]` JSON lines. Messages and secrets are never logged.
 
 Identity headers are believed **only** from the addresses in `trustedProxyCidrs`, based on the real network connection (`X-Forwarded-For` is ignored). TinyWebUI refuses to start in this mode without that list. The gateway must strip any identity headers a client sends, and TinyWebUI must be reachable only through the gateway: no published port.
+
+## Driving TinyWebUI from code
+
+Everything about a deployment, down to what each user sees, can be set up and changed from files. An agent or a script can build the whole thing, check it into git and hand it over, and the running app stays in step with the files.
+
+**Two files, three kinds of setting:**
+
+| Kind | Where it lives | Can the UI change it? |
+| --- | --- | --- |
+| **File-only**: `authMode`, passwords, `trusted*`, `logoutUrl`, `baseUrl`, `apiKey`, `dbPath`, `access` | `tinywebui.config.js` or `tinywebui.config.json` | Never. The API refuses, even for admins. |
+| **Frozen**: anything set in `tinywebui.config.js` (including `mcpServers`) | `tinywebui.config.js` | No. Shown read-only. |
+| **Editable**: everything else | `tinywebui.config.json`, `mcp.json` | Yes, and every UI change is **written back to the file**. |
+
+Admin decisions are recorded the same way. Approving, disabling or changing someone's role writes `access.users` in `tinywebui.config.json` before touching the database. The files outrank the database: delete the database and restart, and every approval and ban is still in force.
+
+**A complete tier-3 setup:**
+
+```js
+// tinywebui.config.js: checked into git
+export default {
+  config: {
+    authMode: 'trusted-header',
+    trustedProxyCidrs: ['172.20.0.0/16'],
+    baseUrl: 'http://gateway:8080/v1',          // your model gateway; users never see it
+    apiKey: process.env.MODEL_GATEWAY_KEY,
+    model: 'fast',
+    systemPrompt: 'You are the team assistant…',  // frozen: set here, so read-only in the UI
+    logoutUrl: 'https://team.cloudflareaccess.com/cdn-cgi/access/logout',
+    access: {
+      bootstrapAdmins: ['google-oauth2|1234567890'],
+      newUsers: 'pending',
+      roles: {
+        user:  { features: ['chat', 'attachments', 'images', 'search', 'folders', 'model-picker'], models: ['fast', 'smart'] },
+        admin: { features: '*' }
+      }
+    }
+  },
+  mcpServers: {                                    // frozen: users can use these tools, nobody can edit them
+    search:  { url: 'http://tinysearch:8000/mcp' },
+    context: { url: 'http://gateway:8080/context/mcp' }
+  }
+};
+```
+
+**Features** a role can have: `chat`, `attachments`, `images`, `search`, `folders`, `automations`, `statistics`, `model-picker`, `tools`, `settings`, `mcp`, `admin` (user management) and `oversight` (reading users' chats). Each one covers both the UI and the API routes behind it. The UI hides what a role lacks, and the server refuses it. Tier 3 defaults: users get everything except `tools`, `settings`, `mcp`, `admin` and `oversight`; admins get `*`. Tiers 1 and 2 get everything except user management.
+
+**Edits apply without a restart.** Changes to `tinywebui.config.json` or `mcp.json` are picked up automatically, or on `kill -HUP`. A reload is all or nothing: a file that doesn't parse or validate is rejected (and logged), and the running config stays as it was. `tinywebui.config.js` and `authMode` need a restart.
+
+**Commands for scripts and agents** (output on stdout is JSON or a single line; logs go to stderr):
+
+```bash
+tinywebui validate                  # "ok <fingerprint>", or every problem and exit code 1
+tinywebui effective                 # what is in effect, and how each setting can change
+tinywebui effective --role user     # exactly what a user can see and do
+tinywebui users list                # users, with decisions pinned in the files
+tinywebui users set <id> --status disabled   # recorded in tinywebui.config.json
+tinywebui fingerprint               # hash of the effective config (secrets never included)
+tinywebui schema                    # JSON Schema for the config (also in docs/config.schema.json)
+```
+
+**Audit trail.**
+- Every change is logged as an `[tinywebui:audit]` JSON line on stdout: config saves (who, which keys, the new values), MCP edits, reloads (accepted or rejected), and user decisions.
+- Config, MCP and reload lines carry the config fingerprint before and after. The same fingerprint is printed at startup and shown in the Admin panel, so you can check that a running instance matches a given commit: `tinywebui fingerprint` on the checked-in files gives the same value.
 
 ## Security and limits
 
