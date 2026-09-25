@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { watch, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize } from 'node:path';
 
@@ -144,7 +145,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   if (problems.length) throw new Error(problems.join('\n'));
   // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
   // (handy for containers). validateConfig above already refused a plaintext one.
-  const passwordHash = cfg.authMode === 'single'
+  let passwordHash = cfg.authMode === 'single'
     ? cfg.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD)
     : null;
   const store = new Store(dbPath(cfg));
@@ -179,6 +180,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       });
 
   let hub = await connectHub(source.loadMcpServers());
+  // What mcp.json said when the hub was last (re)built, so a reload can tell
+  // a real edit from the echo of the UI's own save.
+  let mcpText = readMcpFile();
+  const serversOf = (text) => { try { const p = JSON.parse(text); return p.mcpServers || p; } catch { return {}; } };
 
   console.log(`[tinywebui] config: ${source.path() || '(in code, no file)'}`);
   console.log(`[tinywebui] mcp:    ${source.mcpPath() || '(in code)'}`);
@@ -752,6 +757,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         }
         const old = hub;
         hub = await connectHub(updated);
+        mcpText = readMcpFile();
         await old.close();
         console.log(`[tinywebui] mcp reloaded: ${hub.tools.length} tool(s)`);
         return json(res, 200, { ...hub.inventory(cfg.disabledTools), disabledTools: cfg.disabledTools || [] });
@@ -771,6 +777,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // new ones start, so a rename cannot leave an orphan behind.
         const old = hub;
         hub = await connectHub(servers);
+        mcpText = readMcpFile();
         await old.close();
         console.log(`[tinywebui] mcp reloaded: ${hub.tools.length} tool(s)`);
         return json(res, 200, {
@@ -1163,8 +1170,84 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   // since `process.kill(pid, 'SIGTERM')` is not something to lean on across
   // platforms and exiting the test runner's own process is not what a test
   // closing its server wants anyway.
+  /**
+   * Re-reads config.json and mcp.json after a hand or agent edit. All or
+   * nothing: a file that fails to parse or validate is reported and the
+   * running config stays exactly as it was. tinywebui.config.js is code and
+   * is only read at startup, as is authMode (switching it live would strand
+   * sessions and half the auth state).
+   */
+  async function reloadFromFiles(reason) {
+    let next, servers, text;
+    try {
+      next = source.load();
+      text = readMcpFile();
+      const parsed = JSON.parse(text);
+      servers = parsed.mcpServers || parsed;
+      for (const [name, spec] of Object.entries(servers)) {
+        if (!spec || (!spec.command && !spec.url)) throw new Error(`mcp server "${name}" needs either "command" or "url"`);
+      }
+    } catch (err) {
+      console.error(`[tinywebui] reload rejected (${reason}): ${err.message}`);
+      audit('config.reload_rejected', { reason, problems: [err.message] });
+      return false;
+    }
+    const problems = validateConfig(next);
+    if (next.authMode !== cfg.authMode) problems.push('authMode changes need a restart');
+    if (problems.length) {
+      console.error(`[tinywebui] reload rejected (${reason}):\n  ${problems.join('\n  ')}`);
+      audit('config.reload_rejected', { reason, problems });
+      return false;
+    }
+    const before = fingerprint(cfg, serversOf(mcpText));
+    const after = fingerprint(next, servers);
+    const mcpChanged = text !== mcpText;
+    if (before === after && !mcpChanged) return true; // our own write, or a no-op save
+    cfg = next;
+    if (cfg.authMode === 'single') passwordHash = cfg.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD);
+    if (cfg.authMode === 'trusted-header') applyAccessPolicy(store, cfg);
+    if (mcpChanged) {
+      mcpText = text;
+      const old = hub;
+      hub = await connectHub(servers);
+      await old.close();
+    }
+    armScheduler();
+    console.log(`[tinywebui] reloaded (${reason}): policy ${after}`);
+    audit('config.reloaded', { reason, before, after, mcpChanged });
+    return true;
+  }
+
+  // Editors often replace a file rather than write into it, which a watch on
+  // the file itself would lose; watching the folder catches both.
+  const watchers = [];
+  let reloadTimer = null;
+  const scheduleReload = (reason) => {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => { reloadFromFiles(reason).catch((err) => console.error(`[tinywebui] reload failed: ${err.message}`)); }, 300);
+    reloadTimer.unref?.();
+  };
+  if (sourceOpts.watch !== false) {
+    const targets = [source.path(), source.mcpPath()].filter(Boolean);
+    for (const folder of new Set(targets.map((t) => dirname(t)))) {
+      if (!existsSync(folder)) continue;
+      const names = new Set(targets.filter((t) => dirname(t) === folder).map((t) => t.slice(folder.length + 1)));
+      try {
+        const w = watch(folder, (_, name) => { if (name && names.has(String(name))) scheduleReload('file changed'); });
+        w.unref?.();
+        watchers.push(w);
+      } catch (err) { console.error(`[tinywebui] cannot watch ${folder}: ${err.message}`); }
+    }
+  }
+  const onHup = () => scheduleReload('SIGHUP');
+  process.on('SIGHUP', onHup);
+  server.reload = reloadFromFiles;
+
   const shutdown = async () => {
     schedulerStopped = true;
+    clearTimeout(reloadTimer);
+    for (const w of watchers) w.close();
+    process.off('SIGHUP', onHup);
     if (scheduleTimer) clearTimeout(scheduleTimer);
     await hub.close();
     store.close();
