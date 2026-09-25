@@ -32,5 +32,17 @@
     "mammoth": "^1.12.3",
     "unpdf": "^1.8.1"
   },
+  "peerDependencies": {
+    "onnxruntime-node": "^1.20.0",
+    "@huggingface/tokenizers": "^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "onnxruntime-node": {
+      "optional": true
+    },
+    "@huggingface/tokenizers": {
+      "optional": true
+    }
+  },
   "license": "AGPL-3.0-or-later"
 }

@@ -6,8 +6,9 @@ import { ALL_USERS } from './store.js';
  * Same shape as context_expand: a document is an opaque blob (extracted text
  * of whatever the user dropped in), scoped to the chat that owns it, read
  * either by a narrowing query or by paging through raw offsets. `query`
- * ranks the document's own pre-split chunks with FTS5's bm25() -- the
- * "chunking and retrieval" this needs, without a vector index or embeddings.
+ * ranks the document's own pre-split chunks: FTS5 bm25() by default, or
+ * local embeddings / a BM25+dense fusion when retrieval.mode asks for it
+ * (retrieval.js). The tool's interface is the same in every mode.
  */
 
 export const READ_DOCUMENT = 'read_document';
@@ -55,8 +56,8 @@ function header(doc, note) {
   return `[document ${doc.id} · ${doc.filename} · ${doc.char_len.toLocaleString('en-US')} chars · ${note}]`;
 }
 
-function queryView(store, doc, query, budget) {
-  const hits = store.searchDocumentChunks(doc.id, query, 5);
+async function queryView(store, retrieval, doc, query, budget) {
+  const hits = retrieval ? await retrieval.search(doc.id, query, 5) : store.searchDocumentChunks(doc.id, query, 5);
   if (!hits.length) {
     return `${header(doc, `no match for "${query}"`)}\nTry a broader query, or read from the start with offset/limit.`;
   }
@@ -88,7 +89,7 @@ function windowView(doc, offset, limit, budget) {
 }
 
 /** Runs one read. Returns a string, like every other tool result. */
-export function callReadDocument(args, { store, chatId, budget = 8000 }) {
+export async function callReadDocument(args, { store, retrieval = null, chatId, budget = 8000 }) {
   const id = String(args?.document_id || '').trim();
   if (!id) return 'Error: document_id is required.';
 
@@ -96,6 +97,6 @@ export function callReadDocument(args, { store, chatId, budget = 8000 }) {
   if (!doc) return `Error: no document "${id}". Ids appear in the "[Attached document: ...]" note.`;
   if (doc.chat_id !== chatId) return `Error: document "${id}" does not belong to this conversation.`;
 
-  if (args.query) return queryView(store, doc, String(args.query), budget);
+  if (args.query) return queryView(store, retrieval, doc, String(args.query), budget);
   return windowView(doc, Number(args.offset) || 0, Number(args.limit) || 0, budget);
 }

@@ -188,6 +188,46 @@
       "type": "boolean",
       "x-change": "file-only"
     },
+    "retrieval": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-change": "file-only (restart to apply)",
+      "properties": {
+        "mode": {
+          "enum": [
+            "lexical",
+            "dense",
+            "hybrid"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "description": "fast | balanced | quality, or a name with modelDir"
+        },
+        "modelDir": {
+          "type": "string"
+        },
+        "modelSha256": {
+          "type": "string",
+          "pattern": "^([0-9a-fA-F]{64})?$"
+        },
+        "denseWeight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "rrfK": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queryPrefix": {
+          "type": "string"
+        },
+        "documentPrefix": {
+          "type": "string"
+        }
+      }
+    },
     "access": {
       "type": "object",
       "additionalProperties": false,

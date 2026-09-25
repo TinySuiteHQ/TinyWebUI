@@ -39,7 +39,7 @@ const DEFAULT_ROLES = {
 export const FILE_ONLY = new Set([
   'authMode', 'authPassword', 'sessionSecret', 'sessionTtlDays', 'trustedProxyCidrs', 'trustedUserIdHeader',
   'trustedEmailHeader', 'trustedNameHeader', 'trustedRoleHeader', 'trustedDefaultStatus',
-  'logoutUrl', 'baseUrl', 'apiKey', 'dbPath', 'access', 'allowedOrigins', 'frozen', 'autoMigrate',
+  'logoutUrl', 'baseUrl', 'apiKey', 'dbPath', 'access', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
   'googleClientId', 'googleClientSecret', 'googleRedirectUri', 'adminEmails'
 ]);
 

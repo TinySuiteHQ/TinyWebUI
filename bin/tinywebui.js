@@ -22,6 +22,9 @@ tinywebui migrate [--check]
                            bring the database to the current schema (--check: exit 1 if behind)
 tinywebui doctor           check config, database, model endpoint and MCP servers
 tinywebui config show      same as effective
+tinywebui models pull <fast|balanced|quality> [--dir path]
+                           fetch an embedding bundle for dense/hybrid retrieval (the only download)
+tinywebui models verify    load the configured embedding model the way startup does
 tinywebui effective [--role user|admin]
                            what is in effect and how each setting can change
 tinywebui fingerprint      the config's fingerprint (secrets never included)
@@ -71,6 +74,7 @@ if (args[0] === 'set-password') {
 
 try {
   let opts = {};
+  if (jsPath && !existsSync(jsPath)) throw new Error(`config file not found: ${jsPath}`);
   if (jsPath) {
     const mod = await import(pathToFileURL(jsPath).href);
     const exported = mod.default ?? mod;
@@ -78,7 +82,7 @@ try {
     // stderr, so a command's stdout stays pure JSON for scripts.
     console.error(`[tinywebui] options: ${jsPath}`);
   }
-  const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config'];
+  const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config', 'models'];
   if (COMMANDS.includes(args[0])) {
     const { runCli } = await import('../src/cli.js');
     process.exit(await runCli(args[0], args.slice(1), opts));

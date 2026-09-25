@@ -101,7 +101,7 @@ test('doctor reports each check as a JSON line and fails on an unreachable model
   writeFileSync(join(d, 'mcp.json'), '{ "mcpServers": {} }');
   const r = spawnSync(process.execPath, [BIN, 'doctor', '--config', join(d, 'tinywebui.config.json')], { encoding: 'utf8' });
   const lines = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
-  assert.deepEqual(lines.map((l) => l.check), ['node', 'config', 'database', 'model endpoint']);
+  assert.deepEqual(lines.map((l) => l.check), ['node', 'config', 'database', 'model endpoint', 'retrieval']);
   assert.equal(lines.find((l) => l.check === 'model endpoint').ok, false);
   assert.equal(r.status, 1);
   rmSync(d, { recursive: true, force: true });

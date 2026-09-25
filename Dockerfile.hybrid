@@ -1,0 +1,47 @@
+# TinyWebUI with dense/hybrid document retrieval. Same runtime as Dockerfile,
+# plus onnxruntime-node (glibc, so Debian slim rather than Alpine) and one
+# embedding bundle baked in at build time -- the only time it is fetched.
+#
+#   docker build -f Dockerfile.hybrid \
+#     --build-arg EMBEDDING_MODEL=fast \
+#     --build-arg EMBEDDING_SHA256=<sha256 from `tinywebui models pull`> \
+#     -t tinywebui:hybrid .
+#
+# Then set retrieval: { mode: 'hybrid', model: 'fast', modelSha256: '<same>' }.
+FROM node:22-slim
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    TINYWEBUI_CONFIG=/config/tinywebui.config.js \
+    TINYWEBUI_DB=/data/tinywebui.db \
+    TINYWEBUI_MODELS_DIR=/app/models \
+    ORT_DISABLE_TELEMETRY=1
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
+ && npm install --no-save --ignore-scripts onnxruntime-node@1.30.0 @huggingface/tokenizers@0.2.0 \
+ && npm cache clean --force
+
+COPY bin ./bin
+COPY src ./src
+COPY public ./public
+
+ARG EMBEDDING_MODEL=fast
+ARG EMBEDDING_SHA256=
+# No config exists at build time (it is mounted at runtime) and the pull needs none.
+RUN env -u TINYWEBUI_CONFIG node bin/tinywebui.js models pull "$EMBEDDING_MODEL" > /tmp/pull.json \
+ && node -e "const p=require('/tmp/pull.json'),w=process.env.EMBEDDING_SHA256; \
+    if(w&&w.toLowerCase()!==p.sha256){console.error('model checksum mismatch: expected '+w+', got '+p.sha256);process.exit(1)} \
+    console.log('embedding model '+p.model+' sha256 '+p.sha256)" \
+ && rm /tmp/pull.json
+
+RUN mkdir -p /data /config && chown node:node /data
+USER node
+VOLUME ["/data"]
+EXPOSE 7777
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD node -e "fetch('http://127.0.0.1:7777/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+
+ENTRYPOINT ["node", "bin/tinywebui.js"]
+CMD ["start", "--host", "0.0.0.0", "--port", "7777"]

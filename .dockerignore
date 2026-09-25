@@ -8,3 +8,4 @@ docs
 *.db-*
 tinywebui.config.*
 mcp.json
+models

@@ -1,4 +1,6 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { PRESETS, resolveModel, findOnnxFile, sha256File, loadEmbedder, defaultModelsDir } from './embedding.js';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config.js';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
@@ -171,6 +173,54 @@ const commands = {
     return 0;
   },
 
+  /**
+   * models pull <fast|balanced|quality> [--dir path]
+   *   Fetches a preset embedding bundle from Hugging Face -- the same repos
+   *   and files TinySearch uses -- into the models folder, then prints the
+   *   model's sha256 to pin as retrieval.modelSha256. The only command that
+   *   ever downloads a model; the server never does.
+   * models verify
+   *   Loads the configured bundle exactly as startup would and embeds a probe.
+   */
+  async models(args, opts) {
+    const [sub, name] = args;
+    const { source, cfg } = loadAll(opts);
+    const modelsDir = defaultModelsDir(source.path());
+    if (sub === 'pull') {
+      const preset = PRESETS[name];
+      if (!preset) { process.stderr.write(`usage: tinywebui models pull <${Object.keys(PRESETS).join('|')}> [--dir path]\n`); return 1; }
+      const dest = flag(args, 'dir') ? join(flag(args, 'dir')) : join(modelsDir, preset.localDir);
+      const tmp = `${dest}.partial`;
+      rmSync(tmp, { recursive: true, force: true });
+      process.stderr.write(`[tinywebui] fetching ${preset.repoId} into ${dest} (see its Hugging Face model card for the license)\n`);
+      for (const file of preset.files) {
+        const url = `https://huggingface.co/${preset.repoId}/resolve/main/${file}`;
+        const res = await fetch(url);
+        if (res.status === 404 && file !== preset.onnxPaths[0] && file !== 'tokenizer.json') continue; // companion files are optional
+        if (!res.ok) { rmSync(tmp, { recursive: true, force: true }); process.stderr.write(`error: ${res.status} fetching ${url}\n`); return 1; }
+        const target = join(tmp, file);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+        process.stderr.write(`  ${file}\n`);
+      }
+      rmSync(dest, { recursive: true, force: true });
+      mkdirSync(dirname(dest), { recursive: true });
+      renameSync(tmp, dest);
+      const onnx = findOnnxFile({ ...preset, dir: dest });
+      out({ model: name, dir: dest, onnx, sha256: await sha256File(onnx) });
+      return 0;
+    }
+    if (sub === 'verify') {
+      if (cfg.retrieval.mode === 'lexical') { out('retrieval.mode is lexical: no embedding model needed'); return 0; }
+      const e = await loadEmbedder(cfg.retrieval, modelsDir);
+      out({ model: e.spec.name, dir: e.spec.dir, sha256: e.sha256, pinned: Boolean(cfg.retrieval.modelSha256), dims: e.dim, key: e.key });
+      e.close?.();
+      return 0;
+    }
+    process.stderr.write('usage: tinywebui models pull <preset> [--dir path] | models verify\n');
+    return 1;
+  },
+
   config(args, opts) {
     if (args[0] !== 'show') { process.stderr.write('usage: tinywebui config show [--role user|admin]\n'); return 1; }
     return commands.effective(args.slice(1), opts);
@@ -257,6 +307,12 @@ const commands = {
         if (r.status === 401 || r.status === 403) throw new Error(`${r.status} from ${cfg.baseUrl}: check apiKey`);
         return `${cfg.baseUrl} answered ${r.status}`;
       });
+      await check('retrieval', async () => {
+        if (cfg.retrieval.mode === 'lexical') return 'lexical (SQLite FTS5)';
+        const e = await loadEmbedder(cfg.retrieval, defaultModelsDir(source.path()));
+        e.close?.();
+        return `${cfg.retrieval.mode} with ${e.spec.repoId}, ${e.dim} dims${cfg.retrieval.modelSha256 ? ', checksum pinned' : ', checksum NOT pinned (set retrieval.modelSha256)'}`;
+      });
       const { McpHub } = await import('./mcp.js');
       for (const [name, spec] of Object.entries(servers)) {
         if (spec?.disabled) { checks.push({ check: `mcp ${name}`, ok: true, detail: 'disabled' }); continue; }
@@ -291,6 +347,19 @@ export function configSchema() {
   const role = {
     type: 'object', additionalProperties: false,
     properties: { features: featureList, models: { oneOf: [{ const: '*' }, { type: 'array', items: { type: 'string' } }] } }
+  };
+  properties.retrieval = {
+    type: 'object', additionalProperties: false, 'x-change': 'file-only (restart to apply)',
+    properties: {
+      mode: { enum: ['lexical', 'dense', 'hybrid'] },
+      model: { type: 'string', description: 'fast | balanced | quality, or a name with modelDir' },
+      modelDir: { type: 'string' },
+      modelSha256: { type: 'string', pattern: '^([0-9a-fA-F]{64})?$' },
+      denseWeight: { type: 'number', exclusiveMinimum: 0, exclusiveMaximum: 1 },
+      rrfK: { type: 'integer', minimum: 0 },
+      queryPrefix: { type: 'string' },
+      documentPrefix: { type: 'string' }
+    }
   };
   properties.access = {
     type: 'object', additionalProperties: false, 'x-change': 'file-only (admins write access.users back)',

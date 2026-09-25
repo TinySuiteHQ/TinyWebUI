@@ -15,3 +15,6 @@ tinywebui.db-shm
 
 # Eval run records (evals/run.js).
 evals/results/
+
+# Embedding bundles (tinywebui models pull): large, fetched per deployment.
+models/

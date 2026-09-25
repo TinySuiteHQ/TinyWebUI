@@ -156,6 +156,26 @@ Chats, documents, full tool results, and usage are stored in `tinywebui.db` besi
 
 A running turn belongs to the server rather than the browser tab: reloading or disconnecting does not cancel it. Reopen the chat to rejoin its stream, or use **stop** to cancel it.
 
+### Smarter document search (optional)
+
+By default `read_document` finds passages with SQLite's full-text search (BM25): fast, no extra packages, and exact about words. Turn on **hybrid** retrieval to also match meaning, so a question about an "automobile" finds the paragraph about the "sedan". It works the way TinySearch and TinyContext do: the same local ONNX embedding models, BM25 and embeddings fused with Reciprocal Rank Fusion, and nothing leaves the machine.
+
+```bash
+npm install onnxruntime-node @huggingface/tokenizers   # optional packages, only for dense/hybrid
+npx tinywebui models pull fast                         # the one explicit download; prints its sha256
+```
+
+```json
+{ "retrieval": { "mode": "hybrid", "model": "fast", "modelSha256": "<sha256 from models pull>" } }
+```
+
+- **Modes:** `lexical` (default), `dense` (embeddings only), `hybrid` (both, fused).
+- **Models:** `fast` (all-MiniLM-L6-v2), `balanced` (bge-small-en-v1.5) and `quality` (bge-base-en-v1.5), the same presets as TinySearch. A custom bundle works with `modelDir`.
+- **Embeddings are computed once.** Each chunk is embedded when the document is attached and stored in SQLite; queries embed only the question. Switching models re-embeds automatically, and deleting a document or chat deletes its vectors.
+- **Nothing downloads at runtime.** A missing bundle, missing packages or a checksum that doesn't match `modelSha256` stops startup with a clear message. `tinywebui models verify` and `tinywebui doctor` check the same things beforehand. ONNX Runtime's telemetry is switched off.
+- **Tuning:** `denseWeight` (default 0.5), `rrfK` (default 60), and `queryPrefix`/`documentPrefix` for models that expect instructions (for bge, set `queryPrefix` to `"Represent this sentence for searching relevant passages: "`).
+- **Containers:** `Dockerfile.hybrid` bakes a model into the image at build time and fails the build if `EMBEDDING_SHA256` doesn't match.
+
 ## Automations
 
 Create recurring automations from the **automations** view or ask the model to manage them with `manage_automation`. Use **run now** or ask the model to trigger one for an immediate workflow run; manual triggers wait for the target chat's current turn to finish. Each automation adds its instructions to a selected chat on a five-field cron schedule and IANA timezone. Runs use the current model configuration and enabled tools, and appear in that chat and in the automation's run history. Automations run only while TinyWebUI is running; missed scheduled occurrences and scheduled occurrences during a busy chat are skipped. No external notifications are sent.

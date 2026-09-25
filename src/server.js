@@ -15,6 +15,8 @@ import {
 } from './auth.js';
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
+import { Retrieval } from './retrieval.js';
+import { loadEmbedder, defaultModelsDir } from './embedding.js';
 import { extractText } from './documents.js';
 import { normalizeImage } from './images.js';
 import { overrideFor, setOverride } from './approval.js';
@@ -216,6 +218,18 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     console.log(`[tinywebui] migrated database from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
   }
   if (cfg.authMode === 'trusted-header') applyAccessPolicy(store, cfg);
+
+  // Dense/hybrid document retrieval loads its embedding bundle now, so a
+  // missing package, bundle or checksum mismatch stops startup with a clear
+  // message instead of surfacing on the first document question.
+  let embedder = null;
+  if (cfg.retrieval.mode !== 'lexical') {
+    try {
+      embedder = sourceOpts.embedder || await loadEmbedder(cfg.retrieval, defaultModelsDir(source.path()));
+    } catch (err) { store.close(); throw err; }
+    console.log(`[tinywebui] retrieval: ${cfg.retrieval.mode} with ${embedder.spec?.repoId || cfg.retrieval.model} (${embedder.dim} dims)`);
+  }
+  const retrieval = new Retrieval(store, cfg.retrieval, embedder);
   // The one account behind a 'single' password. Sessions hang off it; data
   // stays unowned (ALL_USERS), so switching between 'none' and 'single'
   // never hides a chat.
@@ -238,7 +252,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const connectHub = async (servers) =>
     (await new McpHub(servers).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
-      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store }), { readOnly: true })
+      .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
       .registerLocal(automationToolDef(), (args, ctx) => {
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation });
         armScheduler();
@@ -1086,6 +1100,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         if (!store.getChat(chatId, auth.userId) && store.chatById(chatId)) return json(res, 404, { error: 'no such chat' });
         const chat = store.getChat(chatId, auth.userId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
         const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text });
+        // Embedded once, in the background; a question that arrives first waits for it.
+        retrieval.ingest(doc.id).catch((err) => console.error(`[tinywebui] embedding ${doc.id} failed: ${err.message}`));
         return json(res, 200, { chatId: chat.id, document: doc });
       }
 
@@ -1293,6 +1309,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   await new Promise((resolve) => server.listen(port, host, resolve));
   armScheduler();
   console.log(`[tinywebui] http://${host}:${port}`);
+  // Documents stored before dense retrieval was on (or under another model)
+  // are embedded in the background; queries on them fill in on demand too.
+  retrieval.backfill((msg) => console.log(`[tinywebui] retrieval: ${msg}`))
+    .catch((err) => console.error(`[tinywebui] retrieval backfill failed: ${err.message}`));
 
   // Real teardown, reused two ways: on SIGINT/SIGTERM it exits the process, and
   // as `server.shutdown()` it does not -- which is what a test harness needs,
@@ -1323,6 +1343,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     }
     const problems = configProblems(next);
     if (next.authMode !== cfg.authMode) problems.push('authMode changes need a restart');
+    if (JSON.stringify(next.retrieval) !== JSON.stringify(cfg.retrieval)) problems.push('retrieval changes need a restart');
     if (problems.length) {
       console.error(`[tinywebui] reload rejected (${reason}):\n  ${problems.join('\n  ')}`);
       audit('config.reload_rejected', { reason, problems });
@@ -1379,6 +1400,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     process.off('SIGHUP', onHup);
     if (scheduleTimer) clearTimeout(scheduleTimer);
     await hub.close();
+    await Promise.allSettled([...retrieval.pending.values()]);
+    embedder?.close?.();
     store.close();
     await new Promise((resolve) => server.close(resolve));
   };

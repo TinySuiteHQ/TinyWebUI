@@ -163,6 +163,20 @@ export const DEFAULTS = {
   // true: nothing in the control plane can change from the UI or API --
   // settings, tools, MCP servers. Change the files and reload instead.
   frozen: false,
+  // read_document ranking. 'lexical' is SQLite FTS5 BM25 and needs nothing
+  // extra. 'dense' and 'hybrid' use a local ONNX embedding bundle (fetched
+  // explicitly with `tinywebui models pull`, never at runtime) and the
+  // optional onnxruntime-node + @huggingface/tokenizers packages.
+  retrieval: {
+    mode: 'lexical',          // lexical | dense | hybrid
+    model: 'fast',            // fast | balanced | quality (TinySearch's presets), or a name with modelDir
+    modelDir: '',             // bundle folder; default models/<preset> next to the config
+    modelSha256: '',          // pin model.onnx; startup refuses a different file
+    denseWeight: 0.5,         // hybrid: dense share of the fused ranking, BM25 gets the rest
+    rrfK: 60,
+    queryPrefix: '',          // e.g. bge: 'Represent this sentence for searching relevant passages: '
+    documentPrefix: '',
+  },
 };
 
 /**
@@ -210,6 +224,8 @@ export function createConfigSource(opts = {}) {
     const fromFile = readFile();
     const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
+    // Partial retrieval blocks fill in from the defaults rather than replace them.
+    cfg.retrieval = { ...DEFAULTS.retrieval, ...(fromFile.retrieval || {}), ...(code.retrieval || {}) };
     // No silent fallbacks: a bad value is reported by configProblems() and
     // refuses to start, rather than quietly becoming a default (a mistyped
     // authMode used to become 'none').
@@ -332,12 +348,32 @@ const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v
  * validateConfig(). Startup, reload, save and `tinywebui validate` all refuse
  * a config with any.
  */
+function retrievalProblems(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return ['retrieval must be an object'];
+  const out = [];
+  for (const k of Object.keys(r)) if (!(k in DEFAULTS.retrieval)) out.push(`unknown setting "retrieval.${k}"`);
+  if (r.mode !== undefined && !['lexical', 'dense', 'hybrid'].includes(r.mode)) out.push('retrieval.mode must be one of lexical, dense, hybrid');
+  for (const k of ['model', 'modelDir', 'modelSha256', 'queryPrefix', 'documentPrefix']) {
+    if (r[k] !== undefined && typeof r[k] !== 'string') out.push(`retrieval.${k} must be a string`);
+  }
+  if (r.modelSha256 && !/^[0-9a-fA-F]{64}$/.test(r.modelSha256)) out.push('retrieval.modelSha256 must be a 64-character hex sha256');
+  if (r.denseWeight !== undefined && !(typeof r.denseWeight === 'number' && r.denseWeight > 0 && r.denseWeight < 1)) {
+    out.push('retrieval.denseWeight must be a number between 0 and 1 (exclusive); use mode "dense" or "lexical" for the extremes');
+  }
+  if (r.rrfK !== undefined && !(Number.isInteger(r.rrfK) && r.rrfK >= 0)) out.push('retrieval.rrfK must be a whole number >= 0');
+  return out;
+}
+
 export function configProblems(cfg) {
   const problems = [];
   for (const [key, value] of Object.entries(cfg)) {
     if (!(key in DEFAULTS) && !EXTRA_KEYS.has(key)) { problems.push(`unknown setting "${key}"`); continue; }
     if (ENUMS[key]) {
       if (!ENUMS[key].includes(value)) problems.push(`${key} must be one of ${ENUMS[key].join(', ')} (got ${JSON.stringify(value)})`);
+      continue;
+    }
+    if (key === 'retrieval') {
+      problems.push(...retrievalProblems(value));
       continue;
     }
     if (key === 'frozen' || key === 'autoMigrate') {

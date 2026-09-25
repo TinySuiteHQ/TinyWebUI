@@ -161,6 +161,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks USING fts5(
   body, tokenize='unicode61'
 );
 
+-- Dense retrieval (retrieval.mode 'dense' / 'hybrid'): one float32 vector
+-- per chunk, per embedding model. model_key names the model, so switching
+-- models re-embeds instead of mixing incompatible vectors -- the same rule
+-- TinyContext follows for its memories.
+-- A chunk longer than the model reads gets one vector per window (part).
+CREATE TABLE IF NOT EXISTS document_chunk_embeddings (
+  chunk_rowid INTEGER NOT NULL,
+  doc_id      TEXT NOT NULL,
+  model_key   TEXT NOT NULL,
+  part        INTEGER NOT NULL DEFAULT 0,
+  vec         BLOB NOT NULL,
+  PRIMARY KEY (chunk_rowid, model_key, part)
+);
+CREATE INDEX IF NOT EXISTS document_chunk_embeddings_doc ON document_chunk_embeddings(doc_id, model_key);
+
 -- Full-text search over what was actually said, not how it got answered.
 -- Reasoning and tool results are the "work" the transcript shows collapsed,
 -- not the conversation, and are left out of the index by role alone -- a
@@ -258,13 +273,13 @@ const SUPERSEDE_CLEANUP = `
  * query still narrows results while it is being typed rather than only once
  * a whole word is finished.
  */
-function ftsQuery(raw) {
+function ftsQuery(raw, { any = false } = {}) {
   const tokens = String(raw ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 12);
   if (!tokens.length) return '';
   const esc = (t) => t.replace(/"/g, '""');
   return tokens
     .map((t, i) => (i === tokens.length - 1 ? `"${esc(t)}"*` : `"${esc(t)}"`))
-    .join(' ');
+    .join(any ? ' OR ' : ' ');
 }
 
 /**
@@ -289,7 +304,7 @@ export const ALL_USERS = Symbol('all-users');
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
@@ -524,6 +539,9 @@ export class Store {
         SELECT chunk_rowid FROM document_chunk_map WHERE chat_id = ?
       )
     `).run(id);
+    this.db.prepare(`DELETE FROM document_chunk_embeddings WHERE doc_id IN (
+      SELECT id FROM documents WHERE chat_id = ?
+    )`).run(id);
     this.db.prepare('DELETE FROM document_chunk_map WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
@@ -909,6 +927,7 @@ export class Store {
         SELECT chunk_rowid FROM document_chunk_map WHERE doc_id = ?
       )
     `).run(id);
+    this.db.prepare('DELETE FROM document_chunk_embeddings WHERE doc_id = ?').run(id);
     this.db.prepare('DELETE FROM document_chunk_map WHERE doc_id = ?').run(id);
     return this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
   }
@@ -926,6 +945,70 @@ export class Store {
       ORDER BY rank
       LIMIT ?
     `).all(q, docId, limit);
+  }
+
+  /** Every chunk of a document, in order -- the candidate set for dense and hybrid ranking. */
+  documentChunks(docId) {
+    return this.db.prepare(`
+      SELECT m.chunk_rowid AS rowid, m.chunk_idx AS chunkIdx, m.char_start AS charStart, document_chunks.body AS body
+      FROM document_chunk_map m JOIN document_chunks ON document_chunks.rowid = m.chunk_rowid
+      WHERE m.doc_id = ? ORDER BY m.chunk_idx
+    `).all(docId);
+  }
+
+  /**
+   * BM25 scores for the hybrid's lexical side. Any query word may match
+   * (lexical-only search requires all of them), so partial matches still
+   * rank above none -- dense ranking handles the rest. Higher is better.
+   */
+  lexicalScores(docId, query) {
+    const q = ftsQuery(query, { any: true });
+    if (!q) return new Map();
+    const rows = this.db.prepare(`
+      SELECT m.chunk_rowid AS rowid, bm25(document_chunks) AS rank
+      FROM document_chunks JOIN document_chunk_map m ON m.chunk_rowid = document_chunks.rowid
+      WHERE document_chunks MATCH ? AND m.doc_id = ?
+    `).all(q, docId);
+    return new Map(rows.map((r) => [r.rowid, -r.rank]));
+  }
+
+  /** Stored vectors for a document under one model: Map(chunk rowid -> Float32Array[] by window). */
+  chunkEmbeddings(docId, modelKey) {
+    const out = new Map();
+    for (const r of this.db.prepare('SELECT chunk_rowid, vec FROM document_chunk_embeddings WHERE doc_id = ? AND model_key = ? ORDER BY chunk_rowid, part').all(docId, modelKey)) {
+      const buf = r.vec;
+      if (!out.has(r.chunk_rowid)) out.set(r.chunk_rowid, []);
+      out.get(r.chunk_rowid).push(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4).slice());
+    }
+    return out;
+  }
+
+  /** rows: [{ rowid, vecs: Float32Array[] }] -- one vector per window of the chunk. */
+  putChunkEmbeddings(docId, modelKey, rows) {
+    const clear = this.db.prepare('DELETE FROM document_chunk_embeddings WHERE chunk_rowid = ? AND model_key = ?');
+    const put = this.db.prepare('INSERT INTO document_chunk_embeddings (chunk_rowid, doc_id, model_key, part, vec) VALUES (?, ?, ?, ?, ?)');
+    this.db.exec('BEGIN');
+    try {
+      for (const { rowid, vecs } of rows) {
+        clear.run(rowid, modelKey);
+        vecs.forEach((vec, part) => put.run(rowid, docId, modelKey, part, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength)));
+      }
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
+  /** Documents with chunks still missing a vector for this model (for backfill). */
+  documentsMissingEmbeddings(modelKey) {
+    return this.db.prepare(`
+      SELECT DISTINCT m.doc_id AS id FROM document_chunk_map m
+      LEFT JOIN document_chunk_embeddings e ON e.chunk_rowid = m.chunk_rowid AND e.model_key = ?
+      WHERE e.chunk_rowid IS NULL
+    `).all(modelKey).map((r) => r.id);
+  }
+
+  /** Drops vectors from models no longer configured. */
+  pruneEmbeddings(keepModelKey) {
+    return this.db.prepare('DELETE FROM document_chunk_embeddings WHERE model_key != ?').run(keepModelKey).changes;
   }
 
   /* ---------- search ---------- */
