@@ -5,13 +5,13 @@
  */
 import { $, el } from './dom.js';
 import { renderMarkdown } from './md.js';
+import { whoami } from './access.js';
 
 let me = null;
 
-/** Reveals the Admin and Log out nav items for whoever is signed in. */
-export async function initAdmin() {
-  try { me = await (await fetch('/api/auth/me')).json(); } catch { return; }
-  $('toggle-admin').hidden = !(me.isAdmin && me.authMode === 'trusted-header');
+/** Wires Log out for whoever is signed in (nav visibility is access.js's). */
+export function initAdmin() {
+  me = whoami();
   if (me.logoutUrl || me.authMode === 'single') {
     const btn = $('logout');
     btn.hidden = false;

@@ -7,7 +7,7 @@ import { createConfigSource, LockedError } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView, ALL_USERS } from './store.js';
-import { validateConfig, fingerprint } from './policy.js';
+import { validateConfig, fingerprint, featuresFor, modelsFor } from './policy.js';
 import {
   getSessionUser, resolveTrustedUser, destroyUserSessions, audit, hashPassword, verifyPassword,
   createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
@@ -88,6 +88,33 @@ async function serveStatic(req, res) {
  * createConfigSource: `config` (keys set here win and are locked in the UI),
  * `configFile` (a path, or false for none), `mcpServers`, `mcpFile`, `dbPath`.
  */
+// Every API route and the feature it needs; null means any signed-in caller
+// (or anyone, for the pre-auth routes the auth gate lets through).
+const ROUTES = [
+  ['GET', /^\/api\/auth\/me$/, null],
+  ['POST', /^\/api\/auth\/(login|logout)$/, null],
+  ['GET', /^\/api\/config$/, null],
+  ['POST', /^\/api\/config$/, 'settings'],
+  ['GET', /^\/api\/models$/, 'model-picker'],
+  ['GET', /^\/api\/tools$/, 'tools'],
+  ['POST', /^\/api\/tools\/(approval|toggle)$/, 'tools'],
+  ['*', /^\/api\/mcp(\/servers\/[^/]+\/toggle)?$/, 'mcp'],
+  ['GET', /^\/api\/search$/, 'search'],
+  ['GET', /^\/api\/usage$/, 'statistics'],
+  ['*', /^\/api\/folders$/, 'folders'],
+  ['POST', /^\/api\/chats\/[\w.-]+\/organize$/, 'folders'],
+  ['*', /^\/api\/automations(\/[\w.-]+(\/(runs|trigger))?)?$/, 'automations'],
+  ['POST', /^\/api\/chats\/[\w.-]+\/documents$/, 'attachments'],
+  ['GET', /^\/api\/documents\/[\w.-]+$/, 'attachments'],
+  ['POST', /^\/api\/images\/normalize$/, 'images'],
+  ['*', /^\/api\/chats(\/import)?$/, 'chat'],
+  ['*', /^\/api\/chats\/[\w.-]+(\/(stream|stop|approve|edit))?$/, 'chat'],
+  ['POST', /^\/api\/chat$/, 'chat'],
+  ['*', /^\/api\/admin\/users(\/[\w-]+)?$/, 'admin'],
+  ['GET', /^\/api\/admin\/(users\/[\w-]+\/chats|chats\/[\w.-]+|documents\/[\w.-]+)$/, 'oversight'],
+];
+export const API_ROUTES = ROUTES;
+
 function adminUserView(u) {
   return {
     id: u.id, email: u.email, name: u.name ?? null, role: u.role, status: u.status,
@@ -268,10 +295,18 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     return run;
   }
 
+  /** The tools a turn gets: what is switched on, minus manage_automation for
+   * anyone whose role has no automations. */
+  const toolsFor = (features) => hub.activeTools(cfg.disabledTools)
+    .filter((t) => features.has('automations') || t.function.name !== 'manage_automation');
+
+  /** A stored owner's features: null (tiers 1-2) is the one person. */
+  const ownerFeatures = (userId) => featuresFor(cfg, userId ? store.getUser(userId)?.role : null);
+
   function launchAutomationRun(automation, runId) {
     // Nobody is at the keyboard to be turned away, so a disabled or pending
     // owner is checked here: their schedules stop the moment their access does.
-    if (automation.userId && store.getUser(automation.userId)?.status !== 'approved') {
+    if (automation.userId && (store.getUser(automation.userId)?.status !== 'approved' || !ownerFeatures(automation.userId).has('automations'))) {
       store.updateAutomationRun(runId, { status: 'skipped', finishedAt: Date.now(), error: 'Owner account is not active.' });
       return true;
     }
@@ -283,7 +318,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     if (isRunning(chat.id)) return false;
     const firstSeq = store.addMessage(chat.id, { role: 'user', content: runMessage(automation) });
     store.updateAutomationRun(runId, { status: 'running', startedAt: Date.now() });
-    startRun({ chat, tools: hub.activeTools(cfg.disabledTools), onFinish: ({ ok, error, result }) => {
+    startRun({ chat, tools: toolsFor(ownerFeatures(automation.userId)), onFinish: ({ ok, error, result }) => {
       store.updateAutomationRun(runId, {
         status: ok ? 'completed' : 'failed', finishedAt: Date.now(),
         result: String(result || '').slice(0, 200000), error: error ? String(error).slice(0, 1000) : null
@@ -410,6 +445,15 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
    * install and sees everything, exactly as before auth existed.
    */
   function resolveAuth(req) {
+    const auth = resolveIdentity(req);
+    // Features come from the policy for the caller's role; nobody signed in
+    // gets none, which leaves only the routes the table marks open.
+    auth.features = auth.userId !== undefined ? featuresFor(cfg, auth.role) : new Set();
+    if (cfg.authMode === 'trusted-header' && auth.user) auth.isAdmin = auth.features.has('admin');
+    return auth;
+  }
+
+  function resolveIdentity(req) {
     if (cfg.authMode === 'none') return { userId: ALL_USERS, role: null, user: null, isAdmin: true };
     const pathname = (req.url || '').split('?')[0];
     let user;
@@ -446,7 +490,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const ADMIN_ONLY_FIELDS = /^(apiKey|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails)/;
   function configFor(auth) {
     const pub = publicConfig(cfg);
-    if (auth.isAdmin) return pub;
+    if (auth.features.has('settings')) return pub;
     const out = {};
     for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
     return { ...out, readOnly: true };
@@ -461,11 +505,24 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       if (auth.pending) return json(res, 403, { error: 'pending_approval' });
       const adminOnly = () => json(res, 403, { error: 'admin_only' });
 
+      // Every API route is listed in ROUTES with the feature it needs. A
+      // route missing from the table is unreachable, so a new route cannot
+      // ship without a decision about who may use it.
+      const pathname = (req.url || '').split('?')[0];
+      if (pathname.startsWith('/api/')) {
+        const route = ROUTES.find(([m, re]) => (m === '*' || m === req.method) && re.test(pathname));
+        if (!route) return json(res, 404, { error: 'not found' });
+        const feature = route[2];
+        if (feature && !auth.features.has(feature)) return json(res, 403, { error: 'feature_disabled', feature });
+      }
+
       if (req.method === 'GET' && req.url === '/api/auth/me') {
         return json(res, 200, {
           authMode: cfg.authMode,
           logoutUrl: cfg.logoutUrl || '',
           isAdmin: Boolean(auth.isAdmin),
+          features: [...auth.features],
+          models: auth.userId !== undefined ? modelsFor(cfg, auth.role) : [],
           user: auth.user
             ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
             : null
@@ -506,13 +563,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.url === '/api/admin/users' && req.method === 'GET') {
-        if (!auth.isAdmin || !multiUser()) return adminOnly();
+        if (!multiUser()) return adminOnly();
         return json(res, 200, { users: store.listUsers().map(adminUserView) });
       }
 
       const adminUser = /^\/api\/admin\/users\/([\w-]+)$/.exec(req.url || '');
       if (adminUser && req.method === 'PATCH') {
-        if (!auth.isAdmin || !multiUser()) return adminOnly();
+        if (!multiUser()) return adminOnly();
         const target = store.getUser(adminUser[1]);
         if (!target) return json(res, 404, { error: 'no such user' });
         const { role, status } = await readJson(req);
@@ -541,7 +598,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       const adminChat = /^\/api\/admin\/chats\/([\w.-]+)$/.exec(req.url || '');
       const adminDoc = /^\/api\/admin\/documents\/([\w.-]+)$/.exec(req.url || '');
       if ((adminChats || adminChat || adminDoc) && req.method === 'GET') {
-        if (!auth.isAdmin || !multiUser()) return adminOnly();
+        if (!multiUser()) return adminOnly();
         if (adminChats) {
           const target = store.getUser(adminChats[1]);
           if (!target) return json(res, 404, { error: 'no such user' });
@@ -582,7 +639,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/config') {
-        if (!auth.isAdmin) return adminOnly();
         cfg = saveConfig(await readJson(req));
         audit('admin.config_changed', { by: auth.userId ?? null });
         return json(res, 200, configFor(auth));
@@ -604,7 +660,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // Per-tool approval override from the settings panel: 'ask', 'auto', or
       // 'default' to fall back to the global toolApproval mode.
       if (req.method === 'POST' && req.url === '/api/tools/approval') {
-        if (!auth.isAdmin) return adminOnly();
         const { name, policy } = await readJson(req);
         if (!name || !['ask', 'auto', 'default'].includes(policy)) {
           return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
@@ -614,7 +669,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/tools/toggle') {
-        if (!auth.isAdmin) return adminOnly();
         const { name, disabled } = await readJson(req);
         if (!name) return json(res, 400, { error: 'name is required' });
         const set = new Set(cfg.disabledTools || []);
@@ -625,7 +679,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       if (req.method === 'GET' && req.url === '/api/mcp') {
         // mcp.json can hold server credentials (env, headers): admins only.
-        if (!auth.isAdmin) return json(res, 200, { path: null, text: '', locked: true, readOnly: true });
         return json(res, 200, { path: source.mcpPath(), text: readMcpFile(), locked: source.mcpLocked });
       }
 
@@ -634,7 +687,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // open connection, not just one the model happens not to be offered.
       const serverToggle = /^\/api\/mcp\/servers\/([^/]+)\/toggle$/.exec(req.url || '');
       if (serverToggle && req.method === 'POST') {
-        if (!auth.isAdmin) return adminOnly();
         const name = decodeURIComponent(serverToggle[1]);
         const { disabled } = await readJson(req);
         let servers;
@@ -661,7 +713,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/mcp') {
-        if (!auth.isAdmin) return adminOnly();
         const { text } = await readJson(req);
         let servers;
         try {
@@ -902,6 +953,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         if (isRunning(id)) return json(res, 409, { error: 'that chat is still working; stop it first' });
 
         const { seq, message, documentIds, removeDocumentIds, images } = await readJson(req);
+        if (Array.isArray(images) && images.length && !auth.features.has('images')) return json(res, 403, { error: 'feature_disabled', feature: 'images' });
+        if (Array.isArray(documentIds) && documentIds.length && !auth.features.has('attachments')) return json(res, 403, { error: 'feature_disabled', feature: 'attachments' });
         const text = String(message ?? '').trim();
         if (!text) return json(res, 400, { error: 'message is required' });
         const target = store.messages(id).find((m) => m.seq === Number(seq));
@@ -931,7 +984,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // rewound transcript and then attaches, the same path a reload takes,
         // rather than reading a stream through a response it also has to
         // redraw behind.
-        startRun({ chat: found, tools: hub.activeTools(cfg.disabledTools) });
+        startRun({ chat: found, tools: toolsFor(auth.features) });
         return json(res, 200, { ok: true, running: true });
       }
 
@@ -993,6 +1046,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       if (req.method === 'POST' && req.url === '/api/chat') {
         const { chatId, message, documentIds, images } = await readJson(req);
+        if (Array.isArray(images) && images.length && !auth.features.has('images')) return json(res, 403, { error: 'feature_disabled', feature: 'images' });
+        if (Array.isArray(documentIds) && documentIds.length && !auth.features.has('attachments')) return json(res, 403, { error: 'feature_disabled', feature: 'attachments' });
         if (!cfg.apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
         if (!message) return json(res, 400, { error: 'message is required' });
 
@@ -1039,7 +1094,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const existing = runs.get(chat.id);
         const run = existing && !existing.done
           ? existing
-          : startRun({ chat, tools: hub.activeTools(cfg.disabledTools) });
+          : startRun({ chat, tools: toolsFor(auth.features) });
         return attach(run, res, 0);
       }
 

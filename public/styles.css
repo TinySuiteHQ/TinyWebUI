@@ -1312,3 +1312,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .attachment-chip-error {
   border-color: var(--danger, #c0392b); color: var(--danger, #c0392b);
 }
+
+#modelBtn.static { cursor: default; }
+#modelBtn.static .chev { display: none; }
+[hidden] { display: none !important; }

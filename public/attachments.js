@@ -5,6 +5,7 @@
  * it from the local queue; there is nothing server-side to clean up.
  */
 import { $, el } from './dom.js';
+import { can } from './access.js';
 import { state } from './state.js';
 import { addError } from './transcript.js';
 
@@ -181,6 +182,11 @@ function unsupportedReason(file) {
 
 /** Queues a file (or a pasted-text stand-in) client-side. No network yet. */
 export function stageAttachment(file) {
+  // Dropped and pasted files arrive here too, not only through the + menu.
+  if (!can(isImageFile(file) ? 'images' : 'attachments')) {
+    addError(`attach "${file.name}": ${isImageFile(file) ? 'images are' : 'attachments are'} turned off for your account`);
+    return;
+  }
   const entry = { file };
   if (isImageFile(file)) {
     entry.isImage = true;

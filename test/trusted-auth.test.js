@@ -65,7 +65,7 @@ test('non-admins cannot change deployment config and do not see its secrets', as
   const cfg = (await user('/api/config')).data;
   assert.equal(cfg.readOnly, true);
   for (const k of ['baseUrl', 'trustedProxyCidrs', 'apiKey', 'sessionSecret']) assert.equal(k in cfg, false, k);
-  assert.equal((await user('/api/mcp')).data.text, '');
+  assert.equal((await user('/api/mcp')).status, 403);
   assert.ok('baseUrl' in (await admin('/api/config')).data);
 });
 

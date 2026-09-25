@@ -10,6 +10,7 @@ import './attachments.js';
 import './automations.js';
 import './panels.js';
 import { initAdmin } from './admin.js';
+import { loadAccess, can } from './access.js';
 import './composer.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
@@ -36,8 +37,7 @@ async function migrateLocal() {
 
 /** 'single' mode with no session: show the password screen and stop there. */
 async function needsLogin() {
-  let me;
-  try { me = await (await fetch('/api/auth/me')).json(); } catch { return false; }
+  const me = await loadAccess();
   if (me.authMode !== 'single' || me.user) return false;
   const box = $('login');
   box.hidden = false;
@@ -61,8 +61,8 @@ async function needsLogin() {
 if (!(await needsLogin())) {
   newChat();
   // Tools render read-only for non-admins, so they wait on the config.
-  loadConfig().then(loadTools);
-  loadMcp();
+  loadConfig().then(() => can('tools') && loadTools());
+  if (can('mcp')) loadMcp();
   initAdmin();
   migrateLocal().then(loadChats);
   $('input').focus();

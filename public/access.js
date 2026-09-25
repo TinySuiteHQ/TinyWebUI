@@ -1,0 +1,40 @@
+/**
+ * What the signed-in person may use, from /api/auth/me. The server enforces
+ * every feature on its own routes; this only keeps the UI from offering
+ * what would be refused. Hidden, not greyed out: a chat-only user should see
+ * a chat app, not a settings app with the settings locked.
+ */
+import { $ } from './dom.js';
+
+let me = { features: [], models: '*' };
+let features = new Set();
+
+export const can = (feature) => features.has(feature);
+export const whoami = () => me;
+
+// Nav items and controls that exist only for one feature.
+const GATED = {
+  settings: ['toggle-settings'],
+  mcp: ['toggle-mcp'],
+  automations: ['toggle-automations'],
+  statistics: ['toggle-statistics'],
+  admin: ['toggle-admin'],
+  folders: ['newFolder']
+};
+
+export async function loadAccess() {
+  try { me = await (await fetch('/api/auth/me')).json(); } catch { /* offline: show nothing extra */ }
+  features = new Set(me.features || []);
+  for (const [feature, ids] of Object.entries(GATED)) {
+    for (const id of ids) { const node = $(id); if (node) node.hidden = !can(feature); }
+  }
+  const search = $('chatSearch')?.closest('.search-row');
+  if (search) search.hidden = !can('search');
+  // The + button opens attach and tools; with neither there is nothing in it.
+  $('attach').hidden = !(can('attachments') || can('images') || can('tools'));
+  // The model pill still says which model answers; it just stops being a menu.
+  const pill = $('modelBtn');
+  pill.disabled = !can('model-picker');
+  pill.classList.toggle('static', !can('model-picker'));
+  return me;
+}
