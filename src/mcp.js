@@ -84,6 +84,9 @@ export class McpHub {
     // default policy: name -> true, or a function of the call's arguments.
     // Same opt-in rule -- silence means "may write".
     this.readOnly = new Map();
+    // Explicit 'parallel' | 'sequential' overrides for tools whose safety to
+    // run alongside others is known better than the hints above say.
+    this.modes = new Map();
     this.errors = [];
   }
 
@@ -92,8 +95,9 @@ export class McpHub {
    * Registered after connect() so locals always land at the end of the block,
    * keeping the tool list byte-identical between runs.
    */
-  registerLocal(def, handler, { readOnly = false, idempotent = readOnly === true } = {}) {
+  registerLocal(def, handler, { readOnly = false, idempotent = readOnly === true, executionMode = null } = {}) {
     this.locals.set(def.function.name, handler);
+    if (executionMode) this.modes.set(def.function.name, executionMode);
     if (readOnly) this.readOnly.set(def.function.name, readOnly);
     if (idempotent) this.idempotent.add(def.function.name);
     this.tools.push(def);
@@ -227,6 +231,16 @@ export class McpHub {
   /** True when a repeat of this call with the same arguments must return the same result. */
   isIdempotent(flatName) {
     return this.idempotent.has(flatName);
+  }
+
+  /**
+   * Whether this tool may run concurrently with others in the same batch.
+   * Parallel only when declared, or when the tool is idempotent -- for MCP,
+   * both readOnly and idempotent hints -- since that is the only claim that it
+   * neither changes anything nor observes something another call might change.
+   */
+  executionMode(flatName) {
+    return this.modes.get(flatName) || (this.idempotent.has(flatName) ? 'parallel' : 'sequential');
   }
 
   /** True for a tool this process implements rather than an MCP server. */

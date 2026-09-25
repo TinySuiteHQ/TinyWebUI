@@ -773,6 +773,8 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
     return decision === 'always' || decision === 'allow' ? 'allow' : 'deny';
   };
 
+  const STOPPED = 'Error: the run was stopped before this call finished.';
+
   /** Approval, as the first beforeToolCall hook. */
   const approval = async ({ name, args, call }) => {
     const decision = await gate(name, args, call.id);
@@ -808,8 +810,13 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
     return ctx.result;
   };
 
-  /** What the model gets back for one call, run or refused. */
-  const resolve = async (call, round) => {
+  /**
+   * Everything that has to happen before a call may run: argument checks,
+   * duplicate suppression and the beforeToolCall chain (approval included).
+   * Returns `{ args, result }` for a call that will not run, `{ args, run }`
+   * for one that will.
+   */
+  const prepare = async (call, round) => {
     const name = call.function.name;
     let args = {};
     let badArgs = null;
@@ -857,16 +864,54 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
     }
     if (blocked !== null) return { args, result: blocked };
     seenCalls.set(dupKey, round);
-    const result = await hub.call(name, args, toolCtx);
-    return { args, result: await after({ ...ctx, result }) };
+    return { args, run: ctx };
+  };
+
+  /**
+   * Runs one prepared call and its afterToolCall chain. A stop abandons it
+   * rather than waiting on a tool that may never answer; the call still gets
+   * a result, so the transcript stays valid.
+   */
+  const run = async (ctx) => {
+    if (signal?.aborted) return STOPPED;
+    let onAbort;
+    const stopped = new Promise((r) => {
+      onAbort = () => r(STOPPED);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      const result = await Promise.race([hub.call(ctx.name, ctx.args, toolCtx), stopped]);
+      if (result === STOPPED) return result;
+      return await after({ ...ctx, result });
+    } catch (err) {
+      if (signal?.aborted) return STOPPED;
+      throw err;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
   };
 
   const execute = async (calls, { round }) => {
+    // Every call is checked and approved before any of them runs, so no
+    // write can start while a later call in the batch still waits on the user.
+    const prepared = [];
+    for (const call of calls) prepared.push(await prepare(call, round));
+
+    // One sequential call makes the whole batch sequential: deterministic, and
+    // no guessing at which calls could safely overlap it.
+    const parallel = prepared.every((p) => !p.run || hub.executionMode?.(p.run.name) === 'parallel');
+    const finish = async (p, call) => {
+      if (p.run) p.result = await run(p.run);
+      emit({ type: 'tool_result', id: call.id, name: call.function.name, result: p.result });
+    };
+    if (parallel) await Promise.all(prepared.map((p, i) => finish(p, calls[i])));
+    else for (const [i, p] of prepared.entries()) await finish(p, calls[i]);
+
+    // Persisted in the order the model made the calls, whatever order they finished in.
     const out = [];
     for (const [i, call] of calls.entries()) {
       const name = call.function.name;
-      const { args, result } = await resolve(call, round);
-      emit({ type: 'tool_result', id: call.id, name, result });
+      const { args, result } = prepared[i];
 
       const text = String(result);
       // Every tool result becomes an artifact, whatever tool produced it. This
