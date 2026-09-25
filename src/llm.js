@@ -1,6 +1,6 @@
 import { toWire } from './store.js';
 import { approvalFor } from './approval.js';
-import { runAgentLoop } from './agent.js';
+import { runAgentLoop, runHooks } from './agent.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
 } from './compact.js';
@@ -534,7 +534,9 @@ export async function runChat({
   cfg, chatId, store, tools, hub, emit, signal, historyFromSeq = null, unattended = false,
   // (call) => Promise<'allow' | 'always' | 'deny'>. Asked for each call the
   // approval policy stops; without it such calls are declined, never run.
-  approve = null
+  approve = null,
+  // Extra lifecycle hooks (see agent.js), run after the built-in ones.
+  hooks = {}
 }) {
   const maxRounds = Math.max(1, cfg.maxToolRounds || 20);
   const operatorPrompt = cfg.systemPrompt;
@@ -613,6 +615,7 @@ export async function runChat({
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;
 
+  const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxRounds, hooks, signal });
   const appended = await runAgentLoop({
     messages: working,
     maxRounds,
@@ -622,7 +625,19 @@ export async function runChat({
       streamTurn: ({ messages, lastCall }) => streamTurn({
         cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall
       }),
-      executeToolBatch: toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxRounds })
+      executeToolBatch: tools_.execute,
+      shouldContinue: async ({ round, assistant, results }) => {
+        if (tools_.stopRequested()) return false;
+        try {
+          return !(await runHooks(hooks.afterTurn, { round, assistant, results, signal }, (o) => o.stop));
+        } catch (err) {
+          if (signal?.aborted) throw err;
+          // Stopping is the one outcome that cannot leave the transcript
+          // half-built: the batch is complete, and no model call is pending.
+          emit({ type: 'notice', text: `Turn hook failed (${err.message}) — stopping here.` });
+          return false;
+        }
+      }
     }
   });
   // Hand the client the exact turns we appended -- including tool calls
@@ -731,7 +746,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
  * stubbing. State that spans the turn (seen calls, "always allow") lives in
  * the closure, so one executor serves exactly one turn.
  */
-function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxRounds }) {
+function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxRounds, hooks, signal }) {
   const toolCtx = { store, chatId, budget: cfg.expandCharBudget || 8000, unattended };
   // Same tool name + same args, seen earlier in this turn, on a tool that has
   // declared its result depends only on its arguments: re-running it only burns
@@ -743,6 +758,9 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
   // taken before it; remembered here so the next call in the turn doesn't ask.
   const allowedNow = new Set();
 
+  // Set by an afterToolCall hook; honoured once the batch is complete.
+  let stop = false;
+
   /** Resolves one call against the approval policy: 'allow', 'deny' or 'unattended'. */
   const gate = async (name, args, id) => {
     if (allowedNow.has(name) || approvalFor(cfg, hub, name, args) === 'auto') return 'allow';
@@ -753,6 +771,41 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
     emit({ type: 'approval_done', id, name, decision });
     if (decision === 'always') allowedNow.add(name);
     return decision === 'always' || decision === 'allow' ? 'allow' : 'deny';
+  };
+
+  /** Approval, as the first beforeToolCall hook. */
+  const approval = async ({ name, args, call }) => {
+    const decision = await gate(name, args, call.id);
+    if (decision === 'unattended') {
+      return {
+        block: `Error: "${name}" needs the user's approval before it runs, and this is an`
+          + ' unattended scheduled run with no one to ask, so it was not called. Finish what'
+          + ' you can without it and say in your result that it still needs doing.'
+      };
+    }
+    if (decision === 'deny') {
+      return {
+        block: `The user declined this call to "${name}", so it was not run. Do not retry it`
+          + ' unless they ask; continue without it, or ask them how they would like to proceed.'
+      };
+    }
+    return undefined;
+  };
+  const before = [approval, ...(hooks.beforeToolCall || [])];
+
+  /** Runs the afterToolCall chain; a failing hook leaves the result as it stood. */
+  const after = async (ctx) => {
+    try {
+      await runHooks(hooks.afterToolCall, ctx, (o) => {
+        if (o.result !== undefined) ctx.result = o.result;
+        if (o.stop) stop = true;
+        return false;
+      });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      emit({ type: 'notice', text: `Tool result hook failed for "${ctx.name}" (${err.message}); result kept as returned.` });
+    }
+    return ctx.result;
   };
 
   /** What the model gets back for one call, run or refused. */
@@ -787,27 +840,28 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
           + ' result for the same arguments. Reuse what you got back then.'
       };
     }
-    const decision = await gate(name, args, call.id);
-    if (decision === 'allow') {
-      seenCalls.set(dupKey, round);
-      return { args, result: await hub.call(name, args, toolCtx) };
+    const ctx = { name, args, call, round, signal };
+    let blocked = null;
+    try {
+      await runHooks(before, ctx, (o) => {
+        if (o.block === undefined) return false;
+        blocked = String(o.block);
+        return true;
+      });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      // A policy check that cannot decide must not let the call through.
+      emit({ type: 'notice', text: `Tool policy hook failed for "${name}" (${err.message}); call not run.` });
+      blocked = `Error: a policy check for "${name}" failed (${err.message}), so the tool was not`
+        + ' called. Continue without it.';
     }
-    if (decision === 'unattended') {
-      return {
-        args,
-        result: `Error: "${name}" needs the user's approval before it runs, and this is an`
-          + ' unattended scheduled run with no one to ask, so it was not called. Finish what'
-          + ' you can without it and say in your result that it still needs doing.'
-      };
-    }
-    return {
-      args,
-      result: `The user declined this call to "${name}", so it was not run. Do not retry it`
-        + ' unless they ask; continue without it, or ask them how they would like to proceed.'
-    };
+    if (blocked !== null) return { args, result: blocked };
+    seenCalls.set(dupKey, round);
+    const result = await hub.call(name, args, toolCtx);
+    return { args, result: await after({ ...ctx, result }) };
   };
 
-  return async (calls, { round }) => {
+  const execute = async (calls, { round }) => {
     const out = [];
     for (const [i, call] of calls.entries()) {
       const name = call.function.name;
@@ -845,4 +899,6 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxR
     }
     return out;
   };
+
+  return { execute, stopRequested: () => stop };
 }

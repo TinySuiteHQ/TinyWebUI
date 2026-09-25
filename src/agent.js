@@ -58,3 +58,35 @@ export async function runAgentLoop({ messages, maxRounds, runtime, signal }) {
   }
   return appended;
 }
+
+/**
+ * Lifecycle hooks: small internal seams at the tool and turn boundaries, so
+ * cross-cutting policy (approvals, audit, result shaping, stopping early)
+ * stays out of the loop. Not a plugin system; nothing outside this repo
+ * registers them and the shapes carry no compatibility promise.
+ *
+ *   beforeToolCall({ name, args, call, round, signal })
+ *     -> undefined to let the call through, or { block: text } to refuse it,
+ *        with `text` as the result the model sees. The first block wins and
+ *        later hooks do not run. Arguments are read-only here.
+ *   afterToolCall({ name, args, call, round, result, signal })
+ *     -> undefined, { result } to replace what is persisted and sent back,
+ *        and/or { stop: true } to end the run once this batch is done.
+ *        Each hook sees the result as the previous one left it.
+ *   afterTurn({ round, assistant, results, signal })
+ *     -> undefined or { stop: true }: end before the next model call.
+ *
+ * Hooks of one kind run in array order, one at a time, each awaited, with
+ * the run's AbortSignal checked around every one. `each(out)` sees each
+ * non-empty output and returns true to stop the chain. A throw is never
+ * swallowed here; the caller turns it into a visible outcome.
+ */
+export async function runHooks(list, ctx, each = () => false) {
+  for (const hook of list || []) {
+    if (ctx.signal?.aborted) throw new Error('Stopped.');
+    const out = await hook(ctx);
+    if (ctx.signal?.aborted) throw new Error('Stopped.');
+    if (out && each(out)) return true;
+  }
+  return false;
+}
