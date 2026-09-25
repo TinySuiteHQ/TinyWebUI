@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -384,7 +384,7 @@ export class Store {
   /* ---------- chats ---------- */
 
   createChat({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = ALL_USERS) {
-    const chatId = id || String(createdAt) + '-' + randomBytes(3).toString('hex');
+    const chatId = id || randomUUID();
     this.db.prepare(
       'INSERT INTO chats (id, title, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)'
     ).run(chatId, title, createdAt, createdAt, ownerOf(userId));
@@ -789,7 +789,7 @@ export class Store {
   /* ---------- artifacts ---------- */
 
   addArtifact(chatId, { toolName, args, content }) {
-    const id = randomBytes(4).toString('hex');
+    const id = randomBytes(12).toString('hex');
     this.db.prepare(`
       INSERT INTO artifacts (id, chat_id, tool_name, args_json, content, char_len, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -829,7 +829,7 @@ export class Store {
   }
 
   addDocument(chatId, { filename, mime, content }) {
-    const id = randomBytes(4).toString('hex');
+    const id = randomBytes(12).toString('hex');
     const createdAt = Date.now();
     this.db.prepare(`
       INSERT INTO documents (id, chat_id, filename, mime, char_len, created_at, content)

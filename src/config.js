@@ -154,6 +154,9 @@ export const DEFAULTS = {
   trustedDefaultStatus: 'approved',
   // Where "log out" sends the browser (e.g. the Access logout URL).
   logoutUrl: '',
+  // Extra origins allowed to send state-changing requests (e.g. an admin
+  // tool on another host). The page's own origin is always allowed.
+  allowedOrigins: [],
 };
 
 /**

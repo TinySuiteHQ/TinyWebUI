@@ -135,7 +135,12 @@ $('form').addEventListener('submit', async (e) => {
 
   // Assigned synchronously (before any await) so the upload below and the
   // /api/chat call after it land on the same not-yet-created chat.
-  if (!state.chat.id) state.chat.id = 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  // randomUUID needs a secure context (https or localhost); getRandomValues
+  // works on plain-http LAN installs too.
+  if (!state.chat.id) {
+    state.chat.id = crypto.randomUUID?.()
+      ?? [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
   // This is the first point anything staged is actually uploaded, extracted
   // and written to the store -- removing a chip before now never touched it.
   const { docs, images, failed } = await commitAttachments(state.chat.id);

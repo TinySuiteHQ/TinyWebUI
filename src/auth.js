@@ -105,8 +105,10 @@ function readCookie(req) {
 }
 
 /** Whether the connection looks TLS-terminated, for the cookie's Secure flag. */
-export function isSecureRequest(req) {
-  return req.headers['x-forwarded-proto'] === 'https' || req.socket?.encrypted === true;
+export function isSecureRequest(req, trustedProxyCidrs = []) {
+  if (req.socket?.encrypted === true) return true;
+  // X-Forwarded-Proto is a claim only a known proxy may make.
+  return req.headers['x-forwarded-proto'] === 'https' && ipInCidrs(req.socket?.remoteAddress, trustedProxyCidrs);
 }
 
 /**

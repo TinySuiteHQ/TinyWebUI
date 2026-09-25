@@ -59,10 +59,69 @@ function json(res, code, payload) {
   res.end(body);
 }
 
-async function readJson(req) {
+/** An error that carries its own HTTP status to the handler's catch. */
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+
+// Body caps. Most requests are a few KB; uploads and turns with images carry
+// base64 (4/3 of the file), so they get room for their own per-file limits.
+const BODY_LIMIT = 1024 * 1024;
+const UPLOAD_LIMIT = 8 * 1024 * 1024;       // one 5 MB file, base64
+const TURN_LIMIT = 60 * 1024 * 1024;        // up to 8 images of 5 MB, base64
+const IMPORT_LIMIT = 50 * 1024 * 1024;
+
+/** Reads a JSON body, refusing more than `limit` bytes (413) or bad JSON (400). */
+async function readJson(req, limit = BODY_LIMIT) {
+  const declared = Number(req.headers['content-length']);
+  if (declared > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
   const chunks = [];
-  for await (const c of req) chunks.push(c);
-  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
+    chunks.push(c);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    throw new HttpError(400, 'request body is not valid JSON');
+  }
+}
+
+// Sent on every response. The page loads only its own scripts; the one
+// outside origin is the Fall Fairy theme's Google Fonts.
+const SECURITY_HEADERS = {
+  'content-security-policy': [
+    "default-src 'self'", "script-src 'self'", "connect-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "img-src 'self' data: blob:", "object-src 'none'", "base-uri 'none'",
+    "frame-ancestors 'none'", "form-action 'self'"
+  ].join('; '),
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'cross-origin-opener-policy': 'same-origin'
+};
+
+/**
+ * Cross-site request forgery guard for anything that changes state. Browsers
+ * send Origin on cross-origin POSTs (and Sec-Fetch-Site on all modern ones),
+ * so a page elsewhere cannot drive this one with the user's cookies, the
+ * gateway's included -- or poke a tier-1 instance on localhost.
+ */
+function crossSite(req, cfg) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return false;
+  const origin = req.headers.origin;
+  if (origin && origin !== 'null') {
+    let host;
+    try { host = new URL(origin).host; } catch { return true; }
+    if (host === req.headers.host) return false;
+    return !(cfg.allowedOrigins || []).includes(origin);
+  }
+  if (origin === 'null') return true;
+  return req.headers['sec-fetch-site'] === 'cross-site';
 }
 
 async function serveStatic(req, res) {
@@ -532,6 +591,11 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
   const server = createServer(async (req, res) => {
     try {
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+      if (crossSite(req, cfg)) {
+        audit('request.cross_site_rejected', { method: req.method, path: (req.url || '').split('?')[0] });
+        return json(res, 403, { error: 'cross-site request refused' });
+      }
       const auth = resolveAuth(req);
       if (auth.notFound) return json(res, 404, { error: 'not found' });
       if (auth.unauthorized) return json(res, 401, { error: 'unauthorized' });
@@ -598,14 +662,14 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         loginFailures.delete(who);
         const token = createSession(store, OWNER_ID, cfg.sessionTtlDays);
         audit('auth.login', { userId: OWNER_ID });
-        res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req) }));
+        res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
         return json(res, 200, { ok: true });
       }
 
       if (cfg.authMode === 'single' && req.method === 'POST' && req.url === '/api/auth/logout') {
         const token = sessionToken(req, cfg);
         if (token) destroySession(store, token);
-        res.setHeader('set-cookie', clearCookie({ secure: isSecureRequest(req) }));
+        res.setHeader('set-cookie', clearCookie({ secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
         return json(res, 200, { ok: true });
       }
 
@@ -799,7 +863,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/mcp') {
-        const { text } = await readJson(req);
+        const { text } = await readJson(req, UPLOAD_LIMIT);
         let servers;
         try {
           const before = fingerprint(cfg, source.loadMcpServers());
@@ -967,7 +1031,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       const uploadDoc = /^\/api\/chats\/([\w.-]+)\/documents$/.exec(req.url || '');
       if (uploadDoc && req.method === 'POST') {
         const [, chatId] = uploadDoc;
-        const { filename, mime, dataBase64 } = await readJson(req);
+        const { filename, mime, dataBase64 } = await readJson(req, UPLOAD_LIMIT);
         if (!filename || typeof dataBase64 !== 'string') {
           return json(res, 400, { error: 'filename and dataBase64 are required' });
         }
@@ -1002,7 +1066,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // instead of a HEIC/AVIF the browser can't decode until the turn ends
       // and the chat reloads with what the server stored.
       if (req.method === 'POST' && req.url === '/api/images/normalize') {
-        const { mime, dataBase64 } = await readJson(req);
+        const { mime, dataBase64 } = await readJson(req, UPLOAD_LIMIT);
         const normalized = await normalizeUpload(mime, dataBase64);
         if (!normalized) return json(res, 400, { error: 'unrecognized or oversized image' });
         return json(res, 200, normalized);
@@ -1041,7 +1105,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // the run answering a question that no longer exists.
         if (isRunning(id)) return json(res, 409, { error: 'that chat is still working; stop it first' });
 
-        const { seq, message, documentIds, removeDocumentIds, images } = await readJson(req);
+        const { seq, message, documentIds, removeDocumentIds, images } = await readJson(req, TURN_LIMIT);
         if (Array.isArray(images) && images.length && !auth.features.has('images')) return json(res, 403, { error: 'feature_disabled', feature: 'images' });
         if (Array.isArray(documentIds) && documentIds.length && !auth.features.has('attachments')) return json(res, 403, { error: 'feature_disabled', feature: 'attachments' });
         const text = String(message ?? '').trim();
@@ -1116,7 +1180,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // Imported tool results become artifacts like any other, so an old chat
       // is compactable the moment it is carried over.
       if (req.method === 'POST' && req.url === '/api/chats/import') {
-        const { chats = [] } = await readJson(req);
+        const { chats = [] } = await readJson(req, IMPORT_LIMIT);
         let imported = 0;
         for (const c of chats) {
           if (!c?.id || store.chatById(c.id)) continue;
@@ -1136,7 +1200,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/chat') {
-        const { chatId, message, documentIds, images } = await readJson(req);
+        const { chatId, message, documentIds, images } = await readJson(req, TURN_LIMIT);
         if (Array.isArray(images) && images.length && !auth.features.has('images')) return json(res, 403, { error: 'feature_disabled', feature: 'images' });
         if (Array.isArray(documentIds) && documentIds.length && !auth.features.has('attachments')) return json(res, 403, { error: 'feature_disabled', feature: 'attachments' });
         if (!cfg.apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
@@ -1191,7 +1255,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       return serveStatic(req, res);
     } catch (err) {
-      if (!res.headersSent) json(res, err instanceof LockedError ? 409 : 500, { error: err.message });
+      if (!res.headersSent) json(res, err instanceof HttpError ? err.status : err instanceof LockedError ? 409 : 500, { error: err.message });
       else res.end();
     }
   });
