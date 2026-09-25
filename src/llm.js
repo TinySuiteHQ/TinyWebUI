@@ -1,5 +1,6 @@
 import { toWire } from './store.js';
 import { approvalFor } from './approval.js';
+import { runAgentLoop } from './agent.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
 } from './compact.js';
@@ -524,8 +525,9 @@ function historyTokens(rows, cfg, tools) {
 }
 
 /**
- * Runs the full agentic loop: stream a completion, run any MCP tool calls,
- * feed the results back, repeat. `emit(event)` is called for every UI event.
+ * One chat turn: decides compaction and the hard window up front, then drives
+ * the generic loop in agent.js with TinyWebUI's runtime -- the provider stream,
+ * the tool policy, and persistence. `emit(event)` is called for every UI event.
  * Returns the messages appended to the conversation.
  */
 export async function runChat({
@@ -547,7 +549,6 @@ export async function runChat({
     systemPrompt: [operatorPrompt, harness, instructions].filter(Boolean).join('\n\n')
   };
 
-  const appended = [];
   // Optional request fields this endpoint has already refused, learned once.
   const disabled = new Set();
 
@@ -611,6 +612,126 @@ export async function runChat({
   const epochIndex = boundarySeq >= 0
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;
+
+  const appended = await runAgentLoop({
+    messages: working,
+    maxRounds,
+    signal,
+    runtime: {
+      onEvent: emit,
+      streamTurn: ({ messages, lastCall }) => streamTurn({
+        cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall
+      }),
+      executeToolBatch: toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxRounds })
+    }
+  });
+  // Hand the client the exact turns we appended -- including tool calls
+  // and results -- so the next request replays an identical prefix.
+  emit({ type: 'done', messages: appended });
+  return appended;
+}
+
+/**
+ * One model request: posts it, streams the reply to the UI, and persists the
+ * assistant message it assembles. The provider-specific half of a round.
+ */
+async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall }) {
+  const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId }, signal, disabled, emit);
+
+  let content = '';
+  let reasoning = '';
+  const reasoningDetails = [];
+  const toolCalls = [];
+  let usage = null;
+  // Which upstream actually served this round. A gateway that routes one
+  // model across several providers gives each its own cache, so a round that
+  // lands somewhere new misses in full however stable the prefix was --
+  // indistinguishable from a prefix bug unless the provider is on the record.
+  let provider = null;
+
+  for await (const chunk of streamChunks(res)) {
+    if (chunk.usage) usage = chunk.usage;
+    if (chunk.provider) provider = chunk.provider;
+    const delta = chunk.choices?.[0]?.delta;
+    if (!delta) continue;
+    // Reasoning is spelled differently per provider: `reasoning` on OpenRouter,
+    // `reasoning_content` on DeepSeek/Qwen. Both are plain text deltas.
+    const think = delta.reasoning ?? delta.reasoning_content;
+    if (think) {
+      reasoning += think;
+      emit({ type: 'reasoning', delta: think });
+    }
+    // Structured form, which has to be echoed back verbatim or providers reject
+    // the follow-up request that carries tool results.
+    for (const d of delta.reasoning_details || []) {
+      const slot = (reasoningDetails[d.index ?? reasoningDetails.length] ||= { ...d, text: '' });
+      if (d.text) slot.text += d.text;
+      if (d.summary) slot.summary = (slot.summary || '') + d.summary;
+    }
+    if (delta.content) {
+      content += delta.content;
+      emit({ type: 'text', delta: delta.content });
+    }
+    for (const tc of delta.tool_calls || []) {
+      const slot = (toolCalls[tc.index] ||= { id: '', type: 'function', function: { name: '', arguments: '' } });
+      if (tc.id) slot.id = tc.id;
+      if (tc.function?.name) slot.function.name += tc.function.name;
+      if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
+    }
+  }
+
+  // Dropped before anything is stored: nothing will produce their results.
+  if (lastCall) toolCalls.length = 0;
+
+  // A reply with no text and no calls ends the turn with nothing to show --
+  // most often the final pass on a provider that ignored tool_choice and
+  // only tried to call more tools. Say so in the transcript rather than
+  // leaving a blank bubble; stored like any answer, so the next turn's model
+  // sees it too and knows the question went unanswered.
+  if (!content.trim() && !toolCalls.some(Boolean)) {
+    content = lastCall
+      ? '(No answer: the tool budget ran out and the model replied without text. Ask again'
+        + ' to have it answer from what it gathered, or raise maxToolRounds.)'
+      : '(The model returned an empty reply.)';
+    emit({ type: 'text', delta: content });
+  }
+
+  const assistant = { role: 'assistant', content: content || null };
+  // Keep both: `reasoning_details` is what the provider needs echoed back,
+  // `reasoning` is the plain text the transcript replays from. Storing only
+  // the former loses every thinking block when a saved chat is reopened.
+  if (reasoningDetails.length) {
+    const details = reasoningDetails.filter(Boolean);
+    assistant.reasoning_details = details;
+    if (!reasoning) reasoning = details.map((d) => d.text || d.summary || '').join('');
+  }
+  if (reasoning) assistant.reasoning = reasoning;
+  if (toolCalls.length) assistant.tool_calls = toolCalls.filter(Boolean);
+  // Usage rides on the message rather than living only in a transient event,
+  // so a reopened chat can still show what each round cost and how much of it
+  // was a cache read. Without that there is no way to tell whether any of the
+  // caching or compaction work here is actually paying off.
+  if (usage) assistant.usage = {
+    ...usage,
+    ...(provider ? { provider } : {}),
+    ...(usage.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
+  };
+  // Snapshotted per-round rather than read back from config later -- the
+  // model can change between chats (or mid-session), and usage history
+  // should report what actually served the round, not whatever is current.
+  assistant.model = cfg.model;
+  store.addMessage(chatId, assistant);
+  if (usage) emit({ type: 'usage', usage: assistant.usage });
+  return assistant;
+}
+
+/**
+ * TinyWebUI's tool policy, as the loop's `executeToolBatch`: argument
+ * validation, duplicate suppression, approvals, MCP dispatch, artifacts and
+ * stubbing. State that spans the turn (seen calls, "always allow") lives in
+ * the closure, so one executor serves exactly one turn.
+ */
+function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, maxRounds }) {
   const toolCtx = { store, chatId, budget: cfg.expandCharBudget || 8000, unattended };
   // Same tool name + same args, seen earlier in this turn, on a tool that has
   // declared its result depends only on its arguments: re-running it only burns
@@ -634,157 +755,63 @@ export async function runChat({
     return decision === 'always' || decision === 'allow' ? 'allow' : 'deny';
   };
 
-  // One extra pass past the budget: tools are mechanically refused there, so the
-  // model spends it writing an answer instead of leaving the turn unfinished.
-  for (let round = 0; round <= maxRounds; round++) {
-    const lastCall = round === maxRounds;
-
-    if (lastCall) {
-      emit({
-        type: 'notice',
-        text: `Tool budget spent (${maxRounds} rounds) — answering with what was gathered.`
-      });
+  /** What the model gets back for one call, run or refused. */
+  const resolve = async (call, round) => {
+    const name = call.function.name;
+    let args = {};
+    let badArgs = null;
+    try { args = call.function.arguments ? JSON.parse(call.function.arguments) : {}; }
+    catch (err) { badArgs = err.message; }
+    if (!badArgs && (args === null || typeof args !== 'object' || Array.isArray(args))) {
+      badArgs = 'arguments must be a JSON object';
     }
+    emit({ type: 'tool_call', id: call.id, name, args: badArgs ? {} : args });
 
-    const res = await post(cfg, { turn: working, tools, lastCall, epochIndex, chatId }, signal, disabled, emit);
-
-    let content = '';
-    let reasoning = '';
-    const reasoningDetails = [];
-    const toolCalls = [];
-    let usage = null;
-    // Which upstream actually served this round. A gateway that routes one
-    // model across several providers gives each its own cache, so a round that
-    // lands somewhere new misses in full however stable the prefix was --
-    // indistinguishable from a prefix bug unless the provider is on the record.
-    let provider = null;
-
-    for await (const chunk of streamChunks(res)) {
-      if (chunk.usage) usage = chunk.usage;
-      if (chunk.provider) provider = chunk.provider;
-      const delta = chunk.choices?.[0]?.delta;
-      if (!delta) continue;
-      // Reasoning is spelled differently per provider: `reasoning` on OpenRouter,
-      // `reasoning_content` on DeepSeek/Qwen. Both are plain text deltas.
-      const think = delta.reasoning ?? delta.reasoning_content;
-      if (think) {
-        reasoning += think;
-        emit({ type: 'reasoning', delta: think });
-      }
-      // Structured form, which has to be echoed back verbatim or providers reject
-      // the follow-up request that carries tool results.
-      for (const d of delta.reasoning_details || []) {
-        const slot = (reasoningDetails[d.index ?? reasoningDetails.length] ||= { ...d, text: '' });
-        if (d.text) slot.text += d.text;
-        if (d.summary) slot.summary = (slot.summary || '') + d.summary;
-      }
-      if (delta.content) {
-        content += delta.content;
-        emit({ type: 'text', delta: delta.content });
-      }
-      for (const tc of delta.tool_calls || []) {
-        const slot = (toolCalls[tc.index] ||= { id: '', type: 'function', function: { name: '', arguments: '' } });
-        if (tc.id) slot.id = tc.id;
-        if (tc.function?.name) slot.function.name += tc.function.name;
-        if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
-      }
+    if (badArgs) {
+      // Never run a tool on arguments the model did not write. Falling back
+      // to {} quietly runs it on its defaults, and the model then reasons as
+      // if its own arguments had been used.
+      return {
+        args: {},
+        result: `Error: the arguments for "${name}" were not valid JSON (${badArgs}), so the`
+          + ' tool was not called. Retry with a well-formed JSON object.'
+      };
     }
-
-    // A provider that ignores tool_choice could still emit calls here. Dropping
-    // them keeps history valid, since nothing will produce their results.
-    if (lastCall) toolCalls.length = 0;
-
-    // A reply with no text and no calls ends the turn with nothing to show --
-    // most often the final pass on a provider that ignored tool_choice and
-    // only tried to call more tools. Say so in the transcript rather than
-    // leaving a blank bubble; stored like any answer, so the next turn's model
-    // sees it too and knows the question went unanswered.
-    if (!content.trim() && !toolCalls.some(Boolean)) {
-      content = lastCall
-        ? '(No answer: the tool budget ran out and the model replied without text. Ask again'
-          + ' to have it answer from what it gathered, or raise maxToolRounds.)'
-        : '(The model returned an empty reply.)';
-      emit({ type: 'text', delta: content });
+    const dupKey = `${name}:${stableKey(args)}`;
+    const seenRound = hub.isIdempotent?.(name) ? seenCalls.get(dupKey) : undefined;
+    if (seenRound !== undefined) {
+      return {
+        args,
+        result: `Skipped: this is an identical call to "${name}" with the same arguments`
+          + ` already made in round ${seenRound + 1} of this turn, and this tool returns the same`
+          + ' result for the same arguments. Reuse what you got back then.'
+      };
     }
-
-    const assistant = { role: 'assistant', content: content || null };
-    // Keep both: `reasoning_details` is what the provider needs echoed back,
-    // `reasoning` is the plain text the transcript replays from. Storing only
-    // the former loses every thinking block when a saved chat is reopened.
-    if (reasoningDetails.length) {
-      const details = reasoningDetails.filter(Boolean);
-      assistant.reasoning_details = details;
-      if (!reasoning) reasoning = details.map((d) => d.text || d.summary || '').join('');
+    const decision = await gate(name, args, call.id);
+    if (decision === 'allow') {
+      seenCalls.set(dupKey, round);
+      return { args, result: await hub.call(name, args, toolCtx) };
     }
-    if (reasoning) assistant.reasoning = reasoning;
-    if (toolCalls.length) assistant.tool_calls = toolCalls.filter(Boolean);
-    // Usage rides on the message rather than living only in a transient event,
-    // so a reopened chat can still show what each round cost and how much of it
-    // was a cache read. Without that there is no way to tell whether any of the
-    // caching or compaction work here is actually paying off.
-    if (usage) assistant.usage = {
-      ...usage,
-      ...(provider ? { provider } : {}),
-      ...(usage.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
+    if (decision === 'unattended') {
+      return {
+        args,
+        result: `Error: "${name}" needs the user's approval before it runs, and this is an`
+          + ' unattended scheduled run with no one to ask, so it was not called. Finish what'
+          + ' you can without it and say in your result that it still needs doing.'
+      };
+    }
+    return {
+      args,
+      result: `The user declined this call to "${name}", so it was not run. Do not retry it`
+        + ' unless they ask; continue without it, or ask them how they would like to proceed.'
     };
-    // Snapshotted per-round rather than read back from config later -- the
-    // model can change between chats (or mid-session), and usage history
-    // should report what actually served the round, not whatever is current.
-    assistant.model = cfg.model;
-    working.push(assistant);
-    appended.push(assistant);
-    store.addMessage(chatId, assistant);
-    if (usage) emit({ type: 'usage', usage: assistant.usage });
+  };
 
-    if (lastCall || !assistant.tool_calls?.length) {
-      // Hand the client the exact turns we appended -- including tool calls
-      // and results -- so the next request replays an identical prefix.
-      emit({ type: 'done', messages: appended });
-      return appended;
-    }
-
-    const calls = assistant.tool_calls;
+  return async (calls, { round }) => {
+    const out = [];
     for (const [i, call] of calls.entries()) {
       const name = call.function.name;
-      let args = {};
-      let badArgs = null;
-      try { args = call.function.arguments ? JSON.parse(call.function.arguments) : {}; }
-      catch (err) { badArgs = err.message; }
-      if (!badArgs && (args === null || typeof args !== 'object' || Array.isArray(args))) {
-        badArgs = 'arguments must be a JSON object';
-      }
-      emit({ type: 'tool_call', id: call.id, name, args: badArgs ? {} : args });
-
-      let result;
-      if (badArgs) {
-        // Never run a tool on arguments the model did not write. Falling back
-        // to {} quietly runs it on its defaults, and the model then reasons as
-        // if its own arguments had been used.
-        args = {};
-        result = `Error: the arguments for "${name}" were not valid JSON (${badArgs}), so the`
-          + ' tool was not called. Retry with a well-formed JSON object.';
-      } else {
-        const dupKey = `${name}:${stableKey(args)}`;
-        const seenRound = hub.isIdempotent?.(name) ? seenCalls.get(dupKey) : undefined;
-        if (seenRound !== undefined) {
-          result = `Skipped: this is an identical call to "${name}" with the same arguments`
-            + ` already made in round ${seenRound + 1} of this turn, and this tool returns the same`
-            + ' result for the same arguments. Reuse what you got back then.';
-        } else {
-          const decision = await gate(name, args, call.id);
-          if (decision === 'allow') {
-            seenCalls.set(dupKey, round);
-            result = await hub.call(name, args, toolCtx);
-          } else if (decision === 'unattended') {
-            result = `Error: "${name}" needs the user's approval before it runs, and this is an`
-              + ' unattended scheduled run with no one to ask, so it was not called. Finish what'
-              + ' you can without it and say in your result that it still needs doing.';
-          } else {
-            result = `The user declined this call to "${name}", so it was not run. Do not retry it`
-              + ' unless they ask; continue without it, or ask them how they would like to proceed.';
-          }
-        }
-      }
+      const { args, result } = await resolve(call, round);
       emit({ type: 'tool_result', id: call.id, name, result });
 
       const text = String(result);
@@ -810,12 +837,12 @@ export async function runChat({
         msg.stub_text = digest({ id: artifactId, tool_name: name, content: text }) + (overTurn ? footer : '');
       }
 
-      working.push(toWire(overTurn ? msg : { ...msg, stub_text: null }));
-      appended.push(msg.stub_text ? { ...msg, compacted: true } : msg);
       store.addMessage(chatId, msg);
+      out.push({
+        wire: toWire(overTurn ? msg : { ...msg, stub_text: null }),
+        message: msg.stub_text ? { ...msg, compacted: true } : msg
+      });
     }
-  }
-
-  emit({ type: 'done', messages: appended });
-  return appended;
+    return out;
+  };
 }
