@@ -6,8 +6,8 @@ import { ALL_USERS } from './store.js';
  * Same shape as context_expand: a document is an opaque blob (extracted text
  * of whatever the user dropped in), scoped to the chat that owns it, read
  * either by a narrowing query or by paging through raw offsets. `query`
- * ranks the document's own pre-split chunks: FTS5 bm25() by default, or
- * local embeddings / a BM25+dense fusion when retrieval.mode asks for it
+ * ranks the document's pre-split passages: FTS5 bm25() by default, or
+ * small-to-big dense / hybrid retrieval when retrieval.mode asks for it
  * (retrieval.js). The tool's interface is the same in every mode.
  */
 
@@ -22,7 +22,7 @@ export function documentToolDef() {
         'Read an attached document. Documents appear as',
         '"[Attached document: ... (id: <id>, ...)]" notes in the conversation.',
         '',
-        'Give a query to search the document\'s chunks for relevant passages (best for',
+        'Give a query to search the document for relevant passages (best for',
         'long documents and specific questions), or use offset/limit to page through the',
         'raw text from the start. With neither, returns the beginning of the document.'
       ].join('\n'),
@@ -57,14 +57,14 @@ function header(doc, note) {
 }
 
 async function queryView(store, retrieval, doc, query, budget) {
-  const hits = retrieval ? await retrieval.search(doc.id, query, 5) : store.searchDocumentChunks(doc.id, query, 5);
+  const hits = retrieval ? await retrieval.search(doc.id, query, 5) : store.searchPassages(doc.id, query, 5);
   if (!hits.length) {
     return `${header(doc, `no match for "${query}"`)}\nTry a broader query, or read from the start with offset/limit.`;
   }
   const out = [header(doc, `${hits.length} passage(s) matching "${query}"`)];
   let used = out[0].length;
   for (const hit of hits) {
-    const block = `--- chunk ${hit.chunkIdx} (offset ${hit.charStart.toLocaleString('en-US')}) ---\n${hit.body}`;
+    const block = `--- passage ${hit.passageIdx} (offset ${hit.charStart.toLocaleString('en-US')}) ---\n${hit.body}`;
     if (used + block.length > budget) {
       out.push('… remaining matches omitted; narrow the query.');
       break;

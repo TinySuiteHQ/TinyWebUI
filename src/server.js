@@ -1099,7 +1099,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
         if (!store.getChat(chatId, auth.userId) && store.chatById(chatId)) return json(res, 404, { error: 'no such chat' });
         const chat = store.getChat(chatId, auth.userId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
-        const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text });
+        const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text }, retrieval.passageSettings());
         // Embedded once, in the background; a question that arrives first waits for it.
         retrieval.ingest(doc.id).catch((err) => console.error(`[tinywebui] embedding ${doc.id} failed: ${err.message}`));
         return json(res, 200, { chatId: chat.id, document: doc });

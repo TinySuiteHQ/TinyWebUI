@@ -176,6 +176,12 @@ export const DEFAULTS = {
     rrfK: 60,
     queryPrefix: '',          // e.g. bge: 'Represent this sentence for searching relevant passages: '
     documentPrefix: '',
+    // Small-to-big: PASSAGES are what read_document returns (every mode);
+    // CHUNKS are what gets embedded -- as long as the model reads (256
+    // tokens for fast, 512 for bge), so only their overlap is set here.
+    passageSize: 1800,        // characters per passage
+    passageOverlap: 200,      // characters shared by neighbouring passages
+    chunkOverlap: 32,         // tokens shared by neighbouring chunks
   },
 };
 
@@ -361,6 +367,14 @@ function retrievalProblems(r) {
     out.push('retrieval.denseWeight must be a number between 0 and 1 (exclusive); use mode "dense" or "lexical" for the extremes');
   }
   if (r.rrfK !== undefined && !(Number.isInteger(r.rrfK) && r.rrfK >= 0)) out.push('retrieval.rrfK must be a whole number >= 0');
+  const size = r.passageSize ?? DEFAULTS.retrieval.passageSize;
+  if (!(Number.isInteger(size) && size >= 200 && size <= 20000)) out.push('retrieval.passageSize must be a whole number of characters from 200 to 20000');
+  if (r.passageOverlap !== undefined && !(Number.isInteger(r.passageOverlap) && r.passageOverlap >= 0 && r.passageOverlap < size / 2)) {
+    out.push('retrieval.passageOverlap must be a whole number >= 0 and under half of passageSize');
+  }
+  if (r.chunkOverlap !== undefined && !(Number.isInteger(r.chunkOverlap) && r.chunkOverlap >= 0 && r.chunkOverlap <= 128)) {
+    out.push('retrieval.chunkOverlap must be a whole number of tokens from 0 to 128');
+  }
   return out;
 }
 

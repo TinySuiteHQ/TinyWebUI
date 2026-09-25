@@ -133,8 +133,13 @@ CREATE TABLE IF NOT EXISTS artifacts (
   created_at INTEGER NOT NULL
 );
 
--- Attached documents. Full text is kept whole here, like artifacts.content;
--- the FTS5 table below only ever holds chunks of it for retrieval.
+-- Attached documents. Full text is kept whole here, like artifacts.content.
+--
+-- Retrieval is small-to-big: a document is split into PASSAGES (what
+-- read_document returns, retrieval.passageSize characters each), and for
+-- dense/hybrid search each passage is split again into CHUNKS sized to the
+-- embedding model (what gets embedded). A query scores every chunk, each
+-- passage takes its best chunk's score, and the model gets whole passages.
 CREATE TABLE IF NOT EXISTS documents (
   id         TEXT PRIMARY KEY,
   chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -145,36 +150,35 @@ CREATE TABLE IF NOT EXISTS documents (
   content    TEXT NOT NULL
 );
 
--- FTS5 can't carry the doc id / chunk index itself, so a plain map table sits
--- next to it, keyed by the same rowid, the same split messages/messages_fts
--- already uses.
-CREATE TABLE IF NOT EXISTS document_chunk_map (
-  chunk_rowid INTEGER PRIMARY KEY,
-  doc_id      TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  chat_id     TEXT NOT NULL,
-  chunk_idx   INTEGER NOT NULL,
-  char_start  INTEGER NOT NULL
+-- Passages live in FTS5 for BM25. FTS5 can't carry the doc id / passage
+-- index itself, so a plain map table sits next to it, keyed by the same
+-- rowid, the same split messages/messages_fts already uses.
+CREATE TABLE IF NOT EXISTS document_passage_map (
+  passage_rowid INTEGER PRIMARY KEY,
+  doc_id        TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  chat_id       TEXT NOT NULL,
+  passage_idx   INTEGER NOT NULL,
+  char_start    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS document_chunk_map_doc ON document_chunk_map(doc_id);
+CREATE INDEX IF NOT EXISTS document_passage_map_doc ON document_passage_map(doc_id);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS document_passages USING fts5(
   body, tokenize='unicode61'
 );
 
--- Dense retrieval (retrieval.mode 'dense' / 'hybrid'): one float32 vector
--- per chunk, per embedding model. model_key names the model, so switching
--- models re-embeds instead of mixing incompatible vectors -- the same rule
--- TinyContext follows for its memories.
--- A chunk longer than the model reads gets one vector per window (part).
-CREATE TABLE IF NOT EXISTS document_chunk_embeddings (
-  chunk_rowid INTEGER NOT NULL,
-  doc_id      TEXT NOT NULL,
-  model_key   TEXT NOT NULL,
-  part        INTEGER NOT NULL DEFAULT 0,
-  vec         BLOB NOT NULL,
-  PRIMARY KEY (chunk_rowid, model_key, part)
+-- Dense retrieval (retrieval.mode 'dense' / 'hybrid'): the embedded chunks
+-- of each passage, one float32 vector per chunk, per embedding model.
+-- model_key names the model (and chunking), so switching re-embeds instead
+-- of mixing incompatible vectors -- the rule TinyContext follows too.
+CREATE TABLE IF NOT EXISTS document_chunks (
+  passage_rowid INTEGER NOT NULL,
+  doc_id        TEXT NOT NULL,
+  model_key     TEXT NOT NULL,
+  chunk         INTEGER NOT NULL,
+  vec           BLOB NOT NULL,
+  PRIMARY KEY (passage_rowid, model_key, chunk)
 );
-CREATE INDEX IF NOT EXISTS document_chunk_embeddings_doc ON document_chunk_embeddings(doc_id, model_key);
+CREATE INDEX IF NOT EXISTS document_chunks_doc ON document_chunks(doc_id, model_key);
 
 -- Full-text search over what was actually said, not how it got answered.
 -- Reasoning and tool results are the "work" the transcript shows collapsed,
@@ -299,12 +303,16 @@ function ftsQuery(raw, { any = false } = {}) {
  */
 export const ALL_USERS = Symbol('all-users');
 
+/** Default passage split: characters per passage, and how much neighbours overlap. */
+export const PASSAGE_SIZE = 1800;
+export const PASSAGE_OVERLAP = 200;
+
 /**
  * Bumped whenever the constructor's migrations change the shape of the
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
@@ -349,6 +357,7 @@ export class Store {
     this.migratedFrom = fresh ? null : found;
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
+    if (!fresh) this.#renameToPassages();
     this.db.exec(SCHEMA);
     // Nullable everywhere: unused (null) when auth is off, the exact behavior
     // installs already have; set only once per-user scoping is opted into.
@@ -362,6 +371,10 @@ export class Store {
     // themselves stay in images_json for the transcript.
     ensureColumn(this.db, 'messages', 'images_dropped', 'INTEGER NOT NULL DEFAULT 0');
     ensureColumn(this.db, 'documents', 'user_id', 'TEXT');
+    // The passage split a document was stored with; NULL means the original
+    // 1800/200, from before it was configurable.
+    ensureColumn(this.db, 'documents', 'passage_size', 'INTEGER');
+    ensureColumn(this.db, 'documents', 'passage_overlap', 'INTEGER');
     ensureColumn(this.db, 'artifacts', 'user_id', 'TEXT');
     ensureColumn(this.db, 'automation_runs', 'trigger_type', "TEXT NOT NULL DEFAULT 'schedule'");
     // Trusted-header auth: the gateway's immutable subject. Email and name are
@@ -417,6 +430,29 @@ export class Store {
       `);
     }
     this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  }
+
+  /**
+   * Schema 4 renamed "chunks" to what they are: document_chunks (FTS) and
+   * its map became document_passages / document_passage_map, and the name
+   * document_chunks now holds embedded chunks. Must run before SCHEMA, which
+   * would otherwise see the old FTS table under the new chunk table's name.
+   */
+  #renameToPassages() {
+    const has = (name) => Boolean(this.db.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name));
+    if (has('document_chunk_map')) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec('ALTER TABLE document_chunks RENAME TO document_passages');
+        this.db.exec('ALTER TABLE document_chunk_map RENAME TO document_passage_map');
+        this.db.exec('ALTER TABLE document_passage_map RENAME COLUMN chunk_rowid TO passage_rowid');
+        this.db.exec('ALTER TABLE document_passage_map RENAME COLUMN chunk_idx TO passage_idx');
+        this.db.exec('DROP INDEX IF EXISTS document_chunk_map_doc');
+        this.db.exec('COMMIT');
+      } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+    }
+    // Vectors from the unreleased schema 3 layout: recomputed by the backfill.
+    this.db.exec('DROP TABLE IF EXISTS document_chunk_embeddings');
   }
 
   schemaVersion() {
@@ -535,14 +571,14 @@ export class Store {
     // FTS5 has no foreign keys of its own, so its rows are dropped by rowid
     // before the map (and then the documents) that name them go with the chat.
     this.db.prepare(`
-      DELETE FROM document_chunks WHERE rowid IN (
-        SELECT chunk_rowid FROM document_chunk_map WHERE chat_id = ?
+      DELETE FROM document_passages WHERE rowid IN (
+        SELECT passage_rowid FROM document_passage_map WHERE chat_id = ?
       )
     `).run(id);
-    this.db.prepare(`DELETE FROM document_chunk_embeddings WHERE doc_id IN (
+    this.db.prepare(`DELETE FROM document_chunks WHERE doc_id IN (
       SELECT id FROM documents WHERE chat_id = ?
     )`).run(id);
-    this.db.prepare('DELETE FROM document_chunk_map WHERE chat_id = ?').run(id);
+    this.db.prepare('DELETE FROM document_passage_map WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
     return true;
@@ -858,14 +894,14 @@ export class Store {
   /* ---------- documents ---------- */
 
   /**
-   * Splits text into overlapping windows for retrieval. Naive on purpose --
-   * no tokenizer, no embeddings -- this only has to give `read_document`'s
-   * query mode something narrower than the whole file to rank with bm25().
-   * Breaks are nudged onto a paragraph or line boundary when one is nearby,
-   * so a chunk doesn't open or close mid-sentence more than it has to.
+   * Splits text into overlapping passages -- the unit read_document returns.
+   * Character-based on purpose: passages are for reading and BM25, and the
+   * embedding side cuts its own model-sized chunks out of them. Breaks are
+   * nudged onto a paragraph or line boundary when one is nearby, so a
+   * passage doesn't open or close mid-sentence more than it has to.
    */
-  static chunkText(text, size = 1800, overlap = 200) {
-    const chunks = [];
+  static splitPassages(text, size = PASSAGE_SIZE, overlap = PASSAGE_OVERLAP) {
+    const passages = [];
     let start = 0;
     while (start < text.length) {
       let end = Math.min(start + size, text.length);
@@ -875,33 +911,68 @@ export class Store {
         const boundary = para > start + size * 0.5 ? para : (line > start + size * 0.5 ? line : -1);
         if (boundary !== -1) end = boundary;
       }
-      chunks.push({ start, text: text.slice(start, end) });
+      passages.push({ start, text: text.slice(start, end) });
       if (end >= text.length) break;
       start = Math.max(end - overlap, start + 1);
     }
-    return chunks;
+    return passages;
   }
 
-  addDocument(chatId, { filename, mime, content }) {
+  #insertPassages(docId, chatId, content, size, overlap) {
+    const passages = Store.splitPassages(content, size, overlap);
+    const insertPassage = this.db.prepare('INSERT INTO document_passages (body) VALUES (?)');
+    const insertMap = this.db.prepare(`
+      INSERT INTO document_passage_map (passage_rowid, doc_id, chat_id, passage_idx, char_start)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    passages.forEach((passage, idx) => {
+      const { lastInsertRowid } = insertPassage.run(passage.text);
+      insertMap.run(lastInsertRowid, docId, chatId, idx, passage.start);
+    });
+    return passages.length;
+  }
+
+  #deletePassages(docId) {
+    this.db.prepare(`
+      DELETE FROM document_passages WHERE rowid IN (
+        SELECT passage_rowid FROM document_passage_map WHERE doc_id = ?
+      )
+    `).run(docId);
+    this.db.prepare('DELETE FROM document_chunks WHERE doc_id = ?').run(docId);
+    this.db.prepare('DELETE FROM document_passage_map WHERE doc_id = ?').run(docId);
+  }
+
+  addDocument(chatId, { filename, mime, content }, { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP } = {}) {
     const id = randomBytes(12).toString('hex');
     const createdAt = Date.now();
     this.db.prepare(`
-      INSERT INTO documents (id, chat_id, filename, mime, char_len, created_at, content)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, chatId, filename, mime ?? null, content.length, createdAt, content);
+      INSERT INTO documents (id, chat_id, filename, mime, char_len, created_at, content, passage_size, passage_overlap)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, chatId, filename, mime ?? null, content.length, createdAt, content, passageSize, passageOverlap);
+    const passages = this.#insertPassages(id, chatId, content, passageSize, passageOverlap);
+    return { id, filename, mime: mime ?? null, char_len: content.length, created_at: createdAt, passages };
+  }
 
-    const chunks = Store.chunkText(content);
-    const insertChunk = this.db.prepare('INSERT INTO document_chunks (body) VALUES (?)');
-    const insertMap = this.db.prepare(`
-      INSERT INTO document_chunk_map (chunk_rowid, doc_id, chat_id, chunk_idx, char_start)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    chunks.forEach((chunk, idx) => {
-      const { lastInsertRowid } = insertChunk.run(chunk.text);
-      insertMap.run(lastInsertRowid, id, chatId, idx, chunk.start);
-    });
+  /** Documents split with other passage settings than these (NULL = the original 1800/200). */
+  documentsWithOtherPassages(size, overlap) {
+    return this.db.prepare(`
+      SELECT id FROM documents
+      WHERE COALESCE(passage_size, ${PASSAGE_SIZE}) != ? OR COALESCE(passage_overlap, ${PASSAGE_OVERLAP}) != ?
+    `).all(size, overlap).map((r) => r.id);
+  }
 
-    return { id, filename, mime: mime ?? null, char_len: content.length, created_at: createdAt, chunks: chunks.length };
+  /** Re-splits a stored document with new passage settings; its old vectors go with the old passages. */
+  repassageDocument(docId, size, overlap) {
+    const doc = this.db.prepare('SELECT id, chat_id, content FROM documents WHERE id = ?').get(docId);
+    if (!doc) return 0;
+    this.db.exec('BEGIN');
+    try {
+      this.#deletePassages(docId);
+      const n = this.#insertPassages(doc.id, doc.chat_id, doc.content, size, overlap);
+      this.db.prepare('UPDATE documents SET passage_size = ?, passage_overlap = ? WHERE id = ?').run(size, overlap, docId);
+      this.db.exec('COMMIT');
+      return n;
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
   /** Scoped through the owning chat: a document is its chat's user's. */
@@ -919,40 +990,34 @@ export class Store {
     `).all(chatId);
   }
 
-  /** Drops one document and its FTS chunks. The rest of the chat is untouched. */
+  /** Drops one document, its passages and their chunk vectors. The rest of the chat is untouched. */
   deleteDocument(id, userId) {
     if (!this.getDocument(id, userId)) return false;
-    this.db.prepare(`
-      DELETE FROM document_chunks WHERE rowid IN (
-        SELECT chunk_rowid FROM document_chunk_map WHERE doc_id = ?
-      )
-    `).run(id);
-    this.db.prepare('DELETE FROM document_chunk_embeddings WHERE doc_id = ?').run(id);
-    this.db.prepare('DELETE FROM document_chunk_map WHERE doc_id = ?').run(id);
+    this.#deletePassages(id);
     return this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
   }
 
-  /** Ranked chunk search within one document's own chunks, via FTS5 bm25(). */
-  searchDocumentChunks(docId, query, limit = 5) {
+  /** Ranked passage search within one document, via FTS5 bm25() (lexical mode). */
+  searchPassages(docId, query, limit = 5) {
     const q = ftsQuery(query);
     if (!q) return [];
     return this.db.prepare(`
-      SELECT m.chunk_idx AS chunkIdx, m.char_start AS charStart,
-             document_chunks.body AS body, bm25(document_chunks) AS rank
-      FROM document_chunks
-      JOIN document_chunk_map m ON m.chunk_rowid = document_chunks.rowid
-      WHERE document_chunks MATCH ? AND m.doc_id = ?
+      SELECT m.passage_idx AS passageIdx, m.char_start AS charStart,
+             document_passages.body AS body, bm25(document_passages) AS rank
+      FROM document_passages
+      JOIN document_passage_map m ON m.passage_rowid = document_passages.rowid
+      WHERE document_passages MATCH ? AND m.doc_id = ?
       ORDER BY rank
       LIMIT ?
     `).all(q, docId, limit);
   }
 
-  /** Every chunk of a document, in order -- the candidate set for dense and hybrid ranking. */
-  documentChunks(docId) {
+  /** Every passage of a document, in order -- the candidate set for dense and hybrid ranking. */
+  documentPassages(docId) {
     return this.db.prepare(`
-      SELECT m.chunk_rowid AS rowid, m.chunk_idx AS chunkIdx, m.char_start AS charStart, document_chunks.body AS body
-      FROM document_chunk_map m JOIN document_chunks ON document_chunks.rowid = m.chunk_rowid
-      WHERE m.doc_id = ? ORDER BY m.chunk_idx
+      SELECT m.passage_rowid AS rowid, m.passage_idx AS passageIdx, m.char_start AS charStart, document_passages.body AS body
+      FROM document_passage_map m JOIN document_passages ON document_passages.rowid = m.passage_rowid
+      WHERE m.doc_id = ? ORDER BY m.passage_idx
     `).all(docId);
   }
 
@@ -965,50 +1030,50 @@ export class Store {
     const q = ftsQuery(query, { any: true });
     if (!q) return new Map();
     const rows = this.db.prepare(`
-      SELECT m.chunk_rowid AS rowid, bm25(document_chunks) AS rank
-      FROM document_chunks JOIN document_chunk_map m ON m.chunk_rowid = document_chunks.rowid
-      WHERE document_chunks MATCH ? AND m.doc_id = ?
+      SELECT m.passage_rowid AS rowid, bm25(document_passages) AS rank
+      FROM document_passages JOIN document_passage_map m ON m.passage_rowid = document_passages.rowid
+      WHERE document_passages MATCH ? AND m.doc_id = ?
     `).all(q, docId);
     return new Map(rows.map((r) => [r.rowid, -r.rank]));
   }
 
-  /** Stored vectors for a document under one model: Map(chunk rowid -> Float32Array[] by window). */
-  chunkEmbeddings(docId, modelKey) {
+  /** A document's chunk vectors under one model: Map(passage rowid -> Float32Array[], one per chunk). */
+  chunkVectors(docId, modelKey) {
     const out = new Map();
-    for (const r of this.db.prepare('SELECT chunk_rowid, vec FROM document_chunk_embeddings WHERE doc_id = ? AND model_key = ? ORDER BY chunk_rowid, part').all(docId, modelKey)) {
+    for (const r of this.db.prepare('SELECT passage_rowid, vec FROM document_chunks WHERE doc_id = ? AND model_key = ? ORDER BY passage_rowid, chunk').all(docId, modelKey)) {
       const buf = r.vec;
-      if (!out.has(r.chunk_rowid)) out.set(r.chunk_rowid, []);
-      out.get(r.chunk_rowid).push(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4).slice());
+      if (!out.has(r.passage_rowid)) out.set(r.passage_rowid, []);
+      out.get(r.passage_rowid).push(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4).slice());
     }
     return out;
   }
 
-  /** rows: [{ rowid, vecs: Float32Array[] }] -- one vector per window of the chunk. */
-  putChunkEmbeddings(docId, modelKey, rows) {
-    const clear = this.db.prepare('DELETE FROM document_chunk_embeddings WHERE chunk_rowid = ? AND model_key = ?');
-    const put = this.db.prepare('INSERT INTO document_chunk_embeddings (chunk_rowid, doc_id, model_key, part, vec) VALUES (?, ?, ?, ?, ?)');
+  /** rows: [{ rowid (passage), vecs: Float32Array[] (its chunks, in order) }]. */
+  putChunkVectors(docId, modelKey, rows) {
+    const clear = this.db.prepare('DELETE FROM document_chunks WHERE passage_rowid = ? AND model_key = ?');
+    const put = this.db.prepare('INSERT INTO document_chunks (passage_rowid, doc_id, model_key, chunk, vec) VALUES (?, ?, ?, ?, ?)');
     this.db.exec('BEGIN');
     try {
       for (const { rowid, vecs } of rows) {
         clear.run(rowid, modelKey);
-        vecs.forEach((vec, part) => put.run(rowid, docId, modelKey, part, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength)));
+        vecs.forEach((vec, chunk) => put.run(rowid, docId, modelKey, chunk, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength)));
       }
       this.db.exec('COMMIT');
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
-  /** Documents with chunks still missing a vector for this model (for backfill). */
-  documentsMissingEmbeddings(modelKey) {
+  /** Documents with passages not yet embedded under this model (for backfill). */
+  documentsMissingVectors(modelKey) {
     return this.db.prepare(`
-      SELECT DISTINCT m.doc_id AS id FROM document_chunk_map m
-      LEFT JOIN document_chunk_embeddings e ON e.chunk_rowid = m.chunk_rowid AND e.model_key = ?
-      WHERE e.chunk_rowid IS NULL
+      SELECT DISTINCT m.doc_id AS id FROM document_passage_map m
+      LEFT JOIN document_chunks c ON c.passage_rowid = m.passage_rowid AND c.model_key = ?
+      WHERE c.passage_rowid IS NULL
     `).all(modelKey).map((r) => r.id);
   }
 
-  /** Drops vectors from models no longer configured. */
-  pruneEmbeddings(keepModelKey) {
-    return this.db.prepare('DELETE FROM document_chunk_embeddings WHERE model_key != ?').run(keepModelKey).changes;
+  /** Drops vectors from models (or chunkings) no longer configured. */
+  pruneVectors(keepModelKey) {
+    return this.db.prepare('DELETE FROM document_chunks WHERE model_key != ?').run(keepModelKey).changes;
   }
 
   /* ---------- search ---------- */

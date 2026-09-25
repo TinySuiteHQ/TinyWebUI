@@ -169,11 +169,23 @@ npx tinywebui models pull fast                         # the one explicit downlo
 { "retrieval": { "mode": "hybrid", "model": "fast", "modelSha256": "<sha256 from models pull>" } }
 ```
 
+**How it works: small-to-big retrieval.** A document is split twice:
+
+| | Passage | Chunk |
+| --- | --- | --- |
+| What it is | What `read_document` returns to the model | What gets embedded |
+| Size | `passageSize` characters (default 1,800, about 400 tokens) | The embedding model's token limit: 256 for `fast`, 512 for `balanced`/`quality` |
+| Overlap | `passageOverlap` characters (default 200) | `chunkOverlap` tokens (default 32) |
+| Used for | BM25 (every mode) and the text the model reads | Dense matching (`dense`, `hybrid`) |
+
+A question is compared with every small chunk, each passage takes its best chunk's score, and the model gets whole passages. Small chunks keep the embedding match precise; big passages give the model enough context to answer. Because chunks follow the model, every part of a passage is embedded, even when the passage is longer than the model can read at once.
+
 - **Modes:** `lexical` (default), `dense` (embeddings only), `hybrid` (both, fused).
 - **Models:** `fast` (all-MiniLM-L6-v2), `balanced` (bge-small-en-v1.5) and `quality` (bge-base-en-v1.5), the same presets as TinySearch. A custom bundle works with `modelDir`.
 - **Embeddings are computed once.** Each chunk is embedded when the document is attached and stored in SQLite; queries embed only the question. Switching models re-embeds automatically, and deleting a document or chat deletes its vectors.
 - **Nothing downloads at runtime.** A missing bundle, missing packages or a checksum that doesn't match `modelSha256` stops startup with a clear message. `tinywebui models verify` and `tinywebui doctor` check the same things beforehand. ONNX Runtime's telemetry is switched off.
-- **Tuning:** `denseWeight` (default 0.5), `rrfK` (default 60), and `queryPrefix`/`documentPrefix` for models that expect instructions (for bge, set `queryPrefix` to `"Represent this sentence for searching relevant passages: "`).
+- **Tuning:** `passageSize`/`passageOverlap` (what the model gets back), `chunkOverlap`, `denseWeight` (default 0.5), `rrfK` (default 60), and `queryPrefix`/`documentPrefix` for models that expect instructions (for bge, set `queryPrefix` to `"Represent this sentence for searching relevant passages: "`). Bigger passages give more context per hit, but fewer hits fit in one `read_document` result.
+- **Changing settings is safe.** Stored documents are re-split on the next start when the passage settings change, and re-embedded when the model or `chunkOverlap` changes. Passage settings apply in `lexical` mode too.
 - **Containers:** `Dockerfile.hybrid` bakes a model into the image at build time and fails the build if `EMBEDDING_SHA256` doesn't match.
 
 ## Automations

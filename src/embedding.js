@@ -92,9 +92,11 @@ export async function sha256File(path) {
  * and here the file checksum too, so a swapped model file never reuses old
  * vectors.
  */
-export function modelKey(spec, onnxSha256, documentPrefix = '') {
+export function modelKey(spec, onnxSha256, documentPrefix = '', chunkOverlap = 32) {
   const prefix = createHash('sha256').update(documentPrefix).digest('hex').slice(0, 12);
-  return `onnx:${spec.repoId}:${onnxSha256.slice(0, 16)}:document-prefix:${prefix}`;
+  // Chunking is part of what a stored vector means: a different overlap
+  // cuts different chunks, so it re-embeds rather than mixing.
+  return `onnx:${spec.repoId}:${onnxSha256.slice(0, 16)}:document-prefix:${prefix}:chunks:${spec.maxLength}/${chunkOverlap}`;
 }
 
 async function importPeer(name) {
@@ -157,19 +159,20 @@ export async function loadEmbedder(retrieval, modelsDir) {
   const wrapper = tokenizer.encode('').ids;
   const open = wrapper.length >= 1 ? wrapper.slice(0, 1) : [];
   const close = wrapper.length >= 2 ? wrapper.slice(-1) : [];
-  const OVERLAP = 32;
+  const chunkOverlap = retrieval.chunkOverlap ?? 32;
   /**
-   * A passage longer than the model reads becomes overlapping windows, each
-   * wrapped like a normal input -- so no part of a chunk goes unembedded.
-   * (TinySearch sizes its chunks in tokens to fit; TinyWebUI's chunks are
-   * character-sized and shared with lexical search, so they are windowed.)
+   * Small-to-big: a passage (what read_document returns) is cut into chunks
+   * (what gets embedded). Chunk length is the model's own token limit --
+   * 256 for `fast`, 512 for the bge presets -- so every token of a passage
+   * is embedded somewhere; neighbouring chunks overlap by chunkOverlap
+   * tokens so a sentence cut at a boundary still lands whole in one of them.
    */
-  const windowsOf = (text) => {
+  const chunksOf = (text) => {
     const body = tokenizer.encode(text, { add_special_tokens: false }).ids;
     const room = spec.maxLength - open.length - close.length;
     if (body.length <= room) return [[...open, ...body, ...close]];
     const out = [];
-    for (let start = 0; start < body.length; start += room - OVERLAP) {
+    for (let start = 0; start < body.length; start += room - chunkOverlap) {
       out.push([...open, ...body.slice(start, start + room), ...close]);
       if (start + room >= body.length) break;
     }
@@ -220,17 +223,18 @@ export async function loadEmbedder(retrieval, modelsDir) {
   /** One vector per text, truncated to the model's length (queries). */
   const embed = (texts) => embedIds(texts.map(encode));
 
-  /** Several vectors per text, one per window (stored document chunks). */
+  /** Each passage as its chunks' vectors: Float32Array[][] (passage -> chunks). */
   async function embedPassages(texts) {
-    const windows = texts.map(windowsOf);
-    const flat = await embedIds(windows.flat());
+    const chunks = texts.map(chunksOf);
+    const flat = await embedIds(chunks.flat());
     let i = 0;
-    return windows.map((w) => w.map(() => flat[i++]));
+    return chunks.map((c) => c.map(() => flat[i++]));
   }
 
   const [probe] = await embed(['probe']);
   return {
-    key: modelKey(spec, actual, retrieval.documentPrefix || ''),
+    key: modelKey(spec, actual, retrieval.documentPrefix || '', chunkOverlap),
+    chunkTokens: spec.maxLength,
     dim: probe.length,
     spec,
     sha256: actual,

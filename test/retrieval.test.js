@@ -71,13 +71,13 @@ test('RRF fusion follows TinySearch: ranks, weights, k=60, deterministic ties', 
 
 test('lexical mode is exactly the old FTS5 behaviour', async () => {
   const { store, doc, r } = setup('lexical');
-  assert.deepEqual(await r.search(doc.id, 'kitten', 5), store.searchDocumentChunks(doc.id, 'kitten', 5));
+  assert.deepEqual(await r.search(doc.id, 'kitten', 5), store.searchPassages(doc.id, 'kitten', 5));
   assert.deepEqual(await r.search(doc.id, 'automobile', 5), [], 'no shared words, no match');
 });
 
 test('hybrid finds what BM25 alone misses, and keeps exact matches on top', async () => {
   const { store, doc, r } = setup('hybrid');
-  assert.deepEqual(store.searchDocumentChunks(doc.id, 'automobile', 5), []);
+  assert.deepEqual(store.searchPassages(doc.id, 'automobile', 5), []);
   const hits = await r.search(doc.id, 'automobile', 2);
   assert.match(hits[0].body, /sedan/);
   const exact = await r.search(doc.id, 'kitten sleeps', 1);
@@ -94,9 +94,9 @@ test('dense mode ranks by embeddings alone', async () => {
 
 test('embeddings are stored in SQLite once and reused by every query', async () => {
   const { store, doc, r, embedder } = setup('hybrid');
-  assert.equal(await r.ingest(doc.id), store.documentChunks(doc.id).length);
-  const stored = store.chunkEmbeddings(doc.id, embedder.key);
-  assert.equal(stored.size, store.documentChunks(doc.id).length);
+  assert.equal(await r.ingest(doc.id), store.documentPassages(doc.id).length);
+  const stored = store.chunkVectors(doc.id, embedder.key);
+  assert.equal(stored.size, store.documentPassages(doc.id).length);
   assert.ok([...stored.values()].every((vs) => vs.length >= 1 && vs[0] instanceof Float32Array));
   embedder.calls.length = 0;
   assert.equal(await r.ingest(doc.id), 0, 'ingesting again embeds nothing');
@@ -109,12 +109,12 @@ test('a model change re-embeds and drops the old vectors; deletes clean up', asy
   const { store, chat, doc, r } = setup('hybrid', fakeEmbedder('fake:v1'));
   await r.ingest(doc.id);
   const r2 = new Retrieval(store, { ...DEFAULTS.retrieval, mode: 'hybrid' }, fakeEmbedder('fake:v2'));
-  assert.deepEqual(store.documentsMissingEmbeddings('fake:v2'), [doc.id]);
+  assert.deepEqual(store.documentsMissingVectors('fake:v2'), [doc.id]);
   await r2.backfill();
-  assert.equal(store.chunkEmbeddings(doc.id, 'fake:v1').size, 0);
-  assert.ok(store.chunkEmbeddings(doc.id, 'fake:v2').size > 0);
+  assert.equal(store.chunkVectors(doc.id, 'fake:v1').size, 0);
+  assert.ok(store.chunkVectors(doc.id, 'fake:v2').size > 0);
   store.deleteChat(chat.id, ALL_USERS);
-  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM document_chunk_embeddings').get().n, 0);
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM document_chunks').get().n, 0);
 });
 
 test('read_document keeps its interface in every mode', async () => {
@@ -122,7 +122,7 @@ test('read_document keeps its interface in every mode', async () => {
     const { store, chat, doc, r } = setup(mode);
     const out = await callReadDocument({ document_id: doc.id, query: 'kitten' }, { store, retrieval: r, chatId: chat.id });
     assert.match(out, /passage\(s\) matching "kitten"/, mode);
-    assert.match(out, /--- chunk \d+ \(offset/, mode);
+    assert.match(out, /--- passage \d+ \(offset/, mode);
   }
 });
 
@@ -147,4 +147,72 @@ test('real MiniLM bundle: hybrid retrieval quality', { skip: !realDir && 'set TI
   const expect = { 'automobile maintenance': /sedan/, 'company profit': /earnings/, 'seeing a medical professional': /physician/, 'young cat': /kitten/ };
   for (const [q, re] of Object.entries(expect)) assert.match((await r.search(doc.id, q, 1))[0].body, re, q);
   embedder.close();
+});
+
+test('passages follow retrieval.passageSize; changing it re-splits stored documents', async () => {
+  const store = new Store(':memory:');
+  const chat = store.createChat({}, ALL_USERS);
+  const text = 'word '.repeat(2000).trim();                       // ~10,000 chars
+  const doc = store.addDocument(chat.id, { filename: 'a', content: text });
+  const before = store.documentPassages(doc.id).length;
+  assert.ok(before >= 5, 'default 1800-char passages');
+
+  const big = new Retrieval(store, { ...DEFAULTS.retrieval, passageSize: 4000, passageOverlap: 400 }, null);
+  await big.backfill();
+  const after = store.documentPassages(doc.id);
+  assert.ok(after.length < before, 'bigger passages, fewer of them');
+  assert.ok(after.every((p) => p.body.length <= 4000));
+  assert.equal(store.documentsWithOtherPassages(4000, 400).length, 0, 're-split once, recorded on the document');
+  // New uploads use the configured split directly.
+  const d2 = store.addDocument(chat.id, { filename: 'b', content: text }, big.passageSettings());
+  assert.equal(store.documentPassages(d2.id).length, after.length);
+  // Lexical search still works on the new passages.
+  assert.ok(store.searchPassages(doc.id, 'word', 1).length === 1);
+});
+
+test('re-splitting drops the old passages\' vectors and re-embeds', async () => {
+  const embedder = fakeEmbedder('fake:v1');
+  const { store, doc, r } = setup('hybrid', embedder);
+  await r.ingest(doc.id);
+  const r2 = new Retrieval(store, { ...DEFAULTS.retrieval, mode: 'hybrid', passageSize: 900, passageOverlap: 100 }, embedder);
+  await r2.backfill();
+  const passages = store.documentPassages(doc.id);
+  const vectors = store.chunkVectors(doc.id, embedder.key);
+  assert.equal(vectors.size, passages.length, 'every new passage has vectors, no orphans');
+  assert.ok(passages.every((p) => vectors.has(p.rowid)));
+});
+
+test('an existing database migrates to passages/chunks in place', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'tinywebui-passages-'));
+  const file = join(dir, 'old.db');
+  // Build a schema-2 style database with the old table names and one document.
+  const s = new Store(file);
+  const chat = s.createChat({}, ALL_USERS);
+  const doc = s.addDocument(chat.id, { filename: 'a', content: 'alpha beta gamma' });
+  s.close();
+  const db = new DatabaseSync(file);
+  db.exec('DROP TABLE document_chunks');
+  db.exec('ALTER TABLE document_passages RENAME TO document_chunks');
+  db.exec('ALTER TABLE document_passage_map RENAME TO document_chunk_map');
+  db.exec('ALTER TABLE document_chunk_map RENAME COLUMN passage_rowid TO chunk_rowid');
+  db.exec('ALTER TABLE document_chunk_map RENAME COLUMN passage_idx TO chunk_idx');
+  db.exec('PRAGMA user_version = 2');
+  db.close();
+
+  const migrated = new Store(file);
+  assert.equal(migrated.migratedFrom, 2);
+  assert.equal(migrated.searchPassages(doc.id, 'beta', 1)[0].body, 'alpha beta gamma');
+  const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'document_%'").all().map((t) => t.name);
+  assert.ok(tables.includes('document_passage_map') && !tables.includes('document_chunk_map'));
+  migrated.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('passage and chunk settings are validated', () => {
+  const bad = configProblems({ ...DEFAULTS, retrieval: { ...DEFAULTS.retrieval, passageSize: 50, passageOverlap: 5000, chunkOverlap: 999 } }).join('\n');
+  for (const needle of ['retrieval.passageSize', 'retrieval.passageOverlap', 'retrieval.chunkOverlap']) assert.ok(bad.includes(needle), needle);
 });
