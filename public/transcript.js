@@ -20,6 +20,26 @@ export function scroll() { if (pinned) log.scrollTop = log.scrollHeight; }
 // Switching chats always lands on the newest message, regardless of whether
 // the chat left open before it had been scrolled up to read older ones.
 export function pinToBottom() { pinned = true; }
+// Height also changes with nobody calling scroll(): images decoding after the
+// last paint, the work collapsing at the end of a turn, the composer growing.
+// Re-pin on any of it, or the answer's tail sits below the fold.
+new ResizeObserver(() => scroll()).observe(wrap);
+new ResizeObserver(() => scroll()).observe(log);
+
+// Chrome can keep a stale scroll range for #log after a turn reshapes it (the
+// work collapsing, the last markdown paint): the wheel stops short of the end
+// while scrollTop can still be set past it, until a reload. Flipping overflow
+// off and on for one frame makes it rebuild the range.
+function resyncScroll() {
+  requestAnimationFrame(() => {
+    const top = log.scrollTop;
+    log.style.overflowY = 'hidden';
+    void log.offsetHeight;
+    log.style.overflowY = '';
+    log.scrollTop = top;
+    scroll();
+  });
+}
 
 /**
  * One assistant turn: the work that led to the answer, and then the answer.
@@ -113,6 +133,7 @@ export function addTurn() {
         const n = raws.length;
         addUsage(tallyUsage(raws), box, { total: true, label: `turn total (${n} rounds)` });
       }
+      resyncScroll();
       if (!mounted) return;
       work.classList.remove('live');
       work.open = false;

@@ -541,7 +541,7 @@ export async function runChat({
   // safe boundary. Persisted and shown as ordinary user messages.
   takeInput = null
 }) {
-  const maxRounds = Math.max(1, cfg.maxToolRounds || 20);
+  const maxRounds = Math.max(1, cfg.maxToolRounds || 12);
   const operatorPrompt = cfg.systemPrompt;
 
   // Built once per turn, so every round of it sends the same system bytes.

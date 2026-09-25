@@ -54,7 +54,7 @@ An OpenRouter example:
   "apiKey": "sk-or-...",
   "model": "deepseek/deepseek-v4-flash-0731",
   "systemPrompt": "You are a terse, precise assistant.",
-  "maxToolRounds": 20
+  "maxToolRounds": 12
 }
 ```
 
@@ -73,7 +73,7 @@ The Settings panel can change the model, prompt, generation settings, tool budge
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `maxToolRounds` | `20` | Shared tool-use budget for one user message. One model response that calls one or more tools uses one round. |
+| `maxToolRounds` | `12` | Shared tool-use budget for one user message. One model response that calls one or more tools uses one round. |
 | `cache` | `true` | Enables prompt-cache shaping where supported. |
 | `cacheMode` | `"auto"` | Selects implicit, explicit, or OpenRouter rolling cache behavior. |
 | `cacheTtl` | `"5m"` | Anthropic cache lifetime; `"1h"` is also available. |
