@@ -55,15 +55,15 @@
     },
     {
       "type": "answer_matches",
-      "pattern": "11°"
+      "pattern": "11\\s?°"
     },
     {
       "type": "answer_matches",
-      "pattern": "14°"
+      "pattern": "14\\s?°"
     },
     {
       "type": "answer_matches",
-      "pattern": "\\b9°"
+      "pattern": "\\b9\\s?°"
     }
   ]
 }
