@@ -247,6 +247,8 @@ export function createConfigSource(opts = {}) {
       keyClasses: Object.fromEntries([...WRITABLE, ...FILE_ONLY].map((k) => [k, keyClass(k, locked)]))
     }),
     lockedKeys: () => new Set(locked),
+    /** Users pinned in code's access.users: admins cannot overrule these. */
+    codeAccessUsers: () => ({ ...(code.access?.users || {}) }),
     /** Low-level access for the policy write-back: read and replace the JSON file. */
     readFile,
     writeFile,

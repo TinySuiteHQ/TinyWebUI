@@ -1,5 +1,6 @@
 import { randomBytes, createHmac, createHash, timingSafeEqual, randomUUID, scryptSync } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
+import { resolveAccess } from './policy.js';
 
 /**
  * Session/cookie plumbing for authMode 'single' (password login), plus the
@@ -183,14 +184,22 @@ export function resolveTrustedUser(req, store, cfg) {
 
   const db = store.db;
   const now = Date.now();
-  const status = cfg.trustedDefaultStatus === 'pending' ? 'pending' : 'approved';
+  // Precedence: the files (bootstrapAdmins, access.users) > gateway role
+  // header > defaults. What an admin decided is in access.users, so the file
+  // outranks a gateway that still says otherwise.
+  const policy = resolveAccess(cfg);
+  const pinned = policy.bootstrapAdmins.includes(externalId)
+    ? { role: 'admin', status: 'approved' }
+    : policy.users[externalId] || {};
+  const wantRole = pinned.role || role;
+  const status = pinned.status || policy.newUsers;
   // The unique index on external_id makes this the atomic provision step:
   // concurrent first requests race to insert, exactly one wins, all read it.
   const inserted = db.prepare(`
     INSERT INTO users (id, external_id, role, status, created_at, approved_at, last_login_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(external_id) DO NOTHING
-  `).run(randomUUID(), externalId, role || 'user', status, now, status === 'approved' ? now : null, now);
+  `).run(randomUUID(), externalId, wantRole || 'user', status, now, status === 'approved' ? now : null, now);
   let user = db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId);
   if (inserted.changes) audit('user.provisioned', { userId: user.id, role: user.role, status: user.status });
 
@@ -202,9 +211,13 @@ export function resolveTrustedUser(req, store, cfg) {
     if (next !== user.email) { sets.push('email = ?'); vals.push(next); }
   }
   if (name !== user.name) { sets.push('name = ?'); vals.push(name); }
-  if (role && role !== user.role) {
-    sets.push('role = ?'); vals.push(role);
-    audit('user.role_changed', { userId: user.id, from: user.role, to: role, by: 'gateway' });
+  if (wantRole && wantRole !== user.role) {
+    sets.push('role = ?'); vals.push(wantRole);
+    audit('user.role_changed', { userId: user.id, from: user.role, to: wantRole, by: pinned.role ? 'policy' : 'gateway' });
+  }
+  if (pinned.status && pinned.status !== user.status) {
+    sets.push('status = ?'); vals.push(pinned.status);
+    audit('user.status_changed', { userId: user.id, from: user.status, to: pinned.status, by: 'policy' });
   }
   if (!user.last_login_at || now - user.last_login_at > LOGIN_TOUCH_MS) { sets.push('last_login_at = ?'); vals.push(now); }
   if (sets.length) {
@@ -212,4 +225,24 @@ export function resolveTrustedUser(req, store, cfg) {
     user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   }
   return { user };
+}
+
+/**
+ * Brings every provisioned user in line with the files' access.users and
+ * bootstrapAdmins, so a status decided in a file (a ban, say) holds even for
+ * someone who has not made a request since -- their automations included.
+ */
+export function applyAccessPolicy(store, cfg) {
+  const policy = resolveAccess(cfg);
+  const pins = { ...policy.users };
+  for (const id of policy.bootstrapAdmins) pins[id] = { role: 'admin', status: 'approved' };
+  for (const [externalId, pin] of Object.entries(pins)) {
+    const user = store.db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId);
+    if (!user) continue;
+    const role = pin.role && pin.role !== user.role ? pin.role : null;
+    const status = pin.status && pin.status !== user.status ? pin.status : null;
+    if (!role && !status) continue;
+    store.updateUser(user.id, { ...(role ? { role } : {}), ...(status ? { status } : {}) });
+    audit('user.policy_applied', { userId: user.id, ...(role ? { role } : {}), ...(status ? { status } : {}) });
+  }
 }

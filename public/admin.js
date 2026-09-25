@@ -69,6 +69,10 @@ function row(user) {
   // Your own account can't be demoted or disabled from here -- the server
   // refuses too, but a locked control says so before you try.
   if (self) { status.disabled = true; role.disabled = true; status.title = role.title = 'your own account'; }
+  if (user.pinnedInCode) {
+    status.disabled = true; role.disabled = true;
+    status.title = role.title = `declared in code (${user.pinnedInCode})`;
+  }
   const view = Object.assign(el('button'), { type: 'button', textContent: 'chats' });
   view.onclick = () => openUser(user);
   r.append(who, status, role, view, err);
@@ -182,7 +186,8 @@ export async function loadAdmin() {
   const out = await res.json().catch(() => ({}));
   box.innerHTML = '';
   if (!res.ok) { $('adminMsg').textContent = out.error || `${res.status}`; return; }
-  $('adminCount').textContent = `${out.users.length}`;
+  $('adminCount').textContent = `${out.users.length} · config ${out.fingerprint}`;
+  $('adminCount').title = 'Config fingerprint: compare with `tinywebui fingerprint` on the checked-in files';
   for (const u of out.users) box.appendChild(row(u));
   if (!out.users.length) box.appendChild(Object.assign(el('div', 'empty'), { textContent: 'no users yet' }));
 }

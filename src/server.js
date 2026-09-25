@@ -7,9 +7,9 @@ import { createConfigSource, LockedError } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView, ALL_USERS } from './store.js';
-import { validateConfig, fingerprint, featuresFor, modelsFor } from './policy.js';
+import { validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess } from './policy.js';
 import {
-  getSessionUser, resolveTrustedUser, destroyUserSessions, audit, hashPassword, verifyPassword,
+  getSessionUser, resolveTrustedUser, destroyUserSessions, audit, hashPassword, verifyPassword, applyAccessPolicy,
   createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from './auth.js';
 import { expandToolDef, callExpand } from './context_tool.js';
@@ -115,6 +115,9 @@ const ROUTES = [
 ];
 export const API_ROUTES = ROUTES;
 
+/** Who to name in the audit log for a change: the user, or 'local' (tiers 1-2). */
+const actor = (auth) => (auth.user?.id && auth.user.id !== 'owner' ? auth.user.id : 'local');
+
 function adminUserView(u) {
   return {
     id: u.id, email: u.email, name: u.name ?? null, role: u.role, status: u.status,
@@ -124,7 +127,16 @@ function adminUserView(u) {
 
 export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } = {}) {
   const source = createConfigSource(sourceOpts);
-  const saveConfig = (patch) => source.save(patch);
+  // Every UI/API change lands in config.json (source.save) and is audited:
+  // who, which keys, the new values (none of these keys are secrets), and the
+  // config fingerprint before and after, to line up with a git diff.
+  const saveConfig = (patch, by) => {
+    const before = fingerprint(cfg, source.loadMcpServers());
+    const next = source.save(patch);
+    audit('config.changed', { by: by ?? 'local', keys: Object.keys(patch), values: patch, before, after: fingerprint(next, source.loadMcpServers()) });
+    return next;
+  };
+  const auditMcp = (by, before) => audit('mcp.changed', { by: by ?? 'local', before, after: fingerprint(cfg, source.loadMcpServers()) });
   const publicConfig = (c) => source.public(c);
   const { dbPath, readMcpFile, saveMcpFile } = source;
   let cfg = source.load();
@@ -136,6 +148,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     ? cfg.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD)
     : null;
   const store = new Store(dbPath(cfg));
+  if (cfg.authMode === 'trusted-header') applyAccessPolicy(store, cfg);
   // The one account behind a 'single' password. Sessions hang off it; data
   // stays unowned (ALL_USERS), so switching between 'none' and 'single'
   // never hides a chat.
@@ -564,7 +577,14 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
       if (req.url === '/api/admin/users' && req.method === 'GET') {
         if (!multiUser()) return adminOnly();
-        return json(res, 200, { users: store.listUsers().map(adminUserView) });
+        const pins = resolveAccess(cfg);
+        const code = source.codeAccessUsers();
+        const pinnedBy = (u) => (pins.bootstrapAdmins.includes(u.external_id) ? 'bootstrapAdmins'
+          : code[u.external_id] ? 'access.users' : null);
+        return json(res, 200, {
+          fingerprint: fingerprint(cfg, source.loadMcpServers()),
+          users: store.listUsers().map((u) => ({ ...adminUserView(u), pinnedInCode: pinnedBy(u) }))
+        });
       }
 
       const adminUser = /^\/api\/admin\/users\/([\w-]+)$/.exec(req.url || '');
@@ -579,6 +599,29 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         }
         if (target.id === auth.userId && ((role && role !== 'admin') || (status && status !== 'approved'))) {
           return json(res, 400, { error: 'you cannot demote or disable your own account' });
+        }
+        const pins = resolveAccess(cfg);
+        if (target.external_id && pins.bootstrapAdmins.includes(target.external_id)) {
+          return json(res, 400, { error: 'this admin is declared in code (access.bootstrapAdmins)' });
+        }
+        // The file is the record: the decision goes into config.json's
+        // access.users first, and only then into the database.
+        if (target.external_id) {
+          const file = source.readFile();
+          const access = file.access && typeof file.access === 'object' ? file.access : {};
+          const users = { ...(access.users || {}) };
+          users[target.external_id] = {
+            ...(users[target.external_id] || {}),
+            ...(role !== undefined ? { role } : {}),
+            ...(status !== undefined ? { status } : {})
+          };
+          const merged = { ...file, access: { ...access, users } };
+          const problems = validateConfig({ ...cfg, access: merged.access });
+          if (problems.length) return json(res, 400, { error: problems.join('; ') });
+          const code = source.codeAccessUsers();
+          if (code[target.external_id]) return json(res, 409, { error: 'this user is pinned in code (access.users)' });
+          source.writeFile(merged);
+          cfg = source.load();
         }
         const updated = store.updateUser(target.id, { role, status });
         if (role !== undefined && role !== target.role) {
@@ -639,7 +682,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
 
       if (req.method === 'POST' && req.url === '/api/config') {
-        cfg = saveConfig(await readJson(req));
+        cfg = saveConfig(await readJson(req), actor(auth));
         audit('admin.config_changed', { by: auth.userId ?? null });
         return json(res, 200, configFor(auth));
       }
@@ -664,7 +707,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         if (!name || !['ask', 'auto', 'default'].includes(policy)) {
           return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
         }
-        cfg = saveConfig(setOverride(cfg, name, policy));
+        cfg = saveConfig(setOverride(cfg, name, policy), actor(auth));
         return json(res, 200, toolsView());
       }
 
@@ -673,7 +716,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         if (!name) return json(res, 400, { error: 'name is required' });
         const set = new Set(cfg.disabledTools || []);
         if (disabled) set.add(name); else set.delete(name);
-        cfg = saveConfig({ disabledTools: [...set] });
+        cfg = saveConfig({ disabledTools: [...set] }, actor(auth));
         return json(res, 200, toolsView());
       }
 
@@ -701,7 +744,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
         let updated;
         try {
+          const before = fingerprint(cfg, source.loadMcpServers());
           updated = saveMcpFile(JSON.stringify({ mcpServers: servers }, null, 2));
+          auditMcp(actor(auth), before);
         } catch (err) {
           return json(res, err instanceof LockedError ? 409 : 400, { error: err.message });
         }
@@ -716,7 +761,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const { text } = await readJson(req);
         let servers;
         try {
+          const before = fingerprint(cfg, source.loadMcpServers());
           servers = saveMcpFile(text);
+          auditMcp(actor(auth), before);
         } catch (err) {
           return json(res, err instanceof LockedError ? 409 : 400, { error: err.message });
         }
@@ -1000,9 +1047,11 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const pending = run?.approvals.get(id);
         if (!pending) return json(res, 409, { error: 'that call is no longer waiting' });
         run.approvals.delete(id);
-        if (decision === 'always') {
+        // "Always" rewrites tool policy, which is the tools feature's to do;
+        // without it, the answer counts as allowing this one call.
+        if (decision === 'always' && auth.features.has('tools')) {
           // Approval lists set in code cannot be saved to; allow this call only.
-          try { cfg = saveConfig(setOverride(cfg, pending.name, 'auto')); }
+          try { cfg = saveConfig(setOverride(cfg, pending.name, 'auto'), actor(auth)); }
           catch (err) { if (!(err instanceof LockedError)) throw err; }
         }
         pending.resolve(decision);
