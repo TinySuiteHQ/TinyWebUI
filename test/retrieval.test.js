@@ -3,10 +3,12 @@
 // same code path runs the real bundle (see the gated test at the bottom).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Store, ALL_USERS } from '../src/store.js';
 import { Retrieval, fuse } from '../src/retrieval.js';
 import { callReadDocument } from '../src/document_tool.js';
-import { loadEmbedder } from '../src/embedding.js';
+import { loadEmbedder, PRESETS } from '../src/embedding.js';
 import { configProblems, DEFAULTS } from '../src/config.js';
 
 // Words map to concepts, so "car" and "automobile" land together -- the
@@ -145,6 +147,29 @@ test('real MiniLM bundle: hybrid retrieval quality', { skip: !realDir && 'set TI
   const embedder = await loadEmbedder({ model: 'fast' }, realDir);
   const { doc, r } = setup('hybrid', embedder);
   const expect = { 'automobile maintenance': /sedan/, 'company profit': /earnings/, 'seeing a medical professional': /physician/, 'young cat': /kitten/ };
+  for (const [q, re] of Object.entries(expect)) assert.match((await r.search(doc.id, q, 1))[0].body, re, q);
+  embedder.close();
+});
+
+// Same, for the multilingual bundle (granite-embedding-107m-multilingual-onnx
+// in TINYWEBUI_TEST_MODELS_DIR): English questions find German passages,
+// which share no words for BM25 to match.
+const multiDir = realDir && existsSync(join(realDir, PRESETS.multilingual.localDir));
+test('real multilingual bundle: English questions find German passages', { skip: !multiDir && 'pull multilingual into TINYWEBUI_TEST_MODELS_DIR' }, async () => {
+  const embedder = await loadEmbedder({ model: 'multilingual' }, realDir);
+  assert.equal(embedder.dim, 384);
+  const store = new Store(':memory:');
+  const chat = store.createChat({}, ALL_USERS);
+  const german = [
+    'Die Limousine braucht vor dem Winter neue Reifen.',
+    'Der Quartalsgewinn hat die Prognose deutlich übertroffen.',
+    'Die Ärztin hat ihre Praxis in die alte Bibliothek verlegt.',
+    'Unser Kätzchen schläft den ganzen Nachmittag.',
+  ];
+  const content = german.map((p) => `${p} `.repeat(Math.floor(1500 / (p.length + 1))).trim()).join('\n\n');
+  const doc = store.addDocument(chat.id, { filename: 'notizen.txt', content });
+  const r = new Retrieval(store, { ...DEFAULTS.retrieval, mode: 'dense' }, embedder);
+  const expect = { 'car tyres': /Limousine/, 'company profit': /Quartalsgewinn/, 'seeing a doctor': /Ärztin/, 'young cat': /Kätzchen/ };
   for (const [q, re] of Object.entries(expect)) assert.match((await r.search(doc.id, q, 1))[0].body, re, q);
   embedder.close();
 });

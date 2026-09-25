@@ -174,14 +174,14 @@ npx tinywebui models pull fast                         # the one explicit downlo
 | | Passage | Chunk |
 | --- | --- | --- |
 | What it is | What `read_document` returns to the model | What gets embedded |
-| Size | `passageSize` characters (default 1,800, about 400 tokens) | The embedding model's token limit: 256 for `fast`, 512 for `balanced`/`quality` |
+| Size | `passageSize` characters (default 1,800, about 400 tokens) | The embedding model's token limit: 256 for `fast`, 512 for `balanced`/`quality`/`multilingual` |
 | Overlap | `passageOverlap` characters (default 200) | `chunkOverlap` tokens (default 32) |
 | Used for | BM25 (every mode) and the text the model reads | Dense matching (`dense`, `hybrid`) |
 
 A question is compared with every small chunk, each passage takes its best chunk's score, and the model gets whole passages. Small chunks keep the embedding match precise; big passages give the model enough context to answer. Because chunks follow the model, every part of a passage is embedded, even when the passage is longer than the model can read at once.
 
 - **Modes:** `lexical` (default), `dense` (embeddings only), `hybrid` (both, fused).
-- **Models:** `fast` (all-MiniLM-L6-v2), `balanced` (bge-small-en-v1.5) and `quality` (bge-base-en-v1.5), the same presets as TinySearch. A custom bundle works with `modelDir`.
+- **Models:** `fast` (all-MiniLM-L6-v2), `balanced` (bge-small-en-v1.5) and `quality` (bge-base-en-v1.5), the same presets as TinySearch, are English-only. For documents in other languages, or questions in a different language from the document, use `multilingual` (granite-embedding-107m-multilingual, Apache-2.0): about as fast as `fast`, but a larger download (430 MB). When questions and documents are in different languages, keyword matches rarely help, so `dense` mode or a higher `denseWeight` usually ranks better than the default hybrid. A custom bundle works with `modelDir`.
 - **Embeddings are computed once.** Each chunk is embedded when the document is attached and stored in SQLite; queries embed only the question. Switching models re-embeds automatically, and deleting a document or chat deletes its vectors.
 - **Nothing downloads at runtime.** A missing bundle, missing packages or a checksum that doesn't match `modelSha256` stops startup with a clear message. `tinywebui models verify` and `tinywebui doctor` check the same things beforehand. ONNX Runtime's telemetry is switched off.
 - **Tuning:** `passageSize`/`passageOverlap` (what the model gets back), `chunkOverlap`, `denseWeight` (default 0.5), `rrfK` (default 60), and `queryPrefix`/`documentPrefix` for models that expect instructions (for bge, set `queryPrefix` to `"Represent this sentence for searching relevant passages: "`). Bigger passages give more context per hit, but fewer hits fit in one `read_document` result.

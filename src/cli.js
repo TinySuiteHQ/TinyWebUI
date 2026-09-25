@@ -174,9 +174,9 @@ const commands = {
   },
 
   /**
-   * models pull <fast|balanced|quality> [--dir path]
+   * models pull <fast|balanced|quality|multilingual> [--dir path]
    *   Fetches a preset embedding bundle from Hugging Face -- the same repos
-   *   and files TinySearch uses -- into the models folder, then prints the
+   *   and files TinySearch uses (multilingual is TinyWebUI's own) -- into the models folder, then prints the
    *   model's sha256 to pin as retrieval.modelSha256. The only command that
    *   ever downloads a model; the server never does.
    * models verify
@@ -352,7 +352,7 @@ export function configSchema() {
     type: 'object', additionalProperties: false, 'x-change': 'file-only (restart to apply)',
     properties: {
       mode: { enum: ['lexical', 'dense', 'hybrid'] },
-      model: { type: 'string', description: 'fast | balanced | quality, or a name with modelDir' },
+      model: { type: 'string', description: 'fast | balanced | quality | multilingual, or a name with modelDir' },
       modelDir: { type: 'string' },
       modelSha256: { type: 'string', pattern: '^([0-9a-fA-F]{64})?$' },
       denseWeight: { type: 'number', exclusiveMinimum: 0, exclusiveMaximum: 1 },

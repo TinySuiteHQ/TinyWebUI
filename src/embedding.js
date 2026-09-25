@@ -19,7 +19,8 @@ import { join, resolve } from 'node:path';
  * need them.
  */
 
-// Mirrors TinySearch's _PRESET_MODELS (services/embedding_service.py).
+// fast/balanced/quality mirror TinySearch's _PRESET_MODELS
+// (services/embedding_service.py); all three are English-only.
 export const PRESETS = {
   fast: {
     repoId: 'onnx-models/all-MiniLM-L6-v2-onnx',
@@ -47,6 +48,19 @@ export const PRESETS = {
     normalize: true,
     maxLength: 512,
     files: ['onnx/model.onnx', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'vocab.txt', 'config.json']
+  },
+  // About as fast as `fast` (same 384 dims), but matches across languages:
+  // an English question finds a German passage. No query/passage prefixes.
+  // CLS pooling per the model card -- the export's other 2-D output is the
+  // tanh pooler, not the sentence embedding.
+  multilingual: {
+    repoId: 'ibm-granite/granite-embedding-107m-multilingual',
+    localDir: 'granite-embedding-107m-multilingual-onnx',
+    onnxPaths: ['model.onnx'],
+    pooling: 'cls',
+    normalize: true,
+    maxLength: 512,
+    files: ['model.onnx', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'config.json']
   }
 };
 
@@ -163,7 +177,7 @@ export async function loadEmbedder(retrieval, modelsDir) {
   /**
    * Small-to-big: a passage (what read_document returns) is cut into chunks
    * (what gets embedded). Chunk length is the model's own token limit --
-   * 256 for `fast`, 512 for the bge presets -- so every token of a passage
+   * 256 for `fast`, 512 for the others -- so every token of a passage
    * is embedded somewhere; neighbouring chunks overlap by chunkOverlap
    * tokens so a sentence cut at a boundary still lands whole in one of them.
    */

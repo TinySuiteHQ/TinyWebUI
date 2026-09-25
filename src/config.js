@@ -169,7 +169,7 @@ export const DEFAULTS = {
   // optional onnxruntime-node + @huggingface/tokenizers packages.
   retrieval: {
     mode: 'lexical',          // lexical | dense | hybrid
-    model: 'fast',            // fast | balanced | quality (TinySearch's presets), or a name with modelDir
+    model: 'fast',            // fast | balanced | quality (TinySearch's presets) | multilingual, or a name with modelDir
     modelDir: '',             // bundle folder; default models/<preset> next to the config
     modelSha256: '',          // pin model.onnx; startup refuses a different file
     denseWeight: 0.5,         // hybrid: dense share of the fused ranking, BM25 gets the rest

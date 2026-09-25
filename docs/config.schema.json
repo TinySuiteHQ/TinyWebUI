@@ -202,7 +202,7 @@
         },
         "model": {
           "type": "string",
-          "description": "fast | balanced | quality, or a name with modelDir"
+          "description": "fast | balanced | quality | multilingual, or a name with modelDir"
         },
         "modelDir": {
           "type": "string"
