@@ -174,7 +174,7 @@ const ROUTES = [
   ['GET', /^\/api\/documents\/[\w.-]+$/, 'attachments'],
   ['POST', /^\/api\/images\/normalize$/, 'images'],
   ['*', /^\/api\/chats(\/import)?$/, 'chat'],
-  ['*', /^\/api\/chats\/[\w.-]+(\/(stream|stop|approve|edit))?$/, 'chat'],
+  ['*', /^\/api\/chats\/[\w.-]+(\/(stream|stop|approve|edit|queue(\/[\w.-]+)?))?$/, 'chat'],
   ['POST', /^\/api\/chat$/, 'chat'],
   ['*', /^\/api\/admin\/users(\/[\w-]+)?$/, 'admin'],
   ['GET', /^\/api\/admin\/(users\/[\w-]+\/chats|chats\/[\w.-]+|documents\/[\w.-]+)$/, 'oversight'],
@@ -350,7 +350,14 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     return allowed[0] || cfg.model;
   }
 
-  function startRun({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null }) {
+  /** Tells everyone watching a chat's run what is queued now. */
+  const announceQueue = (chatId) => runs.get(chatId)?.emit({ type: 'queue', items: store.listQueued(chatId) });
+
+  /**
+   * `lead` is a queued follow-up that starts this run: stored after baseCount
+   * and sent as an event, so a live view and a reload each show it once.
+   */
+  function startRun({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null }) {
     const run = {
       events: [],
       subs: new Set(),
@@ -361,7 +368,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // plays the events over the top.
       baseCount: store.messages(chat.id).length,
       // Tool calls waiting on the user, by call id -> { name, resolve }.
-      approvals: new Map()
+      approvals: new Map(),
+      unattended
     };
     runs.set(chat.id, run);
     // A stop settles every open question as "no", so the loop can unwind
@@ -381,16 +389,40 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       }
     };
 
+    run.emit = emit;
     emit({ type: 'chat', id: chat.id, title: chat.title });
+    if (lead != null) {
+      store.addMessage(chat.id, { role: 'user', content: lead });
+      emit({ type: 'user', content: lead });
+    }
+    emit({ type: 'queue', items: store.listQueued(chat.id) });
+
+    // Steering is interactive input: an unattended run never takes any, so
+    // it cannot swallow what someone typed into a chat an automation shares.
+    const takeInput = unattended ? null : () => {
+      const items = store.takeQueued(chat.id, { kind: 'steer' });
+      if (items.length) emit({ type: 'queue', items: store.listQueued(chat.id) });
+      return items.map((i) => i.content);
+    };
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg: model && model !== cfg.model ? { ...cfg, model } : cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve });
+        await runChat({ cfg: model && model !== cfg.model ? { ...cfg, model } : cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
         store.touchChat(chat.id);
         run.done = true;
+        // The run would go idle here, so the oldest queued item starts the
+        // next one -- in this same synchronous block, so nothing queued before
+        // `done` flipped can be missed. A stop or failure delivers nothing:
+        // the queue stays put and the client hands it back to the composer.
+        const ok = !run.events.some((event) => event.type === 'error') && !run.ac.signal.aborted;
+        const next = ok && !unattended ? store.takeQueued(chat.id, { first: true })[0] : null;
+        if (next) {
+          emit({ type: 'next_run' });
+          startRun({ chat, tools, model, lead: next.content });
+        }
         try { onFinish?.({
           ok: !run.events.some((event) => event.type === 'error') && !run.ac.signal.aborted,
           error: run.events.find((event) => event.type === 'error')?.error || (run.ac.signal.aborted ? 'Stopped.' : null),
@@ -1064,6 +1096,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
           // instead of rendering the same rounds twice.
           messages: live ? messages.slice(0, run.baseCount) : messages,
           running: Boolean(live),
+          queued: store.listQueued(found.id),
           documents: store.listDocuments(found.id)
         });
       }
@@ -1207,6 +1240,30 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         }
         pending.resolve(decision);
         return json(res, 200, { ok: true });
+      }
+
+      // Input sent while a turn is running. Refused when nothing interactive
+      // is running (send it normally) and while an automation holds the chat.
+      const queue = /^\/api\/chats\/([\w.-]+)\/queue(?:\/([\w.-]+))?$/.exec(req.url || '');
+      if (queue && req.method === 'POST' && !queue[2]) {
+        if (!store.getChat(queue[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
+        const { id, kind, message } = await readJson(req, TURN_LIMIT);
+        const text = String(message ?? '').trim();
+        if (!text) return json(res, 400, { error: 'message is required' });
+        if (!['steer', 'followup'].includes(kind)) return json(res, 400, { error: 'kind must be steer or followup' });
+        if (typeof id !== 'string' || !/^[\w.-]{1,64}$/.test(id)) return json(res, 400, { error: 'id is required' });
+        const run = runs.get(queue[1]);
+        if (!run || run.done) return json(res, 409, { error: 'nothing is running; send it as a message' });
+        if (run.unattended) return json(res, 409, { error: 'an automation is running in this chat; wait for it to finish' });
+        store.addQueued(queue[1], { id, kind, content: text });
+        announceQueue(queue[1]);
+        return json(res, 200, { ok: true, items: store.listQueued(queue[1]) });
+      }
+      if (queue && req.method === 'DELETE' && queue[2]) {
+        if (!store.getChat(queue[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
+        const removed = store.deleteQueued(queue[1], queue[2]);
+        announceQueue(queue[1]);
+        return json(res, removed ? 200 : 409, removed ? { ok: true } : { error: 'already delivered' });
       }
 
       const stop = /^\/api\/chats\/([\w.-]+)\/stop$/.exec(req.url || '');

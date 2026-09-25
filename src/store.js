@@ -123,6 +123,19 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS messages_chat_seq ON messages(chat_id, seq);
 
+-- Input sent while a turn was still running: 'steer' is delivered at the next
+-- safe boundary inside the run, 'followup' once it would otherwise go idle.
+-- Kept here rather than in the run so a reload or restart cannot lose one;
+-- the id comes from the client, so a retried submit cannot add it twice.
+CREATE TABLE IF NOT EXISTS queued_messages (
+  pos        INTEGER PRIMARY KEY AUTOINCREMENT,
+  id         TEXT NOT NULL UNIQUE,
+  chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL CHECK (kind IN ('steer', 'followup')),
+  content    TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS artifacts (
   id         TEXT PRIMARY KEY,
   chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -312,7 +325,7 @@ export const PASSAGE_OVERLAP = 200;
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
@@ -549,6 +562,41 @@ export class Store {
    * longer exists, so nothing can reach them, and deleting them would be the
    * one way to lose tool output that the transcript promises to keep.
    */
+  /**
+   * Queues input for a running turn. Returns false when that id is already
+   * queued (a retry), true when it was added.
+   */
+  addQueued(chatId, { id, kind, content }) {
+    return this.db.prepare(
+      'INSERT OR IGNORE INTO queued_messages (id, chat_id, kind, content, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).run(String(id), chatId, kind, String(content), Date.now()).changes > 0;
+  }
+
+  /** A chat's queue, oldest first. */
+  listQueued(chatId) {
+    return this.db.prepare(
+      'SELECT id, kind, content, created_at FROM queued_messages WHERE chat_id = ? ORDER BY pos'
+    ).all(chatId);
+  }
+
+  /**
+   * Removes and returns queued items for delivery, oldest first: every item
+   * of `kind`, or with `first` only the oldest item of any kind.
+   */
+  takeQueued(chatId, { kind = null, first = false } = {}) {
+    const rows = this.db.prepare(
+      `SELECT pos, id, kind, content FROM queued_messages WHERE chat_id = ?${kind ? ' AND kind = ?' : ''} ORDER BY pos${first ? ' LIMIT 1' : ''}`
+    ).all(...(kind ? [chatId, kind] : [chatId]));
+    const drop = this.db.prepare('DELETE FROM queued_messages WHERE pos = ?');
+    for (const r of rows) drop.run(r.pos);
+    return rows.map(({ id, kind: k, content }) => ({ id, kind: k, content }));
+  }
+
+  /** Withdraws one queued item before it is delivered. */
+  deleteQueued(chatId, id) {
+    return this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ? AND id = ?').run(chatId, String(id)).changes > 0;
+  }
+
   truncateFrom(chatId, seq) {
     const removed = this.db
       .prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?')
@@ -567,6 +615,7 @@ export class Store {
     if (!this.getChat(id, userId)) return false;
     this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
+    this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
     // FTS5 has no foreign keys of its own, so its rows are dropped by rowid
     // before the map (and then the documents) that name them go with the chat.

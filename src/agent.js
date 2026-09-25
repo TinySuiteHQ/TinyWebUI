@@ -17,6 +17,11 @@
  *   shouldContinue({ round, assistant, results }) -> boolean
  *     Optional; asked after each tool batch, before the next model call. A
  *     false ends the run at that safe boundary, with the transcript valid.
+ *   pendingInput({ round }) -> [{ wire, message }]
+ *     Optional; user input that arrived while the run was working (steering).
+ *     Asked at each safe boundary -- after a tool batch, or when the model
+ *     answers -- and appended before the next model call. Input delivered on
+ *     an answer keeps the run going, so the model sees it in the same run.
  *
  * Returns the messages appended during the run, in transcript order.
  */
@@ -43,8 +48,22 @@ export async function runAgentLoop({ messages, maxRounds, runtime, signal }) {
     working.push(assistant);
     appended.push(assistant);
 
+    const take = async () => {
+      const input = (await runtime.pendingInput?.({ round })) || [];
+      for (const { wire, message } of input) {
+        working.push(wire);
+        appended.push(message);
+      }
+      return input.length > 0;
+    };
+
     const calls = assistant.tool_calls || [];
-    if (lastCall || !calls.length) return appended;
+    // The last pass takes no input: nothing would answer it. It stays queued.
+    if (lastCall) return appended;
+    if (!calls.length) {
+      if (await take()) continue;
+      return appended;
+    }
 
     const results = await runtime.executeToolBatch(calls, { messages: working, round, lastCall, signal });
     for (const { wire, message } of results) {
@@ -55,6 +74,7 @@ export async function runAgentLoop({ messages, maxRounds, runtime, signal }) {
     if (runtime.shouldContinue && !(await runtime.shouldContinue({ round, assistant, results }))) {
       return appended;
     }
+    await take();
   }
   return appended;
 }

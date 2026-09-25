@@ -82,3 +82,22 @@ test('the wire copy of a result goes to the model, the message copy to the calle
   assert.equal(seen.content, 'stub');
   assert.equal(out[1].content, 'full');
 });
+
+test('pending input lands after a tool batch, and keeps a run going past an answer', async () => {
+  const s = scripted([
+    { role: 'assistant', content: null, tool_calls: [call('a', 'search')] },
+    { role: 'assistant', content: 'first answer' },
+    { role: 'assistant', content: 'second answer' }
+  ]);
+  const queue = [['after tools'], ['after answer'], []];
+  s.runtime.pendingInput = async () => (queue.shift() || []).map((content) => {
+    const m = { role: 'user', content };
+    return { wire: m, message: m };
+  });
+  const out = await runAgentLoop({ messages: [], maxRounds: 5, runtime: s.runtime });
+
+  assert.deepEqual(out.map((m) => m.content ?? m.role), [
+    'assistant', 'result of search', 'after tools', 'first answer', 'after answer', 'second answer'
+  ]);
+  assert.deepEqual(s.turns[1].messages, ['assistant', 'tool', 'user'], 'steering is in the next request');
+});

@@ -14,6 +14,7 @@ export const state = {
   // Switching chats aborts it -- see leaveView() in chat.js.
   viewCtrl: null,
   chats: [],        // the sidebar's chronological chat list
+  queue: [],        // input queued on the running turn: [{id, kind, content}]
   folders: [],      // every known folder name, including empty ones
 
   // Uploaded before the message that references them is sent, so a slow

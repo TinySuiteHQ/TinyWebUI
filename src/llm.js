@@ -536,7 +536,10 @@ export async function runChat({
   // approval policy stops; without it such calls are declined, never run.
   approve = null,
   // Extra lifecycle hooks (see agent.js), run after the built-in ones.
-  hooks = {}
+  hooks = {},
+  // () => string[]: steering input queued while this run works, taken at each
+  // safe boundary. Persisted and shown as ordinary user messages.
+  takeInput = null
 }) {
   const maxRounds = Math.max(1, cfg.maxToolRounds || 20);
   const operatorPrompt = cfg.systemPrompt;
@@ -626,6 +629,12 @@ export async function runChat({
         cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall
       }),
       executeToolBatch: tools_.execute,
+      pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
+        const msg = { role: 'user', content };
+        store.addMessage(chatId, msg);
+        emit({ type: 'user', content });
+        return { wire: msg, message: msg };
+      })),
       shouldContinue: async ({ round, assistant, results }) => {
         if (tools_.stopRequested()) return false;
         try {

@@ -9,22 +9,50 @@ import { consume } from './stream.js';
 import { commitAttachments, invalidAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
+import { renderQueue, enqueue, reclaimQueue } from './queue.js';
 
 const input = $('input');
 
 input.addEventListener('input', () => {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 190) + 'px';
+  if (state.busy) setBusy(true);
 });
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('form').requestSubmit(); }
+  if (e.key !== 'Enter' || e.shiftKey) return;
+  e.preventDefault();
+  // While a turn runs, Alt+Enter queues for after it; plain Enter steers it.
+  if (e.altKey && state.busy) queueInput('followup');
+  else $('form').requestSubmit();
 });
+
+/** Sends what is typed to the running turn instead of starting a new one. */
+async function queueInput(kind) {
+  const text = input.value.trim();
+  if (!text || !state.chat.id) return;
+  input.value = '';
+  input.dispatchEvent(new Event('input'));
+  // 409: the turn finished in the meantime, so this is just the next message.
+  if (!(await enqueue(kind, text))) {
+    input.value = text;
+    setBusy(false);
+    $('form').requestSubmit();
+  }
+}
+
+/** After a stream ends: follow the run a follow-up started, or take back what never went. */
+async function afterRun({ next } = {}, id) {
+  if (next && state.chat.id === id) return rejoin(id);
+  if (state.chat.id === id) await reclaimQueue();
+  return undefined;
+}
 
 /** Cancels whatever stream read the view currently on screen owns. */
 function leaveView() {
   state.viewCtrl?.abort();
   state.viewCtrl = null;
   if (state.busy) setBusy(false);
+  renderQueue([]);
 }
 
 export function newChat() {
@@ -69,9 +97,11 @@ export async function openChat(id) {
   // Mid-turn, the server hands back only the settled part of the transcript;
   // the rest arrives as events, exactly as it did for the tab that started it.
   replay(found.messages);
+  renderQueue(found.queued || []);
   clearSearch();
   closeSideDrawer();
   if (found.running) rejoin(id);
+  else reclaimQueue();
 }
 
 /** Follows a turn already in flight, from the top of its event buffer. */
@@ -79,9 +109,10 @@ async function rejoin(id) {
   const ctrl = new AbortController();
   state.viewCtrl = ctrl;
   setBusy(true);
+  let outcome;
   try {
     const res = await fetch(`/api/chats/${id}/stream?from=0`, { signal: ctrl.signal });
-    if (res.ok) await consume(res);
+    if (res.ok) outcome = await consume(res);
   } catch (err) {
     // Navigating away aborts this on purpose; anything else just means the
     // transcript is in the store and reopening picks it up.
@@ -92,6 +123,7 @@ async function rejoin(id) {
     state.viewCtrl = null;
     setBusy(false);
     loadChats();
+    await afterRun(outcome, id);
   }
 }
 
@@ -99,19 +131,27 @@ const SVG = (d) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="curr
 const SEND_ICON = SVG('<path d="M12 19V5M5 12l7-7 7 7"/>');
 const STOP_ICON = SVG('<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>');
 
-/** While a turn runs, send becomes stop -- the run outlives this tab either way. */
+/**
+ * While a turn runs, send becomes stop -- the run outlives this tab either
+ * way -- unless something is typed, which the arrow then queues on the turn.
+ */
 function setBusy(on) {
+  const wasBusy = state.busy;
   state.busy = on;
+  const stop = on && !input.value.trim();
   // Icon-only button: the arrow sends, the square stops; the label says which.
-  $('send').innerHTML = on ? STOP_ICON : SEND_ICON;
-  $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
-  $('send').classList.toggle('stop', on);
-  if (!on) input.focus();
+  $('send').innerHTML = stop ? STOP_ICON : SEND_ICON;
+  $('send').setAttribute('aria-label', stop ? 'Stop' : on ? 'Queue message (Alt+Enter: after this turn)' : 'Send');
+  $('send').title = on && !stop ? 'Enter: next step · Alt+Enter: after this turn' : '';
+  $('send').classList.toggle('stop', stop);
+  input.placeholder = on ? 'Add a message to this turn…' : 'Type a message…';
+  if (!on && wasBusy) input.focus();
 }
 
 $('form').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (state.busy) {
+    if (input.value.trim()) return queueInput('steer');
     // Closing the tab no longer stops a turn, so there has to be a way to
     // actually mean it.
     if (state.chat.id) await fetch(`/api/chats/${state.chat.id}/stop`, { method: 'POST' });
@@ -154,6 +194,7 @@ $('form').addEventListener('submit', async (e) => {
   const placeholder = !text ? (images.length ? '(attached image)' : '(attached document)') : text;
   addUser(placeholder, null, docs, images);
 
+  let outcome;
   try {
     // Only the new turn goes up. The server replays the rest from its own copy,
     // so a page-sized tool result crosses the wire once rather than every turn.
@@ -168,7 +209,7 @@ $('form').addEventListener('submit', async (e) => {
       }),
       signal: ctrl.signal
     });
-    await consume(res);
+    outcome = await consume(res);
     loadChats();
   } catch (err) {
     if (err.name !== 'AbortError') addError(err.message);
@@ -178,6 +219,7 @@ $('form').addEventListener('submit', async (e) => {
     if (state.viewCtrl === ctrl) {
       state.viewCtrl = null;
       setBusy(false);
+      afterRun(outcome, state.chat.id);
     }
   }
 });

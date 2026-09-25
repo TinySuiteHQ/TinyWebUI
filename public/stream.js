@@ -5,14 +5,17 @@
  * up instead of starting over.
  */
 import { state } from './state.js';
-import { addTurn, addThinking, addSteps, addNotice, addError, statusOf } from './transcript.js';
+import { addTurn, addUser, addThinking, addSteps, addNotice, addError, statusOf } from './transcript.js';
+import { renderQueue } from './queue.js';
 import { loadChats } from './sidebar.js';
 
+/** Resolves to `{ next }`: true when a queued follow-up started a new run. */
 export async function consume(res) {
   let answer = null;
   let think = null;
   let steps = null;
-  const turn = addTurn();
+  let next = false;
+  let turn = addTurn();
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -81,6 +84,18 @@ export async function consume(res) {
           // One line per round, matching what a reopened transcript will show.
           // The turn banks it too, and sums the rounds under the answer.
           turn.usage(ev.usage);
+        } else if (ev.type === 'user') {
+          // Queued input delivered into this run (steering) or starting the
+          // next one (a follow-up): the turn so far closes above it.
+          if (think) think.done();
+          think = null; steps = null; answer = null;
+          turn.finish();
+          addUser(ev.content);
+          turn = addTurn();
+        } else if (ev.type === 'queue') {
+          renderQueue(ev.items);
+        } else if (ev.type === 'next_run') {
+          next = true;
         } else if (ev.type === 'compacted') {
           // Handled by the accompanying notice; nothing extra to draw.
         } else if (ev.type === 'done') {
@@ -107,4 +122,5 @@ export async function consume(res) {
     // so the page is never left with the work stuck open.
     turn.finish();
   }
+  return { next };
 }

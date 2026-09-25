@@ -798,6 +798,21 @@ form {
 .attachment-chip .remove { cursor: pointer; opacity: .6; }
 .attachment-chip .remove:hover { opacity: 1; }
 .attachment-chip-image { padding: .2rem; border-radius: .6rem; }
+/* Input queued on a running turn, listed above the text box until delivered. */
+.queue { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
+.queue[hidden] { display: none; }
+.queued {
+  display: flex; align-items: center; gap: .5rem; min-width: 0;
+  border: 1px dashed var(--line); border-radius: var(--r-md); padding: .25rem .25rem .25rem .6rem;
+  font-size: var(--fs-small);
+}
+.queued-kind { flex: 0 0 auto; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; }
+.queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queued-drop {
+  flex: 0 0 auto; min-width: var(--tap); min-height: 0; padding: 0 .4rem;
+  background: none; border: 0; color: var(--muted); font-size: 1rem; cursor: pointer;
+}
+.queued-drop:hover { color: var(--fg); }
 .attachment-thumb {
   width: 2.5rem; height: 2.5rem; border-radius: .4rem; object-fit: cover;
   background: var(--bg-soft, transparent);
