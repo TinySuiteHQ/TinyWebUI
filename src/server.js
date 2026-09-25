@@ -7,6 +7,7 @@ import { createConfigSource, LockedError } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
 import { Store, toView, ALL_USERS } from './store.js';
+import { validateConfig, fingerprint } from './policy.js';
 import {
   getSessionUser, resolveTrustedUser, destroyUserSessions, audit, hashPassword, verifyPassword,
   createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
@@ -100,22 +101,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const publicConfig = (c) => source.public(c);
   const { dbPath, readMcpFile, saveMcpFile } = source;
   let cfg = source.load();
-  if (cfg.authMode === 'trusted-header' && !(Array.isArray(cfg.trustedProxyCidrs) && cfg.trustedProxyCidrs.length)) {
-    throw new Error("authMode 'trusted-header' requires trustedProxyCidrs: identity headers are only believed from those peers");
-  }
-  if (cfg.authMode === 'multiuser') {
-    throw new Error("authMode 'multiuser' has no login flow yet; use 'trusted-header' behind a gateway for Google/Apple/SSO sign-in");
-  }
+  const problems = validateConfig(cfg);
+  if (problems.length) throw new Error(problems.join('\n'));
   // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
-  // (handy for containers). A plaintext authPassword is refused, not guessed at.
-  let passwordHash = null;
-  if (cfg.authMode === 'single') {
-    if (cfg.authPassword && !String(cfg.authPassword).startsWith('scrypt$')) {
-      throw new Error('authPassword must be a hash: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD');
-    }
-    passwordHash = cfg.authPassword || (process.env.TINYWEBUI_PASSWORD ? hashPassword(process.env.TINYWEBUI_PASSWORD) : null);
-    if (!passwordHash) throw new Error("authMode 'single' needs a password: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD");
-  }
+  // (handy for containers). validateConfig above already refused a plaintext one.
+  const passwordHash = cfg.authMode === 'single'
+    ? cfg.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD)
+    : null;
   const store = new Store(dbPath(cfg));
   // The one account behind a 'single' password. Sessions hang off it; data
   // stays unowned (ALL_USERS), so switching between 'none' and 'single'
@@ -153,6 +145,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   console.log(`[tinywebui] db:     ${dbPath(cfg)}`);
   console.log(`[tinywebui] model:  ${cfg.model} via ${cfg.baseUrl}`);
   console.log(`[tinywebui] tools:  ${hub.tools.length} from ${hub.clients.size} MCP server(s)`);
+  console.log(`[tinywebui] policy: ${fingerprint(cfg, source.loadMcpServers())} (fingerprint)`);
   for (const err of hub.errors) console.log(`[tinywebui] mcp error: ${err}`);
 
   /**

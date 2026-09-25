@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { FILE_ONLY, mergeAccess, keyClass } from './policy.js';
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
   ? resolve(process.env.TINYWEBUI_CONFIG)
@@ -195,7 +196,9 @@ export function createConfigSource(opts = {}) {
     if (process.env.OPENROUTER_API_KEY) env.apiKey = process.env.OPENROUTER_API_KEY;
     if (process.env.TINYWEBUI_MODEL) env.model = process.env.TINYWEBUI_MODEL;
 
-    const cfg = { ...DEFAULTS, ...readFile(), ...env, ...code };
+    const fromFile = readFile();
+    const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
+    if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
     cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
     if (!['5m', '1h'].includes(cfg.cacheTtl)) cfg.cacheTtl = DEFAULTS.cacheTtl;
     const MODES = ['auto', 'implicit', 'explicit', 'rolling', 'off'];
@@ -218,6 +221,8 @@ export function createConfigSource(opts = {}) {
 
   /** Applies the writable, unlocked part of `patch`; locked keys are an error. */
   function save(patch) {
+    const fileOnly = Object.keys(patch).filter((k) => FILE_ONLY.has(k));
+    if (fileOnly.length) throw new LockedError(`set in files only, not editable here: ${fileOnly.join(', ')}`);
     const blocked = Object.keys(patch).filter((k) => WRITABLE.has(k) && locked.has(k));
     if (blocked.length) throw new LockedError(`set in code, not editable here: ${blocked.join(', ')}`);
     const current = readFile();
@@ -237,7 +242,14 @@ export function createConfigSource(opts = {}) {
   return {
     load,
     save,
-    public: (cfg) => ({ ...publicConfig(cfg), lockedKeys: [...locked], mcpLocked: Boolean(codeServers) }),
+    public: (cfg) => ({
+      ...publicConfig(cfg), lockedKeys: [...locked], mcpLocked: Boolean(codeServers),
+      keyClasses: Object.fromEntries([...WRITABLE, ...FILE_ONLY].map((k) => [k, keyClass(k, locked)]))
+    }),
+    lockedKeys: () => new Set(locked),
+    /** Low-level access for the policy write-back: read and replace the JSON file. */
+    readFile,
+    writeFile,
     path: () => file,
     mcpPath: () => (codeServers ? null : mcpFile),
     mcpLocked: Boolean(codeServers),
