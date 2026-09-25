@@ -1,6 +1,7 @@
 /** The settings panel: model/runtime config, MCP servers, and the tools list. */
 import { $, el, num } from './dom.js';
 import { addError } from './transcript.js';
+import { whoami } from './access.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health
@@ -282,7 +283,9 @@ export async function loadConfig() {
   $('toolApproval').value = cfg.toolApproval ?? 'writes';
   // The chip is the model picker's button now; the tool count lives in the
   // + menu, where the tools themselves are.
-  const bits = [cfg.model];
+  // Tier 3 shows your own model; the configured one is only the default.
+  const me = whoami();
+  const bits = [me.authMode === 'trusted-header' && me.model ? me.model : cfg.model];
   if (!cfg.hasApiKey) bits.push('NO API KEY');
   if (cfg.mcpErrors?.length) bits.push(`${cfg.mcpErrors.length} mcp err`);
   $('status').textContent = bits.join(' · ');

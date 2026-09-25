@@ -97,6 +97,7 @@ const ROUTES = [
   ['GET', /^\/api\/config$/, null],
   ['POST', /^\/api\/config$/, 'settings'],
   ['GET', /^\/api\/models$/, 'model-picker'],
+  ['POST', /^\/api\/me\/prefs$/, 'model-picker'],
   ['GET', /^\/api\/tools$/, 'tools'],
   ['POST', /^\/api\/tools\/(approval|toggle)$/, 'tools'],
   ['*', /^\/api\/mcp(\/servers\/[^/]+\/toggle)?$/, 'mcp'],
@@ -255,7 +256,22 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     };
   };
 
-  function startRun({ chat, tools, onFinish, historyFromSeq = null, unattended = false }) {
+  /**
+   * The model a person's turns use. Tiers 1-2: the configured model. Tier 3:
+   * their own pick if their role still allows it, else the configured model
+   * if allowed, else the first model their role allows.
+   */
+  function modelFor(userId, role) {
+    if (cfg.authMode !== 'trusted-header' || !userId) return cfg.model;
+    const allowed = modelsFor(cfg, role);
+    const ok = (m) => m && (allowed === '*' || allowed.includes(m));
+    const pref = store.getPrefs(userId).model;
+    if (ok(pref)) return pref;
+    if (ok(cfg.model)) return cfg.model;
+    return allowed[0] || cfg.model;
+  }
+
+  function startRun({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null }) {
     const run = {
       events: [],
       subs: new Set(),
@@ -290,7 +306,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve });
+        await runChat({ cfg: model && model !== cfg.model ? { ...cfg, model } : cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -336,7 +352,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     if (isRunning(chat.id)) return false;
     const firstSeq = store.addMessage(chat.id, { role: 'user', content: runMessage(automation) });
     store.updateAutomationRun(runId, { status: 'running', startedAt: Date.now() });
-    startRun({ chat, tools: toolsFor(ownerFeatures(automation.userId)), onFinish: ({ ok, error, result }) => {
+    startRun({ chat, model: modelFor(automation.userId, automation.userId ? store.getUser(automation.userId)?.role : null), tools: toolsFor(ownerFeatures(automation.userId)), onFinish: ({ ok, error, result }) => {
       store.updateAutomationRun(runId, {
         status: ok ? 'completed' : 'failed', finishedAt: Date.now(),
         result: String(result || '').slice(0, 200000), error: error ? String(error).slice(0, 1000) : null
@@ -541,10 +557,23 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
           isAdmin: Boolean(auth.isAdmin),
           features: [...auth.features],
           models: auth.userId !== undefined ? modelsFor(cfg, auth.role) : [],
+          model: auth.userId !== undefined ? modelFor(auth.user?.id, auth.role) : null,
           user: auth.user
             ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
             : null
         });
+      }
+
+      // Tier 3's model pill: a personal choice among the role's models. In
+      // tiers 1-2 the pill changes the configured model instead (/api/config).
+      if (req.method === 'POST' && req.url === '/api/me/prefs') {
+        if (!multiUser()) return json(res, 400, { error: 'preferences are per-user; set the model in settings' });
+        const { model } = await readJson(req);
+        if (model !== null && (typeof model !== 'string' || !model.trim())) return json(res, 400, { error: 'model must be a model id or null' });
+        const allowed = modelsFor(cfg, auth.role);
+        if (model && allowed !== '*' && !allowed.includes(model)) return json(res, 403, { error: 'that model is not available to you' });
+        store.setPref(auth.user.id, 'model', model ? model.trim() : null);
+        return json(res, 200, { model: modelFor(auth.user.id, auth.role) });
       }
 
       if (req.method === 'POST' && req.url === '/api/auth/logout' && cfg.authMode === 'trusted-header') {
@@ -696,7 +725,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // every OpenAI-compatible endpoint serves /models, so a failure is an
       // answer too: the picker falls back to typing an id.
       if (req.method === 'GET' && req.url === '/api/models') {
-        return json(res, 200, await listModels());
+        const all = await listModels();
+        const allowed = modelsFor(cfg, auth.role);
+        if (allowed === '*') return json(res, 200, all);
+        // A fixed catalog: only those ids, named from the provider list when
+        // it knows them, listed even when it does not.
+        const byId = new Map(all.models.map((m) => [m.id, m]));
+        return json(res, 200, { supported: true, restricted: true, models: allowed.map((id) => byId.get(id) || { id, name: null }) });
       }
 
       // The grouped view behind the tools panel: built-ins, and every MCP
@@ -1038,7 +1073,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         // rewound transcript and then attaches, the same path a reload takes,
         // rather than reading a stream through a response it also has to
         // redraw behind.
-        startRun({ chat: found, tools: toolsFor(auth.features) });
+        startRun({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role) });
         return json(res, 200, { ok: true, running: true });
       }
 
@@ -1150,7 +1185,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const existing = runs.get(chat.id);
         const run = existing && !existing.done
           ? existing
-          : startRun({ chat, tools: toolsFor(auth.features) });
+          : startRun({ chat, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role) });
         return attach(run, res, 0);
       }
 

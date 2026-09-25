@@ -6,7 +6,7 @@
  */
 import { $, el } from './dom.js';
 import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from './settings.js';
-import { can, whoami } from './access.js';
+import { can, whoami, loadAccess } from './access.js';
 import { addError } from './transcript.js';
 
 const form = $('form');
@@ -156,8 +156,11 @@ function renderTools(body, data) {
 /* ---- model menu ---- */
 
 async function buildModelMenu(pop) {
-  const current = $('model').value;
-  if (isLocked('model')) {
+  // Tier 3: the pill is a personal choice among your role's models, saved
+  // per user; it never changes anyone else's model.
+  const personal = whoami().authMode === 'trusted-header';
+  const current = personal ? whoami().model : $('model').value;
+  if (!personal && isLocked('model')) {
     pop.appendChild(Object.assign(el('div', 'pop-note'), {
       textContent: isReadOnly() ? 'The model is managed by your administrator.' : 'The model is set in code and cannot be switched here.'
     }));
@@ -177,7 +180,10 @@ async function buildModelMenu(pop) {
   const choose = async (id) => {
     closeMenu();
     if (!id || id === current) return;
-    try { await post('/api/config', { model: id }); } catch (err) { return addError(err.message); }
+    try {
+      if (personal) { await post('/api/me/prefs', { model: id }); await loadAccess(); }
+      else await post('/api/config', { model: id });
+    } catch (err) { return addError(err.message); }
     await loadConfig();
   };
 

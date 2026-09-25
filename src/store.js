@@ -328,6 +328,14 @@ export class Store {
     ensureColumn(this.db, 'users', 'external_id', 'TEXT');
     ensureColumn(this.db, 'users', 'name', 'TEXT');
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_external_id ON users(external_id)');
+    // Per-user preferences (tier 3): harmless choices like which allowed
+    // model to use. Deployment settings never live here.
+    this.db.exec(`CREATE TABLE IF NOT EXISTS user_prefs (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key     TEXT NOT NULL,
+      value   TEXT,
+      PRIMARY KEY (user_id, key)
+    )`);
     // `messages` may already exist from before these columns did --
     // CREATE TABLE IF NOT EXISTS above is a no-op against a live table, so
     // they're added here instead, self-repairing like the FTS backfill below.
@@ -932,6 +940,18 @@ export class Store {
   }
 
   /* ---------- users ---------- */
+
+  getPrefs(userId) {
+    const out = {};
+    for (const r of this.db.prepare('SELECT key, value FROM user_prefs WHERE user_id = ?').all(userId)) out[r.key] = r.value;
+    return out;
+  }
+
+  setPref(userId, key, value) {
+    if (value == null) this.db.prepare('DELETE FROM user_prefs WHERE user_id = ? AND key = ?').run(userId, key);
+    else this.db.prepare(`INSERT INTO user_prefs (user_id, key, value) VALUES (?, ?, ?)
+      ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`).run(userId, key, String(value));
+  }
 
   getUser(id) {
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
