@@ -9,7 +9,7 @@ import { consume } from './stream.js';
 import { commitAttachments, invalidAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
-import { renderQueue, enqueue, reclaimQueue } from './queue.js';
+import { renderQueue, enqueue, reclaimQueue, holdFollowup, setHeldSender } from './queue.js';
 
 const input = $('input');
 
@@ -21,10 +21,31 @@ input.addEventListener('input', () => {
 input.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
   e.preventDefault();
-  // While a turn runs, Alt+Enter queues for after it; plain Enter steers it.
-  if (e.altKey && state.busy) queueInput('followup');
+  // While a turn runs, Alt+Enter holds it for later; plain Enter steers it.
+  if (e.altKey && state.busy) holdInput();
   else $('form').requestSubmit();
 });
+
+/** Parks what is typed above the composer until its send button is clicked. */
+function holdInput() {
+  const text = input.value.trim();
+  if (!text || !state.chat.id) return;
+  input.value = '';
+  input.dispatchEvent(new Event('input'));
+  holdFollowup(text);
+}
+
+// A held follow-up, confirmed: into the running turn, or as the next message.
+setHeldSender((text) => {
+  if (!state.busy) input.value = [text, input.value.trim()].filter(Boolean).join('\n\n');
+  else input.value = text;
+  queueOrSend();
+});
+
+function queueOrSend() {
+  if (state.busy) queueInput('steer');
+  else $('form').requestSubmit();
+}
 
 /** Sends what is typed to the running turn instead of starting a new one. */
 async function queueInput(kind) {
@@ -141,8 +162,8 @@ function setBusy(on) {
   const stop = on && !input.value.trim();
   // Icon-only button: the arrow sends, the square stops; the label says which.
   $('send').innerHTML = stop ? STOP_ICON : SEND_ICON;
-  $('send').setAttribute('aria-label', stop ? 'Stop' : on ? 'Queue message (Alt+Enter: after this turn)' : 'Send');
-  $('send').title = on && !stop ? 'Enter: next step · Alt+Enter: after this turn' : '';
+  $('send').setAttribute('aria-label', stop ? 'Stop' : on ? 'Queue message (Alt+Enter: hold for later)' : 'Send');
+  $('send').title = on && !stop ? 'Enter: next step · Alt+Enter: hold for later' : '';
   $('send').classList.toggle('stop', stop);
   input.placeholder = on ? 'Add a message to this turn…' : 'Type a message…';
   if (!on && wasBusy) input.focus();

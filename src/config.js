@@ -49,7 +49,7 @@ export const DEFAULTS = {
   maxTokens: null,
   // How many rounds of tool calls one message may trigger before the loop is
   // cut off. Raise it for deep research, lower it to cap spend per message.
-  maxToolRounds: 20,
+  maxToolRounds: 12,
   // Merged into every completion request. Gateway-specific knobs live here.
   // TinyWebUI adds OpenRouter session_id automatically; setting provider.order
   // yourself takes precedence over sticky routing, so only pin providers when

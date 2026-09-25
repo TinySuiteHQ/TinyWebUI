@@ -3,6 +3,10 @@
  * safe point inside the run; a follow-up starts its own turn once the run is
  * done. The server owns the queue -- this draws it, from whatever list the
  * latest `queue` event or chat load carried.
+ *
+ * Follow-ups are different: they are held here, in the browser, and go
+ * nowhere until the user clicks their send button -- into the running turn
+ * if there still is one, as a new message otherwise.
  */
 import { $, el } from './dom.js';
 import { state } from './state.js';
@@ -13,10 +17,52 @@ const box = $('queue');
 const newId = () => crypto.randomUUID?.()
   ?? [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
+// Held follow-ups per chat id: [{id, content}]. Survive switching chats, not a reload.
+const held = new Map();
+let onSendHeld = () => {};
+
+/** `fn(text)` is called when a held follow-up's send button is clicked. */
+export function setHeldSender(fn) { onSendHeld = fn; }
+
+export function holdFollowup(text) {
+  const id = state.chat.id;
+  held.set(id, [...(held.get(id) || []), { id: newId(), content: text }]);
+  renderQueue(state.queue);
+}
+
+function drawHeld() {
+  for (const item of held.get(state.chat?.id) || []) {
+    const chip = el('div', 'queued held');
+    const kind = el('span', 'queued-kind');
+    kind.textContent = 'held';
+    kind.title = 'Waits here until you send it';
+    const text = el('span', 'queued-text');
+    text.textContent = item.content;
+    const drop = el('button', 'queued-drop');
+    drop.type = 'button';
+    drop.setAttribute('aria-label', 'Remove held message');
+    drop.textContent = '×';
+    const forget = () => {
+      const id = state.chat.id;
+      held.set(id, (held.get(id) || []).filter((i) => i !== item));
+      renderQueue(state.queue);
+    };
+    drop.onclick = forget;
+    const send = el('button', 'queued-send');
+    send.type = 'button';
+    send.textContent = 'Send';
+    send.setAttribute('aria-label', 'Send held message');
+    send.onclick = () => { forget(); onSendHeld(item.content); };
+    chip.append(kind, text, send, drop);
+    box.appendChild(chip);
+  }
+}
+
 export function renderQueue(items = []) {
   state.queue = items;
   box.innerHTML = '';
-  box.hidden = !items.length;
+  box.hidden = !items.length && !(held.get(state.chat?.id) || []).length;
+  drawHeld();
   for (const item of items) {
     const chip = el('div', `queued ${item.kind}`);
     const kind = el('span', 'queued-kind');

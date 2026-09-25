@@ -245,7 +245,7 @@ dialog#organizeDialog::backdrop { background: rgba(0, 0, 0, .62); }
 }
 
 /* main column */
-main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 
 /* Settings takes the whole main column rather than squeezing the transcript. */
 #settings {
@@ -570,7 +570,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
   font-variant-numeric: tabular-nums; color: var(--fg);
 }
 
-#log { flex: 1; overflow-y: auto; padding: 1.25rem .875rem .5rem; }
+#log { flex: 1; min-height: 0; overflow-y: auto; padding: 1.25rem .875rem .5rem; }
 .wrap {
   max-width: var(--measure); margin: 0 auto;
   display: flex; flex-direction: column; gap: 1rem;
@@ -813,6 +813,12 @@ form {
   background: none; border: 0; color: var(--muted); font-size: 1rem; cursor: pointer;
 }
 .queued-drop:hover { color: var(--fg); }
+.queued.held { border-style: solid; }
+.queued-send {
+  flex: 0 0 auto; min-height: 0; padding: .15rem .6rem; border-radius: var(--r-md);
+  background: var(--fg); color: var(--bg); border: 0; font-size: var(--fs-small); cursor: pointer;
+}
+.queued-send:hover { filter: brightness(1.08); }
 .attachment-thumb {
   width: 2.5rem; height: 2.5rem; border-radius: .4rem; object-fit: cover;
   background: var(--bg-soft, transparent);
