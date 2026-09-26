@@ -7,6 +7,7 @@ import { dirname, join, normalize } from 'node:path';
 import { createConfigSource, LockedError, configProblems } from './config.js';
 import { McpHub } from './mcp.js';
 import { runChat } from './llm.js';
+import { effectiveConfig, isClosed, enabledEntries, findEntry, publicEntry, labelFor } from './models.js';
 import { Store, toView, ALL_USERS, SCHEMA_VERSION } from './store.js';
 import { validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess } from './policy.js';
 import {
@@ -341,13 +342,18 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
    * if allowed, else the first model their role allows.
    */
   function modelFor(userId, role) {
-    if (cfg.authMode !== 'trusted-header' || !userId) return cfg.model;
+    // With a catalog, everything is an entry id; a pref saved as a provider
+    // id (before the catalog existed) still finds its entry.
+    const known = (m) => (isClosed(cfg) ? findEntry(cfg, m)?.id : m);
+    const fallback = known(cfg.model) || cfg.model;
+    if (cfg.authMode !== 'trusted-header' || !userId) return fallback;
     const allowed = modelsFor(cfg, role);
     const ok = (m) => m && (allowed === '*' || allowed.includes(m));
-    const pref = store.getPrefs(userId).model;
+    const pref = known(store.getPrefs(userId).model);
     if (ok(pref)) return pref;
-    if (ok(cfg.model)) return cfg.model;
-    return allowed[0] || cfg.model;
+    if (ok(fallback)) return fallback;
+    // First of the role's models still enabled (a parked one never runs).
+    return allowed.map(known).find(Boolean) || fallback;
   }
 
   /** Tells everyone watching a chat's run what is queued now. */
@@ -407,7 +413,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg: model && model !== cfg.model ? { ...cfg, model } : cfg, chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput });
+        await runChat({ cfg: effectiveConfig(cfg, model), chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -632,7 +638,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
   // Fields a non-admin never sees: credentials, and where the deployment's
   // trust boundary sits.
-  const ADMIN_ONLY_FIELDS = /^(apiKey|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails)/;
+  const ADMIN_ONLY_FIELDS = /^(apiKey|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails|models$)/;
   function configFor(auth) {
     const pub = publicConfig(cfg);
     if (auth.features.has('settings')) return pub;
@@ -684,6 +690,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
           features: [...auth.features],
           models: auth.userId !== undefined ? modelsFor(cfg, auth.role) : [],
           model: auth.userId !== undefined ? modelFor(auth.user?.id, auth.role) : null,
+          modelLabel: auth.userId !== undefined ? labelFor(cfg, modelFor(auth.user?.id, auth.role)) : null,
           user: auth.user
             ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
             : null
@@ -697,6 +704,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const { model } = await readJson(req);
         if (model !== null && (typeof model !== 'string' || !model.trim())) return json(res, 400, { error: 'model must be a model id or null' });
         const allowed = modelsFor(cfg, auth.role);
+        if (model && isClosed(cfg) && !findEntry(cfg, model)) return json(res, 403, { error: 'that model is not available to you' });
         if (model && allowed !== '*' && !allowed.includes(model)) return json(res, 403, { error: 'that model is not available to you' });
         store.setPref(auth.user.id, 'model', model ? model.trim() : null);
         return json(res, 200, { model: modelFor(auth.user.id, auth.role) });
@@ -864,8 +872,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // every OpenAI-compatible endpoint serves /models, so a failure is an
       // answer too: the picker falls back to typing an id.
       if (req.method === 'GET' && req.url === '/api/models') {
-        const all = await listModels();
         const allowed = modelsFor(cfg, auth.role);
+        // A catalog is the whole list: its labels, never the provider's ids.
+        if (isClosed(cfg)) {
+          const entries = enabledEntries(cfg).filter((e) => allowed === '*' || allowed.includes(e.id));
+          return json(res, 200, { supported: true, restricted: true, catalog: true, models: entries.map(publicEntry) });
+        }
+        const all = await listModels();
         if (allowed === '*') return json(res, 200, all);
         // A fixed catalog: only those ids, named from the provider list when
         // it knows them, listed even when it does not.

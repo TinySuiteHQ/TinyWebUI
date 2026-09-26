@@ -189,31 +189,37 @@ async function buildModelMenu(pop) {
 
   let models = [];
   let supported = true;
+  // A configured catalog is closed: labels only, no typing arbitrary ids.
+  let closed = false;
   try {
     const out = await (await fetch('/api/models')).json();
     models = out.models || [];
     supported = out.supported;
+    closed = Boolean(out.catalog);
   } catch { supported = false; }
+  if (closed) search.placeholder = 'Search models';
 
   const render = () => {
     const q = search.value.trim().toLowerCase();
     list.innerHTML = '';
-    const hits = models.filter((m) => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q));
+    const hits = models.filter((m) => !q || (!closed && m.id.toLowerCase().includes(q))
+      || (m.name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q));
     for (const m of hits.slice(0, 200)) {
       const b = el('button', 'pop-item pop-model');
       b.type = 'button';
+      b.dataset.id = m.id;
       b.setAttribute('role', 'menuitemradio');
       b.setAttribute('aria-checked', String(m.id === current));
-      const id = Object.assign(el('span', 'pop-name'), { textContent: m.id });
-      b.appendChild(id);
-      if (m.name) b.appendChild(Object.assign(el('span', 'pop-meta'), { textContent: m.name }));
+      b.appendChild(Object.assign(el('span', 'pop-name'), { textContent: closed ? m.name : m.id }));
+      const meta = closed ? m.description : m.name;
+      if (meta) b.appendChild(Object.assign(el('span', 'pop-meta'), { textContent: meta }));
       b.onclick = () => choose(m.id);
       list.appendChild(b);
     }
     // Typing an exact id always works, listed or not -- local runtimes and
     // private deployments often serve models /models never mentions.
     const typed = search.value.trim();
-    if (typed && !models.some((m) => m.id === typed)) {
+    if (typed && !closed && !models.some((m) => m.id === typed)) {
       const b = el('button', 'pop-item');
       b.type = 'button';
       b.textContent = `Use "${typed}"`;
@@ -232,7 +238,8 @@ async function buildModelMenu(pop) {
     e.preventDefault();
     // Exact id first, then the top match, then whatever was typed.
     const q = search.value.trim();
-    const first = list.querySelector('.pop-model .pop-name')?.textContent;
+    const first = list.querySelector('.pop-model')?.dataset.id;
+    if (closed) return first && choose(first);
     choose(models.some((m) => m.id === q) ? q : first || q);
   };
   render();

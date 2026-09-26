@@ -39,7 +39,7 @@ const DEFAULT_ROLES = {
 export const FILE_ONLY = new Set([
   'authMode', 'authPassword', 'sessionSecret', 'sessionTtlDays', 'trustedProxyCidrs', 'trustedUserIdHeader',
   'trustedEmailHeader', 'trustedNameHeader', 'trustedRoleHeader', 'trustedDefaultStatus',
-  'logoutUrl', 'baseUrl', 'apiKey', 'dbPath', 'access', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
+  'logoutUrl', 'baseUrl', 'apiKey', 'dbPath', 'access', 'models', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
   'googleClientId', 'googleClientSecret', 'googleRedirectUri', 'adminEmails'
 ]);
 
@@ -137,7 +137,7 @@ export function validateConfig(cfg, { env = process.env } = {}) {
         }
       }
       if (spec.models !== undefined && spec.models !== '*' && !(Array.isArray(spec.models) && spec.models.every((m) => typeof m === 'string' && m))) {
-        errors.push(`access.roles.${role}.models must be '*' or a list of model ids`);
+        errors.push(`access.roles.${role}.models must be '*' or a list of model ids (catalog ids when models is set)`);
       }
     }
     for (const [id, u] of Object.entries(a.users || {})) {

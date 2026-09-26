@@ -69,6 +69,30 @@ For a local OpenAI-compatible runtime, point `baseUrl` at its API and omit `apiK
 
 The Settings panel can change the model, prompt, generation settings, tool budget, context controls, and enabled tools. It never exposes the API key to the browser.
 
+### Model catalog
+
+List `models` to decide exactly which models people can use, what those models are called and how each one behaves. If the list is empty (the default), any model id works. If it has entries, it is a closed list:
+
+```json
+{
+  "model": "quick",
+  "models": [
+    { "id": "quick", "label": "Quick", "description": "Everyday questions",
+      "model": "deepseek/deepseek-v4-flash-0731", "temperature": 0.3 },
+    { "id": "deep", "label": "Thorough", "model": "anthropic/claude-sonnet-5",
+      "systemPrompt": "You are a careful research assistant...", "maxToolRounds": 20,
+      "extraBody": { "reasoning": { "effort": "high" } } }
+  ],
+  "access": { "roles": { "user": { "models": ["quick"] } } }
+}
+```
+
+- `id` is the name everything else refers to: the `model` setting, `access.roles.*.models` and each person's saved choice. `model` is the provider's model id; if you leave it out, the `id` is sent instead.
+- People see only `label` (and `description`) in the model picker. They can't type in an id, and the provider id is never sent to the browser.
+- An entry can set any of `systemPrompt`, `temperature`, `maxTokens`, `maxToolRounds`, `cacheMode`, `cacheTtl` and `extraBody`. These replace the global values for turns that use that model. The one exception is `extraBody`, which is merged into the global `extraBody`.
+- `"enabled": false` switches an entry off but keeps its settings. The model disappears from the picker, people who had picked it fall back to the default, and a role list can still name it. The default `model` must be an enabled entry.
+- `models` can only be changed in the config file, not from the UI. On startup and on reload, TinyWebUI refuses a catalog with an unknown key, a duplicate id, or a `model` or role list that names something not in the catalog.
+
 ### Important settings
 
 | Setting | Default | Purpose |

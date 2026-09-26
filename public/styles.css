@@ -1097,7 +1097,8 @@ button.primary { color: var(--bg); }
 }
 .nav-item:hover { background: var(--accent-soft); }
 .nav-item.active { background: var(--accent-soft); color: var(--fg); }
-.nav-item .ic { color: var(--muted); }
+.nav-item .ic { color: var(--muted); stroke-width: 1.7; transition: color var(--t-fast); }
+.nav-item:hover .ic, .nav-item.active .ic, .search-row:focus-within .ic { color: var(--fg); }
 button.nav-item:active:not(:disabled) { transform: none; }
 
 /* Search looks like a nav row until it is focused. */

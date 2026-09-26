@@ -2,6 +2,7 @@ import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from './policy.js';
+import { modelProblems, labelFor } from './models.js';
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
   ? resolve(process.env.TINYWEBUI_CONFIG)
@@ -18,6 +19,10 @@ export const DEFAULTS = {
   // A cheap, fast, tool-capable default that caches well on a stable prefix and
   // needs no cache_control fields. Any OpenAI-compatible model id works.
   model: 'deepseek/deepseek-v4-flash-0731',
+  // The model catalog (see src/models.js). Empty: any model id goes. Listed:
+  // only these can be picked, `model` names one by id, and people see each
+  // entry's label, with its own prompt and sampling settings if it has them.
+  models: [],
   systemPrompt: [
     'You are a direct, technically precise assistant.',
     '',
@@ -386,6 +391,7 @@ export function configProblems(cfg) {
       if (!ENUMS[key].includes(value)) problems.push(`${key} must be one of ${ENUMS[key].join(', ')} (got ${JSON.stringify(value)})`);
       continue;
     }
+    if (key === 'models') continue; // modelProblems, below, knows the shape
     if (key === 'retrieval') {
       problems.push(...retrievalProblems(value));
       continue;
@@ -403,7 +409,7 @@ export function configProblems(cfg) {
       : got === want;
     if (!ok) problems.push(`${key} must be ${want === 'null' ? 'a number or null' : `a${want === 'array' || want === 'object' ? 'n' : ''} ${want}`} (got ${got})`);
   }
-  return [...problems, ...validateConfig(cfg)];
+  return [...problems, ...modelProblems(cfg), ...validateConfig(cfg)];
 }
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
@@ -418,6 +424,7 @@ export function publicConfig(cfg) {
   const { apiKey, authPassword, sessionSecret, googleClientSecret, ...rest } = cfg;
   return {
     ...rest,
+    modelLabel: labelFor(cfg, cfg.model),
     hasApiKey: Boolean(apiKey),
     hasGoogleAuth: Boolean(cfg.googleClientId),
   };
