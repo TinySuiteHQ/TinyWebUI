@@ -136,6 +136,26 @@ CREATE TABLE IF NOT EXISTS queued_messages (
   created_at INTEGER NOT NULL
 );
 
+-- A question the model put to the user mid-run (ask_user). One row per
+-- question, settled exactly once: the UPDATE that settles it only matches a
+-- pending row, so a duplicate submit, a late answer or a timeout racing an
+-- answer each find it already settled. A run lives in memory, so a row still
+-- pending when the server starts is expired, not restored.
+CREATE TABLE IF NOT EXISTS questions (
+  id              TEXT PRIMARY KEY,
+  chat_id         TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  question        TEXT NOT NULL,
+  choices_json    TEXT NOT NULL DEFAULT '[]',
+  allow_free_text INTEGER NOT NULL DEFAULT 1,
+  status          TEXT NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'answered', 'timeout', 'skipped', 'cancelled', 'expired')),
+  answer          TEXT,
+  created_at      INTEGER NOT NULL,
+  deadline        INTEGER,
+  settled_at      INTEGER
+);
+CREATE INDEX IF NOT EXISTS questions_pending ON questions(chat_id) WHERE status = 'pending';
+
 CREATE TABLE IF NOT EXISTS artifacts (
   id         TEXT PRIMARY KEY,
   chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -325,7 +345,7 @@ export const PASSAGE_OVERLAP = 200;
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
@@ -597,6 +617,39 @@ export class Store {
     return this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ? AND id = ?').run(chatId, String(id)).changes > 0;
   }
 
+  /** Records a question as pending. `deadline` is epoch ms, or null for no timeout. */
+  addQuestion(chatId, { id, question, choices = [], allowFreeText = true, deadline = null }) {
+    this.db.prepare(
+      'INSERT INTO questions (id, chat_id, question, choices_json, allow_free_text, created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(String(id), chatId, question, JSON.stringify(choices), allowFreeText ? 1 : 0, Date.now(), deadline);
+  }
+
+  getQuestion(id) {
+    const row = this.db.prepare('SELECT * FROM questions WHERE id = ?').get(String(id));
+    return row && {
+      id: row.id, chatId: row.chat_id, question: row.question, choices: JSON.parse(row.choices_json),
+      allowFreeText: Boolean(row.allow_free_text), status: row.status, answer: row.answer,
+      createdAt: row.created_at, deadline: row.deadline, settledAt: row.settled_at
+    };
+  }
+
+  /**
+   * Settles a pending question. True for the one caller that settled it;
+   * false when it was already settled (or never existed).
+   */
+  settleQuestion(id, status, answer = null) {
+    return this.db.prepare(
+      "UPDATE questions SET status = ?, answer = ?, settled_at = ? WHERE id = ? AND status = 'pending'"
+    ).run(status, answer, Date.now(), String(id)).changes > 0;
+  }
+
+  /** Expires every pending question: at startup no run is left to answer one. */
+  expireQuestions() {
+    return this.db.prepare(
+      "UPDATE questions SET status = 'expired', settled_at = ? WHERE status = 'pending'"
+    ).run(Date.now()).changes;
+  }
+
   truncateFrom(chatId, seq) {
     const removed = this.db
       .prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?')
@@ -616,6 +669,7 @@ export class Store {
     this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ?').run(id);
+    this.db.prepare('DELETE FROM questions WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
     // FTS5 has no foreign keys of its own, so its rows are dropped by rowid
     // before the map (and then the documents) that name them go with the chat.

@@ -55,6 +55,10 @@ export const DEFAULTS = {
   // How many rounds of tool calls one message may trigger before the loop is
   // cut off. Raise it for deep research, lower it to cap spend per message.
   maxToolRounds: 12,
+  // How long an ask_user question waits for an answer before the run carries
+  // on without one, on the model's own assumptions. 0 waits until the user
+  // answers or stops the run.
+  askUserTimeoutSeconds: 120,
   // Merged into every completion request. Gateway-specific knobs live here.
   // TinyWebUI adds OpenRouter session_id automatically; setting provider.order
   // yourself takes precedence over sticky routing, so only pin providers when
@@ -401,6 +405,10 @@ export function configProblems(cfg) {
       continue;
     }
     if (!(key in DEFAULTS)) continue;
+    if (key === 'askUserTimeoutSeconds') {
+      if (!(Number.isInteger(value) && value >= 0)) problems.push('askUserTimeoutSeconds must be a whole number of seconds >= 0 (0: no timeout)');
+      continue;
+    }
     const want = kind(DEFAULTS[key]);
     const got = kind(value);
     // A null default is an optional number (temperature, maxTokens).
@@ -414,7 +422,7 @@ export function configProblems(cfg) {
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
 export const WRITABLE = new Set([
-  'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds',
+  'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'askUserTimeoutSeconds',
   'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
   'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone',
   'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools'

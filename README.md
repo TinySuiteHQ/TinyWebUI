@@ -98,6 +98,7 @@ List `models` to decide exactly which models people can use, what those models a
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `maxToolRounds` | `12` | Shared tool-use budget for one user message. One model response that calls one or more tools uses one round. |
+| `askUserTimeoutSeconds` | `120` | How long a question the model asks with the built-in `ask_user` tool waits for an answer. When it runs out, the same run continues on the model's own assumptions. `0` waits until the question is answered or the run is stopped. Automation runs never wait. |
 | `cache` | `true` | Enables prompt-cache shaping where supported. |
 | `cacheMode` | `"auto"` | Selects implicit, explicit, or OpenRouter rolling cache behavior. |
 | `cacheTtl` | `"5m"` | Anthropic cache lifetime; `"1h"` is also available. |

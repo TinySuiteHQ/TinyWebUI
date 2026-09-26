@@ -101,6 +101,7 @@
       <header><h3>Tools</h3><p>How far the model can go on its own before handing back.</p></header>
       <div class="set-grid">
         <div><label for="maxToolRounds">Max tool turns</label><input id="maxToolRounds" type="number" min="1" max="50"><small>Tool calls allowed per reply.</small></div>
+        <div><label for="askUserTimeoutSeconds">Question timeout (s)</label><input id="askUserTimeoutSeconds" type="number" min="0" max="86400"><small>How long a question from the model waits before it continues on its own. 0: wait until answered.</small></div>
         <div><label for="toolApproval">Ask before running</label><select id="toolApproval"><option value="writes">MCP tools that write</option><option value="all">Every MCP tool call</option><option value="off">Never ask</option></select><small>Built-in tools never ask. Scheduled runs refuse calls that would.</small></div>
       </div>
     </section>

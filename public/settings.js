@@ -251,7 +251,7 @@ $('saveMcp').onclick = async () => {
   }
 };
 
-const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'cacheTtl',
+const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'askUserTimeoutSeconds', 'cacheTtl',
   'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
   'maxHistoryTokens', 'toolApproval'];
 
@@ -291,6 +291,7 @@ export async function loadConfig() {
   $('temperature').value = cfg.temperature ?? '';
   $('maxTokens').value = cfg.maxTokens ?? '';
   $('maxToolRounds').value = cfg.maxToolRounds;
+  $('askUserTimeoutSeconds').value = cfg.askUserTimeoutSeconds ?? 120;
   $('cacheTtl').value = cfg.cacheTtl ?? '5m';
   $('compactThreshold').value = cfg.compactThreshold ?? 0;
   $('keepTurns').value = cfg.keepTurns ?? 2;
@@ -319,6 +320,7 @@ $('save').onclick = async () => {
     temperature: num($('temperature').value),
     maxTokens: num($('maxTokens').value),
     maxToolRounds: Number($('maxToolRounds').value) || 12,
+    askUserTimeoutSeconds: Math.max(0, Math.round(Number($('askUserTimeoutSeconds').value) || 0)),
     cacheTtl: $('cacheTtl').value,
     compactThreshold: Number($('compactThreshold').value) || 0,
     keepTurns: Number($('keepTurns').value) || 2,

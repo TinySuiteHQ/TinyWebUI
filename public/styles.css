@@ -1346,3 +1346,17 @@ button.pop-item:active:not(:disabled) { transform: none; }
 #modelBtn.static { cursor: default; }
 #modelBtn.static .chev { display: none; }
 [hidden] { display: none !important; }
+
+/* An ask_user question: the run is paused on it until it is answered,
+   skipped, times out or is stopped. */
+.step .ask {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .6rem; border-top: 1px solid var(--line);
+}
+.step .ask-q { margin: 0; white-space: pre-wrap; color: var(--fg); }
+.step .ask-choices { display: flex; flex-wrap: wrap; gap: .4rem; }
+.step .ask-free { display: flex; gap: .4rem; }
+.step .ask-free input { flex: 1; min-width: 0; }
+.step .ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.step .ask button { font-size: var(--fs-meta); }
+.step .ask-clock { color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }

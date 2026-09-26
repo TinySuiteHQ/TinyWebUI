@@ -15,6 +15,8 @@ export async function consume(res) {
   let think = null;
   let steps = null;
   let next = false;
+  // ask_user question id -> the tool call row it is drawn in.
+  const asks = new Map();
   let turn = addTurn();
 
   const reader = res.body.getReader();
@@ -72,6 +74,26 @@ export async function consume(res) {
         } else if (ev.type === 'approval_done') {
           steps?.settle(ev.id, ev.decision);
           turn.status(statusOf(ev.name || '', {}));
+        } else if (ev.type === 'question') {
+          const chatId = state.chat.id;
+          // The step row is keyed by tool call id, which the question event
+          // does not carry: it belongs to the ask_user row still running.
+          const callId = steps?.pendingAsk?.();
+          steps?.question(callId, ev, async (body) => {
+            const r = await fetch(`/api/chats/${chatId}/answer`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ id: ev.id, ...body })
+            });
+            // 409: already settled -- answered in another tab, timed out or
+            // stopped. Its question_done event settles this card too.
+            if (!r.ok && r.status !== 409) throw new Error(`${r.status}`);
+          });
+          asks.set(ev.id, callId);
+          turn.status('waiting for your answer');
+        } else if (ev.type === 'question_done') {
+          steps?.settleQuestion(asks.get(ev.id), ev.status);
+          turn.status('working');
         } else if (ev.type === 'tool_result') {
           steps?.finish(ev.id, ev.result);
         } else if (ev.type === 'chat') {

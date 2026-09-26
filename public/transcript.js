@@ -148,6 +148,7 @@ export function addTurn() {
 
 /** The live one-liner for the work summary: which tool, on what. */
 export function statusOf(name, args) {
+  if (name === 'ask_user') return 'waiting for your answer';
   const short = name.replace(/^[^_]+__/, '');
   const first = Object.values(args || {})[0];
   if (first == null) return short;
@@ -398,12 +399,13 @@ export function addSteps(parent) {
       pre.textContent = JSON.stringify(args, null, 2);
       d.append(s, pre);
       box.appendChild(d);
-      rows.set(id, { d, ms, pre, t0: Date.now() });
+      rows.set(id, { d, ms, pre, t0: Date.now(), name, done: false });
       scroll();
     },
     finish(id, result, compacted) {
       const row = rows.get(id);
       if (!row) return;
+      row.done = true;
       row.ms.textContent = `${((Date.now() - row.t0) / 1000).toFixed(1)}s`;
       if (/^Error/.test(result)) row.d.classList.add('bad');
       // The transcript always keeps the full output; compaction only shortens
@@ -451,6 +453,86 @@ export function addSteps(parent) {
       row.d.classList.remove('waiting');
       row.d.open = false;
       row.ms.textContent = decision === 'deny' ? 'denied' : '…';
+      row.t0 = Date.now();
+    },
+    /**
+     * An ask_user question: the row opens on the question, with any choices,
+     * a text box when free text is allowed, "continue without me", and a
+     * countdown to the deadline. Like approvals, it stays until the server
+     * confirms with question_done, so every tab watching the run settles.
+     * `onAnswer({ answer } | { skip: true })` sends it.
+     */
+    question(id, q, onAnswer) {
+      const row = rows.get(id);
+      if (!row || row.question) return;
+      row.d.open = true;
+      row.d.classList.add('waiting');
+      row.ms.textContent = 'waiting for you';
+      const box = el('div', 'ask');
+      const text = el('p', 'ask-q');
+      text.textContent = q.question;
+      box.appendChild(text);
+      const lock = (on) => { for (const x of box.querySelectorAll('button, input')) x.disabled = on; };
+      const send = (body) => { lock(true); onAnswer(body).catch(() => lock(false)); };
+      if (q.choices?.length) {
+        const bar = el('div', 'ask-choices');
+        for (const c of q.choices) {
+          const b = el('button');
+          b.textContent = c;
+          b.onclick = () => send({ answer: c });
+          bar.appendChild(b);
+        }
+        box.appendChild(bar);
+      }
+      const foot = el('div', 'ask-foot');
+      if (q.allowFreeText) {
+        const form = el('form', 'ask-free');
+        const input = el('input');
+        input.placeholder = q.choices?.length ? 'or type an answer…' : 'your answer…';
+        input.setAttribute('aria-label', 'Answer');
+        const go = el('button', 'primary');
+        go.type = 'submit';
+        go.textContent = 'answer';
+        form.append(input, go);
+        form.onsubmit = (e) => {
+          e.preventDefault();
+          if (input.value.trim()) send({ answer: input.value.trim() });
+        };
+        box.appendChild(form);
+        setTimeout(() => input.focus(), 0);
+      }
+      const skip = el('button', 'ask-skip');
+      skip.textContent = 'continue without me';
+      skip.onclick = () => send({ skip: true });
+      const clock = el('span', 'ask-clock');
+      foot.append(skip, clock);
+      box.appendChild(foot);
+      let tick = null;
+      if (q.deadline) {
+        const paint = () => {
+          const left = Math.max(0, Math.ceil((q.deadline - Date.now()) / 1000));
+          clock.textContent = `continues on its own in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+        };
+        paint();
+        tick = setInterval(paint, 1000);
+      }
+      row.d.appendChild(box);
+      row.question = { box, tick };
+      scroll();
+    },
+    /** The ask_user call still running here: calls are sequential, so at most one. */
+    pendingAsk() {
+      return [...rows.entries()].find(([, r]) => r.name === 'ask_user' && !r.done)?.[0];
+    },
+    settleQuestion(id, status) {
+      const row = rows.get(id);
+      if (!row?.question) return;
+      clearInterval(row.question.tick);
+      row.question.box.remove();
+      row.question = null;
+      row.d.classList.remove('waiting');
+      row.d.open = false;
+      row.ms.textContent = { answered: '…', timeout: 'no answer', skipped: 'skipped', cancelled: 'stopped' }[status] || '…';
       row.t0 = Date.now();
     },
     // Timings are meaningless on a replayed transcript.

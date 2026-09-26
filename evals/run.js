@@ -27,6 +27,7 @@ import { loadConfig } from '../src/config.js';
 import { Store } from '../src/store.js';
 import { runChat } from '../src/llm.js';
 import { check } from './checks.js';
+import { askToolDef, callAskUser, ASK_USER } from '../src/ask_tool.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TASKS = join(HERE, 'tasks');
@@ -78,13 +79,21 @@ function scriptedHub(task) {
         description: t.description || '',
         parameters: t.parameters || { type: 'object', properties: {} }
       }
-    })),
+    })).concat(task.ask ? [askToolDef()] : []),
     instructionsBlock: () => task.serverInstructions || '',
     isIdempotent: (name) => Boolean(byName.get(name)?.idempotent),
-    isReadOnly: (name) => Boolean(byName.get(name)?.readOnly),
+    // ask_user changes nothing and never waits for approval, as in the app.
+    isReadOnly: (name) => name === ASK_USER || Boolean(byName.get(name)?.readOnly),
     isLocal: () => false,
     call: async (name, args) => {
       calls.push({ name, args });
+      // The real ask_user, answered from the task's script ("answer", or
+      // no answer at all: the timeout fallback).
+      if (name === ASK_USER && task.ask) {
+        return callAskUser(args, {
+          askUser: async () => (task.ask.answer ? { answered: true, answer: task.ask.answer } : { answered: false, reason: 'timeout' })
+        });
+      }
       const tool = byName.get(name);
       return tool ? respond(tool, args) : `Error: unknown tool "${name}"`;
     }
