@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { watch, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,7 @@ import {
 } from './auth.js';
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
+import { askToolDef, callAskUser } from './ask_tool.js';
 import { Retrieval } from './retrieval.js';
 import { loadEmbedder, defaultModelsDir } from './embedding.js';
 import { extractText } from './documents.js';
@@ -175,7 +177,7 @@ const ROUTES = [
   ['GET', /^\/api\/documents\/[\w.-]+$/, 'attachments'],
   ['POST', /^\/api\/images\/normalize$/, 'images'],
   ['*', /^\/api\/chats(\/import)?$/, 'chat'],
-  ['*', /^\/api\/chats\/[\w.-]+(\/(stream|stop|approve|edit|queue(\/[\w.-]+)?))?$/, 'chat'],
+  ['*', /^\/api\/chats\/[\w.-]+(\/(stream|stop|approve|answer|edit|queue(\/[\w.-]+)?))?$/, 'chat'],
   ['POST', /^\/api\/chat$/, 'chat'],
   ['*', /^\/api\/admin\/users(\/[\w-]+)?$/, 'admin'],
   ['GET', /^\/api\/admin\/(users\/[\w-]+\/chats|chats\/[\w.-]+|documents\/[\w.-]+)$/, 'oversight'],
@@ -215,6 +217,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     ? cfg.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD)
     : null;
   const store = new Store(dbPath(cfg), { migrate: cfg.autoMigrate !== false });
+  // Runs live in this process, so nothing from before it can still be waiting.
+  store.expireQuestions();
   if (store.migratedFrom !== null && store.migratedFrom < SCHEMA_VERSION) {
     console.log(`[tinywebui] migrated database from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
   }
@@ -254,6 +258,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     (await new McpHub(servers).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
       .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
+      // Changes nothing, so it never waits for approval; never alongside
+      // other calls, so a question cannot race a write it is asking about.
+      .registerLocal(askToolDef(), callAskUser, { readOnly: true, idempotent: false, executionMode: 'sequential' })
       .registerLocal(automationToolDef(), (args, ctx) => {
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation });
         armScheduler();
@@ -375,6 +382,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       baseCount: store.messages(chat.id).length,
       // Tool calls waiting on the user, by call id -> { name, resolve }.
       approvals: new Map(),
+      // The ask_user question waiting on the user: { id, settle }, or null.
+      question: null,
       unattended
     };
     runs.set(chat.id, run);
@@ -383,10 +392,42 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     run.ac.signal.addEventListener('abort', () => {
       for (const { resolve } of run.approvals.values()) resolve('deny');
       run.approvals.clear();
+      // Stop ends the run; the question is closed so no late answer revives it.
+      run.question?.settle('cancelled');
     }, { once: true });
     // Unattended runs get no asker: the loop refuses gated calls itself.
     const approve = unattended ? null : ({ id, name }) =>
       new Promise((resolve) => run.approvals.set(id, { name, resolve }));
+
+    /**
+     * Puts one ask_user question to the user and waits: for an answer, a
+     * skip, the timeout, or a stop. Persisted first, so the row decides who
+     * settled it; the timer is read from the live config at ask time.
+     */
+    const askUser = unattended ? null : ({ question, choices, allowFreeText }) => {
+      if (run.ac.signal.aborted) return Promise.resolve({ answered: false, reason: 'cancelled' });
+      // Calls are sequential, so a second one can only arrive after the first
+      // settled; this is the guard should that ever change.
+      if (run.question) return Promise.resolve({ answered: false, reason: 'busy' });
+      const id = randomUUID();
+      const seconds = Math.max(0, Number(cfg.askUserTimeoutSeconds) || 0);
+      const deadline = seconds ? Date.now() + seconds * 1000 : null;
+      store.addQuestion(chat.id, { id, question, choices, allowFreeText, deadline });
+      return new Promise((resolve) => {
+        let timer = null;
+        const settle = (status, answer = null) => {
+          if (!store.settleQuestion(id, status, answer)) return false;
+          clearTimeout(timer);
+          if (run.question?.id === id) run.question = null;
+          emit({ type: 'question_done', id, status, answer });
+          resolve(status === 'answered' ? { answered: true, answer } : { answered: false, reason: status });
+          return true;
+        };
+        run.question = { id, choices, allowFreeText, settle };
+        if (deadline) timer = setTimeout(() => settle('timeout'), seconds * 1000);
+        emit({ type: 'question', id, question, choices, allowFreeText, deadline, timeoutSeconds: seconds });
+      });
+    };
 
     const emit = (event) => {
       run.events.push(event);
@@ -413,7 +454,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg: effectiveConfig(cfg, model), chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput });
+        await runChat({ cfg: effectiveConfig(cfg, model), chatId: chat.id, store, tools, hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -1253,6 +1294,26 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         }
         pending.resolve(decision);
         return json(res, 200, { ok: true });
+      }
+
+      // The user's answer to an ask_user question, or `skip` to let the run
+      // continue without one. Only the run's own open question can be
+      // answered; anything else (answered, timed out, stopped) is a 409.
+      const answerRoute = /^\/api\/chats\/([\w.-]+)\/answer$/.exec(req.url || '');
+      if (answerRoute && req.method === 'POST') {
+        if (!store.getChat(answerRoute[1], auth.userId)) return json(res, 404, { error: 'no such chat' });
+        const { id, answer, skip } = await readJson(req, TURN_LIMIT);
+        const pending = runs.get(answerRoute[1])?.question;
+        if (!pending || pending.id !== id) return json(res, 409, { error: 'that question is no longer waiting' });
+        if (skip === true) {
+          return pending.settle('skipped') ? json(res, 200, { ok: true }) : json(res, 409, { error: 'that question is no longer waiting' });
+        }
+        const text = String(answer ?? '').trim();
+        if (!text) return json(res, 400, { error: 'answer is required' });
+        if (!pending.allowFreeText && !pending.choices.includes(text)) {
+          return json(res, 400, { error: 'answer must be one of the offered choices' });
+        }
+        return pending.settle('answered', text) ? json(res, 200, { ok: true }) : json(res, 409, { error: 'that question is no longer waiting' });
       }
 
       // Input sent while a turn is running. Refused when nothing interactive
