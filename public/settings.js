@@ -306,7 +306,7 @@ export async function loadConfig() {
   // + menu, where the tools themselves are.
   // Tier 3 shows your own model; the configured one is only the default.
   const me = whoami();
-  const bits = [me.authMode === 'trusted-header' && me.model ? me.model : cfg.model];
+  const bits = [me.authMode === 'trusted-header' && me.model ? me.modelLabel || me.model : cfg.modelLabel || cfg.model];
   if (!cfg.hasApiKey) bits.push('NO API KEY');
   if (cfg.mcpErrors?.length) bits.push(`${cfg.mcpErrors.length} mcp err`);
   $('status').textContent = bits.join(' · ');

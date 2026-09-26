@@ -361,6 +361,28 @@ export function configSchema() {
       documentPrefix: { type: 'string' }
     }
   };
+  const num = { type: ['number', 'null'] };
+  properties.models = {
+    type: 'array', 'x-change': 'file-only',
+    description: 'The model catalog. Empty: any model id. Listed: only these can be picked, by id, shown by label.',
+    items: {
+      type: 'object', additionalProperties: false, required: ['id'],
+      properties: {
+        id: { type: 'string', description: 'Stable handle: what model, roles and prefs name.' },
+        model: { type: 'string', description: "Provider model id; defaults to id." },
+        label: { type: 'string', description: 'What people see in the picker.' },
+        description: { type: 'string' },
+        enabled: { type: 'boolean', description: 'false: keep the settings, hide and refuse the model.' },
+        systemPrompt: { type: 'string' },
+        temperature: num,
+        maxTokens: num,
+        maxToolRounds: { type: 'integer', minimum: 0 },
+        cacheMode: { enum: ['auto', 'implicit', 'explicit', 'rolling', 'off'] },
+        cacheTtl: { enum: ['5m', '1h'] },
+        extraBody: { type: 'object', description: 'Merged over the global extraBody.' }
+      }
+    }
+  };
   properties.access = {
     type: 'object', additionalProperties: false, 'x-change': 'file-only (admins write access.users back)',
     properties: {
