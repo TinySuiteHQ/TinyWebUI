@@ -3,7 +3,7 @@
  * how each one is prompted and sampled. Declared in the config file:
  *
  *   models: [
- *     { id: 'fast', label: 'Quick', model: 'deepseek/deepseek-v4-flash-0731',
+ *     { id: 'fast', label: 'Quick', model: 'deepseek/deepseek-v4.1-flash',
  *       description: 'Everyday questions', temperature: 0.3 },
  *     { id: 'deep', label: 'Thorough', model: 'anthropic/claude-sonnet-5',
  *       systemPrompt: '...', maxToolRounds: 20 }
