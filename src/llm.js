@@ -364,6 +364,11 @@ export function buildBody(cfg, { turn, tools, lastCall, epochIndex, chatId, rela
  */
 const TRANSIENT = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_RETRIES = 4;
+// Rounds re-run after the stream itself fails, on top of post()'s retries.
+const STREAM_RETRIES = 2;
+
+/** A failure reported inside an otherwise successful stream. */
+class StreamError extends Error {}
 // How many refusals to take from a pinned provider before trying another one.
 // Waiting out the full backoff first is the wrong trade: a provider that is
 // rate-limited on its shared pool is usually limited for longer than any
@@ -737,6 +742,14 @@ export async function runChat({
  * `matched` covers the whole previous request is the provider's, not ours.
  */
 const lastChains = new Map();
+// Only the chats a server is actively serving matter; the oldest go first.
+const MAX_CHAINS = 200;
+
+function rememberChain(chatId, chain) {
+  lastChains.delete(chatId);
+  lastChains.set(chatId, chain);
+  if (lastChains.size > MAX_CHAINS) lastChains.delete(lastChains.keys().next().value);
+}
 
 export function prefixFingerprint(body, previous) {
   const h = createHash('sha256');
@@ -754,54 +767,89 @@ export function prefixFingerprint(body, previous) {
 async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall, attributionContext, onSaved }) {
   let input;
   let prefix;
-  const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId,
+  const request = () => post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId,
     onRequest: (body) => {
       input = attributeRequest(body, attributionContext);
       prefix = prefixFingerprint(body, lastChains.get(chatId));
-      lastChains.set(chatId, prefix.chain);
+      rememberChain(chatId, prefix.chain);
     }
   }, signal, disabled, emit);
 
-  let content = '';
-  let reasoning = '';
-  const reasoningDetails = [];
-  const toolCalls = [];
-  let usage = null;
+  let content;
+  let reasoning;
+  let reasoningDetails;
+  let toolCalls;
+  let usage;
   // Which upstream actually served this round. A gateway that routes one
   // model across several providers gives each its own cache, so a round that
   // lands somewhere new misses in full however stable the prefix was --
   // indistinguishable from a prefix bug unless the provider is on the record.
-  let provider = null;
+  let provider;
+  let finishReason;
 
-  for await (const chunk of streamChunks(res)) {
-    if (chunk.usage) usage = chunk.usage;
-    if (chunk.provider) provider = chunk.provider;
-    const delta = chunk.choices?.[0]?.delta;
-    if (!delta) continue;
-    // Reasoning is spelled differently per provider: `reasoning` on OpenRouter,
-    // `reasoning_content` on DeepSeek/Qwen. Both are plain text deltas.
-    const think = delta.reasoning ?? delta.reasoning_content;
-    if (think) {
-      reasoning += think;
-      emit({ type: 'reasoning', delta: think });
+  // post() retries until the first byte. This covers what happens after it:
+  // a stream that breaks or reports an upstream error part-way. The round is
+  // repeated only while no answer text has reached the user -- a half-sent
+  // tool call has run nothing and is simply discarded -- and never stored.
+  for (let attempt = 0; ; attempt++) {
+    content = ''; reasoning = ''; reasoningDetails = []; toolCalls = [];
+    usage = null; provider = null; finishReason = null;
+    // post() has already spent its own retries on anything before the stream.
+    const res = await request();
+    try {
+      for await (const chunk of streamChunks(res)) {
+        if (chunk.usage) usage = chunk.usage;
+        if (chunk.provider) provider = chunk.provider;
+        // A failure after the 200 arrives in-band: an `error` object, or a choice
+        // that finishes with reason "error". Either way the round did not happen.
+        const finish = chunk.choices?.[0]?.finish_reason;
+        if (chunk.error || finish === 'error') {
+          throw new StreamError(chunk.error?.message || 'upstream error mid-stream');
+        }
+        if (finish) finishReason = finish;
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+        // Reasoning is spelled differently per provider: `reasoning` on OpenRouter,
+        // `reasoning_content` on DeepSeek/Qwen. Both are plain text deltas.
+        const think = delta.reasoning ?? delta.reasoning_content;
+        if (think) {
+          reasoning += think;
+          emit({ type: 'reasoning', delta: think });
+        }
+        // Structured form, which has to be echoed back verbatim or providers reject
+        // the follow-up request that carries tool results.
+        for (const d of delta.reasoning_details || []) {
+          const slot = (reasoningDetails[d.index ?? reasoningDetails.length] ||= { ...d, text: '' });
+          if (d.text) slot.text += d.text;
+          if (d.summary) slot.summary = (slot.summary || '') + d.summary;
+        }
+        if (delta.content) {
+          content += delta.content;
+          emit({ type: 'text', delta: delta.content });
+        }
+        for (const tc of delta.tool_calls || []) {
+          const slot = (toolCalls[tc.index] ||= { id: '', type: 'function', function: { name: '', arguments: '' } });
+          if (tc.id) slot.id = tc.id;
+          if (tc.function?.name) slot.function.name += tc.function.name;
+          if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
+        }
+      }
+      break;
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (content || attempt >= STREAM_RETRIES) {
+        throw new Error(`The model's reply broke off part-way (${err.message}).`
+          + (content ? ' Retry to run this round again.' : ''));
+      }
+      emit({ type: 'notice', text: `Reply stream failed (${err.message}) — retrying the round (${attempt + 1}/${STREAM_RETRIES}).` });
+      await sleep(retryDelay(null, attempt + 1), signal);
     }
-    // Structured form, which has to be echoed back verbatim or providers reject
-    // the follow-up request that carries tool results.
-    for (const d of delta.reasoning_details || []) {
-      const slot = (reasoningDetails[d.index ?? reasoningDetails.length] ||= { ...d, text: '' });
-      if (d.text) slot.text += d.text;
-      if (d.summary) slot.summary = (slot.summary || '') + d.summary;
-    }
-    if (delta.content) {
-      content += delta.content;
-      emit({ type: 'text', delta: delta.content });
-    }
-    for (const tc of delta.tool_calls || []) {
-      const slot = (toolCalls[tc.index] ||= { id: '', type: 'function', function: { name: '', arguments: '' } });
-      if (tc.id) slot.id = tc.id;
-      if (tc.function?.name) slot.function.name += tc.function.name;
-      if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
-    }
+  }
+
+  // Cut off by the output cap: say so, or a truncated tool call just looks
+  // like the model writing bad arguments.
+  if (finishReason === 'length') {
+    emit({ type: 'notice', text: 'The reply hit the output token limit and was cut off (raise maxTokens if this recurs).' });
   }
 
   // Dropped before anything is stored: nothing will produce their results.
