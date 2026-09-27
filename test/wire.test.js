@@ -6,7 +6,7 @@ import { Store, toWire } from '../src/store.js';
 
 const CLAUDE = { cache: true, model: 'anthropic/claude-sonnet-5', systemPrompt: 'sys', cacheTtl: '5m' };
 const OPENROUTER_CLAUDE = { ...CLAUDE, baseUrl: 'https://openrouter.ai/api/v1' };
-const DEEPSEEK = { cache: true, model: 'deepseek/deepseek-v4-flash-0731', systemPrompt: 'sys' };
+const DEEPSEEK = { cache: true, model: 'deepseek/deepseek-v4.1-flash', systemPrompt: 'sys' };
 const OPENROUTER_QWEN = {
   cache: true,
   baseUrl: 'https://openrouter.ai/api/v1',

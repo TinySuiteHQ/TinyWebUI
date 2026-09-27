@@ -52,7 +52,7 @@ An OpenRouter example:
 {
   "baseUrl": "https://openrouter.ai/api/v1",
   "apiKey": "sk-or-...",
-  "model": "deepseek/deepseek-v4-flash-0731",
+  "model": "deepseek/deepseek-v4.1-flash",
   "systemPrompt": "You are a terse, precise assistant.",
   "maxToolRounds": 12
 }
@@ -78,7 +78,7 @@ List `models` to decide exactly which models people can use, what those models a
   "model": "quick",
   "models": [
     { "id": "quick", "label": "Quick", "description": "Everyday questions",
-      "model": "deepseek/deepseek-v4-flash-0731", "temperature": 0.3 },
+      "model": "deepseek/deepseek-v4.1-flash", "temperature": 0.3 },
     { "id": "deep", "label": "Thorough", "model": "anthropic/claude-sonnet-5",
       "systemPrompt": "You are a careful research assistant...", "maxToolRounds": 20,
       "extraBody": { "reasoning": { "effort": "high" } } }

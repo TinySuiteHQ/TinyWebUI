@@ -18,7 +18,7 @@ export const DEFAULTS = {
   apiKey: '',
   // A cheap, fast, tool-capable default that caches well on a stable prefix and
   // needs no cache_control fields. Any OpenAI-compatible model id works.
-  model: 'deepseek/deepseek-v4-flash-0731',
+  model: 'deepseek/deepseek-v4.1-flash',
   // The model catalog (see src/models.js). Empty: any model id goes. Listed:
   // only these can be picked, `model` names one by id, and people see each
   // entry's label, with its own prompt and sampling settings if it has them.
