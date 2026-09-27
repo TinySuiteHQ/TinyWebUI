@@ -262,6 +262,11 @@ test('the budget footer counts down, warns near the end, and closes the door at 
   assert.match(at(11), /Tool budget spent \(12 rounds used\)/);
   assert.match(at(11), /Tools are disabled for your next reply/);
 
+  // Every fourth round asks the model whether more searching changes its answer.
+  assert.match(at(3), /8 rounds of 12 left\. Checkpoint/);
+  assert.match(at(7), /4 rounds of 12 left\. Checkpoint/);
+  assert.doesNotMatch(at(4), /Checkpoint/);
+
   // A budget small enough that the first footer is already the warning.
   assert.match(budgetFooter(0, 2), /stop broadening/);
 });
