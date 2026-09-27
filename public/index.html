@@ -116,6 +116,7 @@
         <div><label for="compactMinSaved">Only compact if it saves</label><input id="compactMinSaved" type="number" min="0" step="1000"><small>Characters. Compacting costs one cache miss, so small savings are skipped.</small></div>
         <div><label for="maxHistoryTokens">Hard history limit</label><input id="maxHistoryTokens" type="number" min="0" step="10000"><small>Tokens. Past this, the oldest turns stop being sent (they stay visible). 0 turns it off.</small></div>
         <div><label for="cacheTtl">Prompt cache lifetime</label><select id="cacheTtl"><option value="5m">5 minutes</option><option value="1h">1 hour</option></select><small>Anthropic models. 1 hour costs more to write, survives longer pauses.</small></div>
+        <div><label for="lazyCapabilities">MCP loading</label><select id="lazyCapabilities"><option value="false">All tools upfront</option><option value="true">Load capabilities on demand</option></select><small>On-demand loading saves initial context but can add a model round.</small></div>
         <div><label for="cacheMode">Cache style</label><select id="cacheMode"><option value="auto">Automatic</option><option value="implicit">Stable prefix only</option><option value="explicit">Anthropic cache_control</option><option value="rolling">OpenRouter automatic</option><option value="off">Off</option></select><small>Automatic is right for OpenRouter and local models; set it for other gateways.</small></div>
       </div>
     </section>
@@ -159,6 +160,8 @@
       <section class="statistics-block">
         <div class="sec-h">token usage <span id="usageRange" class="usage"></span></div>
         <div id="usageStats" class="row"></div>
+        <div id="usageModelFilter"></div>
+        <div id="usageDistribution"></div>
         <div id="usageModels" class="usage-models"></div>
         <div id="usageBars" class="usage-bars"></div>
       </section>

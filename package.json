@@ -21,7 +21,8 @@
     "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.js",
     "stop": "pkill -f 'bin/tinywebui.js' || true",
     "test": "node --test",
-    "eval": "node evals/run.js"
+    "eval": "node evals/run.js",
+    "eval:capabilities": "node evals/capabilities.js"
   },
   "dependencies": {
     "@jsquash/avif": "^2.1.1",

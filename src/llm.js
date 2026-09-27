@@ -1,3 +1,5 @@
+import { capabilitySession } from './capabilities.js';
+import { attributeRequest, completeAttribution, markFinal } from './attribution.js';
 import { toWire } from './store.js';
 import { approvalFor } from './approval.js';
 import { ASK_USER } from './ask_tool.js';
@@ -423,6 +425,8 @@ async function post(cfg, plan, signal, disabled, emit) {
 
   for (;;) {
     let res;
+    const body = buildBody(cfg, { ...plan, relax: relaxed }, disabled);
+    plan.onRequest?.(body);
     try {
       res = await fetch(`${cfg.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -439,7 +443,7 @@ async function post(cfg, plan, signal, disabled, emit) {
               }
             : {})
         },
-        body: JSON.stringify(buildBody(cfg, { ...plan, relax: relaxed }, disabled))
+        body: JSON.stringify(body)
       });
     } catch (err) {
       // A dropped connection looks like nothing at all, so it is judged here
@@ -557,18 +561,36 @@ export async function runChat({
   const maxRounds = Math.max(1, cfg.maxToolRounds || 12);
   const operatorPrompt = cfg.systemPrompt;
 
-  // Built once per turn, so every round of it sends the same system bytes.
-  // Server-level MCP guidance (call order, when to prefer one tool over
-  // another) rides along after the harness block.
-  const instructions = hub?.instructionsBlock?.();
+  const inventory = tools.filter((t) => !(cfg.disabledTools || []).includes(t.function.name));
+  const capabilities = capabilitySession({ tools: inventory, hub, enabled: cfg.lazyCapabilities === true, loaderDisabled: (cfg.disabledTools || []).includes('load_capabilities') });
   const harness = harnessBlock({
-    maxRounds, hasTools: tools.length > 0, timeZone: cfg.timezone,
-    canAsk: tools.some((t) => t.function?.name === ASK_USER)
+    maxRounds, hasTools: inventory.length > 0, timeZone: cfg.timezone,
+    canAsk: inventory.some((t) => t.function?.name === ASK_USER)
   });
-  cfg = {
-    ...cfg,
-    systemPrompt: [operatorPrompt, harness, instructions].filter(Boolean).join('\n\n')
+  const guidanceByServer = new Map([...new Set(inventory.map((t) => hub?.routes?.get(t.function.name)?.server).filter(Boolean))]
+    .map((server) => [server, hub?.instructionsBlock?.([server]) || '']));
+  const legacyGuidance = !hub?.routes ? hub?.instructionsBlock?.() : '';
+  let systemParts;
+  const refresh = () => {
+    tools = capabilities.tools();
+    const servers = capabilities.servers();
+    systemParts = [
+      { category: 'operator', text: operatorPrompt },
+      { category: 'harness', text: [harness, capabilities.guidance].filter(Boolean).join('\n\n') }
+    ];
+    // Each server keeps a separately attributable, deterministic guidance block.
+    for (const server of servers) {
+      const instructions = guidanceByServer.get(server);
+      if (instructions) systemParts.push({ category: 'mcp_instructions', capability: server, text: instructions });
+    }
+    // Test/embedded hubs predating the routed MCP inventory remain supported.
+    if (!hub?.routes && !cfg.lazyCapabilities) {
+      const instructions = legacyGuidance;
+      if (instructions) systemParts.push({ category: 'mcp_instructions', text: instructions });
+    }
+    cfg = { ...cfg, systemPrompt: systemParts.map((p) => p.text).filter(Boolean).join('\n\n') };
   };
+  refresh();
 
   // Optional request fields this endpoint has already refused, learned once.
   const disabled = new Set();
@@ -634,16 +656,22 @@ export async function runChat({
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;
 
-  const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, maxRounds, hooks, signal });
+  const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, maxRounds, hooks, signal, capabilities, available: () => tools });
+  const saved = [];
   const appended = await runAgentLoop({
     messages: working,
     maxRounds,
     signal,
     runtime: {
       onEvent: emit,
-      streamTurn: ({ messages, lastCall }) => streamTurn({
-        cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall
-      }),
+      streamTurn: ({ messages, lastCall }) => {
+        refresh(); // Only at a safe round boundary, after all tool results.
+        return streamTurn({
+          cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall,
+          attributionContext: { systemParts, owner: capabilities.owner },
+          onSaved: (assistant, seq) => saved.push({ assistant, seq })
+        });
+      },
       executeToolBatch: tools_.execute,
       pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
         const msg = { role: 'user', content };
@@ -665,6 +693,11 @@ export async function runChat({
       }
     }
   });
+  const final = saved.at(-1);
+  if (final && !final.assistant.tool_calls?.length && !signal?.aborted) {
+    final.assistant.usage.attribution = markFinal(final.assistant.usage.attribution);
+    store.updateMessageUsage(chatId, final.seq, final.assistant.usage);
+  }
   // Hand the client the exact turns we appended -- including tool calls
   // and results -- so the next request replays an identical prefix.
   emit({ type: 'done', messages: appended });
@@ -675,8 +708,11 @@ export async function runChat({
  * One model request: posts it, streams the reply to the UI, and persists the
  * assistant message it assembles. The provider-specific half of a round.
  */
-async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall }) {
-  const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId }, signal, disabled, emit);
+async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall, attributionContext, onSaved }) {
+  let input;
+  const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId,
+    onRequest: (body) => { input = attributeRequest(body, attributionContext); }
+  }, signal, disabled, emit);
 
   let content = '';
   let reasoning = '';
@@ -720,6 +756,9 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
     }
   }
 
+  // Attribute generated output before dropping refused calls or inserting UI notices.
+  const attribution = completeAttribution(input, usage, { content, reasoning,
+    toolCalls: toolCalls.filter(Boolean), details: reasoningDetails.filter(Boolean) });
   // Dropped before anything is stored: nothing will produce their results.
   if (lastCall) toolCalls.length = 0;
 
@@ -751,16 +790,18 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   // so a reopened chat can still show what each round cost and how much of it
   // was a cache read. Without that there is no way to tell whether any of the
   // caching or compaction work here is actually paying off.
-  if (usage) assistant.usage = {
-    ...usage,
+  assistant.usage = {
+    ...(usage || {}),
+    attribution,
     ...(provider ? { provider } : {}),
-    ...(usage.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
+    ...(usage?.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
   };
   // Snapshotted per-round rather than read back from config later -- the
   // model can change between chats (or mid-session), and usage history
   // should report what actually served the round, not whatever is current.
   assistant.model = cfg.model;
-  store.addMessage(chatId, assistant);
+  const seq = store.addMessage(chatId, assistant);
+  onSaved?.(assistant, seq);
   if (usage) emit({ type: 'usage', usage: assistant.usage });
   return assistant;
 }
@@ -771,7 +812,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
  * stubbing. State that spans the turn (seen calls, "always allow") lives in
  * the closure, so one executor serves exactly one turn.
  */
-function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, maxRounds, hooks, signal }) {
+function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, maxRounds, hooks, signal, capabilities, available }) {
   const toolCtx = { store, chatId, budget: cfg.expandCharBudget || 8000, unattended, askUser: unattended ? null : askUser };
   // Same tool name + same args, seen earlier in this turn, on a tool that has
   // declared its result depends only on its arguments: re-running it only burns
@@ -802,6 +843,7 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askU
 
   /** Approval, as the first beforeToolCall hook. */
   const approval = async ({ name, args, call }) => {
+    if (capabilities.isLoader(name)) return undefined;
     const decision = await gate(name, args, call.id);
     if (decision === 'unattended') {
       return {
@@ -862,6 +904,9 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askU
           + ' tool was not called. Retry with a well-formed JSON object.'
       };
     }
+    if (!available().some((t) => t.function.name === name)) {
+      return { args, result: `Error: tool "${name}" is not available in this round. Load its capability first if listed; disabled or restricted tools cannot be called.` };
+    }
     const dupKey = `${name}:${stableKey(args)}`;
     const seenRound = hub.isIdempotent?.(name) ? seenCalls.get(dupKey) : undefined;
     if (seenRound !== undefined) {
@@ -905,7 +950,8 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askU
       signal?.addEventListener('abort', onAbort, { once: true });
     });
     try {
-      const result = await Promise.race([hub.call(ctx.name, ctx.args, toolCtx), stopped]);
+      const result = await Promise.race([capabilities.isLoader(ctx.name)
+        ? Promise.resolve(capabilities.load(ctx.args)) : hub.call(ctx.name, ctx.args, toolCtx), stopped]);
       if (result === STOPPED) return result;
       return await after({ ...ctx, result });
     } catch (err) {

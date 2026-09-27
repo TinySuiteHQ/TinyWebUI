@@ -252,7 +252,7 @@ $('saveMcp').onclick = async () => {
 };
 
 const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'askUserTimeoutSeconds', 'cacheTtl',
-  'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
+  'lazyCapabilities', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
   'maxHistoryTokens', 'toolApproval'];
 
 // The browser's IANA zones, plus whatever the config holds if the browser
@@ -291,6 +291,7 @@ export async function loadConfig() {
   $('temperature').value = cfg.temperature ?? '';
   $('maxTokens').value = cfg.maxTokens ?? '';
   $('maxToolRounds').value = cfg.maxToolRounds;
+  $('lazyCapabilities').value = String(cfg.lazyCapabilities === true);
   $('askUserTimeoutSeconds').value = cfg.askUserTimeoutSeconds ?? 120;
   $('cacheTtl').value = cfg.cacheTtl ?? '5m';
   $('compactThreshold').value = cfg.compactThreshold ?? 0;
@@ -320,6 +321,7 @@ $('save').onclick = async () => {
     temperature: num($('temperature').value),
     maxTokens: num($('maxTokens').value),
     maxToolRounds: Number($('maxToolRounds').value) || 12,
+    lazyCapabilities: $('lazyCapabilities').value === 'true',
     askUserTimeoutSeconds: Math.max(0, Math.round(Number($('askUserTimeoutSeconds').value) || 0)),
     cacheTtl: $('cacheTtl').value,
     compactThreshold: Number($('compactThreshold').value) || 0,

@@ -108,6 +108,10 @@
       "type": "number",
       "x-change": "editable (UI writes it back here)"
     },
+    "lazyCapabilities": {
+      "type": "boolean",
+      "x-change": "editable (UI writes it back here)"
+    },
     "askUserTimeoutSeconds": {
       "type": "number",
       "x-change": "editable (UI writes it back here)"

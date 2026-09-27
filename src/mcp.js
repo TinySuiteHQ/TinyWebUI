@@ -8,7 +8,7 @@ const MAX_NAME = 64;
 
 // Built-in tools registered after connect(). An MCP tool that flattened onto
 // one of these would be shadowed by the local handler without a word.
-const RESERVED = new Set(['context_expand', 'read_document', 'manage_automation', 'ask_user']);
+const RESERVED = new Set(['context_expand', 'read_document', 'manage_automation', 'ask_user', 'load_capabilities']);
 
 /**
  * The flat name the model sees for a server's tool. Sanitising and the
@@ -210,9 +210,10 @@ export class McpHub {
    * iterated in the same sorted order used everywhere else so the block, and
    * the prompt prefix built on it, stay stable run to run.
    */
-  instructionsBlock() {
+  instructionsBlock(serverNames = null) {
     const parts = [];
     for (const name of Object.keys(this.servers).sort()) {
+      if (serverNames && !serverNames.includes(name)) continue;
       const text = this.clients.get(name)?.getInstructions();
       if (text) parts.push(`## ${name}\n${text}`);
     }

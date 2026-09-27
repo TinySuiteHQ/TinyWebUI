@@ -393,3 +393,49 @@ The test suite covers message serialization, cache behavior, compaction, tool ro
 GNU Affero General Public License v3.0 or later ([AGPL-3.0-or-later](LICENSE)).
 If you run a modified version for users over a network, you must offer them the
 Corresponding Source for that version.
+
+### On-demand MCP capabilities and token attribution
+
+`lazyCapabilities: true` (or **Settings → MCP loading → Load capabilities on demand**)
+starts each run with built-in tools and `load_capabilities`. Each connected MCP
+server forms one capability. Only authorized, enabled tools can be loaded; the
+server's guidance arrives with its schemas on the next model round. Loaded
+capabilities remain available for that run, and the next user turn starts minimal
+again. Disabling `load_capabilities` also prevents loading deferred MCP tools.
+This setting obeys the same code locks and frozen configuration as other settings.
+The default remains `false` because discovery adds a request and may lose a cache
+hit. Compare your workload before changing a deployment's default.
+
+An MCP server entry may set `capabilityDescription` to a short description such
+as `Search and read public web pages`. Otherwise its tool names describe the
+capability. This does not change tool names, routing, or approval requirements.
+Built-ins (including automation, document access, and context expansion) stay
+available according to the existing feature and tool restrictions.
+
+Statistics saves a versioned, counts-only attribution snapshot in each assistant
+request's `usage_json`. It shows operator prompt, harness, MCP guidance, schemas,
+conversation, resent reasoning, tool history/results, image allowances, reasoning
+output, generated calls, intermediate text, and final visible text. Document
+notes remain part of user-message text. Final text is classified when the run
+finishes, so steering can turn an earlier apparent answer into intermediate text.
+
+Provider totals and explicit provider reasoning counts are authoritative. Other
+components use the existing rough character/4 estimator (images use a 1,500-token
+allowance), visibly marked `~` / estimated. The signed provider delta is never
+rescaled away; a negative delta means the estimates exceed the provider total.
+Missing totals remain unreported, and percentages/stacked bars are withheld when
+totals are incomplete or a signed delta cannot form a valid stack. Cache reads
+remain a subset of input, never an extra component. Token views support model
+selection and all-time → year → month → individual day navigation; existing cost
+and tool-call panels remain all-time. Old requests are not reconstructed from
+current settings. Failed streams without a completed assistant record do not
+receive attribution snapshots.
+
+Run `npm run eval:capabilities` for deterministic eager/lazy comparisons of plain,
+memory-only, web-only, combined, and multi-round research tasks. This measures
+actual request composition with scripted responses and explicitly estimated
+matching prefixes, **not** real model behavior, provider cache hits, or billing.
+`npm run eval:capabilities -- --live` uses your configured endpoint and reports
+provider input/output/cache/cost where available; it makes billable model calls.
+Repeat live runs to compare warm and cold caches. No real-provider savings are
+claimed from the offline benchmark.

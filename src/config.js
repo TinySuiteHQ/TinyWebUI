@@ -55,6 +55,8 @@ export const DEFAULTS = {
   // How many rounds of tool calls one message may trigger before the loop is
   // cut off. Raise it for deep research, lower it to cap spend per message.
   maxToolRounds: 12,
+  // Opt-in until real provider cache economics have been compared.
+  lazyCapabilities: false,
   // How long an ask_user question waits for an answer before the run carries
   // on without one, on the model's own assumptions. 0 waits until the user
   // answers or stops the run.
@@ -423,7 +425,7 @@ export function configProblems(cfg) {
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
 export const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'askUserTimeoutSeconds',
-  'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
+  'lazyCapabilities', 'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
   'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone',
   'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools'
 ]);
