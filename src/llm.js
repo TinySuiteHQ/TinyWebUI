@@ -1,3 +1,4 @@
+import { attributeRequest, completeAttribution, markFinal } from './attribution.js';
 import { toWire } from './store.js';
 import { approvalFor } from './approval.js';
 import { ASK_USER } from './ask_tool.js';
@@ -423,6 +424,8 @@ async function post(cfg, plan, signal, disabled, emit) {
 
   for (;;) {
     let res;
+    const body = buildBody(cfg, { ...plan, relax: relaxed }, disabled);
+    plan.onRequest?.(body);
     try {
       res = await fetch(`${cfg.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -439,7 +442,7 @@ async function post(cfg, plan, signal, disabled, emit) {
               }
             : {})
         },
-        body: JSON.stringify(buildBody(cfg, { ...plan, relax: relaxed }, disabled))
+        body: JSON.stringify(body)
       });
     } catch (err) {
       // A dropped connection looks like nothing at all, so it is judged here
@@ -565,10 +568,14 @@ export async function runChat({
     maxRounds, hasTools: tools.length > 0, timeZone: cfg.timezone,
     canAsk: tools.some((t) => t.function?.name === ASK_USER)
   });
-  cfg = {
-    ...cfg,
-    systemPrompt: [operatorPrompt, harness, instructions].filter(Boolean).join('\n\n')
-  };
+  // Kept apart so Statistics can say which part of the system prompt costs what.
+  const systemParts = [
+    { category: 'operator', text: operatorPrompt },
+    { category: 'harness', text: harness },
+    { category: 'mcp_instructions', text: instructions }
+  ];
+  cfg = { ...cfg, systemPrompt: systemParts.map((p) => p.text).filter(Boolean).join('\n\n') };
+  const owner = (name) => hub?.routes?.get(name)?.server || 'built-ins';
 
   // Optional request fields this endpoint has already refused, learned once.
   const disabled = new Set();
@@ -635,6 +642,7 @@ export async function runChat({
     : -1;
 
   const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, maxRounds, hooks, signal });
+  const saved = [];
   const appended = await runAgentLoop({
     messages: working,
     maxRounds,
@@ -642,7 +650,9 @@ export async function runChat({
     runtime: {
       onEvent: emit,
       streamTurn: ({ messages, lastCall }) => streamTurn({
-        cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall
+        cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall,
+        attributionContext: { systemParts, owner },
+        onSaved: (assistant, seq) => saved.push({ assistant, seq })
       }),
       executeToolBatch: tools_.execute,
       pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
@@ -667,6 +677,12 @@ export async function runChat({
   });
   // Hand the client the exact turns we appended -- including tool calls
   // and results -- so the next request replays an identical prefix.
+  // The last reply is only known to be the answer once the run has ended.
+  const final = saved.at(-1);
+  if (final && !final.assistant.tool_calls?.length && !signal?.aborted) {
+    final.assistant.usage.attribution = markFinal(final.assistant.usage.attribution);
+    store.updateMessageUsage(chatId, final.seq, final.assistant.usage);
+  }
   emit({ type: 'done', messages: appended });
   return appended;
 }
@@ -675,8 +691,11 @@ export async function runChat({
  * One model request: posts it, streams the reply to the UI, and persists the
  * assistant message it assembles. The provider-specific half of a round.
  */
-async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall }) {
-  const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId }, signal, disabled, emit);
+async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall, attributionContext, onSaved }) {
+  let input;
+  const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId,
+    onRequest: (body) => { input = attributeRequest(body, attributionContext); }
+  }, signal, disabled, emit);
 
   let content = '';
   let reasoning = '';
@@ -721,6 +740,9 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   }
 
   // Dropped before anything is stored: nothing will produce their results.
+  // Attribute generated output before dropping refused calls or inserting UI notices.
+  const attribution = completeAttribution(input, usage, { content, reasoning,
+    toolCalls: toolCalls.filter(Boolean), details: reasoningDetails.filter(Boolean) });
   if (lastCall) toolCalls.length = 0;
 
   // A reply with no text and no calls ends the turn with nothing to show --
@@ -751,16 +773,18 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   // so a reopened chat can still show what each round cost and how much of it
   // was a cache read. Without that there is no way to tell whether any of the
   // caching or compaction work here is actually paying off.
-  if (usage) assistant.usage = {
-    ...usage,
+  assistant.usage = {
+    ...(usage || {}),
+    attribution,
     ...(provider ? { provider } : {}),
-    ...(usage.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
+    ...(usage?.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
   };
   // Snapshotted per-round rather than read back from config later -- the
   // model can change between chats (or mid-session), and usage history
   // should report what actually served the round, not whatever is current.
   assistant.model = cfg.model;
-  store.addMessage(chatId, assistant);
+  const seq = store.addMessage(chatId, assistant);
+  onSaved?.(assistant, seq);
   if (usage) emit({ type: 'usage', usage: assistant.usage });
   return assistant;
 }

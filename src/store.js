@@ -1,3 +1,4 @@
+import { mergeAttribution } from './attribution.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -819,6 +820,11 @@ export class Store {
     return seq;
   }
 
+  updateMessageUsage(chatId, seq, usage) {
+    this.db.prepare('UPDATE messages SET usage_json = ? WHERE chat_id = ? AND seq = ?')
+      .run(JSON.stringify(usage), chatId, seq);
+  }
+
   messages(chatId) {
     return this.db.prepare(
       'SELECT * FROM messages WHERE chat_id = ? ORDER BY seq ASC'
@@ -885,6 +891,8 @@ export class Store {
       if (!d.models.has(model)) d.models.set(model, { model, in: 0, out: 0, cached: 0 });
       const m = d.models.get(model);
       m.in += inTok; m.out += outTok; m.cached += cached;
+      m.attribution = mergeAttribution(m.attribution, u.attribution);
+      m.requests = (m.requests || 0) + 1;
       if (cost !== null) {
         d.cost = (d.cost || 0) + cost;
         m.cost = (m.cost || 0) + cost;
@@ -951,7 +959,8 @@ export class Store {
         m.in += inTok; m.out += outTok; m.cached += cached;
         if (cost !== null) { m.cost += cost; m.pricedRounds++; summary.pricedRounds++; summary.reportedCost += cost; }
         if (answer) {
-          answer.usageRounds++; answer.tokens += inTok + outTok;
+          if ((usage.prompt_tokens ?? usage.input_tokens) != null && (usage.completion_tokens ?? usage.output_tokens) != null) answer.usageRounds++;
+          answer.tokens += inTok + outTok;
           if (cost !== null) { answer.pricedRounds++; answer.cost += cost; }
         }
       }

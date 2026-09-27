@@ -1360,3 +1360,14 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .step .ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
 .step .ask button { font-size: var(--fs-meta); }
 .step .ask-clock { color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+
+/* Saved request attribution */
+#usageDistribution { margin: 1rem 0; }
+.usage-composition { margin: 1rem 0; }
+.usage-composition h3 { font-size: 1rem; margin: .5rem 0; }
+.usage-attribution-note { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.usage-composition-table { width: 100%; font-size: .8rem; border-collapse: collapse; }
+.usage-composition-table td { padding: .35rem .25rem; overflow-wrap: anywhere; }
+.usage-composition-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-composition-track { display: flex; height: .7rem; overflow: hidden; border-radius: .3rem; margin: .5rem 0; }
+#usageModelFilter select { max-width: 100%; margin-top: .4rem; }
