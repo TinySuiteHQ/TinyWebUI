@@ -10,6 +10,7 @@ import {
 
 /** How many rounds are left before the budget footer starts pressing for an answer. */
 const WARN_ROUNDS = 2;
+const CHECKPOINT_EVERY = 4;
 
 const rounds = (n) => `${n} round${n === 1 ? '' : 's'}`;
 
@@ -88,6 +89,14 @@ export function budgetFooter(round, maxRounds) {
   if (left <= WARN_ROUNDS) {
     return `\n\n[Tool budget: ${rounds(left)} of ${maxRounds} left -- stop broadening, gather`
       + ' just what you still need, and be ready to answer from what you have.]';
+  }
+  // Only the model can tell whether new pages changed its answer -- the harness
+  // sees fresh URLs either way -- so every few rounds it is asked to judge.
+  // Fixed rounds and fixed text: deterministic, and the same for every tool.
+  if ((round + 1) % CHECKPOINT_EVERY === 0) {
+    return `\n\n[Tool budget: ${rounds(left)} of ${maxRounds} left. Checkpoint: if the last`
+      + ' rounds did not change your answer, answer now and say what stays unverified.'
+      + ' Continue only to get a specific fact you are still missing.]';
   }
   return `\n\n[Tool budget: ${rounds(left)} of ${maxRounds} left.]`;
 }
