@@ -18,3 +18,4 @@ evals/results/
 
 # Embedding bundles (tinywebui models pull): large, fetched per deployment.
 models/
+.playwright-mcp/
