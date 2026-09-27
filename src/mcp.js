@@ -88,6 +88,9 @@ export class McpHub {
     // run alongside others is known better than the hints above say.
     this.modes = new Map();
     this.errors = [];
+    // Servers whose connection closed after startup, and reconnects under way.
+    this.dead = new Set();
+    this.reconnecting = new Map();
   }
 
   /**
@@ -110,14 +113,7 @@ export class McpHub {
       const spec = this.servers[name];
       if (spec.disabled) continue;
       try {
-        const client = new Client(
-          { name: 'tinywebui', version: '0.1.0' },
-          { capabilities: {} }
-        );
-        const transport = transportFor(name, spec);
-        await client.connect(transport);
-        this.pipeStderr(name, transport.stderr);
-        this.clients.set(name, client);
+        const client = await this.open(name, spec);
         const { tools } = await client.listTools();
         for (const t of tools.sort((a, b) => a.name.localeCompare(b.name))) {
           const flat = uniqueName(`${name}${SEP}${t.name}`, this.routes, RESERVED);
@@ -141,6 +137,40 @@ export class McpHub {
       }
     }
     return this;
+  }
+
+  /**
+   * Connects one server and watches for it going away. A stdio server can
+   * crash or be killed long after startup; without the watch every later call
+   * fails until someone reloads MCP by hand.
+   */
+  async open(name, spec) {
+    const client = new Client({ name: 'tinywebui', version: '0.1.0' }, { capabilities: {} });
+    const transport = transportFor(name, spec);
+    await client.connect(transport);
+    this.pipeStderr(name, transport.stderr);
+    client.onclose = () => { if (!this.closing && this.clients.get(name) === client) this.dead.add(name); };
+    this.clients.set(name, client);
+    this.dead.delete(name);
+    return client;
+  }
+
+  /**
+   * Brings a dead server back, once per outage however many calls are waiting.
+   * The tool list is not re-read: routes and the tool block stay exactly as
+   * they were, so the prompt cache survives the restart.
+   */
+  reconnect(name) {
+    let pending = this.reconnecting.get(name);
+    if (!pending) {
+      const old = this.clients.get(name);
+      pending = (async () => {
+        try { await old?.close(); } catch { /* already gone */ }
+        return this.open(name, this.servers[name]);
+      })().finally(() => this.reconnecting.delete(name));
+      this.reconnecting.set(name, pending);
+    }
+    return pending;
   }
 
   /** Labels a child's stderr, and goes quiet once we are tearing it down. */
@@ -268,22 +298,45 @@ export class McpHub {
     }
     const route = this.routes.get(flatName);
     if (!route) return `Error: unknown tool "${flatName}"`;
-    const client = this.clients.get(route.server);
-    try {
-      const res = await client.callTool({ name: route.tool, arguments: args || {} });
-      const text = (res.content || [])
-        .map((c) => {
-          if (c.type === 'text') return c.text;
-          if (c.type === 'resource') return c.resource?.text ?? JSON.stringify(c.resource);
-          // A tool message can only carry text, so non-text output is named
-          // rather than silently reduced to a bare type the model can't read.
-          return `[${c.type}${c.mimeType ? ` ${c.mimeType}` : ''} omitted: tool results can only carry text]`;
-        })
-        .join('\n');
-      return res.isError ? `Error: ${text}` : text || '(no output)';
-    } catch (err) {
-      return `Error calling ${flatName}: ${err.message}`;
+    let client = this.clients.get(route.server);
+    // Known dead before the call: reconnecting first is always safe, since
+    // nothing has been sent yet.
+    if (this.dead.has(route.server)) {
+      try { client = await this.reconnect(route.server); }
+      catch (err) { return `Error calling ${flatName}: server "${route.server}" is down and did not restart (${err.message})`; }
     }
+    try {
+      return await this.callOnce(client, route, flatName, args);
+    } catch (err) {
+      // Died during the call. Reconnect for whatever comes next, but only
+      // repeat this call when doing it twice is harmless -- a write may
+      // already have happened before the connection dropped.
+      if (!this.dead.has(route.server)) return `Error calling ${flatName}: ${err.message}`;
+      let fresh;
+      try { fresh = await this.reconnect(route.server); }
+      catch { return `Error calling ${flatName}: server "${route.server}" went down and did not restart (${err.message})`; }
+      if (!this.isIdempotent(flatName)) {
+        return `Error calling ${flatName}: server "${route.server}" restarted during this call (${err.message}).`
+          + ' It may or may not have taken effect; check before repeating it.';
+      }
+      try { return await this.callOnce(fresh, route, flatName, args); }
+      catch (again) { return `Error calling ${flatName}: ${again.message}`; }
+    }
+  }
+
+  /** One call, with the result flattened to the text a tool message can carry. */
+  async callOnce(client, route, flatName, args) {
+    const res = await client.callTool({ name: route.tool, arguments: args || {} });
+    const text = (res.content || [])
+      .map((c) => {
+        if (c.type === 'text') return c.text;
+        if (c.type === 'resource') return c.resource?.text ?? JSON.stringify(c.resource);
+        // A tool message can only carry text, so non-text output is named
+        // rather than silently reduced to a bare type the model can't read.
+        return `[${c.type}${c.mimeType ? ` ${c.mimeType}` : ''} omitted: tool results can only carry text]`;
+      })
+      .join('\n');
+    return res.isError ? `Error: ${text}` : text || '(no output)';
   }
 
   async close() {
