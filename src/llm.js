@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal } from './attribution.js';
 import { toWire } from './store.js';
 import { approvalFor } from './approval.js';
@@ -174,7 +175,10 @@ export function cacheMode(cfg) {
 
   // A pinned provider route means the caller has taken routing into their own
   // hands; automatic mode would quietly narrow it, so fall back to markers.
-  const pinned = Object.keys(cfg.extraBody?.provider || {}).length > 0;
+  // Only routing counts: policy fields like zdr or data_collection narrow the
+  // pool without choosing an upstream, so they leave automatic mode alone.
+  const route = cfg.extraBody?.provider || {};
+  const pinned = Boolean(route.order?.length || route.only?.length);
 
   if (isOpenRouter(cfg)) {
     if (isClaude(cfg.model) && !pinned) return 'rolling';
@@ -538,6 +542,19 @@ function historyTokens(rows, cfg, tools) {
 }
 
 /**
+ * Whether the previous turn left a result that was sent whole then but goes
+ * out as its stub from now on (the `maxInlineChars` case). Results past
+ * `maxTurnChars` were already sent as stubs, so they change nothing.
+ */
+export function swapsStubThisTurn(rows, cfg) {
+  const users = rows.map((r, i) => (r.role === 'user' ? i : -1)).filter((i) => i >= 0);
+  if (users.length < 2) return false;
+  const turnCap = cfg.maxTurnChars || 0;
+  return rows.slice(users[users.length - 2], users[users.length - 1]).some((r) =>
+    r.role === 'tool' && r.stub_text && !(turnCap > 0 && (r.content?.length ?? 0) > turnCap));
+}
+
+/**
  * One chat turn: decides compaction and the hard window up front, then drives
  * the generic loop in agent.js with TinyWebUI's runtime -- the provider stream,
  * the tool policy, and persistence. `emit(event)` is called for every UI event.
@@ -600,10 +617,14 @@ export async function runChat({
   // can always read back what the previous round wrote to the cache.
   const threshold = cfg.compactThreshold || 0;
   if (threshold > 0) {
+    // A result stubbed for later turns only flips to its stub now, so this
+    // request is cold from that message on whatever we do. An epoch opened now
+    // rides on that miss for free instead of costing its own later.
+    const cold = swapsStubThisTurn(rows, cfg);
     const plan = planEpoch(rows, {
       threshold,
       keepTurns,
-      promptTokens: historyTokens(rows, cfg, tools)
+      promptTokens: cold ? Infinity : historyTokens(rows, cfg, tools)
     });
     const done = plan && applyEpoch(store, chat, plan, { minSaved: cfg.compactMinSaved || 0 });
     if (done) {
@@ -633,10 +654,17 @@ export async function runChat({
     });
   }
 
-  const working = rows.map(toWire);
   // Index of the last message inside the frozen prefix, for the pinned
   // breakpoint. -1 before the first epoch, when there is nothing frozen yet.
   const boundarySeq = store.chatById(chatId).boundary_seq;
+  // Reasoning behind the frozen boundary goes too. Providers only need it
+  // echoed within the turn that made it, and the boundary moves only at an
+  // epoch, which is a cold request anyway -- so dropping it never costs cache.
+  const working = rows.map((r) => {
+    const w = toWire(r);
+    if (boundarySeq >= 0 && r.seq < boundarySeq) delete w.reasoning_details;
+    return w;
+  });
   const epochIndex = boundarySeq >= 0
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;
@@ -691,10 +719,38 @@ export async function runChat({
  * One model request: posts it, streams the reply to the UI, and persists the
  * assistant message it assembles. The provider-specific half of a round.
  */
+/**
+ * A fingerprint of what one request asked the provider to cache, so a miss can
+ * be pinned on us or on them. `chain[i]` hashes the tool block and messages
+ * 0..i cumulatively, so two requests agree up to exactly the first message
+ * whose bytes differ. `matched` is how many leading messages this request
+ * shares byte-for-byte with the previous one in the same chat: a miss where
+ * `matched` covers the whole previous request is the provider's, not ours.
+ */
+const lastChains = new Map();
+
+export function prefixFingerprint(body, previous) {
+  const h = createHash('sha256');
+  h.update(JSON.stringify(body.tools || []));
+  const tools = h.copy().digest('hex').slice(0, 8);
+  const chain = body.messages.map((m) => {
+    h.update(JSON.stringify(m));
+    return h.copy().digest('hex').slice(0, 8);
+  });
+  let matched = 0;
+  if (previous) while (matched < chain.length && chain[matched] === previous[matched]) matched++;
+  return { tools, chain, matched, previous: previous ? previous.length : null };
+}
+
 async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall, attributionContext, onSaved }) {
   let input;
+  let prefix;
   const res = await post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId,
-    onRequest: (body) => { input = attributeRequest(body, attributionContext); }
+    onRequest: (body) => {
+      input = attributeRequest(body, attributionContext);
+      prefix = prefixFingerprint(body, lastChains.get(chatId));
+      lastChains.set(chatId, prefix.chain);
+    }
   }, signal, disabled, emit);
 
   let content = '';
@@ -776,6 +832,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   assistant.usage = {
     ...(usage || {}),
     attribution,
+    ...(prefix ? { prefix } : {}),
     ...(provider ? { provider } : {}),
     ...(usage?.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {})
   };
@@ -977,7 +1034,10 @@ function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askU
       // more rounds than the inline text ever cost in tokens. Past
       // `maxTurnChars` it is stubbed even for this turn, because a result that
       // size would be resent in full on every remaining round and can blow the
-      // window on its own. Either stub is an append, so it costs no cache.
+      // window on its own. The turn cap is an append and costs no cache. The
+      // inline cap is not: the next turn swaps full text for the stub, which
+      // is a rewrite -- runChat opens any due epoch on that same turn so the
+      // conversation pays for one cold request, not two.
       const inlineCap = cfg.maxInlineChars || 0;
       const turnCap = cfg.maxTurnChars || 0;
       const overTurn = turnCap > 0 && text.length > turnCap;

@@ -54,6 +54,11 @@ export function effectiveConfig(cfg, key) {
   const out = { ...cfg };
   for (const k of MODEL_OVERRIDES) if (e[k] !== undefined) out[k] = e[k];
   out.extraBody = { ...(cfg.extraBody || {}), ...(e.extraBody || {}) };
+  // `provider` merges one level deeper: a global data policy (zdr,
+  // data_collection) must survive an entry that only pins its routing.
+  if (cfg.extraBody?.provider || e.extraBody?.provider) {
+    out.extraBody.provider = { ...(cfg.extraBody?.provider || {}), ...(e.extraBody?.provider || {}) };
+  }
   out.model = e.model || e.id;
   return out;
 }
