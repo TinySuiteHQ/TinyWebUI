@@ -393,3 +393,16 @@ The test suite covers message serialization, cache behavior, compaction, tool ro
 GNU Affero General Public License v3.0 or later ([AGPL-3.0-or-later](LICENSE)).
 If you run a modified version for users over a network, you must offer them the
 Corresponding Source for that version.
+
+### Token attribution
+
+Statistics saves a versioned, counts-only attribution snapshot in each assistant
+request's `usage_json`: operator prompt, harness, MCP guidance, tool schemas (per
+MCP server), conversation, resent reasoning, tool history/results, image
+allowances, reasoning output, generated calls, intermediate text and final text.
+Provider totals and reported reasoning counts are authoritative; everything else
+uses the rough character/4 estimator (images count 1,500 tokens) and is marked
+`~`. The gap to the provider total is kept as a signed delta, never rescaled.
+Cache reads are a subset of input, not an extra component. Token views can be
+filtered by model and drilled down from all time to a single day. Requests made
+before this existed are not reconstructed.

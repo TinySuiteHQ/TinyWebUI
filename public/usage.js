@@ -10,6 +10,7 @@ import { $, el } from './dom.js';
 let days = []; // raw daily rows from /api/usage
 let path = []; // drill-down breadcrumb, e.g. ['2026'] or ['2026', '2026-03']
 let statistics = null;
+let selectedModel = '';
 
 const fmt = (n) => n.toLocaleString();
 
@@ -55,6 +56,8 @@ function bucket(rows, level) {
 
 function render() {
   renderCostStatistics(statistics);
+  renderModelFilter();
+  if (!days.length) renderDistribution([]);
   if (!days.length) {
     $('usageStats').innerHTML = '<div class="empty">no usage recorded yet</div>';
     $('usageModels').innerHTML = '';
@@ -64,9 +67,12 @@ function render() {
   }
 
   const level = path.length === 0 ? 'year' : path.length === 1 ? 'month' : 'day';
-  const scoped = path.length === 0
-    ? days
-    : days.filter((d) => d.day.startsWith(path[path.length - 1]));
+  const scoped = (path.length === 0 ? days : days.filter((d) => d.day.startsWith(path[path.length - 1])))
+    .map((d) => {
+      const models = d.models.filter((m) => !selectedModel || m.model === selectedModel);
+      return { ...d, models, in: models.reduce((n,m) => n + m.in, 0), out: models.reduce((n,m) => n + m.out, 0) };
+    });
+  renderDistribution(scoped);
 
   // Stat tiles: totals for whatever is currently in view.
   const models = sumModels(scoped);
@@ -180,7 +186,7 @@ function render() {
     const count = el('span', 'usage-bar-count');
     count.textContent = fmt(b.total);
     row.append(label, track, count);
-    if (level !== 'day') {
+    if (path.length < 3) {
       row.classList.add('clickable');
       row.onclick = () => { path = [...path, b.key]; render(); };
     }
@@ -263,5 +269,102 @@ export async function loadUsage() {
   days = data.days || [];
   statistics = data.statistics || null;
   path = [];
+  if (!days.some((d) => d.models.some((m) => m.model === selectedModel))) selectedModel = '';
   render();
+}
+
+
+const CATEGORY_LABELS = {
+  operator: 'Operator / system prompt', harness: 'TinyWebUI harness', mcp_instructions: 'MCP guidance',
+  tool_schemas: 'Tool schemas', user_messages: 'User messages (including document notes)',
+  assistant_history: 'Assistant history', tool_history: 'Tool-call history', tool_results: 'Tool results',
+  reasoning_history: 'Reasoning resent on wire', image_allowance: 'Image allowance', attachments_other: 'Other attachments',
+  system_other: 'Other system content', reasoning: 'Reasoning / thinking', tool_generation: 'Tool-call generation',
+  intermediate_text: 'Intermediate assistant text', final_text: 'Final visible answer', provider_delta: 'Other / provider delta'
+};
+function renderModelFilter() {
+  const box = $('usageModelFilter');
+  if (!box) return;
+  box.replaceChildren();
+  const label = el('label'); label.textContent = 'Token breakdown model ';
+  const select = el('select'); select.setAttribute('aria-label', 'Token breakdown model');
+  for (const model of ['', ...new Set(days.flatMap((d) => d.models.map((m) => m.model)))]) {
+    const option = el('option'); option.value = model; option.textContent = model || 'All models';
+    select.append(option);
+  }
+  select.value = selectedModel;
+  select.onchange = () => { selectedModel = select.value; render(); };
+  label.append(select); box.append(label);
+}
+function renderDistribution(rows) {
+  const box = $('usageDistribution');
+  if (!box) return;
+  box.replaceChildren();
+  const models = rows.flatMap((d) => d.models);
+  const snapshots = models.map((m) => m.attribution).filter(Boolean);
+  const requests = snapshots.reduce((n, s) => n + s.requests, 0);
+  const note = el('p', 'usage-attribution-note');
+  note.textContent = requests
+    ? `${fmt(requests)} of ${fmt(models.reduce((n,m) => n + (m.requests || 0), 0))} requests have saved attribution. Provider totals are authoritative; ~ component counts are character-based estimates. Cache reads are a subset of input and cannot be assigned to individual components.`
+    : 'No saved token attribution in this range. New requests will record it; historical prompts are not reconstructed.';
+  box.append(note);
+  if (!requests) return;
+  for (const side of ['input', 'output']) {
+    const panel = el('section', 'usage-composition');
+    const heading = el('h3'); heading.textContent = side === 'input' ? 'Input composition' : 'Output composition'; panel.append(heading);
+    const buckets = new Map();
+    let total = 0, reported = 0;
+    for (const snapshot of snapshots) {
+      total += snapshot[side].total; reported += snapshot[side].reported;
+      for (const b of snapshot[side].buckets) {
+        const key = JSON.stringify([b.category, b.source]);
+        const item = buckets.get(key) || { category: b.category, source: b.source, tokens: 0 };
+        item.tokens += b.tokens; buckets.set(key, item);
+      }
+    }
+    const complete = reported === requests;
+    const summary = el('p', 'usage-attribution-note');
+    summary.textContent = `${fmt(total)} provider-reported tokens across ${fmt(reported)}/${fmt(requests)} requests.`;
+    if (side === 'input') summary.textContent += ` ${fmt(snapshots.reduce((n,s) => n + s.cached, 0))} cached input tokens reported.`;
+    panel.append(summary);
+    const table = el('table', 'usage-composition-table');
+    for (const b of buckets.values()) {
+      const row = el('tr');
+      const label = el('td'); label.textContent = CATEGORY_LABELS[b.category] || b.category;
+      const value = el('td'); value.textContent = `${b.source === 'provider' ? '' : '~'}${fmt(b.tokens)} (${b.source === 'provider' ? 'provider' : 'estimated'})`;
+      const share = el('td'); share.textContent = complete && total > 0 ? `${(b.tokens / total * 100).toFixed(1)}%` : '—';
+      row.append(label, value, share); table.append(row);
+    }
+    // A signed provider delta is intentionally not hidden or scaled away. A
+    // negative delta means the estimates exceed the provider's token total.
+    const hasNegative = [...buckets.values()].some((b) => b.tokens < 0);
+    if (complete && total > 0 && !hasNegative) {
+      const track = el('div', 'usage-composition-track');
+      let i = 0;
+      for (const b of buckets.values()) {
+        if (!b.tokens) continue;
+        const seg = el('span'); seg.style.width = `${b.tokens / total * 100}%`;
+        seg.style.background = `var(${MODEL_PALETTE[i++ % MODEL_PALETTE.length]})`;
+        seg.title = `${CATEGORY_LABELS[b.category] || b.category}: ${fmt(b.tokens)}`;
+        track.append(seg);
+      }
+      panel.append(track);
+    }
+    panel.append(table);
+    if (hasNegative) {
+      const warning = el('p', 'usage-attribution-note'); warning.textContent = 'Estimates exceed provider totals in some categories. The signed delta shows the difference; components have not been rescaled.'; panel.append(warning);
+    }
+    box.append(panel);
+  }
+  const detail = el('details'); const title = el('summary'); title.textContent = 'Tool / MCP overhead by server'; detail.append(title);
+  const grouped = new Map();
+  for (const snapshot of snapshots) for (const b of snapshot.input.buckets) {
+    if (!b.capability) continue;
+    const key = `${b.capability} · ${CATEGORY_LABELS[b.category] || b.category}`;
+    grouped.set(key, (grouped.get(key) || 0) + b.tokens);
+  }
+  for (const [label, count] of grouped) {
+    const row = el('p', 'usage-attribution-note'); row.textContent = `${label}: ~${fmt(count)} estimated tokens`; detail.append(row);
+  }
+  box.append(detail);
 }
