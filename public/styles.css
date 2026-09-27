@@ -1309,7 +1309,17 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .switch:active:not(:disabled) { transform: none; }
 
 .pop-search { margin-bottom: .375rem; min-height: 2.25rem; }
-.pop-model[aria-checked="true"] { background: var(--accent-soft); font-weight: 600; }
+/* Model rows stack the description under the name, so a long description can
+   never squeeze the name down to an ellipsis on a narrow screen. */
+.pop-model { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .5rem; row-gap: .0625rem; }
+.pop-model .pop-name { grid-column: 1; }
+.pop-model .pop-meta {
+  grid-column: 1; flex-shrink: 1; min-width: 0; font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pop-model::after { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.pop-model[aria-checked="true"] { background: var(--accent-soft); }
+.pop-model[aria-checked="true"] .pop-name { font-weight: 600; }
 .pop-model[aria-checked="true"]::after {
   content: ""; width: .5rem; height: .875rem; margin-right: .25rem; flex-shrink: 0;
   border-right: 2px solid var(--fg); border-bottom: 2px solid var(--fg); transform: rotate(45deg) translate(-2px, -2px);

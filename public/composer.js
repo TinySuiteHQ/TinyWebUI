@@ -32,7 +32,28 @@ function openMenu(btn, side, build) {
   btn.setAttribute('aria-expanded', 'true');
   open = { pop, btn };
   build(pop);
+  fitToViewport(pop);
 }
+
+/**
+ * Opens the popover on whichever side of the composer has more room and caps
+ * its height to that room, so it never hangs off the viewport (short phone
+ * screens, the centred empty-chat composer, an open mobile keyboard).
+ */
+function fitToViewport(pop) {
+  const gap = 8;
+  const rect = form.getBoundingClientRect();
+  const vh = window.visualViewport?.height ?? window.innerHeight;
+  const above = rect.top - gap * 2;
+  const below = vh - rect.bottom - gap * 2;
+  const up = above >= below;
+  pop.style.top = up ? 'auto' : 'calc(100% + .5rem)';
+  pop.style.bottom = up ? 'calc(100% + .5rem)' : 'auto';
+  pop.style.transformOrigin = `${up ? 'bottom' : 'top'} ${pop.classList.contains('popover-right') ? 'right' : 'left'}`;
+  pop.style.maxHeight = `${Math.max(120, Math.min(448, up ? above : below))}px`;
+}
+
+window.visualViewport?.addEventListener('resize', () => { if (open) fitToViewport(open.pop); });
 
 document.addEventListener('pointerdown', (e) => {
   if (open && !open.pop.contains(e.target) && !open.btn.contains(e.target)) closeMenu();
