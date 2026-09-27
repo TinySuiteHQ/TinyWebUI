@@ -80,7 +80,13 @@ export function renderQueue(items = []) {
       drop.disabled = true;
       // 409: already delivered -- the transcript shows it, and the next
       // queue event redraws this list either way.
-      await fetch(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+      try {
+        const res = await fetch(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 409) throw new Error(`${res.status}`);
+      } catch (err) {
+        drop.disabled = false;
+        addError(`couldn't remove queued message: ${err.message}`);
+      }
     };
     chip.append(kind, text, drop);
     box.appendChild(chip);

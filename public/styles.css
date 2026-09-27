@@ -7,9 +7,16 @@
   --mono: ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, monospace;
   --sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
 
-  /* Rounding follows hierarchy: small for controls, medium for cards and
-     rows, large only for the composer. */
-  --r-sm: 6px; --r-md: 10px; --r-lg: 16px;
+  /* Radius is a small, deliberate scale.  Components use these semantic
+     tokens instead of accumulating one-off values, so nested surfaces keep
+     their hierarchy at every viewport. */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 20px;
+  --r-bubble: 18px;
+  --r-composer: 24px;
+  --r-pill: 999px;
   --fs-small: .875rem;
 
   /* One type scale, in rem, so the browser's own font-size setting still
@@ -82,7 +89,7 @@ header .grow { flex: 1; }
 /* One focus ring for everything, drawn outside the element so a dense row does
    not clip it. Keyboard only -- the mouse never sees it. */
 :focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px;
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs);
 }
 
 button {
@@ -163,7 +170,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 #chats::-webkit-scrollbar { width: .5rem; }
 #chats::-webkit-scrollbar-track { background: transparent; }
-#chats::-webkit-scrollbar-thumb { background: var(--line); border-radius: 1rem; }
+#chats::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); }
 #chats::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 #chats { padding: .25rem .375rem .5rem; }
 .chat-item {
@@ -214,7 +221,7 @@ dialog#organizeDialog::backdrop { background: rgba(0, 0, 0, .62); }
 .chat-folder[open] > .chat-folder-heading::before { transform: rotate(90deg); }
 .chat-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-folder-count {
-  margin-left: auto; padding: .05rem .4rem; border: 1px solid var(--line); border-radius: 1rem;
+  margin-left: auto; padding: .05rem .4rem; border: 1px solid var(--line); border-radius: var(--r-pill);
   color: var(--faint); font-size: var(--fs-meta); font-weight: 400;
 }
 .chat-folder-content { padding: 0 0 .25rem .4rem; }
@@ -305,8 +312,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .statistics-cost-row .usage-model-name { flex:1 1 auto; }
 .statistics-tool-row { display:flex; gap:.75rem; align-items:center; font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); }
 .statistics-tool-name { flex:0 0 auto; min-width:11rem; max-width:16rem; white-space:nowrap; color:var(--fg); }
-.statistics-tool-track { flex:1 1 auto; height:.5rem; border-radius:2px; background:var(--faint); overflow:hidden; }
-.statistics-tool-bar { display:block; height:100%; background:var(--accent); border-radius:2px; }
+.statistics-tool-track { flex:1 1 auto; height:.5rem; border-radius:var(--r-xs); background:var(--faint); overflow:hidden; }
+.statistics-tool-bar { display:block; height:100%; background:var(--accent); border-radius:var(--r-xs); }
 .statistics-tool-count { flex:0 0 auto; width:4.5rem; text-align:right; font-variant-numeric:tabular-nums; }
 .automation-head { height: var(--bar); flex: 0 0 auto; padding: 0 1rem; display:flex; align-items:center; gap:.75rem; border-bottom:1px solid var(--line); }
 .automation-head h2 { margin:0; font-size:var(--fs-ui); }
@@ -346,7 +353,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .automation-actions .danger:hover { border-color:var(--err); }
 
 .automation-pill {
-  display:inline-block; padding:.0625rem .5rem; border-radius:999px; font-size:var(--fs-meta);
+  display:inline-block; padding:.0625rem .5rem; border-radius:var(--r-pill); font-size:var(--fs-meta);
   line-height:1.5; border:1px solid var(--line); color:var(--muted); background:var(--panel);
 }
 .automation-pill.is-completed { color:var(--tool); border-color:color-mix(in srgb, var(--tool) 40%, transparent); background:color-mix(in srgb, var(--tool) 10%, transparent); }
@@ -356,7 +363,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .automation-switch { position:relative; display:inline-flex; flex:0 0 auto; margin:.125rem 0 0; cursor:pointer; }
 .automation-switch input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
 .automation-switch .switch-track {
-  width:2.25rem; height:1.25rem; border-radius:999px; background:var(--line); position:relative; transition:background var(--t-fast, .14s);
+  width:2.25rem; height:1.25rem; border-radius:var(--r-pill); background:var(--line); position:relative; transition:background var(--t-fast, .14s);
 }
 .automation-switch .switch-track::after {
   content:''; position:absolute; top:.1875rem; left:.1875rem; width:.875rem; height:.875rem;
@@ -534,7 +541,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 }
 .usage-model-track {
   flex: 1 1 auto; height: .5rem; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 2px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden;
 }
 .usage-model-bar { display: flex; height: 100%; width: 100%; }
 .usage-model-seg { display: block; height: 100%; }
@@ -547,7 +554,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
   font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted);
 }
 .usage-model-legend-item { display: flex; align-items: center; gap: .3125rem; }
-.usage-model-swatch { width: .625rem; height: .625rem; border-radius: 2px; }
+.usage-model-swatch { width: .625rem; height: .625rem; border-radius: var(--r-xs); }
 .usage-model-swatch.fresh { background: var(--accent); }
 .usage-model-swatch.cached { background: var(--tool); }
 .usage-model-swatch.out { background: var(--faint); }
@@ -556,12 +563,15 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
   display: flex; align-items: center; gap: .625rem;
   font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted);
 }
-.usage-bar-row.clickable { cursor: pointer; border-radius: 3px; }
+button.usage-bar-row {
+  width: 100%; min-height: 0; padding: 0; border: 0; background: none; text-align: inherit;
+}
+.usage-bar-row.clickable { cursor: pointer; border-radius: var(--r-xs); }
 .usage-bar-row.clickable:hover { background: var(--panel); }
 .usage-bar-label { flex: 0 0 4rem; text-align: right; }
 .usage-bar-track {
   flex: 1 1 auto; height: .5rem; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 2px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden;
 }
 .usage-bar-fill { display: flex; height: 100%; background: var(--accent); }
 .usage-bar-seg { display: block; height: 100%; }
@@ -592,7 +602,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
    scans as question / answer / question without reading a word. */
 .msg.user .body {
   white-space: pre-wrap; background: var(--accent-soft);
-  border-left: 3px solid var(--accent); border-radius: 0 var(--r-md) var(--r-md) 0;
+  border-left: 3px solid var(--accent); border-radius: var(--r-md);
   padding: .625rem .875rem; font-weight: 500;
 }
 .msg.user .who { display: none; }
@@ -685,7 +695,7 @@ details.work > summary:hover { color: var(--fg); }
 .md li { margin: .15em 0; }
 .md li > ul, .md li > ol { margin-bottom: 0; }
 .md a { color: var(--accent); }
-.md code { background: var(--panel); border-radius: 2px; padding: .1em .3em; font: .9em var(--mono); }
+.md code { background: var(--panel); border-radius: var(--r-xs); padding: .1em .3em; font: .9em var(--mono); }
 .md pre {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm);
   padding: .625rem .75rem; overflow-x: auto; margin: 0 0 .7em;
@@ -750,7 +760,7 @@ details.step > summary:hover { background: var(--panel); }
   margin-left: .375rem;
   padding: 0 .25rem;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   color: var(--muted);
   font-size: var(--fs-meta);
 }
@@ -792,12 +802,12 @@ form {
 .attachments:empty, .attachments[hidden] { display: none; }
 .attachment-chip {
   display: inline-flex; align-items: center; gap: .35rem;
-  border: 1px solid var(--line); border-radius: 999px; padding: .2rem .65rem;
+  border: 1px solid var(--line); border-radius: var(--r-pill); padding: .2rem .65rem;
   font-size: var(--fs-small); background: var(--bg-soft, transparent);
 }
 .attachment-chip .remove { cursor: pointer; opacity: .6; }
 .attachment-chip .remove:hover { opacity: 1; }
-.attachment-chip-image { padding: .2rem; border-radius: .6rem; }
+.attachment-chip-image { padding: .2rem; border-radius: var(--r-sm); }
 /* Input queued on a running turn, listed above the text box until delivered. */
 .queue { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
 .queue[hidden] { display: none; }
@@ -820,7 +830,7 @@ form {
 }
 .queued-send:hover { filter: brightness(1.08); }
 .attachment-thumb {
-  width: 2.5rem; height: 2.5rem; border-radius: .4rem; object-fit: cover;
+  width: 2.5rem; height: 2.5rem; border-radius: var(--r-sm); object-fit: cover;
   background: var(--bg-soft, transparent);
 }
 .attachment-thumb.pending {
@@ -843,7 +853,7 @@ form {
 .msg-attachments { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
 .msg-images { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; }
 .msg-image-thumb {
-  max-width: 12rem; max-height: 12rem; border-radius: .5rem;
+  max-width: 12rem; max-height: 12rem; border-radius: var(--r-sm);
   border: 1px solid var(--line); object-fit: contain;
 }
 
@@ -857,7 +867,7 @@ form {
 .right-rail > * { pointer-events: auto; }
 
 .rail-card {
-  border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
   padding: .4rem;
   display: flex; flex-direction: column; gap: .05rem;
 }
@@ -868,7 +878,7 @@ form {
 }
 .rail-card .rail-item {
   display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left;
-  background: none; border: none; border-radius: 3px; padding: .3rem .35rem; margin: 0;
+  background: none; border: none; border-radius: var(--r-sm); padding: .3rem .35rem; margin: 0;
   min-width: 0; min-height: 0; color: var(--muted); font-size: var(--fs-small);
   font-family: inherit; line-height: 1.5; cursor: pointer; transition: background .1s, color .1s;
 }
@@ -882,7 +892,7 @@ form {
   min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .rail-card .rail-more {
-  align-self: stretch; text-align: left; background: none; border: none; border-radius: 3px;
+  align-self: stretch; text-align: left; background: none; border: none; border-radius: var(--r-sm);
   padding: .3rem .35rem; margin: 0; min-height: 0; color: var(--faint); font-size: var(--fs-meta);
   font-family: inherit; line-height: 1.5; cursor: pointer; transition: background .1s, color .1s;
 }
@@ -907,7 +917,7 @@ form {
   cursor: pointer; display: flex; align-items: center; justify-content: flex-end;
 }
 .outline-tick .bar {
-  width: 1.125rem; height: 2px; background: var(--line); border-radius: 1px;
+  width: 1.125rem; height: 2px; background: var(--line); border-radius: var(--r-xs);
   transition: background .1s, width .1s;
 }
 .outline-tick:hover .bar, .outline-tick:focus-visible .bar {
@@ -915,7 +925,7 @@ form {
 }
 .outline-tick .tip {
   position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
-  margin-right: .5rem; border: 1px solid var(--line); border-radius: 3px;
+  margin-right: .5rem; border: 1px solid var(--line); border-radius: var(--r-sm);
   background: var(--panel); color: var(--fg); font-size: var(--fs-small);
   padding: .3rem .55rem; white-space: nowrap; max-width: 16rem;
   overflow: hidden; text-overflow: ellipsis;
@@ -978,13 +988,13 @@ details.tool > summary select.approval {
 /* Full-column panels slide up and fade in instead of popping. They stay in
    layout (display:flex) and are hidden with visibility, which is what lets
    the transition run in both directions. */
-#settings, #automations, #statistics {
+#settings, #automations, #statistics, #admin {
   display: flex; visibility: hidden; opacity: 0; transform: translateY(8px);
   pointer-events: none;
   transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease),
               visibility 0s linear var(--t-med);
 }
-#settings.open, #automations.open, #statistics.open {
+#settings.open, #automations.open, #statistics.open, #admin.open {
   visibility: visible; opacity: 1; transform: none; pointer-events: auto;
   transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
 }
@@ -1019,7 +1029,7 @@ header { background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-fi
 /* Thin, quiet scrollbars everywhere, not only in the chat list. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--faint) 45%, transparent) transparent; }
 ::-webkit-scrollbar { width: .5rem; height: .5rem; }
-::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--faint) 45%, transparent); border-radius: 1rem; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--faint) 45%, transparent); border-radius: var(--r-pill); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* The answer area fades out under the composer instead of being cut off. */
@@ -1129,7 +1139,7 @@ button.nav-item:active:not(:disabled) { transform: none; }
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
 .side-scroll::-webkit-scrollbar { width: .5rem; }
-.side-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 1rem; }
+.side-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); }
 .side-scroll #chats { flex: none; overflow: visible; }
 .chat-item { padding-left: .5rem; }
 .chat-item.active { background: var(--accent-soft); box-shadow: none; }
@@ -1143,13 +1153,15 @@ button.nav-item:active:not(:disabled) { transform: none; }
 body.side-collapsed #side { display: none; }
 body.side-collapsed #menu { display: inline-flex; }
 
+/* Full-column panels clip themselves to this frame. Keeping main overflow
+   visible lets focus rings and composer popovers extend where they need to. */
 main { border-radius: var(--r-lg); }
 
 /* Transcript: questions are soft grey bubbles on the right. */
 .msg.user { align-self: flex-end; max-width: 85%; }
 .msg.user:not(:first-child)::before { display: none; }
 .msg.user .body {
-  background: var(--panel); border: 0; border-radius: 1.125rem;
+  background: var(--panel); border: 0; border-radius: var(--r-bubble);
   padding: .625rem 1rem; font-weight: 400;
 }
 .msg-tools { justify-content: flex-end; padding-left: 0; }
@@ -1159,7 +1171,7 @@ main { border-radius: var(--r-lg); }
 footer { padding: .25rem 1rem 1rem; }
 #form {
   flex-direction: column; align-items: stretch; gap: .25rem;
-  border-radius: 1.5rem; padding: .625rem .625rem .5rem;
+  border-radius: var(--r-composer); padding: .625rem .625rem .5rem;
   background: var(--panel); border-color: var(--line);
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 30px -18px rgb(0 0 0 / 25%);
 }
@@ -1169,17 +1181,17 @@ footer { padding: .25rem 1rem 1rem; }
 .composer-bar .grow { flex: 1; }
 #form .composer-bar > button { height: 2.125rem; min-height: 0; }
 #attach {
-  width: 2.125rem; min-width: 0; border-radius: 50%;
+  width: 2.125rem; min-width: 0; border-radius: var(--r-pill);
   background: var(--raise); border: 1px solid var(--line); color: var(--fg);
 }
 #attach:hover { background: var(--accent-soft); }
 #modelBtn.model-chip {
-  max-width: 22rem; padding: .25rem .625rem; border: 1px solid var(--line); border-radius: 999px;
+  max-width: 22rem; padding: .25rem .625rem; border: 1px solid var(--line); border-radius: var(--r-pill);
   background: var(--raise); color: var(--fg); font: 500 var(--fs-meta)/1.4 var(--sans);
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0;
 }
 .model-chip:empty { display: none; }
-#send { width: 2.125rem; min-width: 0; padding: 0; border-radius: 50%; }
+#send { width: 2.125rem; min-width: 0; padding: 0; border-radius: var(--r-pill); }
 #send.stop { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 footer::before { display: none; }
 
@@ -1196,7 +1208,7 @@ main:has(#wrap:empty) footer { padding-top: 0; }
 main:has(#wrap:empty) #form { max-width: 48rem; }
 
 /* Panels open inside main, so they take its rounded corners too. */
-#settings, #automations, #statistics { border-radius: var(--r-lg); }
+#settings, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
 
 @media (max-width: 720px) {
   #shell { padding: 0; gap: 0; }
@@ -1282,7 +1294,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 
 .switch {
   position: relative; flex-shrink: 0; width: 2rem; height: 1.125rem; min-height: 0; padding: 0;
-  border: 0; border-radius: 999px; background: var(--line); cursor: pointer;
+  border: 0; border-radius: var(--r-pill); background: var(--line); cursor: pointer;
   transition: background var(--t-fast);
 }
 .switch::after {
@@ -1305,7 +1317,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 
 /* MCP servers: its own full-column panel, same behaviour as the others. */
 #mcp {
-  position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: var(--r-lg);
+  position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
   display: flex; flex-direction: column; overflow: hidden;
   visibility: hidden; opacity: 0; transform: translateY(8px); pointer-events: none;
   transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s linear var(--t-med);
@@ -1335,7 +1347,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .brand-home {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;
   min-height: 0; padding: .125rem .375rem .125rem .125rem; margin: -.125rem 0 -.125rem -.125rem;
-  border: 0; border-radius: 999px; background: none; color: var(--fg); text-align: left;
+  border: 0; border-radius: var(--r-pill); background: none; color: var(--fg); text-align: left;
 }
 .brand-home:hover { background: var(--accent-soft); }
 .brand-home:active:not(:disabled) { transform: none; }
@@ -1369,5 +1381,5 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .usage-composition-table { width: 100%; font-size: .8rem; border-collapse: collapse; }
 .usage-composition-table td { padding: .35rem .25rem; overflow-wrap: anywhere; }
 .usage-composition-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.usage-composition-track { display: flex; height: .7rem; overflow: hidden; border-radius: .3rem; margin: .5rem 0; }
+.usage-composition-track { display: flex; height: .7rem; overflow: hidden; border-radius: var(--r-xs); margin: .5rem 0; }
 #usageModelFilter select { max-width: 100%; margin-top: .4rem; }

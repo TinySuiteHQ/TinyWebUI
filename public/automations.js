@@ -7,6 +7,7 @@ const panel = $('automations');
 const list = $('automation-list');
 const createSlot = $('automation-create-slot');
 let snapshot = { automations: [], chats: [] };
+let automationLoadRequest = 0;
 
 function close() { panel.classList.remove('open'); $('toggle-automations').classList.remove('active'); }
 
@@ -346,8 +347,18 @@ function card(automation) {
   history.addEventListener('toggle', async () => {
     if (!history.open || history.dataset.loaded) return;
     history.dataset.loaded = '1';
-    const res = await fetch(url(automation, '/runs'));
-    const { runs = [] } = res.ok ? await res.json() : {};
+    let runs = [];
+    try {
+      const res = await fetch(url(automation, '/runs'));
+      if (!res.ok) throw new Error(`${res.status}`);
+      ({ runs = [] } = await res.json());
+    } catch (err) {
+      // Let the next expand retry instead of leaving the section empty for good.
+      delete history.dataset.loaded;
+      const p = el('p'); p.textContent = `Couldn't load runs (${err.message}).`; history.appendChild(p);
+      history.addEventListener('toggle', () => { if (!history.open) p.remove(); }, { once: true });
+      return;
+    }
     if (!runs.length) { const p = el('p'); p.textContent = 'No runs yet.'; history.appendChild(p); return; }
     const table = el('div', 'automation-runs');
     for (const r of runs) {
@@ -411,9 +422,20 @@ function rerender() {
 }
 
 async function load() {
-  const res = await fetch('/api/automations');
-  if (!res.ok) return;
-  snapshot = await res.json();
+  const request = ++automationLoadRequest;
+  let next;
+  try {
+    const res = await fetch('/api/automations');
+    if (!res.ok) throw new Error(`${res.status}`);
+    next = await res.json();
+  } catch (err) {
+    if (request === automationLoadRequest && panel.classList.contains('open')) {
+      list.replaceChildren(Object.assign(el('div', 'automation-empty'), { textContent: `Couldn't load automations (${err.message}).` }));
+    }
+    return;
+  }
+  if (request !== automationLoadRequest) return;
+  snapshot = next;
   if (openForm && openForm !== 'new' && !snapshot.automations.some((a) => a.id === openForm)) openForm = null;
   rerender();
 }

@@ -8,6 +8,9 @@ import { renderMarkdown } from './md.js';
 import { whoami } from './access.js';
 
 let me = null;
+let adminLoadRequest = 0;
+// Bumped by every admin view change; a response for an older view is dropped.
+let adminViewRequest = 0;
 
 /** Wires Log out for whoever is signed in (nav visibility is access.js's). */
 export function initAdmin() {
@@ -85,6 +88,7 @@ let pollTimer = null;
 const stopPoll = () => { if (pollTimer) clearTimeout(pollTimer); pollTimer = null; };
 
 function showView(title, meta) {
+  adminViewRequest++;
   stopPoll();
   $('adminUsers').parentElement.hidden = true;
   $('adminView').hidden = false;
@@ -105,9 +109,11 @@ async function getJson(url) {
 async function openUser(user) {
   const body = showView(user.name || user.email || user.id, 'loading…');
   $('adminBack').onclick = () => loadAdmin();
+  const request = adminViewRequest;
   let out;
   try { out = await getJson(`/api/admin/users/${encodeURIComponent(user.id)}/chats`); }
-  catch (e) { $('adminViewMeta').textContent = e.message; return; }
+  catch (e) { if (request === adminViewRequest) $('adminViewMeta').textContent = e.message; return; }
+  if (request !== adminViewRequest) return;
   const s = out.summary || {};
   const cost = s.pricedRounds ? ` · $${Number(s.reportedCost || 0).toFixed(2)} reported` : '';
   $('adminViewMeta').textContent = `${out.chats.length} chats · ${s.rounds || 0} model rounds${cost}`;
@@ -152,9 +158,11 @@ function messageNode(m) {
 async function openChat(chatId, user) {
   const body = showView('loading…');
   $('adminBack').onclick = () => openUser(user);
+  const request = adminViewRequest;
   let out;
   try { out = await getJson(`/api/admin/chats/${encodeURIComponent(chatId)}`); }
-  catch (e) { $('adminViewTitle').textContent = e.message; return; }
+  catch (e) { if (request === adminViewRequest) $('adminViewTitle').textContent = e.message; return; }
+  if (request !== adminViewRequest) return;
   $('adminViewTitle').textContent = out.title || out.id;
   $('adminViewMeta').textContent = `${out.owner?.email || out.owner?.name || 'no owner'} · ${out.messages.length} messages`
     + (out.running ? ' · live, refreshing' : '');
@@ -173,17 +181,30 @@ async function openChat(chatId, user) {
   for (const m of out.messages) if (m.role !== 'system') body.appendChild(messageNode(m));
   // Monitoring a turn in flight: re-read while it runs, and only while this
   // chat is still the one on screen.
-  if (out.running) pollTimer = setTimeout(() => { if ($('admin').classList.contains('open') && !$('adminView').hidden) openChat(chatId, user); }, 4000);
+  if (out.running) pollTimer = setTimeout(() => { if (request === adminViewRequest && $('admin').classList.contains('open') && !$('adminView').hidden) openChat(chatId, user); }, 4000);
 }
 
 export async function loadAdmin() {
+  const request = ++adminLoadRequest;
+  adminViewRequest++;
   stopPoll();
   $('adminView').hidden = true;
   $('adminUsers').parentElement.hidden = false;
   const box = $('adminUsers');
   $('adminMsg').textContent = '';
-  const res = await fetch('/api/admin/users');
-  const out = await res.json().catch(() => ({}));
+  let res;
+  let out;
+  try {
+    res = await fetch('/api/admin/users');
+    out = await res.json().catch(() => ({}));
+  } catch (err) {
+    if (request === adminLoadRequest) {
+      box.innerHTML = '';
+      $('adminMsg').textContent = `Couldn't load users: ${err.message}`;
+    }
+    return;
+  }
+  if (request !== adminLoadRequest) return;
   box.innerHTML = '';
   if (!res.ok) { $('adminMsg').textContent = out.error || `${res.status}`; return; }
   $('adminCount').textContent = `${out.users.length} · config ${out.fingerprint}`;

@@ -219,15 +219,23 @@ function bucketOf(updatedAt, now) {
   return d.toLocaleDateString('en-US', sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
 }
 
+let chatsRequest = 0;
+
+async function getJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
 export async function loadChats() {
-  try {
-    const res = await (await fetch('/api/chats')).json();
-    state.chats = res.chats || [];
-  } catch { state.chats = []; }
-  try {
-    const res = await (await fetch('/api/folders')).json();
-    state.folders = res.folders || [];
-  } catch { /* keep whatever folder list is already on screen */ }
+  // Many callers (polls, stream ends, edits) overlap; only the newest call
+  // may write, or an older list could land last and drop a just-made chat.
+  const request = ++chatsRequest;
+  const [chats, folders] = await Promise.allSettled([getJson('/api/chats'), getJson('/api/folders')]);
+  if (request !== chatsRequest) return;
+  // On failure keep whatever is already on screen rather than blanking it.
+  if (chats.status === 'fulfilled') state.chats = chats.value.chats || [];
+  if (folders.status === 'fulfilled') state.folders = folders.value.folders || [];
   // A background poll (the running-dot refresh) must not clobber search
   // results the user is looking at with the plain chronological list.
   refreshSidebar();
@@ -376,7 +384,14 @@ $('organizeCancel').addEventListener('click', () => $('organizeDialog').close())
 $('organizeDelete').addEventListener('click', async () => {
   if (!organizingChatId) return;
   const id = organizingChatId;
-  await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+  try {
+    const res = await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `${res.status}`);
+  } catch (err) {
+    $('organizeError').textContent = `Could not delete chat: ${err.message}`;
+    $('organizeError').hidden = false;
+    return;
+  }
   $('organizeDialog').close();
   organizingChatId = null;
   await loadChats();
@@ -421,19 +436,42 @@ export function clearSearch() {
  * in openChat/newChat) -- a panel with only one way to close is the kind of
  * thing that reads as broken on a phone even when it technically isn't.
  */
-function setSideDrawer(open) {
-  $('side').classList.toggle('open', open);
-  $('side-backdrop').classList.toggle('open', open);
-  $('menu').setAttribute('aria-expanded', String(open));
-}
-export const closeSideDrawer = () => setSideDrawer(false);
-
 /**
  * Desktop hides the sidebar outright instead of opening it as a drawer; the
  * same #menu button brings it back, so it means "show sidebar" at any width.
  */
 const COLLAPSE_KEY = 'tinywebui.side.collapsed';
 const narrow = () => matchMedia('(max-width: 720px)').matches;
+
+function setSideDrawer(open) {
+  const side = $('side');
+  const backdrop = $('side-backdrop');
+  const menu = $('menu');
+  const main = document.querySelector('main');
+  const mobile = narrow();
+
+  // The off-canvas sidebar remains in the DOM for its transition. Make it
+  // inert while closed so keyboard users never tab into invisible controls.
+  // When open, invert that boundary: Tab remains in the drawer rather than
+  // reaching the obscured transcript and composer behind it.
+  side.classList.toggle('open', mobile && open);
+  backdrop.classList.toggle('open', mobile && open);
+  side.inert = mobile && !open;
+  main.inert = mobile && open;
+  side.toggleAttribute('aria-hidden', mobile && !open);
+  menu.setAttribute('aria-expanded', String(mobile && open));
+
+  if (mobile && open) requestAnimationFrame(() => $('new').focus());
+  if (mobile && !open && side.contains(document.activeElement)) menu.focus();
+}
+export const closeSideDrawer = () => setSideDrawer(false);
+
+// A resize can move a currently open drawer onto the desktop layout (or vice
+// versa). Reset the inert boundary in that transition rather than leaving the
+// transcript inaccessible until the next sidebar interaction.
+matchMedia('(max-width: 720px)').addEventListener('change', () => setSideDrawer(false));
+setSideDrawer(false);
+
 function setCollapsed(on) {
   document.body.classList.toggle('side-collapsed', on);
   try { on ? localStorage.setItem(COLLAPSE_KEY, '1') : localStorage.removeItem(COLLAPSE_KEY); } catch { /* per-viewer nicety only */ }
