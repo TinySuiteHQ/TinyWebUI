@@ -11,6 +11,7 @@ let days = []; // raw daily rows from /api/usage
 let path = []; // drill-down breadcrumb, e.g. ['2026'] or ['2026', '2026-03']
 let statistics = null;
 let selectedModel = '';
+let usageRequest = 0;
 
 const fmt = (n) => n.toLocaleString();
 
@@ -169,7 +170,9 @@ function render() {
   }
   const max = Math.max(...buckets.map((b) => b.total), 1);
   for (const b of buckets) {
-    const row = el('div', 'usage-bar-row');
+    const drillable = path.length < 3;
+    const row = el(drillable ? 'button' : 'div', 'usage-bar-row');
+    if (drillable) row.type = 'button';
     const label = el('span', 'usage-bar-label');
     label.textContent = level === 'day' ? b.key.slice(8) : (level === 'year' ? b.key : b.key.slice(5));
     const track = el('span', 'usage-bar-track');
@@ -186,8 +189,9 @@ function render() {
     const count = el('span', 'usage-bar-count');
     count.textContent = fmt(b.total);
     row.append(label, track, count);
-    if (path.length < 3) {
+    if (drillable) {
       row.classList.add('clickable');
+      row.setAttribute('aria-label', `Show ${b.key} usage details`);
       row.onclick = () => { path = [...path, b.key]; render(); };
     }
     box.appendChild(row);
@@ -263,9 +267,21 @@ function renderCostStatistics(stats) {
 }
 
 export async function loadUsage() {
-  const response = await fetch('/api/usage');
-  if (!response.ok) return;
-  const data = await response.json();
+  const request = ++usageRequest;
+  let data;
+  try {
+    const response = await fetch('/api/usage');
+    if (!response.ok) throw new Error(`${response.status}`);
+    data = await response.json();
+  } catch (err) {
+    if (request !== usageRequest) return;
+    const msg = Object.assign(el('div', 'empty'), { textContent: `Couldn't load usage (${err.message}).` });
+    $('usageStats').replaceChildren(msg);
+    $('usageModels').replaceChildren();
+    $('usageBars').replaceChildren();
+    return;
+  }
+  if (request !== usageRequest) return;
   days = data.days || [];
   statistics = data.statistics || null;
   path = [];

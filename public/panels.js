@@ -15,7 +15,7 @@ const admin = $('admin');
 const adminBtn = $('toggle-admin');
 
 function closeOtherPanels(except) {
-  if (except !== settings) toggleSettings(false);
+  if (except !== settings) toggleSettings(false, { focusComposer: false });
   if (except !== automations) { automations.classList.remove('open'); automationsBtn.classList.remove('active'); }
   if (except !== mcp) { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); }
   if (except !== statistics) { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); }

@@ -214,12 +214,30 @@ function renderToolPanel(data) {
   }
 }
 
+/** Fetches JSON, throwing on a network error or a non-2xx status. */
+async function getJson(url) {
+  const res = await fetch(url);
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || String(res.status));
+  return out;
+}
+
 export async function loadTools() {
-  renderToolPanel(await (await fetch('/api/tools')).json());
+  let data;
+  try { data = await getJson('/api/tools'); } catch (err) {
+    $('tools').replaceChildren(Object.assign(el('div', 'empty'), { textContent: `Couldn't load tools (${err.message}).` }));
+    return;
+  }
+  renderToolPanel(data);
 }
 
 export async function loadMcp() {
-  const { path, text, locked, readOnly: managed } = await (await fetch('/api/mcp')).json();
+  let out;
+  try { out = await getJson('/api/mcp'); } catch (err) {
+    $('mcpMsg').textContent = `Couldn't load MCP config (${err.message}).`;
+    return;
+  }
+  const { path, text, locked, readOnly: managed } = out;
   $('mcpText').value = text;
   $('mcpText').readOnly = Boolean(locked);
   $('saveMcp').disabled = Boolean(locked);
@@ -274,7 +292,14 @@ let lockedKeys = new Set();
 export const isLocked = (key) => readOnly || lockedKeys.has(key);
 
 export async function loadConfig() {
-  const cfg = await (await fetch('/api/config')).json();
+  let cfg;
+  try { cfg = await getJson('/api/config'); } catch (err) {
+    // Without the lock list the form can't be edited safely; keep it read-only.
+    for (const id of FORM_KEYS) $(id).disabled = true;
+    $('save').disabled = true;
+    $('saveMsg').textContent = `Couldn't load settings (${err.message}).`;
+    return;
+  }
   lockedKeys = new Set(cfg.lockedKeys || []);
   readOnly = Boolean(cfg.readOnly);
   for (const id of FORM_KEYS) {
@@ -351,13 +376,15 @@ $('save').onclick = async () => {
 
 $('cancel').onclick = () => toggleSettings(false);
 
-export function toggleSettings(open) {
+export function toggleSettings(open, { focusComposer = true } = {}) {
   const panel = $('settings');
   const on = open ?? !panel.classList.contains('open');
   panel.classList.toggle('open', on);
   if (on && !$('save').disabled) $('saveMsg').textContent = '';
   $('toggle-settings').classList.toggle('active', on);
-  if (!on) $('input').focus();
+  // A panel swap should leave focus to the panel being opened. Focusing the
+  // composer here would otherwise raise the mobile keyboard behind it.
+  if (!on && focusComposer) $('input').focus();
 }
 
 document.addEventListener('keydown', (e) => {

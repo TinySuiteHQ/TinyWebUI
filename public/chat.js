@@ -12,6 +12,12 @@ import { resetOutline } from './outline.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup, setHeldSender } from './queue.js';
 
 const input = $('input');
+let chatLoadCtrl = null;
+
+function cancelChatLoad() {
+  chatLoadCtrl?.abort();
+  chatLoadCtrl = null;
+}
 
 input.addEventListener('input', () => {
   input.style.height = 'auto';
@@ -77,6 +83,7 @@ function leaveView() {
 }
 
 export function newChat() {
+  cancelChatLoad();
   leaveView();
   state.chat = { id: null, title: 'New chat' };
   $('wrap').innerHTML = '';
@@ -96,9 +103,25 @@ export function newChat() {
 }
 
 export async function openChat(id) {
-  const res = await fetch(`/api/chats/${id}`);
-  if (!res.ok) return;
-  const found = await res.json();
+  // A slower earlier click must never replace the chat selected most recently.
+  cancelChatLoad();
+  const ctrl = new AbortController();
+  chatLoadCtrl = ctrl;
+  let res;
+  let found;
+  try {
+    res = await fetch(`/api/chats/${id}`, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`Could not open chat (${res.status})`);
+    found = await res.json();
+  } catch (err) {
+    if (chatLoadCtrl === ctrl) {
+      chatLoadCtrl = null;
+      if (err.name !== 'AbortError') addError(err.message);
+    }
+    return;
+  }
+  if (chatLoadCtrl !== ctrl) return;
+  chatLoadCtrl = null;
   leaveView();
   state.chat = { id: found.id, title: found.title };
   $('wrap').innerHTML = '';
@@ -175,7 +198,11 @@ $('form').addEventListener('submit', async (e) => {
     if (input.value.trim()) return queueInput('steer');
     // Closing the tab no longer stops a turn, so there has to be a way to
     // actually mean it.
-    if (state.chat.id) await fetch(`/api/chats/${state.chat.id}/stop`, { method: 'POST' });
+    if (!state.chat.id) return;
+    try {
+      const res = await fetch(`/api/chats/${state.chat.id}/stop`, { method: 'POST' });
+      if (!res.ok) throw new Error(`${res.status}`);
+    } catch (err) { addError(`couldn't stop: ${err.message}`); }
     return;
   }
   const text = input.value.trim();
