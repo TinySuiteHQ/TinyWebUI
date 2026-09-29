@@ -32,7 +32,7 @@ public/          the page (plain ES modules, no build); app.js is the entry and 
   chat/        the conversation: chat, stream, transcript, composer, queue,
                attachments, sidebar, outline, tasks
   panels/      settings, MCP, automations, usage, admin; panels.js (PANEL, openPanel/closePanel)
-  shared/      imported by the server too (events, features)
+  shared/      imported by the server too (events, features, usage); imports nothing
   themes/      optional themes, loaded by theme-loader.js
 test/            node:test suites; evals/ model-behaviour evals (costs API calls)
 ```

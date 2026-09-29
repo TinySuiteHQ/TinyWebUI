@@ -8,6 +8,7 @@ import { $, el } from '../core/dom.js';
 import { state } from '../core/state.js';
 import { addQuestion } from './outline.js';
 import { api } from '../core/api.js';
+import { tally as tallyUsage } from '../shared/usage.js';
 
 const log = $('log');
 const wrap = $('wrap');
@@ -541,58 +542,7 @@ export function addSteps(parent) {
   };
 }
 
-/**
- * Cache reporting is not standardised. Each provider spells it differently, and
- * some report nothing at all -- in which case a hit is invisible, not absent.
- *   OpenAI / Gemini / OpenRouter : prompt_tokens_details.cached_tokens
- *   Anthropic                    : cache_read_input_tokens (+ creation, billed extra)
- *   DeepSeek                     : prompt_cache_hit_tokens / prompt_cache_miss_tokens
- */
-function cacheReads(u) {
-  return u.prompt_tokens_details?.cached_tokens
-    ?? u.input_tokens_details?.cached_tokens
-    ?? u.cache_read_input_tokens
-    ?? u.prompt_cache_hit_tokens
-    ?? 0;
-}
-
-function cacheWrites(u) {
-  return u.cache_creation_input_tokens
-    ?? u.cache_write_tokens
-    ?? u.prompt_tokens_details?.cache_write_tokens
-    ?? u.prompt_tokens_details?.cache_creation_tokens
-    ?? u.input_tokens_details?.cache_write_tokens
-    ?? 0;
-}
-
-/** Folds one or more raw usage objects into the numbers we display. */
-export function tally(raws) {
-  const t = { in: 0, out: 0, cached: 0, written: 0, discount: 0, reported: false, raw: raws, provider: null, providers: [] };
-  for (const u of raws) {
-    if (u.provider) {
-      t.provider = u.provider;
-      // Distinct upstreams, in the order they served. A turn split across two
-      // of them cannot cache between rounds, and summing would otherwise hide
-      // that behind whichever one happened to serve last.
-      if (!t.providers.includes(u.provider)) t.providers.push(u.provider);
-    }
-    t.in += u.prompt_tokens ?? u.input_tokens ?? 0;
-    t.out += u.completion_tokens ?? u.output_tokens ?? 0;
-    t.cached += cacheReads(u);
-    t.written += cacheWrites(u);
-    t.discount += Number(u.cache_discount || 0);
-    // Distinguish "the provider said zero" from "the provider said nothing".
-    if (u.prompt_tokens_details || u.input_tokens_details || u.cache_read_input_tokens != null
-        || u.cache_write_tokens != null || u.prompt_cache_hit_tokens != null) t.reported = true;
-  }
-  return t;
-}
-
 const fmt = (n) => n.toLocaleString('en-US');
-
-// `addTurn` has a local `tally` (the step-count span), so it reaches this one
-// by alias rather than by name.
-const tallyUsage = tally;
 
 export function addUsage(u, parent, { label = null, total = false } = {}) {
   const bits = [];

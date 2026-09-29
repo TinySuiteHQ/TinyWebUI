@@ -1,4 +1,5 @@
 import { scope } from './scope.js';
+import { inputTokens, outputTokens, cacheReads } from '../../public/shared/usage.js';
 
 // Token and cost statistics over stored messages.
 // One area of the Store; see index.js.
@@ -57,12 +58,9 @@ export class UsageStore {
     for (const row of rows) {
       let u;
       try { u = JSON.parse(row.usage_json); } catch { continue; }
-      const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
-      const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
-      const cached = u.prompt_tokens_details?.cached_tokens
-        ?? u.cache_read_input_tokens
-        ?? u.cached_tokens
-        ?? 0;
+      const inTok = inputTokens(u) ?? 0;
+      const outTok = outputTokens(u) ?? 0;
+      const cached = cacheReads(u) ?? 0;
       const model = row.model || u.model || 'unknown';
 
       const cost = u.cost != null && Number.isFinite(Number(u.cost)) ? Number(u.cost) : null;
@@ -133,15 +131,15 @@ export class UsageStore {
         }
       }
       if (usage) {
-        const inTok = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
-        const outTok = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
-        const cached = Number(usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? usage.cached_tokens ?? 0) || 0;
+        const inTok = inputTokens(usage) ?? 0;
+        const outTok = outputTokens(usage) ?? 0;
+        const cached = cacheReads(usage) ?? 0;
         const costValue = usage.cost ?? usage.total_cost;
         const cost = costValue !== undefined && costValue !== null && Number.isFinite(Number(costValue)) ? Number(costValue) : null;
         m.in += inTok; m.out += outTok; m.cached += cached;
         if (cost !== null) { m.cost += cost; m.pricedRounds++; summary.pricedRounds++; summary.reportedCost += cost; }
         if (answer) {
-          if ((usage.prompt_tokens ?? usage.input_tokens) != null && (usage.completion_tokens ?? usage.output_tokens) != null) answer.usageRounds++;
+          if (inputTokens(usage) !== null && outputTokens(usage) !== null) answer.usageRounds++;
           answer.tokens += inTok + outTok;
           if (cost !== null) { answer.pricedRounds++; answer.cost += cost; }
         }

@@ -1,3 +1,5 @@
+import { inputTokens, outputTokens, cacheReads } from '../../public/shared/usage.js';
+
 // Counts only: never retain another copy of prompts, schemas or tool output.
 // The char/4 estimator matches compact.js; it is not provider tokenization.
 const estimate = (value) => Math.ceil((typeof value === 'string' ? value : JSON.stringify(value ?? '')).length / 4);
@@ -61,9 +63,9 @@ export function completeAttribution(input, usage, { content = '', reasoning = ''
   if (content) output.push(bucket('intermediate_text', estimate(content)));
   return {
     version: 1, estimator: 'characters/4; images 1500 tokens each',
-    input: reconcile(input.buckets, count(usage?.prompt_tokens ?? usage?.input_tokens)),
-    output: reconcile(output, count(usage?.completion_tokens ?? usage?.output_tokens)),
-    cached: count(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens ?? usage?.cached_tokens)
+    input: reconcile(input.buckets, inputTokens(usage)),
+    output: reconcile(output, outputTokens(usage)),
+    cached: cacheReads(usage)
   };
 }
 
