@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS chats (
   tags_json    TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tasks_chat ON tasks(chat_id, created_at);
+
 CREATE TABLE IF NOT EXISTS automations (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -346,7 +356,7 @@ export const PASSAGE_OVERLAP = 200;
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
@@ -503,6 +513,24 @@ export class Store {
   }
 
   /* ---------- chats ---------- */
+
+  listTasks(chatId) {
+    return this.db.prepare('SELECT id, title, status, created_at, updated_at FROM tasks WHERE chat_id = ? ORDER BY created_at, rowid').all(chatId);
+  }
+
+  addTask(chatId, title) {
+    const id = randomUUID();
+    const now = Date.now();
+    this.db.prepare('INSERT INTO tasks (id, chat_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, chatId, title, now, now);
+    return this.listTasks(chatId).find((task) => task.id === id);
+  }
+
+  updateTask(chatId, id, status) {
+    const changed = this.db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE chat_id = ? AND id = ?')
+      .run(status, Date.now(), chatId, id).changes;
+    return changed ? this.listTasks(chatId).find((task) => task.id === id) : null;
+  }
 
   createChat({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = ALL_USERS) {
     const chatId = id || randomUUID();

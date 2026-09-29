@@ -9,6 +9,7 @@ import { consume } from './stream.js';
 import { commitAttachments, invalidAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
+import { renderTasks } from './tasks.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup, setHeldSender } from './queue.js';
 
 const input = $('input');
@@ -86,6 +87,7 @@ export function newChat() {
   cancelChatLoad();
   leaveView();
   state.chat = { id: null, title: 'New chat' };
+  renderTasks();
   $('wrap').innerHTML = '';
   pinToBottom();
   state.pendingAttachments = [];
@@ -124,6 +126,7 @@ export async function openChat(id) {
   chatLoadCtrl = null;
   leaveView();
   state.chat = { id: found.id, title: found.title };
+  renderTasks(found.tasks || []);
   $('wrap').innerHTML = '';
   pinToBottom();
   state.pendingAttachments = [];
