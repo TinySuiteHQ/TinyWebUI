@@ -4,6 +4,7 @@ import { fingerprint } from '../access/policy.js';
 import { actor } from '../access/auth_gate.js';
 import { toolList } from './settings.js';
 import { logger } from '../log.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 const log = logger('mcp');
 
@@ -27,10 +28,10 @@ export function mcpRoutes({ auditMcp, config, hub, source, swapHub }) {
 
   return [
     // mcp.json can hold server credentials (env, headers): admins only.
-    { method: 'GET', path: /^\/api\/mcp$/, feature: 'mcp', handle: ({ res }) =>
+    { method: 'GET', path: /^\/api\/mcp$/, feature: FEATURE.MCP, handle: ({ res }) =>
       json(res, 200, { path: source.mcpPath(), text: source.readMcpFile(), locked: source.mcpLocked }) },
 
-    { method: 'POST', path: /^\/api\/mcp$/, feature: 'mcp', handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/mcp$/, feature: FEATURE.MCP, handle: async ({ req, res, auth }) => {
       const { text } = await readJson(req, UPLOAD_LIMIT);
       if (!await saveAndReconnect(res, text, auth)) return undefined;
       return json(res, 200, { tools: toolList(hub()), mcpErrors: hub().errors });
@@ -39,7 +40,7 @@ export function mcpRoutes({ auditMcp, config, hub, source, swapHub }) {
     // Disabling a server tears its connection down rather than filtering its
     // tools out client-side: an unwanted server is one fewer child process or
     // open connection, not just one the model happens not to be offered.
-    { method: 'POST', path: /^\/api\/mcp\/servers\/([^/]+)\/toggle$/, feature: 'mcp', handle: async ({ req, res, auth, params: [rawName] }) => {
+    { method: 'POST', path: /^\/api\/mcp\/servers\/([^/]+)\/toggle$/, feature: FEATURE.MCP, handle: async ({ req, res, auth, params: [rawName] }) => {
       const name = decodeURIComponent(rawName);
       const { disabled } = await readJson(req);
       let servers;

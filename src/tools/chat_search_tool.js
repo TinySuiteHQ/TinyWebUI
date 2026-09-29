@@ -1,3 +1,5 @@
+import { CORPUS } from '../store/index.js';
+
 /**
  * search_chats -- lets the model look up the user's earlier conversations:
  * what they asked and the answer they finally got. Ranked by the same
@@ -47,7 +49,7 @@ export async function callSearchChats(args, { store, retrieval, chatId, budget =
   if (!query) return 'Error: query is required.';
   const limit = Math.min(MAX_RESULTS, Math.max(1, Number.parseInt(args?.limit, 10) || 5));
   const owner = chatId ? store.chats.byId(chatId)?.user_id ?? null : null;
-  const hits = await retrieval.search('chats', { userId: owner, excludeChatId: chatId ?? null }, query, limit);
+  const hits = await retrieval.search(CORPUS.CHATS, { userId: owner, excludeChatId: chatId ?? null }, query, limit);
   if (!hits.length) return `[search_chats · no earlier conversation matches "${query}"]\nTry other words for the same topic.`;
 
   const out = [`[search_chats · ${hits.length} turn(s) matching "${query}"]`];

@@ -4,14 +4,15 @@ import { toView } from '../store/index.js';
 import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
 import { attachmentNote, normalizeUpload } from './documents.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 const MAX_IMAGES = 8;
-const F = 'chat';
+const F = FEATURE.CHAT;
 
 /** Images and documents on a turn need their own features, whatever the route. */
 function refusedFeature(auth, { images, documentIds }) {
-  if (Array.isArray(images) && images.length && !auth.features.has('images')) return 'images';
-  if (Array.isArray(documentIds) && documentIds.length && !auth.features.has('attachments')) return 'attachments';
+  if (Array.isArray(images) && images.length && !auth.features.has(FEATURE.IMAGES)) return FEATURE.IMAGES;
+  if (Array.isArray(documentIds) && documentIds.length && !auth.features.has(FEATURE.ATTACHMENTS)) return FEATURE.ATTACHMENTS;
   return null;
 }
 
@@ -141,7 +142,7 @@ export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor
       run.approvals.delete(id);
       // "Always" rewrites tool policy, which is the tools feature's to do;
       // without it, the answer counts as allowing this one call.
-      if (decision === 'always' && auth.features.has('tools')) {
+      if (decision === 'always' && auth.features.has(FEATURE.TOOLS)) {
         // Approval lists set in code cannot be saved to; allow this call only.
         try { saveConfig(setOverride(config(), pending.name, 'auto'), actor(auth)); }
         catch (err) { if (!(err instanceof LockedError)) throw err; }

@@ -6,6 +6,7 @@ import {
 } from '../access/auth.js';
 import { audit } from '../audit.js';
 import { OWNER_ID } from '../access/auth_gate.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.
 const LOGIN_MAX = 5;
@@ -70,7 +71,7 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
 
     // Tier 3's model pill: a personal choice among the role's models. In
     // tiers 1-2 the pill changes the configured model instead (/api/config).
-    { method: 'POST', path: /^\/api\/me\/prefs$/, feature: 'model-picker', handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/me\/prefs$/, feature: FEATURE.MODEL_PICKER, handle: async ({ req, res, auth }) => {
       const cfg = config();
       if (!multiUser()) return json(res, 400, { error: 'preferences are per-user; set the model in settings' });
       const { model } = await readJson(req);

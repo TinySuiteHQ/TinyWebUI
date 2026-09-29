@@ -11,6 +11,7 @@ import './automations.js';
 import './panels.js';
 import { initAdmin } from './admin.js';
 import { loadAccess, can } from './access.js';
+import { FEATURE } from './shared/features.js';
 import './composer.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
@@ -61,8 +62,8 @@ async function needsLogin() {
 if (!(await needsLogin())) {
   newChat();
   // Tools render read-only for non-admins, so they wait on the config.
-  loadConfig().then(() => can('tools') && loadTools());
-  if (can('mcp')) loadMcp();
+  loadConfig().then(() => can(FEATURE.TOOLS) && loadTools());
+  if (can(FEATURE.MCP)) loadMcp();
   initAdmin();
   migrateLocal().then(loadChats);
   $('input').focus();

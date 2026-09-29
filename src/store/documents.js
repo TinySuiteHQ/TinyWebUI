@@ -1,5 +1,6 @@
 import { scope, ftsQuery } from './scope.js';
 import { randomBytes } from 'node:crypto';
+import { CORPUS } from './embeddings.js';
 
 // Attached documents, split into passages for read_document (BM25 and dense retrieval).
 // One area of the Store; see index.js.
@@ -122,7 +123,7 @@ export class DocumentStore {
         SELECT passage_rowid FROM document_passage_map WHERE doc_id = ?
       )
     `).run(docId);
-    this.embeddings.deleteOwner('documents', docId);
+    this.embeddings.deleteOwner(CORPUS.DOCUMENTS, docId);
     this.db.prepare('DELETE FROM document_passage_map WHERE doc_id = ?').run(docId);
   }
 
@@ -170,8 +171,8 @@ export class DocumentStore {
   missingVectors(modelKey) {
     return this.db.prepare(`
       SELECT DISTINCT m.doc_id AS id FROM document_passage_map m
-      LEFT JOIN embeddings e ON e.corpus = 'documents' AND e.unit_id = m.passage_rowid AND e.model_key = ? AND e.chunk = 0
+      LEFT JOIN embeddings e ON e.corpus = ? AND e.unit_id = m.passage_rowid AND e.model_key = ? AND e.chunk = 0
       WHERE e.unit_id IS NULL
-    `).all(modelKey).map((r) => r.id);
+    `).all(CORPUS.DOCUMENTS, modelKey).map((r) => r.id);
   }
 }

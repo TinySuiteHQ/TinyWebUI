@@ -32,6 +32,8 @@ import { automationRoutes } from './routes/automations.js';
 import { documentRoutes } from './routes/documents.js';
 import { chatRoutes } from './routes/chats.js';
 import { adminRoutes } from './routes/admin.js';
+import { EVENT } from '../public/shared/events.js';
+import { FEATURE } from '../public/shared/features.js';
 
 const log = logger('server');
 
@@ -158,7 +160,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     /** The tools a turn gets: what is switched on, minus manage_automation for
      * anyone whose role has no automations. */
     toolsFor: (features) => app.hub.activeTools(app.cfg.disabledTools)
-      .filter((t) => features.has('automations') || t.function.name !== 'manage_automation'),
+      .filter((t) => features.has(FEATURE.AUTOMATIONS) || t.function.name !== 'manage_automation'),
 
     /** A stored owner's features: null (tiers 1-2) is the one person. */
     ownerFeatures: (userId) => featuresFor(app.cfg, userId ? store.users.get(userId)?.role : null),
@@ -179,7 +181,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
     configFor(auth) {
       const pub = source.public(app.cfg);
-      if (auth.features.has('settings')) return pub;
+      if (auth.features.has(FEATURE.SETTINGS)) return pub;
       const out = {};
       for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
       return { ...out, readOnly: true };
@@ -211,7 +213,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // other calls, so a question cannot race a write it is asking about.
       .registerLocal(askToolDef(), callAskUser, { readOnly: true, idempotent: false, executionMode: 'sequential' })
       .registerLocal(taskToolDef(), (args, ctx) => callManageTasks(args, {
-        ...ctx, store, onChange: (tasks) => runs.get(ctx.chatId)?.emit({ type: 'tasks', tasks })
+        ...ctx, store, onChange: (tasks) => runs.get(ctx.chatId)?.emit({ type: EVENT.TASKS, tasks })
       }), { executionMode: 'sequential' })
       .registerLocal(automationToolDef(), (args, ctx) => {
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation: scheduler.trigger });

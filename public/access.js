@@ -5,6 +5,7 @@
  * a chat app, not a settings app with the settings locked.
  */
 import { $ } from './dom.js';
+import { FEATURE } from './shared/features.js';
 
 let me = { features: [], models: '*' };
 let features = new Set();
@@ -29,12 +30,12 @@ export async function loadAccess() {
     for (const id of ids) { const node = $(id); if (node) node.hidden = !can(feature); }
   }
   const search = $('chatSearch')?.closest('.search-row');
-  if (search) search.hidden = !can('search');
+  if (search) search.hidden = !can(FEATURE.SEARCH);
   // The + button opens attach and tools; with neither there is nothing in it.
-  $('attach').hidden = !(can('attachments') || can('images') || can('tools'));
+  $('attach').hidden = !(can(FEATURE.ATTACHMENTS) || can(FEATURE.IMAGES) || can(FEATURE.TOOLS));
   // The model pill still says which model answers; it just stops being a menu.
   const pill = $('modelBtn');
-  pill.disabled = !can('model-picker');
-  pill.classList.toggle('static', !can('model-picker'));
+  pill.disabled = !can(FEATURE.MODEL_PICKER);
+  pill.classList.toggle('static', !can(FEATURE.MODEL_PICKER));
   return me;
 }

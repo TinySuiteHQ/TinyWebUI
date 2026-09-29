@@ -3,6 +3,7 @@ import { ALL_USERS, toView } from '../store/index.js';
 import { validateConfig, fingerprint, resolveAccess } from '../access/policy.js';
 import { destroyUserSessions } from '../access/auth.js';
 import { audit } from '../audit.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 function adminUserView(u) {
   return {
@@ -21,7 +22,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
   const multi = (handle) => (ctx) => (multiUser() ? handle(ctx) : json(ctx.res, 403, { error: 'admin_only' }));
 
   return [
-    { method: 'GET', path: /^\/api\/admin\/users$/, feature: 'admin', handle: multi(({ res }) => {
+    { method: 'GET', path: /^\/api\/admin\/users$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
       const pins = resolveAccess(config());
       const code = source.codeAccessUsers();
       const pinnedBy = (u) => (pins.bootstrapAdmins.includes(u.external_id) ? 'bootstrapAdmins'
@@ -32,7 +33,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       });
     }) },
 
-    { method: 'PATCH', path: /^\/api\/admin\/users\/([\w-]+)$/, feature: 'admin', handle: multi(async ({ req, res, auth, params: [id] }) => {
+    { method: 'PATCH', path: /^\/api\/admin\/users\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth, params: [id] }) => {
       const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
       const { role, status } = await readJson(req);
@@ -79,7 +80,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     // Oversight: read-only, every view audited. Reached through ALL_USERS on
     // purpose -- this is the one place a user's scope is crossed, and it only
     // exists when there are users to cross between.
-    { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/chats$/, feature: 'oversight', handle: multi(({ res, auth, params: [id] }) => {
+    { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/chats$/, feature: FEATURE.OVERSIGHT, handle: multi(({ res, auth, params: [id] }) => {
       const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
       audit('admin.view_user_chats', { by: auth.userId, userId: target.id });
@@ -87,7 +88,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       return json(res, 200, { user: adminUserView(target), chats, summary: store.usage.statistics(target.id).summary });
     }) },
 
-    { method: 'GET', path: /^\/api\/admin\/chats\/([\w.-]+)$/, feature: 'oversight', handle: multi(({ res, auth, params: [id] }) => {
+    { method: 'GET', path: /^\/api\/admin\/chats\/([\w.-]+)$/, feature: FEATURE.OVERSIGHT, handle: multi(({ res, auth, params: [id] }) => {
       const found = store.chats.get(id, ALL_USERS);
       if (!found) return json(res, 404, { error: 'no such chat' });
       audit('admin.view_chat', { by: auth.userId, chatId: found.id, owner: found.user_id });
@@ -101,7 +102,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       });
     }) },
 
-    { method: 'GET', path: /^\/api\/admin\/documents\/([\w.-]+)$/, feature: 'oversight', handle: multi(({ res, auth, params: [id] }) => {
+    { method: 'GET', path: /^\/api\/admin\/documents\/([\w.-]+)$/, feature: FEATURE.OVERSIGHT, handle: multi(({ res, auth, params: [id] }) => {
       const doc = store.documents.get(id, ALL_USERS);
       if (!doc) return json(res, 404, { error: 'no such document' });
       audit('admin.view_document', { by: auth.userId, documentId: doc.id, chatId: doc.chat_id });

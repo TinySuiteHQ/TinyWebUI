@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.js';
 import { effectiveConfig } from '../config/models.js';
 import { logger } from '../log.js';
+import { EVENT } from '../../public/shared/events.js';
+import { CORPUS } from '../store/index.js';
 
 const log = logger('retrieval');
 
@@ -35,7 +37,7 @@ export function createRuns(app) {
   };
 
   /** Tells everyone watching a chat's run what is queued now. */
-  const announceQueue = (chatId) => runs.get(chatId)?.emit({ type: 'queue', items: store.chats.listQueued(chatId) });
+  const announceQueue = (chatId) => runs.get(chatId)?.emit({ type: EVENT.QUEUE, items: store.chats.listQueued(chatId) });
 
   /**
    * `lead` is a queued follow-up that starts this run: stored after baseCount
@@ -90,13 +92,13 @@ export function createRuns(app) {
           if (!store.chats.settleQuestion(id, status, answer)) return false;
           clearTimeout(timer);
           if (run.question?.id === id) run.question = null;
-          emit({ type: 'question_done', id, status, answer });
+          emit({ type: EVENT.QUESTION_DONE, id, status, answer });
           resolve(status === 'answered' ? { answered: true, answer } : { answered: false, reason: status });
           return true;
         };
         run.question = { id, choices, allowFreeText, settle };
         if (deadline) timer = setTimeout(() => settle('timeout'), seconds * 1000);
-        emit({ type: 'question', id, question, choices, allowFreeText, deadline, timeoutSeconds: seconds });
+        emit({ type: EVENT.QUESTION, id, question, choices, allowFreeText, deadline, timeoutSeconds: seconds });
       });
     };
 
@@ -108,18 +110,18 @@ export function createRuns(app) {
     };
 
     run.emit = emit;
-    emit({ type: 'chat', id: chat.id, title: chat.title });
+    emit({ type: EVENT.CHAT, id: chat.id, title: chat.title });
     if (lead != null) {
       store.messages.add(chat.id, { role: 'user', content: lead });
-      emit({ type: 'user', content: lead });
+      emit({ type: EVENT.USER, content: lead });
     }
-    emit({ type: 'queue', items: store.chats.listQueued(chat.id) });
+    emit({ type: EVENT.QUEUE, items: store.chats.listQueued(chat.id) });
 
     // Steering is interactive input: an unattended run never takes any, so
     // it cannot swallow what someone typed into a chat an automation shares.
     const takeInput = unattended ? null : () => {
       const items = store.chats.takeQueued(chat.id, { kind: 'steer' });
-      if (items.length) emit({ type: 'queue', items: store.chats.listQueued(chat.id) });
+      if (items.length) emit({ type: EVENT.QUEUE, items: store.chats.listQueued(chat.id) });
       return items.map((i) => i.content);
     };
 
@@ -127,24 +129,24 @@ export function createRuns(app) {
       try {
         await runChat({ cfg: effectiveConfig(app.cfg, model), chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
       } catch (err) {
-        emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
+        emit({ type: EVENT.ERROR, error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
         store.chats.touch(chat.id);
         run.done = true;
-        app.retrieval.ingest('chats', chat.id).catch((err) => log.error(`embedding chat ${chat.id} failed: ${err.message}`));
+        app.retrieval.ingest(CORPUS.CHATS, chat.id).catch((err) => log.error(`embedding chat ${chat.id} failed: ${err.message}`));
         // The run would go idle here, so the oldest queued item starts the
         // next one -- in this same synchronous block, so nothing queued before
         // `done` flipped can be missed. A stop or failure delivers nothing:
         // the queue stays put and the client hands it back to the composer.
-        const ok = !run.events.some((event) => event.type === 'error') && !run.ac.signal.aborted;
+        const ok = !run.events.some((event) => event.type === EVENT.ERROR) && !run.ac.signal.aborted;
         const next = ok && !unattended ? store.chats.takeQueued(chat.id, { first: true })[0] : null;
         if (next) {
-          emit({ type: 'next_run' });
+          emit({ type: EVENT.NEXT_RUN });
           start({ chat, tools, model, lead: next.content });
         }
         try { onFinish?.({
           ok,
-          error: run.events.find((event) => event.type === 'error')?.error || (run.ac.signal.aborted ? 'Stopped.' : null),
+          error: run.events.find((event) => event.type === EVENT.ERROR)?.error || (run.ac.signal.aborted ? 'Stopped.' : null),
           result: store.messages.list(chat.id).slice(run.baseCount).filter((m) => m.role === 'assistant').at(-1)?.content || ''
         }); } catch { /* a run observer cannot disrupt chat teardown */ }
         for (const sub of run.subs) { try { sub.end(); } catch { /* already gone */ } }

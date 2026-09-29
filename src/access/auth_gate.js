@@ -2,6 +2,7 @@ import { ALL_USERS } from '../store/index.js';
 import { featuresFor } from './policy.js';
 import { getSessionUser, resolveTrustedUser } from './auth.js';
 import { audit } from '../audit.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 /** The one account behind a 'single' password. */
 export const OWNER_ID = 'owner';
@@ -58,7 +59,7 @@ export function resolveAuth(req, pathname, cfg, store) {
   // Features come from the policy for the caller's role; nobody signed in
   // gets none, which leaves only the routes the table marks open.
   auth.features = auth.userId !== undefined ? featuresFor(cfg, auth.role) : new Set();
-  if (cfg.authMode === 'trusted-header' && auth.user) auth.isAdmin = auth.features.has('admin');
+  if (cfg.authMode === 'trusted-header' && auth.user) auth.isAdmin = auth.features.has(FEATURE.ADMIN);
   return auth;
 }
 

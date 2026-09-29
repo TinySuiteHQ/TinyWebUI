@@ -4,6 +4,7 @@ import { toWire } from '../store/index.js';
 import { toolExecutor } from './tool_executor.js';
 import { ASK_USER } from '../tools/ask_tool.js';
 import { runAgentLoop, runHooks } from './agent.js';
+import { EVENT } from '../../public/shared/events.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
 } from './compact.js';
@@ -410,14 +411,14 @@ async function post(cfg, plan, signal, disabled, emit) {
     // finishing the turn is. Retry elsewhere immediately rather than waiting.
     if (pinned && !relaxed && retries >= RELEASE_PIN_AFTER) {
       relaxed = true;
-      emit({ type: 'notice', text: `${why} — releasing the provider pin (cache will be cold).` });
+      emit({ type: EVENT.NOTICE, text: `${why} — releasing the provider pin (cache will be cold).` });
       return true;
     }
     if (retries < MAX_RETRIES) {
       retries++;
       const wait = retryDelay(res, retries);
       emit({
-        type: 'notice',
+        type: EVENT.NOTICE,
         text: `${why} — retrying in ${(wait / 1000).toFixed(1)}s (${retries}/${MAX_RETRIES}).`
       });
       await sleep(wait, signal);
@@ -466,7 +467,7 @@ async function post(cfg, plan, signal, disabled, emit) {
       : null;
     if (culprit) {
       disabled.add(culprit.drop);
-      emit({ type: 'notice', text: `Provider rejected ${culprit.drop}; retrying without it.` });
+      emit({ type: EVENT.NOTICE, text: `Provider rejected ${culprit.drop}; retrying without it.` });
       continue;
     }
 
@@ -630,10 +631,10 @@ export async function runChat({
     if (done) {
       rows = load();
       emit({
-        type: 'notice',
+        type: EVENT.NOTICE,
         text: `Context compacted (epoch ${done.epoch}): ${done.saved.toLocaleString('en-US')} chars of earlier tool output and images moved out of the window. Use context_expand to read any of it.`
       });
-      emit({ type: 'compacted', epoch: done.epoch, boundarySeq: done.boundarySeq, saved: done.saved });
+      emit({ type: EVENT.COMPACTED, epoch: done.epoch, boundarySeq: done.boundarySeq, saved: done.saved });
     }
   }
 
@@ -649,7 +650,7 @@ export async function runChat({
     const before = rows.length;
     rows = load();
     emit({
-      type: 'notice',
+      type: EVENT.NOTICE,
       text: `Context window full: the ${before - rows.length} oldest messages are no longer sent to the model (they stay in the transcript).`
     });
   }
@@ -686,7 +687,7 @@ export async function runChat({
       pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
         const msg = { role: 'user', content };
         store.messages.add(chatId, msg);
-        emit({ type: 'user', content });
+        emit({ type: EVENT.USER, content });
         return { wire: msg, message: msg };
       })),
       shouldContinue: async ({ round, assistant, results }) => {
@@ -697,7 +698,7 @@ export async function runChat({
           if (signal?.aborted) throw err;
           // Stopping is the one outcome that cannot leave the transcript
           // half-built: the batch is complete, and no model call is pending.
-          emit({ type: 'notice', text: `Turn hook failed (${err.message}) — stopping here.` });
+          emit({ type: EVENT.NOTICE, text: `Turn hook failed (${err.message}) — stopping here.` });
           return false;
         }
       }
@@ -711,7 +712,7 @@ export async function runChat({
     final.assistant.usage.attribution = markFinal(final.assistant.usage.attribution);
     store.messages.updateUsage(chatId, final.seq, final.assistant.usage);
   }
-  emit({ type: 'done', messages: appended });
+  emit({ type: EVENT.DONE, messages: appended });
   return appended;
 }
 
@@ -800,7 +801,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
         const think = delta.reasoning ?? delta.reasoning_content;
         if (think) {
           reasoning += think;
-          emit({ type: 'reasoning', delta: think });
+          emit({ type: EVENT.REASONING, delta: think });
         }
         // Structured form, which has to be echoed back verbatim or providers reject
         // the follow-up request that carries tool results.
@@ -811,7 +812,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
         }
         if (delta.content) {
           content += delta.content;
-          emit({ type: 'text', delta: delta.content });
+          emit({ type: EVENT.TEXT, delta: delta.content });
         }
         for (const tc of delta.tool_calls || []) {
           const slot = (toolCalls[tc.index] ||= { id: '', type: 'function', function: { name: '', arguments: '' } });
@@ -827,7 +828,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
         throw new Error(`The model's reply broke off part-way (${err.message}).`
           + (content ? ' Retry to run this round again.' : ''));
       }
-      emit({ type: 'notice', text: `Reply stream failed (${err.message}) — retrying the round (${attempt + 1}/${STREAM_RETRIES}).` });
+      emit({ type: EVENT.NOTICE, text: `Reply stream failed (${err.message}) — retrying the round (${attempt + 1}/${STREAM_RETRIES}).` });
       await sleep(retryDelay(null, attempt + 1), signal);
     }
   }
@@ -835,7 +836,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   // Cut off by the output cap: say so, or a truncated tool call just looks
   // like the model writing bad arguments.
   if (finishReason === 'length') {
-    emit({ type: 'notice', text: 'The reply hit the output token limit and was cut off (raise maxTokens if this recurs).' });
+    emit({ type: EVENT.NOTICE, text: 'The reply hit the output token limit and was cut off (raise maxTokens if this recurs).' });
   }
 
   // Dropped before anything is stored: nothing will produce their results.
@@ -854,7 +855,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
       ? '(No answer: the tool budget ran out and the model replied without text. Ask again'
         + ' to have it answer from what it gathered, or raise maxToolRounds.)'
       : '(The model returned an empty reply.)';
-    emit({ type: 'text', delta: content });
+    emit({ type: EVENT.TEXT, delta: content });
   }
 
   const assistant = { role: 'assistant', content: content || null };
@@ -885,6 +886,6 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   assistant.model = cfg.model;
   const seq = store.messages.add(chatId, assistant);
   onSaved?.(assistant, seq);
-  if (usage) emit({ type: 'usage', usage: assistant.usage });
+  if (usage) emit({ type: EVENT.USAGE, usage: assistant.usage });
   return assistant;
 }

@@ -4,6 +4,7 @@ import { modelsFor } from '../access/policy.js';
 import { audit } from '../audit.js';
 import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 export const toolList = (hub) => hub.tools.map((t) => ({
   name: t.function.name,
@@ -48,7 +49,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
       mcpErrors: hub().errors
     }) },
 
-    { method: 'POST', path: /^\/api\/config$/, feature: 'settings', handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/config$/, feature: FEATURE.SETTINGS, handle: async ({ req, res, auth }) => {
       saveConfig(await readJson(req), actor(auth));
       audit('admin.config_changed', { by: auth.userId ?? null });
       return json(res, 200, configFor(auth));
@@ -57,7 +58,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
     // The provider's own model list, for the composer's model picker. Not
     // every OpenAI-compatible endpoint serves /models, so a failure is an
     // answer too: the picker falls back to typing an id.
-    { method: 'GET', path: /^\/api\/models$/, feature: 'model-picker', handle: async ({ res, auth }) => {
+    { method: 'GET', path: /^\/api\/models$/, feature: FEATURE.MODEL_PICKER, handle: async ({ res, auth }) => {
       const cfg = config();
       const allowed = modelsFor(cfg, auth.role);
       // A catalog is the whole list: its labels, never the provider's ids.
@@ -75,11 +76,11 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
 
     // The grouped view behind the tools panel: built-ins, and every MCP
     // server's tools under it with that server's connection health.
-    { method: 'GET', path: /^\/api\/tools$/, feature: 'tools', handle: ({ res }) => json(res, 200, toolsView()) },
+    { method: 'GET', path: /^\/api\/tools$/, feature: FEATURE.TOOLS, handle: ({ res }) => json(res, 200, toolsView()) },
 
     // Per-tool approval override from the settings panel: 'ask', 'auto', or
     // 'default' to fall back to the global toolApproval mode.
-    { method: 'POST', path: /^\/api\/tools\/approval$/, feature: 'tools', handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/tools\/approval$/, feature: FEATURE.TOOLS, handle: async ({ req, res, auth }) => {
       const { name, policy } = await readJson(req);
       if (!name || !['ask', 'auto', 'default'].includes(policy)) {
         return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
@@ -88,7 +89,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
       return json(res, 200, toolsView());
     } },
 
-    { method: 'POST', path: /^\/api\/tools\/toggle$/, feature: 'tools', handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/tools\/toggle$/, feature: FEATURE.TOOLS, handle: async ({ req, res, auth }) => {
       const { name, disabled } = await readJson(req);
       if (!name) return json(res, 400, { error: 'name is required' });
       const set = new Set(config().disabledTools || []);

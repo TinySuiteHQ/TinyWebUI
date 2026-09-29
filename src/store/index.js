@@ -16,6 +16,7 @@ export { SCHEMA_VERSION } from './schema.js';
 export { ALL_USERS } from './scope.js';
 export { PASSAGE_SIZE, PASSAGE_OVERLAP } from './documents.js';
 export { toWire, toView } from './wire.js';
+export { CORPUS } from './embeddings.js';
 
 /**
  * Conversation storage.

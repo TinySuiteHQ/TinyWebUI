@@ -8,6 +8,7 @@ import { $, el } from './dom.js';
 import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from './settings.js';
 import { can, whoami, loadAccess } from './access.js';
 import { addError } from './transcript.js';
+import { FEATURE } from './shared/features.js';
 
 const form = $('form');
 const attachBtn = $('attach');
@@ -93,14 +94,14 @@ function toggle(on, label, onToggle) {
 /* ---- + menu: attach and tools ---- */
 
 async function buildToolsMenu(pop) {
-  if (can('attachments') || can('images')) {
+  if (can(FEATURE.ATTACHMENTS) || can(FEATURE.IMAGES)) {
   const attach = el('button', 'pop-item');
   attach.type = 'button';
   attach.setAttribute('role', 'menuitem');
   attach.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6L15.5 7"/></svg><span>Attach files</span>';
   attach.onclick = () => { closeMenu(); $('fileInput').click(); };
   pop.appendChild(attach);
-  if (!can('tools')) return;
+  if (!can(FEATURE.TOOLS)) return;
   pop.appendChild(el('hr', 'pop-sep'));
   }
 
@@ -112,7 +113,7 @@ async function buildToolsMenu(pop) {
   manage.type = 'button';
   manage.textContent = 'Manage MCP servers';
   manage.onclick = () => { closeMenu(); if (!$('mcp').classList.contains('open')) $('toggle-mcp').click(); };
-  if (can('mcp')) pop.appendChild(manage);
+  if (can(FEATURE.MCP)) pop.appendChild(manage);
 
   let data;
   try { data = await (await fetch('/api/tools')).json(); } catch (err) {

@@ -1,6 +1,9 @@
 // Chunk vectors for every retrieval corpus (see retrieval/retrieval.js).
 // One area of the Store; see index.js.
 
+/** The retrieval corpora whose vectors live here (see retrieval/retrieval.js). */
+export const CORPUS = Object.freeze({ DOCUMENTS: 'documents', CHATS: 'chats' });
+
 export class EmbeddingStore {
   constructor(db, deps = {}) {
     this.db = db;

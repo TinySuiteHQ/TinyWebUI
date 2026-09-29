@@ -1,4 +1,5 @@
 import { json, readJson } from '../http.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 /** The sidebar's search, usage statistics, and folders. */
 export function libraryRoutes({ runs, store }) {
@@ -6,7 +7,7 @@ export function libraryRoutes({ runs, store }) {
     // Full-text search across every stored message, for the sidebar's search
     // box. GET with a query string, so it is bookmarkable and cacheable like
     // any other read.
-    { method: 'GET', path: /^\/api\/search$/, feature: 'search', handle: ({ res, auth, url }) => {
+    { method: 'GET', path: /^\/api\/search$/, feature: FEATURE.SEARCH, handle: ({ res, auth, url }) => {
       const q = url.searchParams.get('q') || '';
       const limit = 30;
       // A chat mid-turn is still being written -- store.search would be
@@ -20,20 +21,20 @@ export function libraryRoutes({ runs, store }) {
       return json(res, 200, { results });
     } },
 
-    { method: 'GET', path: /^\/api\/usage$/, feature: 'statistics', handle: ({ res, auth }) =>
+    { method: 'GET', path: /^\/api\/usage$/, feature: FEATURE.STATISTICS, handle: ({ res, auth }) =>
       json(res, 200, { days: store.usage.rollup(auth.userId), statistics: store.usage.statistics(auth.userId) }) },
 
-    { method: 'GET', path: /^\/api\/folders$/, feature: 'folders', handle: ({ res, auth }) =>
+    { method: 'GET', path: /^\/api\/folders$/, feature: FEATURE.FOLDERS, handle: ({ res, auth }) =>
       json(res, 200, { folders: store.chats.listFolders(auth.userId) }) },
 
-    { method: 'POST', path: /^\/api\/folders$/, feature: 'folders', handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/folders$/, feature: FEATURE.FOLDERS, handle: async ({ req, res, auth }) => {
       const { name } = await readJson(req);
       const created = store.chats.createFolder(name, auth.userId);
       if (!created) return json(res, 400, { error: 'folder name required' });
       return json(res, 200, { folder: created });
     } },
 
-    { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/organize$/, feature: 'folders', handle: async ({ req, res, auth, params: [chatId] }) => {
+    { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/organize$/, feature: FEATURE.FOLDERS, handle: async ({ req, res, auth, params: [chatId] }) => {
       const { folder, tags } = await readJson(req);
       const found = store.chats.get(chatId, auth.userId);
       if (!found) return json(res, 404, { error: 'no such chat' });

@@ -1,3 +1,4 @@
+import { EVENT } from '../../public/shared/events.js';
 /**
  * The generic agent loop: stream a model turn, run the tool calls it made,
  * feed the results back, repeat until the model answers or the budget is spent.
@@ -36,7 +37,7 @@ export async function runAgentLoop({ messages, maxRounds, runtime, signal }) {
     const lastCall = round === maxRounds;
     if (lastCall) {
       emit({
-        type: 'notice',
+        type: EVENT.NOTICE,
         text: `Tool budget spent (${maxRounds} rounds) — answering with what was gathered.`
       });
     }

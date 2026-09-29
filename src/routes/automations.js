@@ -1,5 +1,6 @@
 import { json, readJson } from '../http.js';
 import { validateSchedule } from '../automations/automation.js';
+import { FEATURE } from '../../public/shared/features.js';
 
 /** `newChatTitle` on an automation request: undefined when absent, false when
  * present but unusable, otherwise the trimmed title. */
@@ -12,7 +13,7 @@ function newChatTitleOf(body) {
 const BAD_TITLE = { error: 'the new chat needs a name (at most 120 characters)' };
 
 export function automationRoutes({ scheduler, store }) {
-  const F = 'automations';
+  const F = FEATURE.AUTOMATIONS;
   return [
     { method: 'GET', path: /^\/api\/automations$/, feature: F, handle: ({ res, auth }) =>
       json(res, 200, { automations: store.automations.list(auth.userId), chats: store.chats.list(200, auth.userId) }) },

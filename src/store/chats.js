@@ -1,5 +1,6 @@
 import { ALL_USERS, scope, ownerOf } from './scope.js';
 import { randomUUID } from 'node:crypto';
+import { CORPUS } from './embeddings.js';
 
 // Chats and what hangs off one: tasks, folders, queued input, ask_user questions, rewind and delete.
 // One area of the Store; see index.js.
@@ -193,7 +194,7 @@ export class ChatStore {
     this.automations.deleteForChat(id);
     this.messages.deleteForChat(id);
     this.documents.deleteForChat(id);
-    this.embeddings.deleteOwner('chats', id);
+    this.embeddings.deleteOwner(CORPUS.CHATS, id);
     this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM questions WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);

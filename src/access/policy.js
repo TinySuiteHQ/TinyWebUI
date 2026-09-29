@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { FEATURE } from '../../public/shared/features.js';
 
 /**
  * Access policy: who can use which parts of TinyWebUI, declared in files.
@@ -17,17 +18,14 @@ import { createHash } from 'node:crypto';
  */
 
 /** Every feature a role can be granted. Each maps to UI and API routes. */
-export const FEATURES = [
-  'chat', 'attachments', 'images', 'search', 'folders', 'automations', 'statistics',
-  'model-picker', 'tools', 'settings', 'mcp', 'admin', 'oversight'
-];
+export const FEATURES = Object.values(FEATURE);
 
 export const ROLES = ['admin', 'user'];
 export const STATUSES = ['pending', 'approved', 'disabled'];
 
 // Tier 3's out-of-the-box split: users work, admins run the place.
 const DEFAULT_ROLES = {
-  user: { features: ['chat', 'attachments', 'images', 'search', 'folders', 'automations', 'statistics', 'model-picker'], models: '*' },
+  user: { features: [FEATURE.CHAT, FEATURE.ATTACHMENTS, FEATURE.IMAGES, FEATURE.SEARCH, FEATURE.FOLDERS, FEATURE.AUTOMATIONS, FEATURE.STATISTICS, FEATURE.MODEL_PICKER], models: '*' },
   admin: { features: '*', models: '*' }
 };
 

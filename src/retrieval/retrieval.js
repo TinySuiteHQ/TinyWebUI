@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { CORPUS } from '../store/index.js';
 
 /**
  * Search for everything the model can look things up in: lexical (FTS5 BM25,
@@ -142,8 +143,8 @@ export class Retrieval {
     if (this.mode !== 'lexical' && !this.embedder) throw new Error(`retrieval.mode '${this.mode}' needs an embedding model`);
     this.corpora = new Map();
     this.pending = new Map(); // "corpus:owner" -> in-flight ingestion, so a query can wait for it
-    this.register('documents', documentsCorpus(store));
-    this.register('chats', chatsCorpus(store));
+    this.register(CORPUS.DOCUMENTS, documentsCorpus(store));
+    this.register(CORPUS.CHATS, chatsCorpus(store));
   }
 
   register(name, corpus) {

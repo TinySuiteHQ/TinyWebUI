@@ -2,6 +2,7 @@ import { toWire } from '../store/index.js';
 import { approvalFor } from '../config/approval.js';
 import { runHooks } from './agent.js';
 import { digest } from './compact.js';
+import { EVENT } from '../../public/shared/events.js';
 
 /**
  * Key for spotting a repeated call. Keys are sorted at every depth: a flat
@@ -43,9 +44,9 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     if (allowedNow.has(name) || approvalFor(cfg, hub, name, args) === 'auto') return 'allow';
     if (unattended) return 'unattended';
     if (!approve) return 'deny';
-    emit({ type: 'approval', id, name, args });
+    emit({ type: EVENT.APPROVAL, id, name, args });
     const decision = await approve({ id, name, args });
-    emit({ type: 'approval_done', id, name, decision });
+    emit({ type: EVENT.APPROVAL_DONE, id, name, decision });
     if (decision === 'always') allowedNow.add(name);
     return decision === 'always' || decision === 'allow' ? 'allow' : 'deny';
   };
@@ -82,7 +83,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
       });
     } catch (err) {
       if (signal?.aborted) throw err;
-      emit({ type: 'notice', text: `Tool result hook failed for "${ctx.name}" (${err.message}); result kept as returned.` });
+      emit({ type: EVENT.NOTICE, text: `Tool result hook failed for "${ctx.name}" (${err.message}); result kept as returned.` });
     }
     return ctx.result;
   };
@@ -102,7 +103,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     if (!badArgs && (args === null || typeof args !== 'object' || Array.isArray(args))) {
       badArgs = 'arguments must be a JSON object';
     }
-    emit({ type: 'tool_call', id: call.id, name, args: badArgs ? {} : args });
+    emit({ type: EVENT.TOOL_CALL, id: call.id, name, args: badArgs ? {} : args });
 
     if (badArgs) {
       // Never run a tool on arguments the model did not write. Falling back
@@ -135,7 +136,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     } catch (err) {
       if (signal?.aborted) throw err;
       // A policy check that cannot decide must not let the call through.
-      emit({ type: 'notice', text: `Tool policy hook failed for "${name}" (${err.message}); call not run.` });
+      emit({ type: EVENT.NOTICE, text: `Tool policy hook failed for "${name}" (${err.message}); call not run.` });
       blocked = `Error: a policy check for "${name}" failed (${err.message}), so the tool was not`
         + ' called. Continue without it.';
     }
@@ -179,7 +180,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     const parallel = prepared.every((p) => !p.run || hub.executionMode?.(p.run.name) === 'parallel');
     const finish = async (p, call) => {
       if (p.run) p.result = await run(p.run);
-      emit({ type: 'tool_result', id: call.id, name: call.function.name, result: p.result });
+      emit({ type: EVENT.TOOL_RESULT, id: call.id, name: call.function.name, result: p.result });
     };
     if (parallel) await Promise.all(prepared.map((p, i) => finish(p, calls[i])));
     else for (const [i, p] of prepared.entries()) await finish(p, calls[i]);

@@ -1,4 +1,5 @@
 import { scope, ftsQuery } from './scope.js';
+import { CORPUS } from './embeddings.js';
 
 // Chat turns -- a question and its final answer -- the 'chats' retrieval corpus.
 // One area of the Store; see index.js.
@@ -70,8 +71,8 @@ export class TurnStore {
   chatsMissingVectors(modelKey) {
     return this.db.prepare(`
       SELECT DISTINCT m.chat_id AS id FROM messages m
-      LEFT JOIN embeddings e ON e.corpus = 'chats' AND e.unit_id = m.id AND e.model_key = ? AND e.chunk = 0
+      LEFT JOIN embeddings e ON e.corpus = ? AND e.unit_id = m.id AND e.model_key = ? AND e.chunk = 0
       WHERE m.role = 'user' AND e.unit_id IS NULL
-    `).all(modelKey).map((r) => r.id);
+    `).all(CORPUS.CHATS, modelKey).map((r) => r.id);
   }
 }

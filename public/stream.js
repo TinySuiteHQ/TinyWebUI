@@ -9,6 +9,7 @@ import { addTurn, addUser, addThinking, addSteps, addNotice, addError, statusOf 
 import { renderQueue } from './queue.js';
 import { loadChats } from './sidebar.js';
 import { renderTasks } from './tasks.js';
+import { EVENT } from './shared/events.js';
 
 /** Resolves to `{ next }`: true when a queued follow-up started a new run. */
 export async function consume(res) {
@@ -36,7 +37,7 @@ export async function consume(res) {
         if (!line.startsWith('data:')) continue;
         const ev = JSON.parse(line.slice(5));
 
-        if (ev.type === 'reasoning') {
+        if (ev.type === EVENT.REASONING) {
           // A fresh thought starts the next round, so close the open tool group:
           // otherwise later calls keep landing in a box further up the page while
           // each new thought appends at the bottom, and the order comes apart.
@@ -44,14 +45,14 @@ export async function consume(res) {
           think ||= addThinking(turn.work());
           think.push(ev.delta);
           turn.status('thinking');
-        } else if (ev.type === 'text') {
+        } else if (ev.type === EVENT.TEXT) {
           if (think) { think.done(); think = null; }
           // Prose is written at full width as the answer-so-far. If more work
           // follows, the turn demotes it into the work and this repeats.
           steps = null;
           if (!answer) { answer = turn.prose(); turn.status('writing'); }
           answer.push(ev.delta);
-        } else if (ev.type === 'tool_call') {
+        } else if (ev.type === EVENT.TOOL_CALL) {
           if (think) { think.done(); think = null; }
           answer = null;
           turn.interrupt();
@@ -59,7 +60,7 @@ export async function consume(res) {
           steps.add(ev.id, ev.name, ev.args);
           turn.step();
           turn.status(statusOf(ev.name, ev.args));
-        } else if (ev.type === 'approval') {
+        } else if (ev.type === EVENT.APPROVAL) {
           const chatId = state.chat.id;
           steps?.ask(ev.id, async (decision) => {
             const r = await fetch(`/api/chats/${chatId}/approve`, {
@@ -72,10 +73,10 @@ export async function consume(res) {
             if (!r.ok && r.status !== 409) throw new Error(`${r.status}`);
           });
           turn.status('waiting for approval');
-        } else if (ev.type === 'approval_done') {
+        } else if (ev.type === EVENT.APPROVAL_DONE) {
           steps?.settle(ev.id, ev.decision);
           turn.status(statusOf(ev.name || '', {}));
-        } else if (ev.type === 'question') {
+        } else if (ev.type === EVENT.QUESTION) {
           const chatId = state.chat.id;
           // The step row is keyed by tool call id, which the question event
           // does not carry: it belongs to the ask_user row still running.
@@ -92,24 +93,24 @@ export async function consume(res) {
           });
           asks.set(ev.id, callId);
           turn.status('waiting for your answer');
-        } else if (ev.type === 'question_done') {
+        } else if (ev.type === EVENT.QUESTION_DONE) {
           steps?.settleQuestion(asks.get(ev.id), ev.status);
           turn.status('working');
-        } else if (ev.type === 'tool_result') {
+        } else if (ev.type === EVENT.TOOL_RESULT) {
           steps?.finish(ev.id, ev.result);
-        } else if (ev.type === 'tasks') {
+        } else if (ev.type === EVENT.TASKS) {
           renderTasks(ev.tasks);
-        } else if (ev.type === 'chat') {
+        } else if (ev.type === EVENT.CHAT) {
           // The server owns chat ids now; a new conversation gets one here.
           const fresh = !state.chat.id;
           state.chat.id = ev.id;
           state.chat.title = ev.title;
           if (fresh) loadChats();
-        } else if (ev.type === 'usage') {
+        } else if (ev.type === EVENT.USAGE) {
           // One line per round, matching what a reopened transcript will show.
           // The turn banks it too, and sums the rounds under the answer.
           turn.usage(ev.usage);
-        } else if (ev.type === 'user') {
+        } else if (ev.type === EVENT.USER) {
           // Queued input delivered into this run (steering) or starting the
           // next one (a follow-up): the turn so far closes above it.
           if (think) think.done();
@@ -117,21 +118,21 @@ export async function consume(res) {
           turn.finish();
           addUser(ev.content);
           turn = addTurn();
-        } else if (ev.type === 'queue') {
+        } else if (ev.type === EVENT.QUEUE) {
           renderQueue(ev.items);
-        } else if (ev.type === 'next_run') {
+        } else if (ev.type === EVENT.NEXT_RUN) {
           next = true;
-        } else if (ev.type === 'compacted') {
+        } else if (ev.type === EVENT.COMPACTED) {
           // Handled by the accompanying notice; nothing extra to draw.
-        } else if (ev.type === 'done') {
+        } else if (ev.type === EVENT.DONE) {
           /* the server already has them */
-        } else if (ev.type === 'notice') {
+        } else if (ev.type === EVENT.NOTICE) {
           think = null;
           steps = null;
           answer = null;
           turn.interrupt();
           addNotice(ev.text, turn.meta());
-        } else if (ev.type === 'error') {
+        } else if (ev.type === EVENT.ERROR) {
           addError(ev.error, turn.el);
         }
       }
