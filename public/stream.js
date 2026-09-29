@@ -8,6 +8,7 @@ import { state } from './state.js';
 import { addTurn, addUser, addThinking, addSteps, addNotice, addError, statusOf } from './transcript.js';
 import { renderQueue } from './queue.js';
 import { loadChats } from './sidebar.js';
+import { renderTasks } from './tasks.js';
 
 /** Resolves to `{ next }`: true when a queued follow-up started a new run. */
 export async function consume(res) {
@@ -96,6 +97,8 @@ export async function consume(res) {
           turn.status('working');
         } else if (ev.type === 'tool_result') {
           steps?.finish(ev.id, ev.result);
+        } else if (ev.type === 'tasks') {
+          renderTasks(ev.tasks);
         } else if (ev.type === 'chat') {
           // The server owns chat ids now; a new conversation gets one here.
           const fresh = !state.chat.id;
