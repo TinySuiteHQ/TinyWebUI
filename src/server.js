@@ -67,7 +67,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
   const store = new Store(source.dbPath(initial), { migrate: initial.autoMigrate !== false });
   // Runs live in this process, so nothing from before it can still be waiting.
-  store.expireQuestions();
+  store.chats.expireQuestions();
   if (store.migratedFrom !== null && store.migratedFrom < SCHEMA_VERSION) {
     console.log(`[tinywebui] migrated database from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
   }
@@ -84,7 +84,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     console.log(`[tinywebui] retrieval: ${initial.retrieval.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
   }
 
-  if (initial.authMode === 'single') store.ensureOwner(OWNER_ID);
+  if (initial.authMode === 'single') store.users.ensureOwner(OWNER_ID);
 
   /**
    * What every part of the server shares. `cfg` and `hub` are replaced, not
@@ -129,7 +129,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       if (cfg.authMode !== 'trusted-header' || !userId) return fallback;
       const allowed = modelsFor(cfg, role);
       const ok = (m) => m && (allowed === '*' || allowed.includes(m));
-      const pref = known(store.getPrefs(userId).model);
+      const pref = known(store.users.getPrefs(userId).model);
       if (ok(pref)) return pref;
       if (ok(fallback)) return fallback;
       // First of the role's models still enabled (a parked one never runs).
@@ -142,7 +142,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       .filter((t) => features.has('automations') || t.function.name !== 'manage_automation'),
 
     /** A stored owner's features: null (tiers 1-2) is the one person. */
-    ownerFeatures: (userId) => featuresFor(app.cfg, userId ? store.getUser(userId)?.role : null),
+    ownerFeatures: (userId) => featuresFor(app.cfg, userId ? store.users.get(userId)?.role : null),
 
     /** The tools panel payload: inventory plus each tool's approval state. */
     toolsView() {

@@ -87,15 +87,15 @@ test('one result per matching chat, never one per matching message', async () =>
 
   // Three messages in one chat all say "lisbon" -- the question, and two
   // rounds of answer -- plus a second, unrelated chat that says it once.
-  const a = store.createChat({ title: 'Lisbon trip' });
-  store.addMessage(a.id, { role: 'user', content: 'best time to visit lisbon' });
-  store.addMessage(a.id, { role: 'assistant', content: 'lisbon in spring is lovely, lisbon avoids the summer crowds' });
+  const a = store.chats.create({ title: 'Lisbon trip' });
+  store.messages.add(a.id, { role: 'user', content: 'best time to visit lisbon' });
+  store.messages.add(a.id, { role: 'assistant', content: 'lisbon in spring is lovely, lisbon avoids the summer crowds' });
 
-  const b = store.createChat({ title: 'Other' });
-  store.addMessage(b.id, { role: 'user', content: 'is lisbon worth a weekend' });
-  store.addMessage(b.id, { role: 'assistant', content: 'yes' });
+  const b = store.chats.create({ title: 'Other' });
+  store.messages.add(b.id, { role: 'user', content: 'is lisbon worth a weekend' });
+  store.messages.add(b.id, { role: 'assistant', content: 'yes' });
 
-  const results = store.search('lisbon', 30, ALL_USERS);
+  const results = store.search.chats('lisbon', 30, ALL_USERS);
   assert.equal(results.length, 2, 'two distinct chats, not one row per matching message');
   assert.deepEqual(new Set(results.map((r) => r.chatId)), new Set([a.id, b.id]));
 });
@@ -104,24 +104,24 @@ test('search does not reach into reasoning, tool calls, tool results, or narrati
   const dir2 = mkdtempSync(join(tmpdir(), 'search-store-'));
   const { Store, ALL_USERS } = await import('../src/store/index.js');
   const store = new Store(join(dir2, 'x.db'));
-  const chat = store.createChat({ title: 'probe' });
+  const chat = store.chats.create({ title: 'probe' });
   // A round that opens a tool call: narration + reasoning, then the tool
   // result, then a second round that actually answers. Only the last one is
   // "the answer" by the same rule the UI uses to decide what stays visible
   // outside the collapsed work.
-  store.addMessage(chat.id, {
+  store.messages.add(chat.id, {
     role: 'assistant',
     content: 'narrationonly let me go check',
     reasoning: 'secretlyunique thinking nobody sees',
     tool_calls: [{ id: 't1' }]
   });
-  store.addMessage(chat.id, { role: 'tool', tool_call_id: 't1', content: 'giantscrapeblob from a page' });
-  store.addMessage(chat.id, { role: 'assistant', content: 'the visible answer' });
+  store.messages.add(chat.id, { role: 'tool', tool_call_id: 't1', content: 'giantscrapeblob from a page' });
+  store.messages.add(chat.id, { role: 'assistant', content: 'the visible answer' });
 
-  assert.deepEqual(store.search('secretlyunique', 30, ALL_USERS), [], 'reasoning is the work, not the conversation');
-  assert.deepEqual(store.search('giantscrapeblob', 30, ALL_USERS), [], 'a tool result is the work, not the conversation');
-  assert.deepEqual(store.search('narrationonly', 30, ALL_USERS), [], 'narration superseded by a later round is the work too');
-  assert.equal(store.search('visible', 30, ALL_USERS).length, 1, 'the answer that actually stood is still found');
+  assert.deepEqual(store.search.chats('secretlyunique', 30, ALL_USERS), [], 'reasoning is the work, not the conversation');
+  assert.deepEqual(store.search.chats('giantscrapeblob', 30, ALL_USERS), [], 'a tool result is the work, not the conversation');
+  assert.deepEqual(store.search.chats('narrationonly', 30, ALL_USERS), [], 'narration superseded by a later round is the work too');
+  assert.equal(store.search.chats('visible', 30, ALL_USERS).length, 1, 'the answer that actually stood is still found');
   store.close();
 });
 

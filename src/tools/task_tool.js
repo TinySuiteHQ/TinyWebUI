@@ -24,22 +24,22 @@ export function taskToolDef() {
 export function callManageTasks(args, { store, chatId, onChange } = {}) {
   if (!store || !chatId) return 'Error: this tool requires a chat.';
   const { action } = args || {};
-  if (action === 'list') return JSON.stringify({ tasks: store.listTasks(chatId) });
+  if (action === 'list') return JSON.stringify({ tasks: store.chats.listTasks(chatId) });
   if (action === 'add') {
     const title = typeof args.title === 'string' ? args.title.trim() : '';
     if (!title || title.length > 200) return 'Error: title must be 1–200 characters.';
-    if (store.listTasks(chatId).length >= 50) return 'Error: this chat has reached the 50-task limit.';
-    const task = store.addTask(chatId, title);
-    onChange?.(store.listTasks(chatId));
+    if (store.chats.listTasks(chatId).length >= 50) return 'Error: this chat has reached the 50-task limit.';
+    const task = store.chats.addTask(chatId, title);
+    onChange?.(store.chats.listTasks(chatId));
     return JSON.stringify({ task });
   }
   if (action === 'update') {
     if (typeof args.id !== 'string' || !args.id || !['pending', 'in_progress', 'completed'].includes(args.status)) {
       return 'Error: update requires a valid task id and status.';
     }
-    const task = store.updateTask(chatId, args.id, args.status);
+    const task = store.chats.updateTask(chatId, args.id, args.status);
     if (!task) return 'Error: task not found in this chat.';
-    onChange?.(store.listTasks(chatId));
+    onChange?.(store.chats.listTasks(chatId));
     return JSON.stringify({ task });
   }
   return 'Error: action must be add, update, or list.';

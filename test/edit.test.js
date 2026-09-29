@@ -125,13 +125,13 @@ test('an edit is refused when it does not name a question of your own', async ()
 
 test('truncating below a compaction boundary clears it', () => {
   const store = new Store(join(mkdtempSync(join(tmpdir(), 'trunc-')), 't.db'));
-  const chat = store.createChat({ title: 't' });
-  for (let i = 0; i < 4; i++) store.addMessage(chat.id, { role: 'user', content: `m${i}` });
-  store.touchChat(chat.id, { boundary_seq: 3 });
+  const chat = store.chats.create({ title: 't' });
+  for (let i = 0; i < 4; i++) store.messages.add(chat.id, { role: 'user', content: `m${i}` });
+  store.chats.touch(chat.id, { boundary_seq: 3 });
 
-  store.truncateFrom(chat.id, 2);
-  assert.equal(store.messages(chat.id).length, 2);
-  assert.equal(store.chatById(chat.id).boundary_seq, -1, 'a frozen prefix inside the cut is no longer frozen');
+  store.chats.truncateFrom(chat.id, 2);
+  assert.equal(store.messages.list(chat.id).length, 2);
+  assert.equal(store.chats.byId(chat.id).boundary_seq, -1, 'a frozen prefix inside the cut is no longer frozen');
   store.close();
 });
 

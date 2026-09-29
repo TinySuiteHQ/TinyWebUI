@@ -125,7 +125,7 @@ const commands = {
       const dbFile = source.dbPath(cfg);
       const rows = dbFile !== ':memory:' && existsSync(dbFile) ? (() => {
         const store = new Store(dbFile);
-        try { return store.listUsers(); } finally { store.close(); }
+        try { return store.users.list(); } finally { store.close(); }
       })() : [];
       const seen = new Set();
       const users = rows.map((u) => {

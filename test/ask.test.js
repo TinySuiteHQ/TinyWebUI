@@ -216,11 +216,11 @@ test('another chat cannot answer the question', async () => {
 
 test('a question still pending at startup is expired, not restored', () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  store.addQuestion(chat.id, { id: 'q1', question: 'still there?', deadline: Date.now() + 60000 });
-  assert.equal(store.expireQuestions(), 1);
-  assert.equal(store.getQuestion('q1').status, 'expired');
-  assert.equal(store.settleQuestion('q1', 'answered', 'late'), false);
+  const chat = store.chats.create({ title: 't' });
+  store.chats.addQuestion(chat.id, { id: 'q1', question: 'still there?', deadline: Date.now() + 60000 });
+  assert.equal(store.chats.expireQuestions(), 1);
+  assert.equal(store.chats.getQuestion('q1').status, 'expired');
+  assert.equal(store.chats.settleQuestion('q1', 'answered', 'late'), false);
 });
 
 test('the tool validates its arguments and falls back with no one to ask', async () => {

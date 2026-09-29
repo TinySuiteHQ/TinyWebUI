@@ -1,16 +1,21 @@
 import { randomBytes } from 'node:crypto';
 
 // The transcript: messages in order, and the tool-result artifacts behind them.
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 export class MessageStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   nextSeq(chatId) {
     const row = this.db.prepare('SELECT MAX(seq) AS m FROM messages WHERE chat_id = ?').get(chatId);
     return (row?.m ?? -1) + 1;
   }
 
   /** Appends one message. Append-only by design: rows are never reordered. */
-  addMessage(chatId, msg) {
+  add(chatId, msg) {
     const seq = this.nextSeq(chatId);
     this.db.prepare(`
       INSERT INTO messages
@@ -35,12 +40,12 @@ export class MessageStore {
     return seq;
   }
 
-  updateMessageUsage(chatId, seq, usage) {
+  updateUsage(chatId, seq, usage) {
     this.db.prepare('UPDATE messages SET usage_json = ? WHERE chat_id = ? AND seq = ?')
       .run(JSON.stringify(usage), chatId, seq);
   }
 
-  messages(chatId) {
+  list(chatId) {
     return this.db.prepare(
       'SELECT * FROM messages WHERE chat_id = ? ORDER BY seq ASC'
     ).all(chatId);

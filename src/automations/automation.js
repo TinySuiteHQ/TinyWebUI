@@ -65,32 +65,32 @@ export async function manageAutomation(args, { store, chatId, triggerAutomation,
   if (unattended && (action === 'create' || action === 'trigger')) {
     return `Error: "${action}" is not available inside a scheduled run. Tell the user in your result if a new automation or run is needed.`;
   }
-  const chat = chatId ? store.chatById(chatId) : null;
+  const chat = chatId ? store.chats.byId(chatId) : null;
   const userId = chat?.user_id ?? null;
-  if (action === 'list') return JSON.stringify(store.listAutomations(userId));
+  if (action === 'list') return JSON.stringify(store.automations.list(userId));
   if (action === 'create') {
     if (!chat) throw new Error('automation creation requires a current chat');
     const fields = cleanFields(args, { requireAll: true });
-    const row = store.createAutomation({ ...fields, chatId, source: 'model' }, userId);
+    const row = store.automations.create({ ...fields, chatId, source: 'model' }, userId);
     return JSON.stringify(row);
   }
   if (!args?.id) throw new Error('id is required');
-  if (action === 'delete') return store.deleteAutomation(args.id, userId)
+  if (action === 'delete') return store.automations.delete(args.id, userId)
     ? `Deleted automation ${args.id}.` : 'Error: no such automation';
   if (action === 'trigger') {
-    const automation = store.getAutomation(args.id, userId);
+    const automation = store.automations.get(args.id, userId);
     if (!automation) throw new Error('no such automation');
     if (!triggerAutomation) throw new Error('manual triggering is unavailable');
     return JSON.stringify(await triggerAutomation(automation, userId));
   }
   if (action === 'update') {
-    const current = store.getAutomation(args.id, userId);
+    const current = store.automations.get(args.id, userId);
     if (!current) throw new Error('no such automation');
     const fields = cleanFields(args);
     if (args.cron !== undefined || args.timezone !== undefined) {
       Object.assign(fields, validateSchedule(fields.cron ?? current.cron, fields.timezone ?? current.timezone));
     }
-    const row = store.updateAutomation(args.id, fields, userId);
+    const row = store.automations.update(args.id, fields, userId);
     return row ? JSON.stringify(row) : 'Error: no such automation';
   }
   throw new Error('action must be list, create, update, delete, or trigger');

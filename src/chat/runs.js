@@ -32,7 +32,7 @@ export function createRuns(app) {
   };
 
   /** Tells everyone watching a chat's run what is queued now. */
-  const announceQueue = (chatId) => runs.get(chatId)?.emit({ type: 'queue', items: store.listQueued(chatId) });
+  const announceQueue = (chatId) => runs.get(chatId)?.emit({ type: 'queue', items: store.chats.listQueued(chatId) });
 
   /**
    * `lead` is a queued follow-up that starts this run: stored after baseCount
@@ -47,7 +47,7 @@ export function createRuns(app) {
       // Where the store stood when the turn began, including the user message
       // that started it. A client reopening mid-turn replays up to here and
       // plays the events over the top.
-      baseCount: store.messages(chat.id).length,
+      baseCount: store.messages.list(chat.id).length,
       // Tool calls waiting on the user, by call id -> { name, resolve }.
       approvals: new Map(),
       // The ask_user question waiting on the user: { id, settle }, or null.
@@ -80,11 +80,11 @@ export function createRuns(app) {
       const id = randomUUID();
       const seconds = Math.max(0, Number(app.cfg.askUserTimeoutSeconds) || 0);
       const deadline = seconds ? Date.now() + seconds * 1000 : null;
-      store.addQuestion(chat.id, { id, question, choices, allowFreeText, deadline });
+      store.chats.addQuestion(chat.id, { id, question, choices, allowFreeText, deadline });
       return new Promise((resolve) => {
         let timer = null;
         const settle = (status, answer = null) => {
-          if (!store.settleQuestion(id, status, answer)) return false;
+          if (!store.chats.settleQuestion(id, status, answer)) return false;
           clearTimeout(timer);
           if (run.question?.id === id) run.question = null;
           emit({ type: 'question_done', id, status, answer });
@@ -107,16 +107,16 @@ export function createRuns(app) {
     run.emit = emit;
     emit({ type: 'chat', id: chat.id, title: chat.title });
     if (lead != null) {
-      store.addMessage(chat.id, { role: 'user', content: lead });
+      store.messages.add(chat.id, { role: 'user', content: lead });
       emit({ type: 'user', content: lead });
     }
-    emit({ type: 'queue', items: store.listQueued(chat.id) });
+    emit({ type: 'queue', items: store.chats.listQueued(chat.id) });
 
     // Steering is interactive input: an unattended run never takes any, so
     // it cannot swallow what someone typed into a chat an automation shares.
     const takeInput = unattended ? null : () => {
-      const items = store.takeQueued(chat.id, { kind: 'steer' });
-      if (items.length) emit({ type: 'queue', items: store.listQueued(chat.id) });
+      const items = store.chats.takeQueued(chat.id, { kind: 'steer' });
+      if (items.length) emit({ type: 'queue', items: store.chats.listQueued(chat.id) });
       return items.map((i) => i.content);
     };
 
@@ -126,7 +126,7 @@ export function createRuns(app) {
       } catch (err) {
         emit({ type: 'error', error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
-        store.touchChat(chat.id);
+        store.chats.touch(chat.id);
         run.done = true;
         app.retrieval.ingest('chats', chat.id).catch((err) => console.error(`[tinywebui] embedding chat ${chat.id} failed: ${err.message}`));
         // The run would go idle here, so the oldest queued item starts the
@@ -134,7 +134,7 @@ export function createRuns(app) {
         // `done` flipped can be missed. A stop or failure delivers nothing:
         // the queue stays put and the client hands it back to the composer.
         const ok = !run.events.some((event) => event.type === 'error') && !run.ac.signal.aborted;
-        const next = ok && !unattended ? store.takeQueued(chat.id, { first: true })[0] : null;
+        const next = ok && !unattended ? store.chats.takeQueued(chat.id, { first: true })[0] : null;
         if (next) {
           emit({ type: 'next_run' });
           start({ chat, tools, model, lead: next.content });
@@ -142,7 +142,7 @@ export function createRuns(app) {
         try { onFinish?.({
           ok,
           error: run.events.find((event) => event.type === 'error')?.error || (run.ac.signal.aborted ? 'Stopped.' : null),
-          result: store.messages(chat.id).slice(run.baseCount).filter((m) => m.role === 'assistant').at(-1)?.content || ''
+          result: store.messages.list(chat.id).slice(run.baseCount).filter((m) => m.role === 'assistant').at(-1)?.content || ''
         }); } catch { /* a run observer cannot disrupt chat teardown */ }
         for (const sub of run.subs) { try { sub.end(); } catch { /* already gone */ } }
         run.subs.clear();

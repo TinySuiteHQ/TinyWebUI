@@ -41,8 +41,8 @@ async function listen(srv) {
 
 function freshStore() {
   const store = new Store(join(mkdtempSync(join(tmpdir(), 'retry-')), 'r.db'));
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'hi' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'hi' });
   return { store, chatId: chat.id };
 }
 

@@ -57,7 +57,7 @@ function header(doc, note) {
 }
 
 async function queryView(store, retrieval, doc, query, budget) {
-  const hits = retrieval ? await retrieval.search('documents', { docId: doc.id }, query, 5) : store.searchPassages(doc.id, query, 5);
+  const hits = retrieval ? await retrieval.search('documents', { docId: doc.id }, query, 5) : store.documents.searchPassages(doc.id, query, 5);
   if (!hits.length) {
     return `${header(doc, `no match for "${query}"`)}\nTry a broader query, or read from the start with offset/limit.`;
   }
@@ -93,7 +93,7 @@ export async function callReadDocument(args, { store, retrieval = null, chatId, 
   const id = String(args?.document_id || '').trim();
   if (!id) return 'Error: document_id is required.';
 
-  const doc = store.getDocument(id, ALL_USERS);
+  const doc = store.documents.get(id, ALL_USERS);
   if (!doc) return `Error: no document "${id}". Ids appear in the "[Attached document: ...]" note.`;
   if (doc.chat_id !== chatId) return `Error: document "${id}" does not belong to this conversation.`;
 

@@ -1,9 +1,14 @@
 // Chunk vectors for every retrieval corpus (see retrieval/retrieval.js).
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 export class EmbeddingStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   /** Chunk vectors of the given units under one model: Map(unit id -> Float32Array[], one per chunk). */
-  unitVectors(corpus, modelKey, unitIds) {
+  vectors(corpus, modelKey, unitIds) {
     const out = new Map();
     if (!unitIds.length) return out;
     const rows = this.db.prepare(`
@@ -20,14 +25,14 @@ export class EmbeddingStore {
   }
 
   /** What each of an owner's units was embedded from: Map(unit id -> digest). */
-  unitDigests(corpus, ownerId, modelKey) {
+  digests(corpus, ownerId, modelKey) {
     const rows = this.db.prepare('SELECT unit_id, digest FROM embeddings WHERE corpus = ? AND owner_id = ? AND model_key = ? AND chunk = 0')
       .all(corpus, ownerId, modelKey);
     return new Map(rows.map((r) => [r.unit_id, r.digest]));
   }
 
   /** rows: [{ unitId, digest, vecs: Float32Array[] (its chunks, in order) }], replacing what those units had. */
-  putUnitVectors(corpus, ownerId, modelKey, rows) {
+  put(corpus, ownerId, modelKey, rows) {
     const clear = this.db.prepare('DELETE FROM embeddings WHERE corpus = ? AND unit_id = ? AND model_key = ?');
     const put = this.db.prepare('INSERT INTO embeddings (corpus, unit_id, owner_id, model_key, digest, chunk, vec) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.db.exec('BEGIN');
@@ -41,14 +46,14 @@ export class EmbeddingStore {
   }
 
   /** Drops an owner's vectors for units it no longer has. */
-  dropStaleUnits(corpus, ownerId, keepUnitIds) {
+  dropStale(corpus, ownerId, keepUnitIds) {
     return this.db.prepare(`
       DELETE FROM embeddings WHERE corpus = ? AND owner_id = ? AND unit_id NOT IN (SELECT value FROM json_each(?))
     `).run(corpus, ownerId, JSON.stringify(keepUnitIds)).changes;
   }
 
   /** Drops vectors from models (or chunkings) no longer configured. */
-  pruneVectors(keepModelKey) {
+  prune(keepModelKey) {
     return this.db.prepare('DELETE FROM embeddings WHERE model_key != ?').run(keepModelKey).changes;
   }
 }

@@ -98,31 +98,31 @@ test('estimateTokens counts content and tool calls', () => {
 
 function seeded() {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
+  const chat = store.chats.create({ title: 't' });
   const mk = (toolText) => {
-    const id = store.addArtifact(chat.id, { toolName: 'srv__thing', args: { q: 1 }, content: toolText });
-    store.addMessage(chat.id, { role: 'tool', tool_call_id: 'tc', content: toolText, artifact_id: id });
+    const id = store.messages.addArtifact(chat.id, { toolName: 'srv__thing', args: { q: 1 }, content: toolText });
+    store.messages.add(chat.id, { role: 'tool', tool_call_id: 'tc', content: toolText, artifact_id: id });
     return id;
   };
-  store.addMessage(chat.id, { role: 'user', content: 'q1' });
+  store.messages.add(chat.id, { role: 'user', content: 'q1' });
   const a1 = mk(big(9000));
-  store.addMessage(chat.id, { role: 'assistant', content: 'answer 1', usage: { prompt_tokens: 90000 } });
-  store.addMessage(chat.id, { role: 'user', content: 'q2' });
+  store.messages.add(chat.id, { role: 'assistant', content: 'answer 1', usage: { prompt_tokens: 90000 } });
+  store.messages.add(chat.id, { role: 'user', content: 'q2' });
   mk(big(9000));
-  store.addMessage(chat.id, { role: 'assistant', content: 'answer 2' });
-  store.addMessage(chat.id, { role: 'user', content: 'q3' });
+  store.messages.add(chat.id, { role: 'assistant', content: 'answer 2' });
+  store.messages.add(chat.id, { role: 'user', content: 'q3' });
   return { store, chat, a1 };
 }
 
 test('applyEpoch shrinks the wire but leaves the transcript whole', () => {
   const { store, chat } = seeded();
-  const before = store.messages(chat.id);
+  const before = store.messages.list(chat.id);
   const plan = planEpoch(before, { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
   const done = applyEpoch(store, chat, plan);
   assert.ok(done.saved > 8000);
   assert.equal(done.epoch, 1);
 
-  const after = store.messages(chat.id);
+  const after = store.messages.list(chat.id);
   const demoted = after.find((r) => r.stub_text);
   assert.equal(demoted.content.length, 9000, 'transcript keeps the full text');
   assert.ok(toWire(demoted).content.length < 1500, 'the wire gets the stub');
@@ -132,24 +132,24 @@ test('applyEpoch shrinks the wire but leaves the transcript whole', () => {
 
 test('a second epoch over the same state is a no-op', () => {
   const { store, chat } = seeded();
-  const first = planEpoch(store.messages(chat.id), { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
+  const first = planEpoch(store.messages.list(chat.id), { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
   applyEpoch(store, chat, first);
-  const again = planEpoch(store.messages(chat.id), { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
+  const again = planEpoch(store.messages.list(chat.id), { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
   assert.equal(again, null, 'idempotent: nothing left to demote');
 });
 
 test('the frozen prefix rebuilds byte-identically', () => {
   const { store, chat } = seeded();
-  const plan = planEpoch(store.messages(chat.id), { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
+  const plan = planEpoch(store.messages.list(chat.id), { threshold: 1000, keepTurns: 2, promptTokens: 90000 });
   applyEpoch(store, chat, plan);
-  const once = JSON.stringify(store.messages(chat.id).map(toWire));
-  const twice = JSON.stringify(store.messages(chat.id).map(toWire));
+  const once = JSON.stringify(store.messages.list(chat.id).map(toWire));
+  const twice = JSON.stringify(store.messages.list(chat.id).map(toWire));
   assert.equal(once, twice);
 });
 
 test('usage survives a round trip through the store', () => {
   const { store, chat } = seeded();
-  const withUsage = store.messages(chat.id).map(toView).filter((m) => m.usage);
+  const withUsage = store.messages.list(chat.id).map(toView).filter((m) => m.usage);
   assert.equal(withUsage.length, 1);
   assert.equal(withUsage[0].usage.prompt_tokens, 90000);
 });
@@ -159,10 +159,10 @@ test('usage survives a round trip through the store', () => {
 test('context_expand greps, windows and refuses cross-chat reads', () => {
   const { store, chat, a1 } = seeded();
   const store2 = store;
-  const other = store2.createChat({ title: 'other' });
+  const other = store2.chats.create({ title: 'other' });
 
   const text = 'alpha line\nbeta line\nNEEDLE here\ngamma line\n' + big(3000);
-  const id = store.addArtifact(chat.id, { toolName: 'srv__thing', args: {}, content: text });
+  const id = store.messages.addArtifact(chat.id, { toolName: 'srv__thing', args: {}, content: text });
 
   const hit = callExpand({ artifact_id: id, grep: 'needle' }, { store, chatId: chat.id, budget: 4000 });
   assert.ok(hit.includes('NEEDLE here'));
@@ -192,8 +192,8 @@ test('context_expand greps, windows and refuses cross-chat reads', () => {
 
 test('context_expand respects the char budget', () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  const id = store.addArtifact(chat.id, { toolName: 't', args: {}, content: big(50000) });
+  const chat = store.chats.create({ title: 't' });
+  const id = store.messages.addArtifact(chat.id, { toolName: 't', args: {}, content: big(50000) });
   const out = callExpand({ artifact_id: id, limit: 999999 }, { store, chatId: chat.id, budget: 1000 });
   assert.ok(out.length < 1400, `budget honoured, got ${out.length}`);
 });
@@ -235,8 +235,8 @@ test('a prose stub carries the map; a json stub does not', () => {
 
 test('a failed grep returns the map instead of a bare miss', () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 'c' });
-  const id = store.addArtifact(chat.id, { toolName: 'srv__scrape', args: {}, content: scraped() });
+  const chat = store.chats.create({ title: 'c' });
+  const id = store.messages.addArtifact(chat.id, { toolName: 'srv__scrape', args: {}, content: scraped() });
 
   const miss = callExpand({ artifact_id: id, grep: 'nothingmatchesthis' }, { store, chatId: chat.id, budget: 4000 });
   assert.match(miss, /no match for/);

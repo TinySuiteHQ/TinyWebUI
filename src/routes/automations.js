@@ -16,13 +16,13 @@ export function automationRoutes(app) {
   const F = 'automations';
   return [
     { method: 'GET', path: /^\/api\/automations$/, feature: F, handle: ({ res, auth }) =>
-      json(res, 200, { automations: store.listAutomations(auth.userId), chats: store.listChats(200, auth.userId) }) },
+      json(res, 200, { automations: store.automations.list(auth.userId), chats: store.chats.list(200, auth.userId) }) },
 
     { method: 'POST', path: /^\/api\/automations$/, feature: F, handle: async ({ req, res, auth }) => {
       const body = await readJson(req);
       const newChatTitle = newChatTitleOf(body);
       if (newChatTitle === false) return json(res, 400, BAD_TITLE);
-      let chat = newChatTitle ? null : store.getChat(String(body.chatId || ''), auth.userId);
+      let chat = newChatTitle ? null : store.chats.get(String(body.chatId || ''), auth.userId);
       if (!newChatTitle && !chat) return json(res, 400, { error: 'a chat you own is required' });
       const name = String(body.name || '').trim();
       const prompt = String(body.prompt || '').trim();
@@ -31,26 +31,26 @@ export function automationRoutes(app) {
       let schedule;
       try { schedule = validateSchedule(body.cron, body.timezone); }
       catch (err) { return json(res, 400, { error: err.message }); }
-      if (newChatTitle) chat = store.createChat({ title: newChatTitle }, auth.userId);
-      const automation = store.createAutomation({ ...schedule, chatId: chat.id, name, prompt, enabled: body.enabled !== false, source: 'user' }, auth.userId);
+      if (newChatTitle) chat = store.chats.create({ title: newChatTitle }, auth.userId);
+      const automation = store.automations.create({ ...schedule, chatId: chat.id, name, prompt, enabled: body.enabled !== false, source: 'user' }, auth.userId);
       scheduler.arm();
       return json(res, 201, { automation });
     } },
 
     { method: 'GET', path: /^\/api\/automations\/([\w.-]+)\/runs$/, feature: F, handle: ({ res, auth, params: [id] }) => {
-      const runs = store.listAutomationRuns(id, auth.userId);
+      const runs = store.automations.listRuns(id, auth.userId);
       return runs ? json(res, 200, { runs }) : json(res, 404, { error: 'no such automation' });
     } },
 
     { method: 'POST', path: /^\/api\/automations\/([\w.-]+)\/trigger$/, feature: F, handle: async ({ res, auth, params: [id] }) => {
-      const automation = store.getAutomation(id, auth.userId);
+      const automation = store.automations.get(id, auth.userId);
       if (!automation) return json(res, 404, { error: 'no such automation' });
       const run = await scheduler.trigger(automation, auth.userId);
       return json(res, 202, { run });
     } },
 
     { method: 'PATCH', path: /^\/api\/automations\/([\w.-]+)$/, feature: F, handle: async ({ req, res, auth, params: [id] }) => {
-      const existing = store.getAutomation(id, auth.userId);
+      const existing = store.automations.get(id, auth.userId);
       if (!existing) return json(res, 404, { error: 'no such automation' });
       const body = await readJson(req);
       const patch = {};
@@ -59,7 +59,7 @@ export function automationRoutes(app) {
       if (newChatTitle === false) return json(res, 400, BAD_TITLE);
       if (newChatTitle) delete patch.chatId;
       if (patch.chatId !== undefined) {
-        const chat = store.getChat(String(patch.chatId), auth.userId);
+        const chat = store.chats.get(String(patch.chatId), auth.userId);
         if (!chat) return json(res, 400, { error: 'a chat you own is required' });
         patch.chatId = chat.id;
       }
@@ -77,14 +77,14 @@ export function automationRoutes(app) {
         catch (err) { return json(res, 400, { error: err.message }); }
         Object.assign(patch, schedule);
       }
-      if (newChatTitle) patch.chatId = store.createChat({ title: newChatTitle }, auth.userId).id;
-      const automation = store.updateAutomation(id, patch, auth.userId);
+      if (newChatTitle) patch.chatId = store.chats.create({ title: newChatTitle }, auth.userId).id;
+      const automation = store.automations.update(id, patch, auth.userId);
       scheduler.arm();
       return json(res, 200, { automation });
     } },
 
     { method: 'DELETE', path: /^\/api\/automations\/([\w.-]+)$/, feature: F, handle: ({ res, auth, params: [id] }) => {
-      if (!store.deleteAutomation(id, auth.userId)) return json(res, 404, { error: 'no such automation' });
+      if (!store.automations.delete(id, auth.userId)) return json(res, 404, { error: 'no such automation' });
       scheduler.arm();
       return json(res, 200, { ok: true });
     } }

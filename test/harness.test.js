@@ -53,8 +53,8 @@ const TOOLS = ['snapshot', 'search'].map((name) => ({
 async function drive(replies, { hub = fakeHub(), cfg = {} } = {}) {
   const provider = await scripted(replies);
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'go' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'go' });
   try {
     await runChat({
       cfg: { baseUrl: provider.baseUrl, apiKey: 'k', model: 'm', systemPrompt: 'sys', maxToolRounds: 4, ...cfg },
@@ -64,7 +64,7 @@ async function drive(replies, { hub = fakeHub(), cfg = {} } = {}) {
   } finally {
     provider.close();
   }
-  return { hub, seen: provider.seen, rows: store.messages(chat.id) };
+  return { hub, seen: provider.seen, rows: store.messages.list(chat.id) };
 }
 
 test('an identical call to a tool that has not declared itself idempotent runs again', async () => {
@@ -167,16 +167,16 @@ test('a big tool block does not count as history, so it cannot force an epoch by
     function: { name: 'search', description: 'd'.repeat(80000), parameters: { type: 'object', properties: {} } }
   }];
   const setup = (store) => {
-    const chat = store.createChat({ title: 't' });
+    const chat = store.chats.create({ title: 't' });
     for (let i = 0; i < 3; i++) {
-      store.addMessage(chat.id, { role: 'user', content: `q${i}` });
-      store.addMessage(chat.id, { role: 'assistant', content: null, tool_calls: [{ id: `t${i}`, type: 'function', function: { name: 'search', arguments: '{}' } }] });
-      const artifactId = store.addArtifact(chat.id, { toolName: 'search', args: {}, content: 'r'.repeat(4000) });
-      store.addMessage(chat.id, { role: 'tool', tool_call_id: `t${i}`, content: 'r'.repeat(4000), artifact_id: artifactId });
+      store.messages.add(chat.id, { role: 'user', content: `q${i}` });
+      store.messages.add(chat.id, { role: 'assistant', content: null, tool_calls: [{ id: `t${i}`, type: 'function', function: { name: 'search', arguments: '{}' } }] });
+      const artifactId = store.messages.addArtifact(chat.id, { toolName: 'search', args: {}, content: 'r'.repeat(4000) });
+      store.messages.add(chat.id, { role: 'tool', tool_call_id: `t${i}`, content: 'r'.repeat(4000), artifact_id: artifactId });
       // Last request: ~20k tokens of tool definitions plus ~3k of history.
-      store.addMessage(chat.id, { role: 'assistant', content: `a${i}`, usage: { prompt_tokens: 23500 } });
+      store.messages.add(chat.id, { role: 'assistant', content: `a${i}`, usage: { prompt_tokens: 23500 } });
     }
-    store.addMessage(chat.id, { role: 'user', content: 'next' });
+    store.messages.add(chat.id, { role: 'user', content: 'next' });
     return chat;
   };
 
@@ -204,7 +204,7 @@ test('a big tool block does not count as history, so it cannot force an epoch by
 
 test('a scheduled run cannot create or trigger automations, but can still adjust one', async () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
+  const chat = store.chats.create({ title: 't' });
   const ctx = { store, chatId: chat.id, unattended: true, triggerAutomation: async () => ({ ok: true }) };
 
   assert.match(
@@ -236,32 +236,32 @@ const IMG = { mime: 'image/png', data: 'iVBORw0KGgo=' };
 
 test('an epoch takes old images off the wire and leaves them in the transcript', () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'look', images: [IMG, IMG] });
-  store.addMessage(chat.id, { role: 'assistant', content: 'a cat' });
-  store.addMessage(chat.id, { role: 'user', content: 'and this', images: [IMG] });
-  store.addMessage(chat.id, { role: 'assistant', content: 'a dog' });
-  store.addMessage(chat.id, { role: 'user', content: 'thanks' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'look', images: [IMG, IMG] });
+  store.messages.add(chat.id, { role: 'assistant', content: 'a cat' });
+  store.messages.add(chat.id, { role: 'user', content: 'and this', images: [IMG] });
+  store.messages.add(chat.id, { role: 'assistant', content: 'a dog' });
+  store.messages.add(chat.id, { role: 'user', content: 'thanks' });
 
-  const plan = planEpoch(store.messages(chat.id), { threshold: 1, keepTurns: 2, promptTokens: 99 });
+  const plan = planEpoch(store.messages.list(chat.id), { threshold: 1, keepTurns: 2, promptTokens: 99 });
   assert.equal(plan.targets.length, 1, 'only the image outside the last two turns');
   assert.ok(applyEpoch(store, chat, plan));
 
-  const [old, , recent] = store.messages(chat.id);
+  const [old, , recent] = store.messages.list(chat.id);
   const wire = toWire(old);
   assert.equal(typeof wire.content, 'string', 'no image parts left');
   assert.match(wire.content, /^look\n\n\[2 images attached here were removed from context/);
   assert.ok(Array.isArray(toWire(recent).content), 'recent turn keeps its image');
   assert.equal(toView(old).images.length, 2, 'the transcript still has them');
-  assert.equal(planEpoch(store.messages(chat.id), { threshold: 1, keepTurns: 2, promptTokens: 99 }), null,
+  assert.equal(planEpoch(store.messages.list(chat.id), { threshold: 1, keepTurns: 2, promptTokens: 99 }), null,
     'dropped once, never again');
 });
 
 function chatter(store, turns, size = 4000) {
-  const chat = store.createChat({ title: 't' });
+  const chat = store.chats.create({ title: 't' });
   for (let i = 0; i < turns; i++) {
-    store.addMessage(chat.id, { role: 'user', content: `q${i} ` + 'u'.repeat(size) });
-    store.addMessage(chat.id, { role: 'assistant', content: `a${i} ` + 'a'.repeat(size) });
+    store.messages.add(chat.id, { role: 'user', content: `q${i} ` + 'u'.repeat(size) });
+    store.messages.add(chat.id, { role: 'assistant', content: `a${i} ` + 'a'.repeat(size) });
   }
   return chat;
 }
@@ -269,7 +269,7 @@ function chatter(store, turns, size = 4000) {
 test('the window cuts on a user message, down to the target, and never into the kept turns', () => {
   const store = new Store(':memory:');
   const chat = chatter(store, 10); // ~20k tokens, 2k per turn
-  const rows = store.messages(chat.id);
+  const rows = store.messages.list(chat.id);
 
   assert.equal(planWindow(rows, { maxTokens: 50000, targetTokens: 25000, keepTurns: 2, toWire }), null);
 
@@ -292,7 +292,7 @@ test('a long plain-text chat is windowed once and then stays put', async () => {
   const chat = chatter(store, 10);
   const cfg = { baseUrl: provider.baseUrl, apiKey: 'k', model: 'm', systemPrompt: 'sys', maxHistoryTokens: 15000 };
   const turn = async (q) => {
-    store.addMessage(chat.id, { role: 'user', content: q });
+    store.messages.add(chat.id, { role: 'user', content: q });
     const events = [];
     await runChat({ cfg, chatId: chat.id, store, tools: [], hub: fakeHub(), emit: (e) => events.push(e),
       signal: new AbortController().signal });
@@ -304,11 +304,11 @@ test('a long plain-text chat is windowed once and then stays put', async () => {
     const sent = provider.seen[0].messages;
     assert.equal(sent[1].role, 'user');
     assert.match(sent[1].content, /^\[Earlier conversation omitted/);
-    const windowAt = store.chatById(chat.id).window_seq;
+    const windowAt = store.chats.byId(chat.id).window_seq;
     assert.ok(windowAt > 0);
 
     await turn('again');
-    assert.equal(store.chatById(chat.id).window_seq, windowAt, 'no move while under the limit');
+    assert.equal(store.chats.byId(chat.id).window_seq, windowAt, 'no move while under the limit');
     const [a, b] = provider.seen.map((body) => body.messages);
     assert.deepEqual(b.slice(0, a.length), a, 'the second turn extends the first byte for byte');
   } finally {
@@ -362,8 +362,8 @@ function gatedHub({ readOnly = [], local = [] } = {}) {
 async function gated(replies, { hub, cfg = {}, answers = [], unattended = false }) {
   const provider = await scripted(replies);
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'go' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'go' });
   const asked = [];
   const events = [];
   try {
@@ -376,7 +376,7 @@ async function gated(replies, { hub, cfg = {}, answers = [], unattended = false 
   } finally {
     provider.close();
   }
-  return { asked, events, rows: store.messages(chat.id), calls: hub.calls };
+  return { asked, events, rows: store.messages.list(chat.id), calls: hub.calls };
 }
 
 test('a write waits for the user, and a denied call is never run', async () => {

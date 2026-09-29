@@ -1,9 +1,14 @@
 import { scope, ftsQuery } from './scope.js';
 
 // Sidebar search: full-text over what was said, one row per chat.
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 export class SearchStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   /**
    * Full-text search, one row per matching CHAT, not per matching message --
    * a search box is for finding a conversation, and a chat where the same
@@ -18,7 +23,7 @@ export class SearchStore {
    * function's own ORDER BY) is what keeps them legal here -- SQLite raises
    * "unable to use function bm25 in the requested context" otherwise.
    */
-  search(query, limit, userId) {
+  chats(query, limit, userId) {
     const s = scope(userId, 'c.user_id');
     const q = ftsQuery(query);
     if (!q) return [];

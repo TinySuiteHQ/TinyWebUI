@@ -37,8 +37,8 @@ const TOOLS = ['search', 'write'].map((name) => ({
 async function drive(replies, { hooks, approve = null, cfg = {}, signal } = {}) {
   const provider = await scripted(replies);
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'go' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'go' });
   const calls = [];
   const events = [];
   const hub = {
@@ -57,7 +57,7 @@ async function drive(replies, { hooks, approve = null, cfg = {}, signal } = {}) 
   } finally {
     provider.close();
   }
-  return { calls, events, error, seen: provider.seen, rows: store.messages(chat.id) };
+  return { calls, events, error, seen: provider.seen, rows: store.messages.list(chat.id) };
 }
 
 const toolRows = (rows) => rows.filter((r) => r.role === 'tool').map((r) => r.content);

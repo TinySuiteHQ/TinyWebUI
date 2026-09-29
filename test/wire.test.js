@@ -27,17 +27,17 @@ const marks = (msgs) =>
 
 test('a just-appended message and one rebuilt from the store serialise identically', () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
+  const chat = store.chats.create({ title: 't' });
 
   // Shapes built in three different key orders, as the loop actually builds them.
   const assistant = { role: 'assistant', content: 'hi', usage: { prompt_tokens: 5 }, reasoning: 'think' };
   const tool = { content: 'result', role: 'tool', tool_call_id: 'tc1', artifact_id: 'a1' };
-  store.addMessage(chat.id, { role: 'user', content: 'q' });
-  store.addMessage(chat.id, assistant);
-  store.addMessage(chat.id, tool);
+  store.messages.add(chat.id, { role: 'user', content: 'q' });
+  store.messages.add(chat.id, assistant);
+  store.messages.add(chat.id, tool);
 
   const live = [{ role: 'user', content: 'q' }, assistant, toWire(tool)];
-  const stored = store.messages(chat.id).map(toWire);
+  const stored = store.messages.list(chat.id).map(toWire);
 
   assert.equal(
     JSON.stringify(buildMessages(DEEPSEEK, live)),

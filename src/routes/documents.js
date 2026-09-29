@@ -53,9 +53,9 @@ export function documentRoutes(app) {
       }
       if (!text.trim()) return json(res, 400, { error: 'no extractable text in that file' });
 
-      if (!store.getChat(chatId, auth.userId) && store.chatById(chatId)) return json(res, 404, { error: 'no such chat' });
-      const chat = store.getChat(chatId, auth.userId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
-      const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text }, retrieval.passageSettings());
+      if (!store.chats.get(chatId, auth.userId) && store.chats.byId(chatId)) return json(res, 404, { error: 'no such chat' });
+      const chat = store.chats.get(chatId, auth.userId) || store.chats.create({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
+      const doc = store.documents.add(chat.id, { filename: String(filename), mime: mime || null, content: text }, retrieval.passageSettings());
       // Embedded once, in the background; a question that arrives first waits for it.
       retrieval.ingest('documents', doc.id).catch((err) => console.error(`[tinywebui] embedding ${doc.id} failed: ${err.message}`));
       return json(res, 200, { chatId: chat.id, document: doc });
@@ -66,7 +66,7 @@ export function documentRoutes(app) {
     // Documents have no delete route of their own: the only way one goes
     // away is editing the message that attached it (see /edit in chats.js).
     { method: 'GET', path: /^\/api\/documents\/([\w.-]+)$/, feature: 'attachments', handle: ({ res, auth, params: [id] }) => {
-      const doc = store.getDocument(id, auth.userId);
+      const doc = store.documents.get(id, auth.userId);
       if (!doc) return json(res, 404, { error: 'no such document' });
       return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
     } },

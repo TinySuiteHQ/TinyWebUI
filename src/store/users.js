@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 // Users, their preferences, and login sessions.
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 export class UserStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   getPrefs(userId) {
     const out = {};
     for (const r of this.db.prepare('SELECT key, value FROM user_prefs WHERE user_id = ?').all(userId)) out[r.key] = r.value;
@@ -16,11 +21,11 @@ export class UserStore {
       ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`).run(userId, key, String(value));
   }
 
-  getUser(id) {
+  get(id) {
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
   }
 
-  listUsers() {
+  list() {
     return this.db.prepare(`
       SELECT u.id, u.email, u.name, u.role, u.status, u.external_id, u.created_at, u.last_login_at,
              (SELECT COUNT(*) FROM chats c WHERE c.user_id = u.id) AS chat_count
@@ -29,7 +34,7 @@ export class UserStore {
   }
 
   /** Admin-side changes only: role in (admin,user), status in (pending,approved,disabled). */
-  updateUser(id, { role, status } = {}) {
+  update(id, { role, status } = {}) {
     const sets = []; const vals = [];
     if (role !== undefined) { sets.push('role = ?'); vals.push(role); }
     if (status !== undefined) {
@@ -37,10 +42,10 @@ export class UserStore {
       if (status === 'approved') { sets.push('approved_at = COALESCE(approved_at, ?)'); vals.push(Date.now()); }
     }
     if (sets.length) this.db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
-    return this.getUser(id);
+    return this.get(id);
   }
 
-  userByExternalId(externalId) {
+  byExternalId(externalId) {
     return this.db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId) || null;
   }
 
@@ -54,21 +59,21 @@ export class UserStore {
    * exists. The unique index makes this atomic: concurrent first requests race
    * to insert, exactly one wins. Returns { user, created }.
    */
-  provisionUser({ externalId, role, status, now = Date.now() }) {
+  provision({ externalId, role, status, now = Date.now() }) {
     const created = this.db.prepare(`
       INSERT INTO users (id, external_id, role, status, created_at, approved_at, last_login_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(external_id) DO NOTHING
     `).run(randomUUID(), externalId, role, status, now, status === 'approved' ? now : null, now).changes > 0;
-    return { user: this.userByExternalId(externalId), created };
+    return { user: this.byExternalId(externalId), created };
   }
 
   /** Gateway-side sync of identity metadata; only these columns can be set. */
-  syncUser(id, fields) {
+  sync(id, fields) {
     const allowed = ['email', 'name', 'role', 'status', 'last_login_at'];
     const keys = Object.keys(fields).filter((k) => allowed.includes(k));
     if (keys.length) this.db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id);
-    return this.getUser(id);
+    return this.get(id);
   }
 
   /** The single approved admin account behind a 'single' password. */

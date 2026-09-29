@@ -38,8 +38,8 @@ async function run(plan) {
   const { srv, count } = provider(plan);
   const port = await new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
   const store = new Store(join(mkdtempSync(join(tmpdir(), 'res-')), 'r.db'));
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'hi' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'hi' });
   const events = [];
   try {
     await runChat({
@@ -51,7 +51,7 @@ async function run(plan) {
     events.push({ type: 'error', error: err.message });
   }
   srv.close();
-  const stored = store.messages(chat.id).filter((m) => m.role === 'assistant');
+  const stored = store.messages.list(chat.id).filter((m) => m.role === 'assistant');
   return { events, stored, requests: count() };
 }
 

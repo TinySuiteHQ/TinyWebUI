@@ -124,14 +124,14 @@ test('cidr matching handles v4, v6 and v4-mapped peers', () => {
 
 test('scoped store reads refuse a missing scope', () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' }, 'u1');
-  assert.throws(() => store.getChat(chat.id), /user scope is required/);
-  assert.throws(() => store.listChats(10), /user scope is required/);
-  assert.throws(() => store.search('t', 10), /user scope is required/);
-  assert.equal(store.getChat(chat.id, 'u2'), null);
-  assert.equal(store.getChat(chat.id, null), null);
-  assert.ok(store.getChat(chat.id, 'u1'));
-  assert.ok(store.getChat(chat.id, ALL_USERS));
+  const chat = store.chats.create({ title: 't' }, 'u1');
+  assert.throws(() => store.chats.get(chat.id), /user scope is required/);
+  assert.throws(() => store.chats.list(10), /user scope is required/);
+  assert.throws(() => store.search.chats('t', 10), /user scope is required/);
+  assert.equal(store.chats.get(chat.id, 'u2'), null);
+  assert.equal(store.chats.get(chat.id, null), null);
+  assert.ok(store.chats.get(chat.id, 'u1'));
+  assert.ok(store.chats.get(chat.id, ALL_USERS));
   store.close();
 });
 

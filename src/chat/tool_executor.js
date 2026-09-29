@@ -195,7 +195,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
       // is the one thing that makes compaction possible later: content can only
       // leave the window safely if the stub left behind can bring it back. The
       // artifact keeps the raw output; the budget footer is harness chatter.
-      const artifactId = store.addArtifact(chatId, { toolName: name, args, content: text });
+      const artifactId = store.messages.addArtifact(chatId, { toolName: name, args, content: text });
       const footer = i === calls.length - 1 ? roundFooter(round) : '';
       const msg = { role: 'tool', tool_call_id: call.id, content: text + footer, artifact_id: artifactId };
 
@@ -216,7 +216,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
         msg.stub_text = digest({ id: artifactId, tool_name: name, content: text }) + (overTurn ? footer : '');
       }
 
-      store.addMessage(chatId, msg);
+      store.messages.add(chatId, msg);
       out.push({
         wire: toWire(overTurn ? msg : { ...msg, stub_text: null }),
         message: msg.stub_text ? { ...msg, compacted: true } : msg

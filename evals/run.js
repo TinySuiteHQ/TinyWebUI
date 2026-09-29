@@ -104,10 +104,10 @@ async function runOnce(task, baseCfg) {
   const cfg = { ...baseCfg, ...(task.config || {}) };
   const hub = scriptedHub(task);
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: task.name });
+  const chat = store.chats.create({ title: task.name });
   // Earlier turns, verbatim, for tasks about how the model uses history.
-  for (const m of task.history || []) store.addMessage(chat.id, m);
-  store.addMessage(chat.id, { role: 'user', content: task.prompt });
+  for (const m of task.history || []) store.messages.add(chat.id, m);
+  store.messages.add(chat.id, { role: 'user', content: task.prompt });
 
   const events = [];
   const approvals = [...(task.approvals || [])];
@@ -126,7 +126,7 @@ async function runOnce(task, baseCfg) {
     error = err.message;
   }
 
-  const rows = store.messages(chat.id).slice((task.history || []).length + 1);
+  const rows = store.messages.list(chat.id).slice((task.history || []).length + 1);
   const assistants = rows.filter((r) => r.role === 'assistant');
   const usage = assistants.map((r) => (r.usage_json ? JSON.parse(r.usage_json) : null)).filter(Boolean);
   const run = {

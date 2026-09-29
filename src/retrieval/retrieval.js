@@ -82,13 +82,13 @@ export function fuse(bm25Scores, denseScores, { denseWeight = 0.5, k = 60 } = {}
 /** Attached documents: one unit per passage. Scope: { docId }. */
 export function documentsCorpus(store) {
   return {
-    units: (docId) => store.documentPassages(docId).map((p) => ({ id: p.rowid, text: p.body })),
-    ownersMissing: (key) => store.documentsMissingVectors(key),
+    units: (docId) => store.documents.passages(docId).map((p) => ({ id: p.rowid, text: p.body })),
+    ownersMissing: (key) => store.documents.missingVectors(key),
     ownersOf: ({ docId }) => [docId],
-    candidates: ({ docId }) => store.documentPassages(docId).map((p) => p.rowid),
-    lexical: ({ docId }, query, { any }) => store.lexicalScores(docId, query, { any }),
+    candidates: ({ docId }) => store.documents.passages(docId).map((p) => p.rowid),
+    lexical: ({ docId }, query, { any }) => store.documents.lexicalScores(docId, query, { any }),
     hydrate(hits, { docId }) {
-      const byId = new Map(store.documentPassages(docId).map((p) => [p.rowid, p]));
+      const byId = new Map(store.documents.passages(docId).map((p) => [p.rowid, p]));
       return hits.map((h) => {
         const p = byId.get(h.id);
         return { passageIdx: p.passageIdx, charStart: p.charStart, body: p.body, rank: h.rank, dense: h.dense, bm25: h.bm25 };
@@ -96,8 +96,8 @@ export function documentsCorpus(store) {
     },
     maintain(engine, log) {
       const { passageSize, passageOverlap } = engine.passageSettings();
-      const stale = store.documentsWithOtherPassages(passageSize, passageOverlap);
-      for (const id of stale) store.repassageDocument(id, passageSize, passageOverlap);
+      const stale = store.documents.withOtherPassages(passageSize, passageOverlap);
+      for (const id of stale) store.documents.repassage(id, passageSize, passageOverlap);
       if (stale.length) log(`re-split ${stale.length} document(s) into ${passageSize}-character passages`);
     }
   };
@@ -116,12 +116,12 @@ export function chatsCorpus(store) {
   const turnText = (t) => `${t.question.slice(0, TURN_QUESTION_CHARS)}\n\n${t.answer.slice(0, TURN_ANSWER_CHARS)}`.trim();
   return {
     mutable: true,
-    units: (chatId) => store.chatTurns(chatId).map((t) => ({ id: t.id, text: turnText(t) })).filter((u) => u.text),
-    ownersMissing: (key) => store.chatsMissingVectors(key),
-    candidates: ({ userId, excludeChatId }) => store.turnIds(userId, { excludeChatId }),
-    lexical: ({ userId, excludeChatId }, query, { any }) => store.turnLexicalScores(userId, query, { excludeChatId, any }),
+    units: (chatId) => store.turns.forChat(chatId).map((t) => ({ id: t.id, text: turnText(t) })).filter((u) => u.text),
+    ownersMissing: (key) => store.turns.chatsMissingVectors(key),
+    candidates: ({ userId, excludeChatId }) => store.turns.ids(userId, { excludeChatId }),
+    lexical: ({ userId, excludeChatId }, query, { any }) => store.turns.lexicalScores(userId, query, { excludeChatId, any }),
     hydrate(hits) {
-      const turns = store.turnsByIds(hits.map((h) => h.id));
+      const turns = store.turns.byIds(hits.map((h) => h.id));
       return hits.filter((h) => turns.has(h.id)).map((h) => ({ ...turns.get(h.id), rank: h.rank, dense: h.dense, bm25: h.bm25 }));
     }
   };
@@ -171,8 +171,8 @@ export class Retrieval {
     const job = (async () => {
       const key = this.embedder.key;
       const units = corpus.units(ownerId).map((u) => ({ ...u, digest: corpus.mutable ? digestOf(u.text) : '' }));
-      const have = this.store.unitDigests(name, ownerId, key);
-      if ([...have.keys()].some((id) => !units.some((u) => u.id === id))) this.store.dropStaleUnits(name, ownerId, units.map((u) => u.id));
+      const have = this.store.embeddings.digests(name, ownerId, key);
+      if ([...have.keys()].some((id) => !units.some((u) => u.id === id))) this.store.embeddings.dropStale(name, ownerId, units.map((u) => u.id));
       const missing = units.filter((u) => have.get(u.id) !== u.digest);
       if (!missing.length) return 0;
       const prefix = this.cfg.documentPrefix || '';
@@ -183,7 +183,7 @@ export class Retrieval {
       // The owner may have been deleted while it was being embedded.
       const still = new Set(corpus.units(ownerId).map((u) => u.id));
       const rows = missing.map((u, i) => ({ unitId: u.id, digest: u.digest, vecs: vecs[i] })).filter((r) => still.has(r.unitId));
-      if (rows.length) this.store.putUnitVectors(name, ownerId, key, rows);
+      if (rows.length) this.store.embeddings.put(name, ownerId, key, rows);
       return rows.length;
     })().finally(() => this.pending.delete(tag));
     this.pending.set(tag, job);
@@ -198,7 +198,7 @@ export class Retrieval {
   async backfill(log = () => {}) {
     for (const corpus of this.corpora.values()) corpus.maintain?.(this, log);
     if (!this.embedder) return 0;
-    const pruned = this.store.pruneVectors(this.embedder.key);
+    const pruned = this.store.embeddings.prune(this.embedder.key);
     if (pruned) log(`dropped ${pruned} chunk vector(s) from a previous model or chunking`);
     let total = 0;
     for (const [name, corpus] of this.corpora) {
@@ -233,7 +233,7 @@ export class Retrieval {
     for (const owner of corpus.ownersOf?.(scope) || []) await this.ingest(name, owner);
     const ids = corpus.candidates(scope);
     if (!ids.length) return [];
-    const vectors = this.store.unitVectors(name, this.embedder.key, ids);
+    const vectors = this.store.embeddings.vectors(name, this.embedder.key, ids);
     const [q] = await this.embedder.embed([(this.cfg.queryPrefix || '') + query]);
     const dense = ids.map((id) => (vectors.has(id) ? Math.max(...vectors.get(id).map((v) => cosine(q, v))) : -1));
     const lexical = corpus.lexical(scope, query, { any: true });

@@ -46,7 +46,7 @@ export async function callSearchChats(args, { store, retrieval, chatId, budget =
   const query = String(args?.query || '').trim();
   if (!query) return 'Error: query is required.';
   const limit = Math.min(MAX_RESULTS, Math.max(1, Number.parseInt(args?.limit, 10) || 5));
-  const owner = chatId ? store.chatById(chatId)?.user_id ?? null : null;
+  const owner = chatId ? store.chats.byId(chatId)?.user_id ?? null : null;
   const hits = await retrieval.search('chats', { userId: owner, excludeChatId: chatId ?? null }, query, limit);
   if (!hits.length) return `[search_chats · no earlier conversation matches "${query}"]\nTry other words for the same topic.`;
 

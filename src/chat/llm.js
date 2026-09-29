@@ -604,12 +604,12 @@ export async function runChat({
   // One loader for every (re)read, so a reload after compaction can't drop the
   // automation boundary or the hard window.
   const load = () => {
-    let all = store.messages(chatId);
+    let all = store.messages.list(chatId);
     if (Number.isSafeInteger(historyFromSeq)) all = all.filter((row) => row.seq >= historyFromSeq);
-    return windowRows(all, store.chatById(chatId).window_seq);
+    return windowRows(all, store.chats.byId(chatId).window_seq);
   };
   let rows = load();
-  const chat = store.chatById(chatId);
+  const chat = store.chats.byId(chatId);
   const keepTurns = Math.max(1, cfg.keepTurns || 2);
 
   // Compaction is decided once, here, before the first request of the turn --
@@ -645,7 +645,7 @@ export async function runChat({
     maxTokens: maxHistory, targetTokens: Math.floor(maxHistory / 2), keepTurns, toWire
   });
   if (cut != null) {
-    store.touchChat(chatId, { window_seq: cut });
+    store.chats.touch(chatId, { window_seq: cut });
     const before = rows.length;
     rows = load();
     emit({
@@ -656,7 +656,7 @@ export async function runChat({
 
   // Index of the last message inside the frozen prefix, for the pinned
   // breakpoint. -1 before the first epoch, when there is nothing frozen yet.
-  const boundarySeq = store.chatById(chatId).boundary_seq;
+  const boundarySeq = store.chats.byId(chatId).boundary_seq;
   // Reasoning behind the frozen boundary goes too. Providers only need it
   // echoed within the turn that made it, and the boundary moves only at an
   // epoch, which is a cold request anyway -- so dropping it never costs cache.
@@ -685,7 +685,7 @@ export async function runChat({
       executeToolBatch: tools_.execute,
       pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
         const msg = { role: 'user', content };
-        store.addMessage(chatId, msg);
+        store.messages.add(chatId, msg);
         emit({ type: 'user', content });
         return { wire: msg, message: msg };
       })),
@@ -709,7 +709,7 @@ export async function runChat({
   const final = saved.at(-1);
   if (final && !final.assistant.tool_calls?.length && !signal?.aborted) {
     final.assistant.usage.attribution = markFinal(final.assistant.usage.attribution);
-    store.updateMessageUsage(chatId, final.seq, final.assistant.usage);
+    store.messages.updateUsage(chatId, final.seq, final.assistant.usage);
   }
   emit({ type: 'done', messages: appended });
   return appended;
@@ -883,7 +883,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   // model can change between chats (or mid-session), and usage history
   // should report what actually served the round, not whatever is current.
   assistant.model = cfg.model;
-  const seq = store.addMessage(chatId, assistant);
+  const seq = store.messages.add(chatId, assistant);
   onSaved?.(assistant, seq);
   if (usage) emit({ type: 'usage', usage: assistant.usage });
   return assistant;

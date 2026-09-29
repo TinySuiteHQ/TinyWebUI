@@ -1,15 +1,20 @@
 import { scope, ftsQuery } from './scope.js';
 
 // Chat turns -- a question and its final answer -- the 'chats' retrieval corpus.
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 export class TurnStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   /**
    * A chat's turns: each question with the answer it finally got -- the last
    * assistant message with text before the next question, the one the
    * transcript shows as the answer. A turn's id is its user message's id.
    */
-  chatTurns(chatId) {
+  forChat(chatId) {
     const rows = this.db.prepare(`
       SELECT id, seq, role, content, created_at FROM messages
       WHERE chat_id = ? AND role IN ('user', 'assistant') ORDER BY seq
@@ -23,21 +28,21 @@ export class TurnStore {
   }
 
   /** The turns with these ids, each with its chat's title: Map(id -> turn). */
-  turnsByIds(ids) {
+  byIds(ids) {
     const chatIds = this.db.prepare(`
       SELECT DISTINCT chat_id FROM messages WHERE role = 'user' AND id IN (SELECT value FROM json_each(?))
     `).all(JSON.stringify(ids)).map((r) => r.chat_id);
     const wanted = new Set(ids);
     const out = new Map();
     for (const chatId of chatIds) {
-      const title = this.chatById(chatId)?.title || 'Untitled chat';
-      for (const t of this.chatTurns(chatId)) if (wanted.has(t.id)) out.set(t.id, { ...t, chatTitle: title });
+      const title = this.chats.byId(chatId)?.title || 'Untitled chat';
+      for (const t of this.forChat(chatId)) if (wanted.has(t.id)) out.set(t.id, { ...t, chatTitle: title });
     }
     return out;
   }
 
   /** Every turn id a user may search, leaving one chat out (the one asking). */
-  turnIds(userId, { excludeChatId = null } = {}) {
+  ids(userId, { excludeChatId = null } = {}) {
     const s = scope(userId, 'c.user_id');
     return this.db.prepare(`
       SELECT m.id FROM messages m JOIN chats c ON c.id = m.chat_id
@@ -46,7 +51,7 @@ export class TurnStore {
   }
 
   /** BM25 per turn (its best message), higher is better. `any`: any query word may match. */
-  turnLexicalScores(userId, query, { excludeChatId = null, any = true } = {}) {
+  lexicalScores(userId, query, { excludeChatId = null, any = true } = {}) {
     const q = ftsQuery(query, { any });
     if (!q) return new Map();
     const s = scope(userId, 'c.user_id');

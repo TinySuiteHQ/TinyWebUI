@@ -79,7 +79,7 @@ export function authRoutes(app) {
       const allowed = modelsFor(cfg, auth.role);
       if (model && isClosed(cfg) && !findEntry(cfg, model)) return json(res, 403, { error: 'that model is not available to you' });
       if (model && allowed !== '*' && !allowed.includes(model)) return json(res, 403, { error: 'that model is not available to you' });
-      store.setPref(auth.user.id, 'model', model ? model.trim() : null);
+      store.users.setPref(auth.user.id, 'model', model ? model.trim() : null);
       return json(res, 200, { model: app.modelFor(auth.user.id, auth.role) });
     } },
 

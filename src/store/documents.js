@@ -2,7 +2,7 @@ import { scope, ftsQuery } from './scope.js';
 import { randomBytes } from 'node:crypto';
 
 // Attached documents, split into passages for read_document (BM25 and dense retrieval).
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 /** Default passage split: characters per passage, and how much neighbours overlap. */
 export const PASSAGE_SIZE = 1800;
@@ -58,7 +58,12 @@ function deletePassages(db, docId) {
 }
 
 export class DocumentStore {
-  addDocument(chatId, { filename, mime, content }, { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP } = {}) {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
+  add(chatId, { filename, mime, content }, { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP } = {}) {
     const id = randomBytes(12).toString('hex');
     const createdAt = Date.now();
     this.db.prepare(`
@@ -70,7 +75,7 @@ export class DocumentStore {
   }
 
   /** Documents split with other passage settings than these (NULL = the original 1800/200). */
-  documentsWithOtherPassages(size, overlap) {
+  withOtherPassages(size, overlap) {
     return this.db.prepare(`
       SELECT id FROM documents
       WHERE COALESCE(passage_size, ${PASSAGE_SIZE}) != ? OR COALESCE(passage_overlap, ${PASSAGE_OVERLAP}) != ?
@@ -78,7 +83,7 @@ export class DocumentStore {
   }
 
   /** Re-splits a stored document with new passage settings; its old vectors go with the old passages. */
-  repassageDocument(docId, size, overlap) {
+  repassage(docId, size, overlap) {
     const doc = this.db.prepare('SELECT id, chat_id, content FROM documents WHERE id = ?').get(docId);
     if (!doc) return 0;
     this.db.exec('BEGIN');
@@ -92,14 +97,14 @@ export class DocumentStore {
   }
 
   /** Scoped through the owning chat: a document is its chat's user's. */
-  getDocument(id, userId) {
+  get(id, userId) {
     const s = scope(userId, 'c.user_id');
     return this.db.prepare(
       `SELECT d.* FROM documents d JOIN chats c ON c.id = d.chat_id WHERE d.id = ? AND ${s.sql}`
     ).get(id, ...s.params) || null;
   }
 
-  listDocuments(chatId) {
+  list(chatId) {
     return this.db.prepare(`
       SELECT id, filename, mime, char_len, created_at
       FROM documents WHERE chat_id = ? ORDER BY created_at ASC
@@ -107,8 +112,8 @@ export class DocumentStore {
   }
 
   /** Drops one document, its passages and their chunk vectors. The rest of the chat is untouched. */
-  deleteDocument(id, userId) {
-    if (!this.getDocument(id, userId)) return false;
+  delete(id, userId) {
+    if (!this.get(id, userId)) return false;
     deletePassages(this.db, id);
     return this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
   }
@@ -129,7 +134,7 @@ export class DocumentStore {
   }
 
   /** Every passage of a document, in order -- the candidate set for dense and hybrid ranking. */
-  documentPassages(docId) {
+  passages(docId) {
     return this.db.prepare(`
       SELECT m.passage_rowid AS rowid, m.passage_idx AS passageIdx, m.char_start AS charStart, document_passages.body AS body
       FROM document_passage_map m JOIN document_passages ON document_passages.rowid = m.passage_rowid
@@ -154,7 +159,7 @@ export class DocumentStore {
   }
 
   /** Documents with passages not yet embedded under this model (for backfill). */
-  documentsMissingVectors(modelKey) {
+  missingVectors(modelKey) {
     return this.db.prepare(`
       SELECT DISTINCT m.doc_id AS id FROM document_passage_map m
       LEFT JOIN embeddings e ON e.corpus = 'documents' AND e.unit_id = m.passage_rowid AND e.model_key = ? AND e.chunk = 0

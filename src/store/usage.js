@@ -1,7 +1,7 @@
 import { scope } from './scope.js';
 
 // Token and cost statistics over stored messages.
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 /** Adds one stored attribution snapshot (see chat/attribution.js) into a running total. */
 function mergeAttribution(target, snapshot) {
@@ -23,6 +23,11 @@ function mergeAttribution(target, snapshot) {
 }
 
 export class UsageStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   /**
    * Rolls up token usage across every assistant round that has it, bucketed
    * by local calendar day ('YYYY-MM-DD', via SQLite's julianday/strftime on
@@ -37,7 +42,7 @@ export class UsageStore {
    * still show up here the same way their cost already does in
    * usageStatistics() below.
    */
-  usageRollup(userId) {
+  rollup(userId) {
     const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`
       SELECT CASE WHEN m.created_at IS NOT NULL
@@ -83,7 +88,7 @@ export class UsageStore {
       .sort((a, b) => a.day.localeCompare(b.day));
   }
 
-  usageStatistics(userId) {
+  statistics(userId) {
     const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`SELECT m.chat_id,m.seq,m.role,m.content,m.tool_calls_json,m.model,m.usage_json
       FROM messages m JOIN chats c ON c.id=m.chat_id WHERE ${s.sql} ORDER BY m.chat_id,m.seq`).all(...s.params);

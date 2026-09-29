@@ -18,19 +18,19 @@ export function createScheduler(app) {
   function launch(automation, runId) {
     // Nobody is at the keyboard to be turned away, so a disabled or pending
     // owner is checked here: their schedules stop the moment their access does.
-    if (automation.userId && (store.getUser(automation.userId)?.status !== 'approved' || !app.ownerFeatures(automation.userId).has('automations'))) {
-      store.updateAutomationRun(runId, { status: 'skipped', finishedAt: Date.now(), error: 'Owner account is not active.' });
+    if (automation.userId && (store.users.get(automation.userId)?.status !== 'approved' || !app.ownerFeatures(automation.userId).has('automations'))) {
+      store.automations.updateRun(runId, { status: 'skipped', finishedAt: Date.now(), error: 'Owner account is not active.' });
       return true;
     }
-    const chat = store.getChat(automation.chatId, automation.userId);
+    const chat = store.chats.get(automation.chatId, automation.userId);
     if (!chat) {
-      store.updateAutomationRun(runId, { status: 'failed', finishedAt: Date.now(), error: 'Target chat no longer exists.' });
+      store.automations.updateRun(runId, { status: 'failed', finishedAt: Date.now(), error: 'Target chat no longer exists.' });
       return false;
     }
     if (runs.isRunning(chat.id)) return false;
-    const firstSeq = store.addMessage(chat.id, { role: 'user', content: runMessage(automation) });
-    store.updateAutomationRun(runId, { status: 'running', startedAt: Date.now() });
-    const role = automation.userId ? store.getUser(automation.userId)?.role : null;
+    const firstSeq = store.messages.add(chat.id, { role: 'user', content: runMessage(automation) });
+    store.automations.updateRun(runId, { status: 'running', startedAt: Date.now() });
+    const role = automation.userId ? store.users.get(automation.userId)?.role : null;
     runs.start({
       chat,
       model: app.modelFor(automation.userId, role),
@@ -38,7 +38,7 @@ export function createScheduler(app) {
       historyFromSeq: firstSeq,
       unattended: true,
       onFinish: ({ ok, error, result }) => {
-        store.updateAutomationRun(runId, {
+        store.automations.updateRun(runId, {
           status: ok ? 'completed' : 'failed', finishedAt: Date.now(),
           result: String(result || '').slice(0, 200000), error: error ? String(error).slice(0, 1000) : null
         });
@@ -49,9 +49,9 @@ export function createScheduler(app) {
   }
 
   async function trigger(automation, userId) {
-    const owned = store.getAutomation(automation.id, userId);
+    const owned = store.automations.get(automation.id, userId);
     if (!owned) throw new Error('no such automation');
-    const runId = store.addAutomationRun(owned.id, Date.now(), 'queued', 'manual');
+    const runId = store.automations.addRun(owned.id, Date.now(), 'queued', 'manual');
     if (runs.isRunning(owned.chatId)) {
       const queue = pendingManual.get(owned.chatId) || [];
       queue.push({ automationId: owned.id, userId, runId });
@@ -68,9 +68,9 @@ export function createScheduler(app) {
     if (!queue?.length) return;
     const next = queue.shift();
     if (!queue.length) pendingManual.delete(chatId);
-    const automation = store.getAutomation(next.automationId, next.userId);
+    const automation = store.automations.get(next.automationId, next.userId);
     if (!automation) {
-      store.updateAutomationRun(next.runId, { status: 'failed', finishedAt: Date.now(), error: 'Automation no longer exists.' });
+      store.automations.updateRun(next.runId, { status: 'failed', finishedAt: Date.now(), error: 'Automation no longer exists.' });
       queueMicrotask(() => drain(chatId));
       return;
     }
@@ -85,13 +85,13 @@ export function createScheduler(app) {
 
   function refresh() {
     const now = Date.now();
-    for (const automation of store.listAllAutomations()) {
+    for (const automation of store.automations.listAll()) {
       if (!automation.enabled) continue;
       // Recompute stale timestamps on startup or after changes without replaying
       // occurrences missed while the process was down.
       if (!automation.nextRunAt || automation.nextRunAt <= now) {
-        try { store.updateAutomation(automation.id, { nextRunAt: nextSchedule(automation.cron, automation.timezone, now) }, automation.userId); }
-        catch (err) { store.updateAutomation(automation.id, { enabled: false, lastStatus: `invalid schedule: ${err.message}` }, automation.userId); }
+        try { store.automations.update(automation.id, { nextRunAt: nextSchedule(automation.cron, automation.timezone, now) }, automation.userId); }
+        catch (err) { store.automations.update(automation.id, { enabled: false, lastStatus: `invalid schedule: ${err.message}` }, automation.userId); }
       }
     }
   }
@@ -99,19 +99,19 @@ export function createScheduler(app) {
   function processDue() {
     if (stopped) return;
     const now = Date.now();
-    for (const automation of store.dueAutomations(now)) {
+    for (const automation of store.automations.due(now)) {
       const scheduledAt = automation.nextRunAt;
-      const runId = store.addAutomationRun(automation.id, scheduledAt, 'queued');
+      const runId = store.automations.addRun(automation.id, scheduledAt, 'queued');
       let nextRunAt;
       try { nextRunAt = nextSchedule(automation.cron, automation.timezone, scheduledAt); }
       catch (err) {
-        store.updateAutomation(automation.id, { enabled: false, lastStatus: `invalid schedule: ${err.message}`, nextRunAt: null }, automation.userId);
-        store.updateAutomationRun(runId, { status: 'failed', finishedAt: now, error: err.message });
+        store.automations.update(automation.id, { enabled: false, lastStatus: `invalid schedule: ${err.message}`, nextRunAt: null }, automation.userId);
+        store.automations.updateRun(runId, { status: 'failed', finishedAt: now, error: err.message });
         continue;
       }
-      store.updateAutomation(automation.id, { nextRunAt }, automation.userId);
+      store.automations.update(automation.id, { nextRunAt }, automation.userId);
       if (runs.isRunning(automation.chatId)) {
-        store.updateAutomationRun(runId, { status: 'skipped', finishedAt: now, error: 'Target chat was already running.' });
+        store.automations.updateRun(runId, { status: 'skipped', finishedAt: now, error: 'Target chat was already running.' });
         continue;
       }
       launch(automation, runId);
@@ -124,7 +124,7 @@ export function createScheduler(app) {
     if (stopped) return;
     if (timer) clearTimeout(timer);
     refresh();
-    const next = store.nextAutomationDue();
+    const next = store.automations.nextDue();
     if (next == null) { timer = null; return; }
     timer = setTimeout(processDue, Math.max(25, Math.min(2_147_000_000, next - Date.now())));
     timer.unref?.();
@@ -135,6 +135,6 @@ export function createScheduler(app) {
     if (timer) clearTimeout(timer);
   }
 
-  store.recoverAutomationRuns();
+  store.automations.recoverRuns();
   return { arm, trigger, drain, stop };
 }

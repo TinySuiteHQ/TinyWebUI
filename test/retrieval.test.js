@@ -35,7 +35,7 @@ function fakeEmbedder(key = 'fake:v1') {
   };
 }
 
-const docVectors = (store, docId, key) => store.unitVectors('documents', key, store.documentPassages(docId).map((p) => p.rowid));
+const docVectors = (store, docId, key) => store.embeddings.vectors('documents', key, store.documents.passages(docId).map((p) => p.rowid));
 
 const PARAS = [
   'The sedan needs new tyres before winter.',
@@ -45,10 +45,10 @@ const PARAS = [
 ];
 function setup(mode = 'hybrid', embedder = fakeEmbedder()) {
   const store = new Store(':memory:');
-  const chat = store.createChat({}, ALL_USERS);
+  const chat = store.chats.create({}, ALL_USERS);
   // Each topic fills about one 1,800-char chunk, like a real document section.
   const content = PARAS.map((p) => `${p} `.repeat(Math.floor(1500 / (p.length + 1))).trim()).join('\n\n');
-  const doc = store.addDocument(chat.id, { filename: 'notes.txt', content });
+  const doc = store.documents.add(chat.id, { filename: 'notes.txt', content });
   const r = new Retrieval(store, { ...DEFAULTS.retrieval, mode }, mode === 'lexical' ? null : embedder);
   return { store, chat, doc, r, embedder };
 }
@@ -76,13 +76,13 @@ test('RRF fusion follows TinySearch: ranks, weights, k=60, deterministic ties', 
 test('lexical mode is exactly the old FTS5 behaviour', async () => {
   const { store, doc, r } = setup('lexical');
   const bodies = (rows) => rows.map((p) => [p.passageIdx, p.body]);
-  assert.deepEqual(bodies(await r.search('documents', { docId: doc.id }, 'kitten', 5)), bodies(store.searchPassages(doc.id, 'kitten', 5)));
+  assert.deepEqual(bodies(await r.search('documents', { docId: doc.id }, 'kitten', 5)), bodies(store.documents.searchPassages(doc.id, 'kitten', 5)));
   assert.deepEqual(await r.search('documents', { docId: doc.id }, 'automobile', 5), [], 'no shared words, no match');
 });
 
 test('hybrid finds what BM25 alone misses, and keeps exact matches on top', async () => {
   const { store, doc, r } = setup('hybrid');
-  assert.deepEqual(store.searchPassages(doc.id, 'automobile', 5), []);
+  assert.deepEqual(store.documents.searchPassages(doc.id, 'automobile', 5), []);
   const hits = await r.search('documents', { docId: doc.id }, 'automobile', 2);
   assert.match(hits[0].body, /sedan/);
   const exact = await r.search('documents', { docId: doc.id }, 'kitten sleeps', 1);
@@ -99,9 +99,9 @@ test('dense mode ranks by embeddings alone', async () => {
 
 test('embeddings are stored in SQLite once and reused by every query', async () => {
   const { store, doc, r, embedder } = setup('hybrid');
-  assert.equal(await r.ingest('documents', doc.id), store.documentPassages(doc.id).length);
+  assert.equal(await r.ingest('documents', doc.id), store.documents.passages(doc.id).length);
   const stored = docVectors(store, doc.id,embedder.key);
-  assert.equal(stored.size, store.documentPassages(doc.id).length);
+  assert.equal(stored.size, store.documents.passages(doc.id).length);
   assert.ok([...stored.values()].every((vs) => vs.length >= 1 && vs[0] instanceof Float32Array));
   embedder.calls.length = 0;
   assert.equal(await r.ingest('documents', doc.id), 0, 'ingesting again embeds nothing');
@@ -114,11 +114,11 @@ test('a model change re-embeds and drops the old vectors; deletes clean up', asy
   const { store, chat, doc, r } = setup('hybrid', fakeEmbedder('fake:v1'));
   await r.ingest('documents', doc.id);
   const r2 = new Retrieval(store, { ...DEFAULTS.retrieval, mode: 'hybrid' }, fakeEmbedder('fake:v2'));
-  assert.deepEqual(store.documentsMissingVectors('fake:v2'), [doc.id]);
+  assert.deepEqual(store.documents.missingVectors('fake:v2'), [doc.id]);
   await r2.backfill();
   assert.equal(docVectors(store, doc.id,'fake:v1').size, 0);
   assert.ok(docVectors(store, doc.id,'fake:v2').size > 0);
-  store.deleteChat(chat.id, ALL_USERS);
+  store.chats.delete(chat.id, ALL_USERS);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM embeddings').get().n, 0);
 });
 
@@ -162,7 +162,7 @@ test('real multilingual bundle: English questions find German passages', { skip:
   const embedder = await loadEmbedder({ model: 'multilingual' }, realDir);
   assert.equal(embedder.dim, 384);
   const store = new Store(':memory:');
-  const chat = store.createChat({}, ALL_USERS);
+  const chat = store.chats.create({}, ALL_USERS);
   const german = [
     'Die Limousine braucht vor dem Winter neue Reifen.',
     'Der Quartalsgewinn hat die Prognose deutlich übertroffen.',
@@ -170,7 +170,7 @@ test('real multilingual bundle: English questions find German passages', { skip:
     'Unser Kätzchen schläft den ganzen Nachmittag.',
   ];
   const content = german.map((p) => `${p} `.repeat(Math.floor(1500 / (p.length + 1))).trim()).join('\n\n');
-  const doc = store.addDocument(chat.id, { filename: 'notizen.txt', content });
+  const doc = store.documents.add(chat.id, { filename: 'notizen.txt', content });
   const r = new Retrieval(store, { ...DEFAULTS.retrieval, mode: 'dense' }, embedder);
   const expect = { 'car tyres': /Limousine/, 'company profit': /Quartalsgewinn/, 'seeing a doctor': /Ärztin/, 'young cat': /Kätzchen/ };
   for (const [q, re] of Object.entries(expect)) assert.match((await r.search('documents', { docId: doc.id },q, 1))[0].body, re, q);
@@ -179,23 +179,23 @@ test('real multilingual bundle: English questions find German passages', { skip:
 
 test('passages follow retrieval.passageSize; changing it re-splits stored documents', async () => {
   const store = new Store(':memory:');
-  const chat = store.createChat({}, ALL_USERS);
+  const chat = store.chats.create({}, ALL_USERS);
   const text = 'word '.repeat(2000).trim();                       // ~10,000 chars
-  const doc = store.addDocument(chat.id, { filename: 'a', content: text });
-  const before = store.documentPassages(doc.id).length;
+  const doc = store.documents.add(chat.id, { filename: 'a', content: text });
+  const before = store.documents.passages(doc.id).length;
   assert.ok(before >= 5, 'default 1800-char passages');
 
   const big = new Retrieval(store, { ...DEFAULTS.retrieval, passageSize: 4000, passageOverlap: 400 }, null);
   await big.backfill();
-  const after = store.documentPassages(doc.id);
+  const after = store.documents.passages(doc.id);
   assert.ok(after.length < before, 'bigger passages, fewer of them');
   assert.ok(after.every((p) => p.body.length <= 4000));
-  assert.equal(store.documentsWithOtherPassages(4000, 400).length, 0, 're-split once, recorded on the document');
+  assert.equal(store.documents.withOtherPassages(4000, 400).length, 0, 're-split once, recorded on the document');
   // New uploads use the configured split directly.
-  const d2 = store.addDocument(chat.id, { filename: 'b', content: text }, big.passageSettings());
-  assert.equal(store.documentPassages(d2.id).length, after.length);
+  const d2 = store.documents.add(chat.id, { filename: 'b', content: text }, big.passageSettings());
+  assert.equal(store.documents.passages(d2.id).length, after.length);
   // Lexical search still works on the new passages.
-  assert.ok(store.searchPassages(doc.id, 'word', 1).length === 1);
+  assert.ok(store.documents.searchPassages(doc.id, 'word', 1).length === 1);
 });
 
 test('re-splitting drops the old passages\' vectors and re-embeds', async () => {
@@ -204,7 +204,7 @@ test('re-splitting drops the old passages\' vectors and re-embeds', async () => 
   await r.ingest('documents', doc.id);
   const r2 = new Retrieval(store, { ...DEFAULTS.retrieval, mode: 'hybrid', passageSize: 900, passageOverlap: 100 }, embedder);
   await r2.backfill();
-  const passages = store.documentPassages(doc.id);
+  const passages = store.documents.passages(doc.id);
   const vectors = docVectors(store, doc.id,embedder.key);
   assert.equal(vectors.size, passages.length, 'every new passage has vectors, no orphans');
   assert.ok(passages.every((p) => vectors.has(p.rowid)));
@@ -219,8 +219,8 @@ test('an existing database migrates to passages/chunks in place', async () => {
   const file = join(dir, 'old.db');
   // Build a schema-2 style database with the old table names and one document.
   const s = new Store(file);
-  const chat = s.createChat({}, ALL_USERS);
-  const doc = s.addDocument(chat.id, { filename: 'a', content: 'alpha beta gamma' });
+  const chat = s.chats.create({}, ALL_USERS);
+  const doc = s.documents.add(chat.id, { filename: 'a', content: 'alpha beta gamma' });
   s.close();
   const db = new DatabaseSync(file);
   db.exec('ALTER TABLE document_passages RENAME TO document_chunks');
@@ -232,7 +232,7 @@ test('an existing database migrates to passages/chunks in place', async () => {
 
   const migrated = new Store(file);
   assert.equal(migrated.migratedFrom, 2);
-  assert.equal(migrated.searchPassages(doc.id, 'beta', 1)[0].body, 'alpha beta gamma');
+  assert.equal(migrated.documents.searchPassages(doc.id, 'beta', 1)[0].body, 'alpha beta gamma');
   const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'document_%'").all().map((t) => t.name);
   assert.ok(tables.includes('document_passage_map') && !tables.includes('document_chunk_map'));
   migrated.close();
@@ -247,10 +247,10 @@ test('passage and chunk settings are validated', () => {
 // ---------- the chats corpus and search_chats ----------
 
 function chatWith(store, title, turns, userId = ALL_USERS) {
-  const chat = store.createChat({ title }, userId);
+  const chat = store.chats.create({ title }, userId);
   for (const [q, ...answers] of turns) {
-    store.addMessage(chat.id, { role: 'user', content: q });
-    for (const a of answers) store.addMessage(chat.id, { role: 'assistant', content: a });
+    store.messages.add(chat.id, { role: 'user', content: q });
+    for (const a of answers) store.messages.add(chat.id, { role: 'assistant', content: a });
   }
   return chat;
 }
@@ -266,7 +266,7 @@ function chatSetup(mode = 'hybrid', embedder = fakeEmbedder()) {
 
 test('a chat turn is its question and final answer, not the narration before it', () => {
   const { store, cars } = chatSetup('lexical');
-  const [turn] = store.chatTurns(cars.id);
+  const [turn] = store.turns.forChat(cars.id);
   assert.equal(turn.question, 'When should the sedan get winter tyres?');
   assert.equal(turn.answer, 'Before the first frost.');
 });
@@ -275,7 +275,7 @@ test('hybrid chat search finds a paraphrase, never the asking chat', async () =>
   const { store, r, cars, asking } = chatSetup('hybrid');
   await r.backfill();
   const scope = { userId: null, excludeChatId: asking.id };
-  assert.equal(store.turnLexicalScores(null, 'automobile', scope).size, 0, 'no shared words');
+  assert.equal(store.turns.lexicalScores(null, 'automobile', scope).size, 0, 'no shared words');
   const [hit] = await r.search('chats', scope, 'automobile', 3);
   assert.equal(hit.chatId, cars.id);
   assert.equal(hit.chatTitle, 'Garage');
@@ -306,16 +306,16 @@ test('turn vectors follow the transcript: new answers re-embed, rewinds and dele
   const { store, r, cars } = chatSetup('hybrid');
   assert.equal(await r.ingest('chats', cars.id), 1);
   assert.equal(await r.ingest('chats', cars.id), 0, 'up to date');
-  store.addMessage(cars.id, { role: 'assistant', content: 'Actually, in October.' });
+  store.messages.add(cars.id, { role: 'assistant', content: 'Actually, in October.' });
   assert.equal(await r.ingest('chats', cars.id), 1, 'the final answer changed');
-  store.addMessage(cars.id, { role: 'user', content: 'And the kitten?' });
+  store.messages.add(cars.id, { role: 'user', content: 'And the kitten?' });
   await r.ingest('chats', cars.id);
   const count = () => store.db.prepare("SELECT COUNT(DISTINCT unit_id) AS n FROM embeddings WHERE corpus = 'chats' AND owner_id = ?").get(cars.id).n;
   assert.equal(count(), 2);
-  store.truncateFrom(cars.id, store.chatTurns(cars.id)[1].seq);
+  store.chats.truncateFrom(cars.id, store.turns.forChat(cars.id)[1].seq);
   await r.ingest('chats', cars.id);
   assert.equal(count(), 1, 'the rewound turn\'s vectors go');
-  store.deleteChat(cars.id, ALL_USERS);
+  store.chats.delete(cars.id, ALL_USERS);
   assert.equal(count(), 0);
 });
 
@@ -337,9 +337,9 @@ test('schema 7 document vectors move into the shared embeddings table', async ()
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-embeddings-'));
   const file = join(dir, 'v7.db');
   const s = new Store(file);
-  const chat = s.createChat({}, ALL_USERS);
-  const doc = s.addDocument(chat.id, { filename: 'a', content: 'alpha beta gamma' });
-  const [p] = s.documentPassages(doc.id);
+  const chat = s.chats.create({}, ALL_USERS);
+  const doc = s.documents.add(chat.id, { filename: 'a', content: 'alpha beta gamma' });
+  const [p] = s.documents.passages(doc.id);
   s.close();
   const db = new DatabaseSync(file);
   db.exec(`CREATE TABLE document_chunks (passage_rowid INTEGER NOT NULL, doc_id TEXT NOT NULL, model_key TEXT NOT NULL,
@@ -353,7 +353,7 @@ test('schema 7 document vectors move into the shared embeddings table', async ()
   assert.equal(migrated.migratedFrom, 7);
   assert.deepEqual([...docVectors(migrated, doc.id, 'fake:v1').get(p.rowid)[0]], [1, 0, 0, 0]);
   assert.equal(migrated.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'document_chunks'").get(), undefined);
-  assert.deepEqual(migrated.documentsMissingVectors('fake:v1'), [], 'nothing to re-embed');
+  assert.deepEqual(migrated.documents.missingVectors('fake:v1'), [], 'nothing to re-embed');
   migrated.close();
   rmSync(dir, { recursive: true, force: true });
 });

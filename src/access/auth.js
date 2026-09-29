@@ -32,16 +32,16 @@ function verify(value, sig, secret) {
 
 export function createSession(store, userId, ttlDays = 30) {
   const token = randomBytes(32).toString('hex');
-  store.addSession(sha256(token), userId, Date.now() + ttlDays * 86400_000);
+  store.users.addSession(sha256(token), userId, Date.now() + ttlDays * 86400_000);
   return token;
 }
 
 export function destroySession(store, token) {
-  store.deleteSession(sha256(token));
+  store.users.deleteSession(sha256(token));
 }
 
 export function destroyUserSessions(store, userId) {
-  store.deleteUserSessions(userId);
+  store.users.deleteUserSessions(userId);
 }
 
 /** Builds the Set-Cookie header value for a freshly created session token. */
@@ -118,10 +118,10 @@ export function getSessionUser(req, store, cfg) {
   const token = sessionToken(req, cfg);
   if (!token) return null;
 
-  const session = store.getSession(sha256(token));
+  const session = store.users.getSession(sha256(token));
   if (!session || session.expires_at < Date.now()) return null;
 
-  return store.getUser(session.user_id);
+  return store.users.get(session.user_id);
 }
 
 /* ---------- trusted-header mode ---------- */
@@ -184,13 +184,13 @@ export function resolveTrustedUser(req, store, cfg) {
     : policy.users[externalId] || {};
   const wantRole = pinned.role || role;
   const status = pinned.status || policy.newUsers;
-  let { user, created } = store.provisionUser({ externalId, role: wantRole || 'user', status, now });
+  let { user, created } = store.users.provision({ externalId, role: wantRole || 'user', status, now });
   if (created) audit('user.provisioned', { userId: user.id, role: user.role, status: user.status });
 
   const changes = {};
   if (email !== user.email) {
     // Emails are unique; one held by another account is dropped, never merged.
-    const next = email && store.emailTaken(email, user.id) ? null : email;
+    const next = email && store.users.emailTaken(email, user.id) ? null : email;
     if (next !== user.email) changes.email = next;
   }
   if (name !== user.name) changes.name = name;
@@ -203,7 +203,7 @@ export function resolveTrustedUser(req, store, cfg) {
     audit('user.status_changed', { userId: user.id, from: user.status, to: pinned.status, by: 'policy' });
   }
   if (!user.last_login_at || now - user.last_login_at > LOGIN_TOUCH_MS) changes.last_login_at = now;
-  if (Object.keys(changes).length) user = store.syncUser(user.id, changes);
+  if (Object.keys(changes).length) user = store.users.sync(user.id, changes);
   return { user };
 }
 
@@ -217,12 +217,12 @@ export function applyAccessPolicy(store, cfg) {
   const pins = { ...policy.users };
   for (const id of policy.bootstrapAdmins) pins[id] = { role: 'admin', status: 'approved' };
   for (const [externalId, pin] of Object.entries(pins)) {
-    const user = store.userByExternalId(externalId);
+    const user = store.users.byExternalId(externalId);
     if (!user) continue;
     const role = pin.role && pin.role !== user.role ? pin.role : null;
     const status = pin.status && pin.status !== user.status ? pin.status : null;
     if (!role && !status) continue;
-    store.updateUser(user.id, { ...(role ? { role } : {}), ...(status ? { status } : {}) });
+    store.users.update(user.id, { ...(role ? { role } : {}), ...(status ? { status } : {}) });
     audit('user.policy_applied', { userId: user.id, ...(role ? { role } : {}), ...(status ? { status } : {}) });
   }
 }

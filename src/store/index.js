@@ -30,9 +30,10 @@ export { toWire, toView } from './wire.js';
  * an arbitrary MCP server. Everything downstream (compaction, expansion) holds
  * to the same rule.
  *
- * One class, one connection. Its methods are written per area in the files
- * next to this one and copied onto Store below, so callers see a single
- * `store.x()` API while each area reads on its own.
+ * One connection, one object per area. Every call names its area --
+ * `store.chats.list()`, `store.documents.add()` -- and each area lives in the
+ * file of the same name next to this one. An area that needs another is
+ * handed it here, so every dependency between areas is listed in one place.
  */
 
 /** Thrown when a database is behind and migrating was not allowed. */
@@ -59,6 +60,17 @@ export class Store {
     }
     this.migratedFrom = fresh ? null : found;
     migrateSchema(this.db, { fresh });
+
+    const { db } = this;
+    this.chats = new ChatStore(db);
+    this.messages = new MessageStore(db);
+    this.automations = new AutomationStore(db);
+    this.usage = new UsageStore(db);
+    this.documents = new DocumentStore(db);
+    this.embeddings = new EmbeddingStore(db);
+    this.turns = new TurnStore(db, { chats: this.chats });
+    this.search = new SearchStore(db);
+    this.users = new UserStore(db);
   }
 
   schemaVersion() {
@@ -72,11 +84,5 @@ export class Store {
 
   close() {
     try { this.db.close(); } catch { /* already gone */ }
-  }
-}
-
-for (const area of [ChatStore, MessageStore, AutomationStore, UsageStore, DocumentStore, EmbeddingStore, TurnStore, SearchStore, UserStore]) {
-  for (const name of Object.getOwnPropertyNames(area.prototype)) {
-    if (name !== 'constructor') Object.defineProperty(Store.prototype, name, Object.getOwnPropertyDescriptor(area.prototype, name));
   }
 }

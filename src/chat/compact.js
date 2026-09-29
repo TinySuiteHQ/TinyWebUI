@@ -172,7 +172,7 @@ export function applyEpoch(store, chat, plan, { minSaved = 0 } = {}) {
       saved += JSON.parse(row.images_json).length * IMAGE_CHARS;
       continue;
     }
-    const artifact = store.getArtifact(row.artifact_id, chat.id);
+    const artifact = store.messages.getArtifact(row.artifact_id, chat.id);
     if (!artifact) continue;
     const stub = digest(artifact);
     if (stub.length >= (row.content?.length ?? 0)) continue;
@@ -180,10 +180,10 @@ export function applyEpoch(store, chat, plan, { minSaved = 0 } = {}) {
     saved += (row.content?.length ?? 0) - stub.length;
   }
   if (!saved || saved < minSaved) return null;
-  for (const [id, stub] of stubs) store.setStub(id, stub);
-  for (const id of drops) store.dropImages(id);
+  for (const [id, stub] of stubs) store.messages.setStub(id, stub);
+  for (const id of drops) store.messages.dropImages(id);
   const epoch = chat.epoch + 1;
-  store.touchChat(chat.id, { epoch, boundary_seq: plan.boundarySeq });
+  store.chats.touch(chat.id, { epoch, boundary_seq: plan.boundarySeq });
   return { epoch, boundarySeq: plan.boundarySeq, saved };
 }
 

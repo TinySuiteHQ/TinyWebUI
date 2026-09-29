@@ -2,9 +2,14 @@ import { ALL_USERS, scope, ownerOf } from './scope.js';
 import { randomUUID } from 'node:crypto';
 
 // Chats and what hangs off one: tasks, folders, queued input, ask_user questions, rewind and delete.
-// Methods of Store; see index.js.
+// One area of the Store; see index.js.
 
 export class ChatStore {
+  constructor(db, deps = {}) {
+    this.db = db;
+    Object.assign(this, deps);
+  }
+
   listTasks(chatId) {
     return this.db.prepare('SELECT id, title, status, created_at, updated_at FROM tasks WHERE chat_id = ? ORDER BY created_at, rowid').all(chatId);
   }
@@ -23,42 +28,42 @@ export class ChatStore {
     return changed ? this.listTasks(chatId).find((task) => task.id === id) : null;
   }
 
-  createChat({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = ALL_USERS) {
+  create({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = ALL_USERS) {
     const chatId = id || randomUUID();
     this.db.prepare(
       'INSERT INTO chats (id, title, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)'
     ).run(chatId, title, createdAt, createdAt, ownerOf(userId));
-    return this.chatById(chatId);
+    return this.byId(chatId);
   }
 
   /** Scoped lookup for anything reached from a request. See scope(). */
-  getChat(id, userId) {
+  get(id, userId) {
     const s = scope(userId);
     return this.db.prepare(`SELECT * FROM chats WHERE id = ? AND ${s.sql}`).get(id, ...s.params) || null;
   }
 
   /** Unscoped lookup for internal plumbing that already holds a chat id it
    * got from a scoped path (the chat loop, compaction, automation runs). */
-  chatById(id) {
+  byId(id) {
     return this.db.prepare('SELECT * FROM chats WHERE id = ?').get(id) || null;
   }
 
-  listChats(limit, userId) {
+  list(limit, userId) {
     const s = scope(userId);
     return this.db.prepare(
       `SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
     ).all(...s.params, limit);
   }
 
-  organizeChat(id, { folder = null, tags } = {}, userId) {
-    if (!this.getChat(id, userId)) return null;
+  organize(id, { folder = null, tags } = {}, userId) {
+    if (!this.get(id, userId)) return null;
     const clean = (items, max) => [...new Set((Array.isArray(items) ? items : [])
       .map((v) => String(v).trim().slice(0, max)).filter(Boolean))].slice(0, 10);
     const cleanFolder = folder == null ? null : String(folder).trim().slice(0, 40) || null;
     const tagsJson = tags === undefined ? null : JSON.stringify(clean(tags, 32));
     const result = this.db.prepare('UPDATE chats SET folder = ?, tags_json = COALESCE(?, tags_json) WHERE id = ?')
       .run(cleanFolder, tagsJson, id);
-    return result.changes ? this.chatById(id) : null;
+    return result.changes ? this.byId(id) : null;
   }
 
   /** Names only, sorted -- the create-then-move-chats-into-it workflow needs
@@ -176,16 +181,16 @@ export class ChatStore {
       .run(chatId, seq).changes;
     // A frozen compaction boundary inside the cut no longer describes anything,
     // so the pinned cache breakpoint it drives has to go with it.
-    const chat = this.chatById(chatId);
-    if (chat && chat.boundary_seq >= seq) this.touchChat(chatId, { boundary_seq: -1 });
+    const chat = this.byId(chatId);
+    if (chat && chat.boundary_seq >= seq) this.touch(chatId, { boundary_seq: -1 });
     // Same for the hard window: a cut at or past the rewind point would hide
     // the very question being asked again.
-    if (chat && chat.window_seq >= seq) this.touchChat(chatId, { window_seq: -1 });
+    if (chat && chat.window_seq >= seq) this.touch(chatId, { window_seq: -1 });
     return removed;
   }
 
-  deleteChat(id, userId) {
-    if (!this.getChat(id, userId)) return false;
+  delete(id, userId) {
+    if (!this.get(id, userId)) return false;
     this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ?').run(id);
@@ -208,7 +213,7 @@ export class ChatStore {
     return true;
   }
 
-  touchChat(id, patch = {}) {
+  touch(id, patch = {}) {
     const sets = ['updated_at = ?'];
     const vals = [Date.now()];
     for (const key of ['title', 'epoch', 'boundary_seq', 'window_seq']) {

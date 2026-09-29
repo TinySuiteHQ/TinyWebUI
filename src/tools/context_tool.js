@@ -172,7 +172,7 @@ export function callExpand(args, { store, chatId, budget = 8000 }) {
 
   // Scoped to the conversation that produced it at the query level: artifact ids
   // are short, and one chat must not be able to read another's tool output by guessing.
-  const artifact = store.getArtifact(id, chatId);
+  const artifact = store.messages.getArtifact(id, chatId);
   if (!artifact) return `Error: no artifact "${id}". Ids appear in the "[compacted: artifact <id> ...]" marker.`;
 
   if (args.grep) {

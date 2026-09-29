@@ -56,8 +56,8 @@ function fakeHub({ delays = { slow: 150, fast: 10, write: 10 } } = {}) {
 async function drive(replies, { hub = fakeHub(), approve = null, signal, cfg = {} } = {}) {
   const provider = await scripted(replies);
   const store = new Store(':memory:');
-  const chat = store.createChat({ title: 't' });
-  store.addMessage(chat.id, { role: 'user', content: 'go' });
+  const chat = store.chats.create({ title: 't' });
+  store.messages.add(chat.id, { role: 'user', content: 'go' });
   const events = [];
   let error = null;
   const t0 = Date.now();
@@ -68,7 +68,7 @@ async function drive(replies, { hub = fakeHub(), approve = null, signal, cfg = {
       emit: (e) => events.push(e), signal: signal || new AbortController().signal
     });
   } catch (err) { error = err; } finally { provider.close(); }
-  return { hub, events, error, ms: Date.now() - t0, seen: provider.seen, rows: store.messages(chat.id) };
+  return { hub, events, error, ms: Date.now() - t0, seen: provider.seen, rows: store.messages.list(chat.id) };
 }
 
 const toolRows = (rows) => rows.filter((r) => r.role === 'tool');

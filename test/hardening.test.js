@@ -39,10 +39,10 @@ test('oversized and malformed bodies are refused', async () => {
 test('server-made ids are long random values', async () => {
   const { Store, ALL_USERS } = await import('../src/store/index.js');
   const store = new Store(':memory:');
-  const chat = store.createChat({}, ALL_USERS);
+  const chat = store.chats.create({}, ALL_USERS);
   assert.match(chat.id, /^[0-9a-f-]{36}$/);
-  const doc = store.addDocument(chat.id, { filename: 'a', content: 'b' });
+  const doc = store.documents.add(chat.id, { filename: 'a', content: 'b' });
   assert.match(doc.id, /^[0-9a-f]{24}$/);
-  assert.match(store.addArtifact(chat.id, { toolName: 't', content: 'c' }), /^[0-9a-f]{24}$/);
+  assert.match(store.messages.addArtifact(chat.id, { toolName: 't', content: 'c' }), /^[0-9a-f]{24}$/);
   store.close();
 });

@@ -29,12 +29,12 @@ export function adminRoutes(app) {
         : code[u.external_id] ? 'access.users' : null);
       return json(res, 200, {
         fingerprint: fingerprint(app.cfg, source.loadMcpServers()),
-        users: store.listUsers().map((u) => ({ ...adminUserView(u), pinnedInCode: pinnedBy(u) }))
+        users: store.users.list().map((u) => ({ ...adminUserView(u), pinnedInCode: pinnedBy(u) }))
       });
     }) },
 
     { method: 'PATCH', path: /^\/api\/admin\/users\/([\w-]+)$/, feature: 'admin', handle: multi(async ({ req, res, auth, params: [id] }) => {
-      const target = store.getUser(id);
+      const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
       const { role, status } = await readJson(req);
       if (role !== undefined && !['admin', 'user'].includes(role)) return json(res, 400, { error: 'role must be admin or user' });
@@ -66,7 +66,7 @@ export function adminRoutes(app) {
         source.writeFile(merged);
         app.cfg = source.load();
       }
-      const updated = store.updateUser(target.id, { role, status });
+      const updated = store.users.update(target.id, { role, status });
       if (role !== undefined && role !== target.role) {
         audit('user.role_changed', { userId: target.id, from: target.role, to: role, by: auth.userId });
       }
@@ -81,29 +81,29 @@ export function adminRoutes(app) {
     // purpose -- this is the one place a user's scope is crossed, and it only
     // exists when there are users to cross between.
     { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/chats$/, feature: 'oversight', handle: multi(({ res, auth, params: [id] }) => {
-      const target = store.getUser(id);
+      const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
       audit('admin.view_user_chats', { by: auth.userId, userId: target.id });
-      const chats = store.listChats(500, target.id).map((c) => ({ ...c, running: runs.isRunning(c.id) }));
-      return json(res, 200, { user: adminUserView(target), chats, summary: store.usageStatistics(target.id).summary });
+      const chats = store.chats.list(500, target.id).map((c) => ({ ...c, running: runs.isRunning(c.id) }));
+      return json(res, 200, { user: adminUserView(target), chats, summary: store.usage.statistics(target.id).summary });
     }) },
 
     { method: 'GET', path: /^\/api\/admin\/chats\/([\w.-]+)$/, feature: 'oversight', handle: multi(({ res, auth, params: [id] }) => {
-      const found = store.getChat(id, ALL_USERS);
+      const found = store.chats.get(id, ALL_USERS);
       if (!found) return json(res, 404, { error: 'no such chat' });
       audit('admin.view_chat', { by: auth.userId, chatId: found.id, owner: found.user_id });
-      const owner = found.user_id ? store.getUser(found.user_id) : null;
+      const owner = found.user_id ? store.users.get(found.user_id) : null;
       return json(res, 200, {
         id: found.id, title: found.title, updatedAt: found.updated_at,
         owner: owner ? adminUserView(owner) : null,
         running: runs.isRunning(found.id),
-        messages: store.messages(found.id).map(toView),
-        documents: store.listDocuments(found.id)
+        messages: store.messages.list(found.id).map(toView),
+        documents: store.documents.list(found.id)
       });
     }) },
 
     { method: 'GET', path: /^\/api\/admin\/documents\/([\w.-]+)$/, feature: 'oversight', handle: multi(({ res, auth, params: [id] }) => {
-      const doc = store.getDocument(id, ALL_USERS);
+      const doc = store.documents.get(id, ALL_USERS);
       if (!doc) return json(res, 404, { error: 'no such document' });
       audit('admin.view_document', { by: auth.userId, documentId: doc.id, chatId: doc.chat_id });
       return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
