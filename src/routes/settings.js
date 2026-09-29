@@ -11,13 +11,13 @@ export const toolList = (hub) => hub.tools.map((t) => ({
   parameters: t.function.parameters
 }));
 
-export function settingsRoutes(app) {
+export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }) {
   // The provider's model list, cached per endpoint for a few minutes:
   // OpenRouter's list is large and the picker is opened far more often than
   // the catalogue changes.
   let modelCache = null;
   const listModels = async () => {
-    const { cfg } = app;
+    const cfg = config();
     const key = `${cfg.baseUrl}|${Boolean(cfg.apiKey)}`;
     if (modelCache?.key === key && Date.now() - modelCache.at < 5 * 60_000) return modelCache.value;
     let value;
@@ -43,22 +43,22 @@ export function settingsRoutes(app) {
 
   return [
     { method: 'GET', path: /^\/api\/config$/, feature: null, handle: ({ res, auth }) => json(res, 200, {
-      ...app.configFor(auth),
-      tools: toolList(app.hub),
-      mcpErrors: app.hub.errors
+      ...configFor(auth),
+      tools: toolList(hub()),
+      mcpErrors: hub().errors
     }) },
 
     { method: 'POST', path: /^\/api\/config$/, feature: 'settings', handle: async ({ req, res, auth }) => {
-      app.cfg = app.saveConfig(await readJson(req), actor(auth));
+      saveConfig(await readJson(req), actor(auth));
       audit('admin.config_changed', { by: auth.userId ?? null });
-      return json(res, 200, app.configFor(auth));
+      return json(res, 200, configFor(auth));
     } },
 
     // The provider's own model list, for the composer's model picker. Not
     // every OpenAI-compatible endpoint serves /models, so a failure is an
     // answer too: the picker falls back to typing an id.
     { method: 'GET', path: /^\/api\/models$/, feature: 'model-picker', handle: async ({ res, auth }) => {
-      const { cfg } = app;
+      const cfg = config();
       const allowed = modelsFor(cfg, auth.role);
       // A catalog is the whole list: its labels, never the provider's ids.
       if (isClosed(cfg)) {
@@ -75,7 +75,7 @@ export function settingsRoutes(app) {
 
     // The grouped view behind the tools panel: built-ins, and every MCP
     // server's tools under it with that server's connection health.
-    { method: 'GET', path: /^\/api\/tools$/, feature: 'tools', handle: ({ res }) => json(res, 200, app.toolsView()) },
+    { method: 'GET', path: /^\/api\/tools$/, feature: 'tools', handle: ({ res }) => json(res, 200, toolsView()) },
 
     // Per-tool approval override from the settings panel: 'ask', 'auto', or
     // 'default' to fall back to the global toolApproval mode.
@@ -84,17 +84,17 @@ export function settingsRoutes(app) {
       if (!name || !['ask', 'auto', 'default'].includes(policy)) {
         return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
       }
-      app.cfg = app.saveConfig(setOverride(app.cfg, name, policy), actor(auth));
-      return json(res, 200, app.toolsView());
+      saveConfig(setOverride(config(), name, policy), actor(auth));
+      return json(res, 200, toolsView());
     } },
 
     { method: 'POST', path: /^\/api\/tools\/toggle$/, feature: 'tools', handle: async ({ req, res, auth }) => {
       const { name, disabled } = await readJson(req);
       if (!name) return json(res, 400, { error: 'name is required' });
-      const set = new Set(app.cfg.disabledTools || []);
+      const set = new Set(config().disabledTools || []);
       if (disabled) set.add(name); else set.delete(name);
-      app.cfg = app.saveConfig({ disabledTools: [...set] }, actor(auth));
-      return json(res, 200, app.toolsView());
+      saveConfig({ disabledTools: [...set] }, actor(auth));
+      return json(res, 200, toolsView());
     } }
   ];
 }

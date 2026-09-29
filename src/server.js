@@ -44,13 +44,25 @@ const VERSION = JSON.parse(await readFile(new URL('../package.json', import.meta
  * about who may use it. First match wins.
  */
 function routeTable(app) {
+  // What route groups may ask for. Each group's signature names the part it
+  // uses; config, hub and passwordHash change at runtime, so they are read
+  // through accessors rather than captured.
+  const deps = {
+    store: app.store, runs: app.runs, scheduler: app.scheduler, retrieval: app.retrieval,
+    source: app.source, version: app.version,
+    config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash,
+    saveConfig: (patch, by) => app.saveConfig(patch, by), refreshConfig: () => app.refreshConfig(),
+    auditMcp: (by, before) => app.auditMcp(by, before), swapHub: (servers) => app.swapHub(servers),
+    multiUser: () => app.multiUser(), modelFor: (userId, role) => app.modelFor(userId, role),
+    toolsFor: (features) => app.toolsFor(features), toolsView: () => app.toolsView(), configFor: (auth) => app.configFor(auth)
+  };
   return [
-    ...authRoutes(app), ...settingsRoutes(app), ...mcpRoutes(app), ...libraryRoutes(app),
-    ...automationRoutes(app), ...documentRoutes(app), ...chatRoutes(app), ...adminRoutes(app)
+    ...authRoutes(deps), ...settingsRoutes(deps), ...mcpRoutes(deps), ...libraryRoutes(deps),
+    ...automationRoutes(deps), ...documentRoutes(deps), ...chatRoutes(deps), ...adminRoutes(deps)
   ];
 }
 
-// Handlers read the app only when called, so a stub lists the table.
+// Handlers only read their dependencies when called, so a stub lists the table.
 export const API_ROUTES = routeTable({}).map((r) => [r.method, r.path, r.feature]);
 
 // Fields a non-admin never sees: credentials, and where the deployment's
@@ -110,9 +122,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     // config fingerprint before and after, to line up with a git diff.
     saveConfig(patch, by) {
       const before = fingerprint(app.cfg, source.loadMcpServers());
-      const next = source.save(patch);
-      audit('config.changed', { by: by ?? 'local', keys: Object.keys(patch), values: patch, before, after: fingerprint(next, source.loadMcpServers()) });
-      return next;
+      app.cfg = source.save(patch);
+      audit('config.changed', { by: by ?? 'local', keys: Object.keys(patch), values: patch, before, after: fingerprint(app.cfg, source.loadMcpServers()) });
+      return app.cfg;
+    },
+    /** Re-reads the config after something other than saveConfig wrote the file. */
+    refreshConfig() {
+      app.cfg = source.load();
     },
     auditMcp: (by, before) => audit('mcp.changed', { by: by ?? 'local', before, after: fingerprint(app.cfg, source.loadMcpServers()) }),
 

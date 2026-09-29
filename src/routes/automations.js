@@ -11,8 +11,7 @@ function newChatTitleOf(body) {
 
 const BAD_TITLE = { error: 'the new chat needs a name (at most 120 characters)' };
 
-export function automationRoutes(app) {
-  const { store, scheduler } = app;
+export function automationRoutes({ scheduler, store }) {
   const F = 'automations';
   return [
     { method: 'GET', path: /^\/api\/automations$/, feature: F, handle: ({ res, auth }) =>

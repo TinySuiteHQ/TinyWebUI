@@ -1,8 +1,7 @@
 import { json, readJson } from '../http.js';
 
 /** The sidebar's search, usage statistics, and folders. */
-export function libraryRoutes(app) {
-  const { store, runs } = app;
+export function libraryRoutes({ runs, store }) {
   return [
     // Full-text search across every stored message, for the sidebar's search
     // box. GET with a query string, so it is bookmarkable and cacheable like

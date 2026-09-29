@@ -15,8 +15,7 @@ function refusedFeature(auth, { images, documentIds }) {
   return null;
 }
 
-export function chatRoutes(app) {
-  const { store, runs } = app;
+export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor }) {
   const noChat = (res) => json(res, 404, { error: 'no such chat' });
 
   return [
@@ -125,7 +124,7 @@ export function chatRoutes(app) {
       // rewound transcript and then attaches, the same path a reload takes,
       // rather than reading a stream through a response it also has to
       // redraw behind.
-      runs.start({ chat: found, tools: app.toolsFor(auth.features), model: app.modelFor(auth.user?.id, auth.role) });
+      runs.start({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role) });
       return json(res, 200, { ok: true, running: true });
     } },
 
@@ -144,7 +143,7 @@ export function chatRoutes(app) {
       // without it, the answer counts as allowing this one call.
       if (decision === 'always' && auth.features.has('tools')) {
         // Approval lists set in code cannot be saved to; allow this call only.
-        try { app.cfg = app.saveConfig(setOverride(app.cfg, pending.name, 'auto'), actor(auth)); }
+        try { saveConfig(setOverride(config(), pending.name, 'auto'), actor(auth)); }
         catch (err) { if (!(err instanceof LockedError)) throw err; }
       }
       pending.resolve(decision);
@@ -204,7 +203,7 @@ export function chatRoutes(app) {
       const { chatId, message, documentIds, images } = body;
       const refused = refusedFeature(auth, body);
       if (refused) return json(res, 403, { error: 'feature_disabled', feature: refused });
-      if (!app.cfg.apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
+      if (!config().apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
       if (!message) return json(res, 400, { error: 'message is required' });
 
       // The client no longer ships the transcript: it sends the new turn and
@@ -245,7 +244,7 @@ export function chatRoutes(app) {
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: app.toolsFor(auth.features), model: app.modelFor(auth.user?.id, auth.role) });
+        : runs.start({ chat, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role) });
       return runs.attach(run, res, 0);
     } }
   ];

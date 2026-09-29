@@ -11,15 +11,14 @@ import { OWNER_ID } from '../access/auth_gate.js';
 const LOGIN_MAX = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 
-export function authRoutes(app) {
+export function authRoutes({ config, modelFor, multiUser, passwordHash, source, store, version }) {
   const loginFailures = new Map();
-  const { store } = app;
 
   return [
     { method: 'GET', path: /^\/api\/auth\/me$/, feature: null, handle: ({ res, auth }) => {
-      const { cfg } = app;
+      const cfg = config();
       const signedIn = auth.userId !== undefined;
-      const model = signedIn ? app.modelFor(auth.user?.id, auth.role) : null;
+      const model = signedIn ? modelFor(auth.user?.id, auth.role) : null;
       return json(res, 200, {
         authMode: cfg.authMode,
         logoutUrl: cfg.logoutUrl || '',
@@ -35,7 +34,7 @@ export function authRoutes(app) {
     } },
 
     { method: 'POST', path: /^\/api\/auth\/login$/, feature: null, handle: async ({ req, res }) => {
-      const { cfg } = app;
+      const cfg = config();
       if (cfg.authMode !== 'single') return json(res, 404, { error: 'not found' });
       const who = req.socket.remoteAddress || '?';
       const now = Date.now();
@@ -46,7 +45,7 @@ export function authRoutes(app) {
         return json(res, 429, { error: 'too many attempts, try again later' });
       }
       const { password } = await readJson(req);
-      if (!verifyPassword(password, app.passwordHash)) {
+      if (!verifyPassword(password, passwordHash())) {
         loginFailures.set(who, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
         audit('auth.rejected', { reason: 'bad_password' });
         return json(res, 401, { error: 'wrong password' });
@@ -59,7 +58,7 @@ export function authRoutes(app) {
     } },
 
     { method: 'POST', path: /^\/api\/auth\/logout$/, feature: null, handle: ({ req, res }) => {
-      const { cfg } = app;
+      const cfg = config();
       // The gateway owns the session; the client is sent to its logout page.
       if (cfg.authMode === 'trusted-header') return json(res, 200, { redirect: cfg.logoutUrl || null });
       if (cfg.authMode !== 'single') return json(res, 404, { error: 'not found' });
@@ -72,26 +71,26 @@ export function authRoutes(app) {
     // Tier 3's model pill: a personal choice among the role's models. In
     // tiers 1-2 the pill changes the configured model instead (/api/config).
     { method: 'POST', path: /^\/api\/me\/prefs$/, feature: 'model-picker', handle: async ({ req, res, auth }) => {
-      const { cfg } = app;
-      if (!app.multiUser()) return json(res, 400, { error: 'preferences are per-user; set the model in settings' });
+      const cfg = config();
+      if (!multiUser()) return json(res, 400, { error: 'preferences are per-user; set the model in settings' });
       const { model } = await readJson(req);
       if (model !== null && (typeof model !== 'string' || !model.trim())) return json(res, 400, { error: 'model must be a model id or null' });
       const allowed = modelsFor(cfg, auth.role);
       if (model && isClosed(cfg) && !findEntry(cfg, model)) return json(res, 403, { error: 'that model is not available to you' });
       if (model && allowed !== '*' && !allowed.includes(model)) return json(res, 403, { error: 'that model is not available to you' });
       store.users.setPref(auth.user.id, 'model', model ? model.trim() : null);
-      return json(res, 200, { model: app.modelFor(auth.user.id, auth.role) });
+      return json(res, 200, { model: modelFor(auth.user.id, auth.role) });
     } },
 
     // Non-secret facts about this deployment, for scripts verifying what is
     // running: build, config hash, database schema, auth, MCP server names.
     { method: 'GET', path: /^\/api\/meta$/, feature: null, handle: ({ res }) => json(res, 200, {
-      version: app.version,
+      version: version,
       schemaVersion: store.schemaVersion(),
-      fingerprint: fingerprint(app.cfg, app.source.loadMcpServers()),
-      configMode: app.source.isFrozen() ? 'frozen' : 'editable',
-      authMode: app.cfg.authMode,
-      mcpServers: Object.keys(app.source.loadMcpServers()).sort()
+      fingerprint: fingerprint(config(), source.loadMcpServers()),
+      configMode: source.isFrozen() ? 'frozen' : 'editable',
+      authMode: config().authMode,
+      mcpServers: Object.keys(source.loadMcpServers()).sort()
     }) }
   ];
 }

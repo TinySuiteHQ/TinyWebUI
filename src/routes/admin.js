@@ -15,20 +15,19 @@ function adminUserView(u) {
  * User management and oversight. They only mean something when there is more
  * than one person; 'none' and 'single' are just you, and get admin_only.
  */
-export function adminRoutes(app) {
-  const { store, source, runs } = app;
+export function adminRoutes({ config, multiUser, refreshConfig, runs, source, store }) {
 
   // Wraps a handler so it refuses outside multi-user deployments.
-  const multi = (handle) => (ctx) => (app.multiUser() ? handle(ctx) : json(ctx.res, 403, { error: 'admin_only' }));
+  const multi = (handle) => (ctx) => (multiUser() ? handle(ctx) : json(ctx.res, 403, { error: 'admin_only' }));
 
   return [
     { method: 'GET', path: /^\/api\/admin\/users$/, feature: 'admin', handle: multi(({ res }) => {
-      const pins = resolveAccess(app.cfg);
+      const pins = resolveAccess(config());
       const code = source.codeAccessUsers();
       const pinnedBy = (u) => (pins.bootstrapAdmins.includes(u.external_id) ? 'bootstrapAdmins'
         : code[u.external_id] ? 'access.users' : null);
       return json(res, 200, {
-        fingerprint: fingerprint(app.cfg, source.loadMcpServers()),
+        fingerprint: fingerprint(config(), source.loadMcpServers()),
         users: store.users.list().map((u) => ({ ...adminUserView(u), pinnedInCode: pinnedBy(u) }))
       });
     }) },
@@ -44,7 +43,7 @@ export function adminRoutes(app) {
       if (target.id === auth.userId && ((role && role !== 'admin') || (status && status !== 'approved'))) {
         return json(res, 400, { error: 'you cannot demote or disable your own account' });
       }
-      const pins = resolveAccess(app.cfg);
+      const pins = resolveAccess(config());
       if (target.external_id && pins.bootstrapAdmins.includes(target.external_id)) {
         return json(res, 400, { error: 'this admin is declared in code (access.bootstrapAdmins)' });
       }
@@ -60,11 +59,11 @@ export function adminRoutes(app) {
           ...(status !== undefined ? { status } : {})
         };
         const merged = { ...file, access: { ...access, users } };
-        const problems = validateConfig({ ...app.cfg, access: merged.access });
+        const problems = validateConfig({ ...config(), access: merged.access });
         if (problems.length) return json(res, 400, { error: problems.join('; ') });
         if (source.codeAccessUsers()[target.external_id]) return json(res, 409, { error: 'this user is pinned in code (access.users)' });
         source.writeFile(merged);
-        app.cfg = source.load();
+        refreshConfig();
       }
       const updated = store.users.update(target.id, { role, status });
       if (role !== undefined && role !== target.role) {

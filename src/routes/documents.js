@@ -27,8 +27,7 @@ export async function normalizeUpload(mimeRaw, dataBase64) {
   }
 }
 
-export function documentRoutes(app) {
-  const { store, retrieval } = app;
+export function documentRoutes({ retrieval, store }) {
   return [
     // Uploads (including the paste-as-file path) land here before the first
     // message exists, so the chat is created lazily, the same way /api/chat
