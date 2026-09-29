@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configProblems, DEFAULTS } from '../src/config.js';
+import { configProblems, DEFAULTS } from '../src/config/config.js';
 
 const { start } = await import('../src/server.js');
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-frozen-'));

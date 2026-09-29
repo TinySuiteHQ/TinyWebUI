@@ -1,7 +1,7 @@
 import { json, readJson, UPLOAD_LIMIT } from '../http.js';
-import { LockedError } from '../config.js';
-import { fingerprint } from '../policy.js';
-import { actor } from '../auth_gate.js';
+import { LockedError } from '../config/config.js';
+import { fingerprint } from '../access/policy.js';
+import { actor } from '../access/auth_gate.js';
 import { toolList } from './settings.js';
 
 export function mcpRoutes(app) {

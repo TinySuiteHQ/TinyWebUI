@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { trustedServer } from './trusted-helpers.js';
-import { configProblems, DEFAULTS } from '../src/config.js';
-import { effectiveConfig } from '../src/models.js';
+import { configProblems, DEFAULTS } from '../src/config/config.js';
+import { effectiveConfig } from '../src/config/models.js';
 
 const seen = [];
 const fake = createServer((req, res) => {

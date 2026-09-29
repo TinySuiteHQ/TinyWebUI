@@ -51,7 +51,7 @@ panel. See README for the rest.
   process.exit(0);
 }
 
-// Resolve the JS config before src/config.js is imported: that module fixes
+// Resolve the JS config before src/config/config.js is imported: that module fixes
 // its JSON path at load time from $TINYWEBUI_CONFIG, so a .js path there has
 // to be swapped for the JSON file beside it first.
 const envPath = process.env.TINYWEBUI_CONFIG && resolve(process.env.TINYWEBUI_CONFIG);
@@ -67,7 +67,7 @@ if (envPath && /\.[cm]?js$/.test(envPath)) {
 }
 
 if (args[0] === 'set-password') {
-  const { setPassword } = await import('../src/set-password.js');
+  const { setPassword } = await import('../src/access/set-password.js');
   try { await setPassword(); process.exit(0); }
   catch (err) { console.error(`[tinywebui] ${err.message}`); process.exit(1); }
 }

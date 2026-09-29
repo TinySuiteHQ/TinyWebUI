@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
 import { Store } from '../src/store.js';
-import { runChat } from '../src/llm.js';
+import { runChat } from '../src/chat/llm.js';
 
 async function scripted(replies) {
   const seen = [];

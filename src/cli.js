@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, loadEmbedder, defaultModelsDir } from './retrieval/embedding.js';
-import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config.js';
+import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.js';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS
-} from './policy.js';
+} from './access/policy.js';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store.js';
 
 /**

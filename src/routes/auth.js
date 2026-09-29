@@ -1,10 +1,10 @@
 import { json, readJson } from '../http.js';
-import { isClosed, findEntry, labelFor } from '../models.js';
-import { modelsFor, fingerprint } from '../policy.js';
+import { isClosed, findEntry, labelFor } from '../config/models.js';
+import { modelsFor, fingerprint } from '../access/policy.js';
 import {
   verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest, audit
-} from '../auth.js';
-import { OWNER_ID } from '../auth_gate.js';
+} from '../access/auth.js';
+import { OWNER_ID } from '../access/auth_gate.js';
 
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.
 const LOGIN_MAX = 5;

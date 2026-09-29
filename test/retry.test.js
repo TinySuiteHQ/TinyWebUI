@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Store } from '../src/store.js';
-import { runChat } from '../src/llm.js';
+import { runChat } from '../src/chat/llm.js';
 
 /** A provider that fails `failures` times with `status`, then answers. */
 function flaky({ failures, status, retryAfter }) {

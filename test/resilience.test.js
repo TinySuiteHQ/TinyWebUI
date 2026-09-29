@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Store } from '../src/store.js';
-import { runChat } from '../src/llm.js';
+import { runChat } from '../src/chat/llm.js';
 import { McpHub } from '../src/mcp.js';
 
 const MORTAL = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'mortal-mcp-server.mjs');

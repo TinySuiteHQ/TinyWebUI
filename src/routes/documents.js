@@ -1,6 +1,6 @@
 import { json, readJson, UPLOAD_LIMIT } from '../http.js';
-import { extractText } from '../documents.js';
-import { normalizeImage } from '../images.js';
+import { extractText } from '../files/documents.js';
+import { normalizeImage } from '../files/images.js';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 

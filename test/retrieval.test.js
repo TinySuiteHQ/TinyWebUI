@@ -9,7 +9,7 @@ import { Store, ALL_USERS } from '../src/store.js';
 import { Retrieval, fuse } from '../src/retrieval/retrieval.js';
 import { callReadDocument } from '../src/tools/document_tool.js';
 import { loadEmbedder, PRESETS } from '../src/retrieval/embedding.js';
-import { configProblems, DEFAULTS } from '../src/config.js';
+import { configProblems, DEFAULTS } from '../src/config/config.js';
 
 // Words map to concepts, so "car" and "automobile" land together -- the
 // thing BM25 cannot do and embeddings can.

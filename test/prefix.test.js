@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prefixFingerprint } from '../src/llm.js';
+import { prefixFingerprint } from '../src/chat/llm.js';
 
 const sys = { role: 'system', content: 'sys' };
 const u = { role: 'user', content: 'hi' };
@@ -29,7 +29,7 @@ test('a changed tool block breaks the match from the start', () => {
 });
 
 test('a stub first sent whole last turn marks this turn cold', async () => {
-  const { swapsStubThisTurn } = await import('../src/llm.js');
+  const { swapsStubThisTurn } = await import('../src/chat/llm.js');
   const big = 'x'.repeat(40000);
   const rows = [
     { role: 'user' },
@@ -43,7 +43,7 @@ test('a stub first sent whole last turn marks this turn cold', async () => {
 });
 
 test('a model entry keeps the global provider data policy', async () => {
-  const { effectiveConfig } = await import('../src/models.js');
+  const { effectiveConfig } = await import('../src/config/models.js');
   const cfg = {
     model: 'flash',
     extraBody: { provider: { zdr: true, data_collection: 'deny' } },

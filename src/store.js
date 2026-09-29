@@ -1,4 +1,4 @@
-import { mergeAttribution } from './attribution.js';
+import { mergeAttribution } from './chat/attribution.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attributeRequest, completeAttribution, markFinal } from '../src/attribution.js';
+import { attributeRequest, completeAttribution, markFinal } from '../src/chat/attribution.js';
 
 test('actual wire content is attributed including structured reasoning and image allowance', () => {
   const systemParts = [{category:'operator',text:'abcd'},{category:'harness',text:'efgh'}];

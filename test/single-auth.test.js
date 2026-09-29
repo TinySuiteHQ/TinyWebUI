@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashPassword, verifyPassword } from '../src/auth.js';
+import { hashPassword, verifyPassword } from '../src/access/auth.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-single-'));
 const { start } = await import('../src/server.js');

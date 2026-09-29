@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildBody, buildMessages, budgetFooter, harnessBlock } from '../src/llm.js';
+import { buildBody, buildMessages, budgetFooter, harnessBlock } from '../src/chat/llm.js';
 import { Store, toWire } from '../src/store.js';
 
 const CLAUDE = { cache: true, model: 'anthropic/claude-sonnet-5', systemPrompt: 'sys', cacheTtl: '5m' };

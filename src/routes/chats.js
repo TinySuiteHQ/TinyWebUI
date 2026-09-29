@@ -1,8 +1,8 @@
 import { json, readJson, TURN_LIMIT, IMPORT_LIMIT } from '../http.js';
-import { LockedError } from '../config.js';
+import { LockedError } from '../config/config.js';
 import { toView } from '../store.js';
-import { setOverride } from '../approval.js';
-import { actor } from '../auth_gate.js';
+import { setOverride } from '../chat/approval.js';
+import { actor } from '../access/auth_gate.js';
 import { attachmentNote, normalizeUpload } from './documents.js';
 
 const MAX_IMAGES = 8;

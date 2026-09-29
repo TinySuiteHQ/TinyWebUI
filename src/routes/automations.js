@@ -1,5 +1,5 @@
 import { json, readJson } from '../http.js';
-import { validateSchedule } from '../automation.js';
+import { validateSchedule } from '../automations/automation.js';
 
 /** `newChatTitle` on an automation request: undefined when absent, false when
  * present but unusable, otherwise the trimmed title. */

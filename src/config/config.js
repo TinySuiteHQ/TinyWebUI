@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from './policy.js';
+import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
 import { modelProblems, labelFor } from './models.js';
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
@@ -19,7 +19,7 @@ export const DEFAULTS = {
   // A cheap, fast, tool-capable default that caches well on a stable prefix and
   // needs no cache_control fields. Any OpenAI-compatible model id works.
   model: 'deepseek/deepseek-v4.1-flash',
-  // The model catalog (see src/models.js). Empty: any model id goes. Listed:
+  // The model catalog (see src/config/models.js). Empty: any model id goes. Listed:
   // only these can be picked, `model` names one by id, and people see each
   // entry's label, with its own prompt and sampling settings if it has them.
   models: [],
@@ -110,7 +110,7 @@ export const DEFAULTS = {
   // IANA zone the model is told the date in (and uses for automations). Empty
   // means the server's own zone.
   timezone: '',
-  // Which tool calls wait for the user (see src/approval.js).
+  // Which tool calls wait for the user (see src/chat/approval.js).
   //   'writes'  ask before any call not declared read-only (default)
   //   'all'     ask before every call
   //   'off'     never ask

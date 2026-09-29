@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.js';
-import { effectiveConfig } from './models.js';
+import { effectiveConfig } from '../config/models.js';
 
 const RETAIN_MS = 5 * 60 * 1000;
 

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { trustedServer } from './trusted-helpers.js';
 import { Store, ALL_USERS } from '../src/store.js';
-import { ipInCidrs } from '../src/auth.js';
+import { ipInCidrs } from '../src/access/auth.js';
 
 const { srv, as } = await trustedServer({ logoutUrl: 'https://team.example/cdn-cgi/access/logout' });
 test.after(() => srv.shutdown());

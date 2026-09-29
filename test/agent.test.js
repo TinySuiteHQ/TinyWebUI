@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runAgentLoop } from '../src/agent.js';
+import { runAgentLoop } from '../src/chat/agent.js';
 
 const call = (id, name) => ({ id, type: 'function', function: { name, arguments: '{}' } });
 

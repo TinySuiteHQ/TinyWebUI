@@ -23,9 +23,9 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from '../src/config.js';
+import { loadConfig } from '../src/config/config.js';
 import { Store } from '../src/store.js';
-import { runChat } from '../src/llm.js';
+import { runChat } from '../src/chat/llm.js';
 import { check } from './checks.js';
 import { askToolDef, callAskUser, ASK_USER } from '../src/tools/ask_tool.js';
 

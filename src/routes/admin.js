@@ -1,7 +1,7 @@
 import { json, readJson } from '../http.js';
 import { ALL_USERS, toView } from '../store.js';
-import { validateConfig, fingerprint, resolveAccess } from '../policy.js';
-import { destroyUserSessions, audit } from '../auth.js';
+import { validateConfig, fingerprint, resolveAccess } from '../access/policy.js';
+import { destroyUserSessions, audit } from '../access/auth.js';
 
 function adminUserView(u) {
   return {
