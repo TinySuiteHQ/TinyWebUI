@@ -12,11 +12,10 @@ import { $, el } from '../core/dom.js';
 import { state } from '../core/state.js';
 import { addError } from './transcript.js';
 import { api } from '../core/api.js';
+import { newId } from '../core/id.js';
 
 const box = $('queue');
 
-const newId = () => crypto.randomUUID?.()
-  ?? [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 // Held follow-ups per chat id: [{id, content}]. Survive switching chats, not a reload.
 const held = new Map();

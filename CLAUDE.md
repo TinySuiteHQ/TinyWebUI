@@ -28,7 +28,7 @@ src/
   files/         turning uploads into text or wire-safe images
   mcp.js         MCP client hub; log.js; audit.js; cli.js; set-password.js
 public/          the page (plain ES modules, no build); app.js is the entry and the only wiring
-  core/        api.js (every JSON call), dom, state, md (renderMarkdown), access
+  core/        api.js (every JSON call), dom, state, id, md (the only HTML from outside text), access
   chat/        the conversation: chat, stream, transcript, composer, queue,
                attachments, sidebar, outline, tasks
   panels/      settings, MCP, automations, usage, admin; panels.js (PANEL, openPanel/closePanel)

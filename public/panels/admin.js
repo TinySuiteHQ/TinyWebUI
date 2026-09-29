@@ -13,7 +13,7 @@ let adminLoadRequest = 0;
 // Bumped by every admin view change; a response for an older view is dropped.
 let adminViewRequest = 0;
 
-/** Wires Log out for whoever is signed in (nav visibility is access.js's). */
+/** Wires Log out for whoever is signed in (nav visibility is core/access.js's). */
 export function initAdmin() {
   me = whoami();
   if (me.logoutUrl || me.authMode === 'single') {

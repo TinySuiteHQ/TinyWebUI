@@ -155,7 +155,7 @@ async function normalizeStaged(entry) {
   renderAttachments();
 }
 
-// Mirrors what src/documents.js can extract. The server stays authoritative;
+// Mirrors what src/files/documents.js can extract. The server stays authoritative;
 // this only exists so an obviously unusable file is flagged on its chip and
 // blocks sending, instead of being discovered after the message already went.
 const DOC_EXT = new Set([
@@ -173,7 +173,7 @@ function unsupportedReason(file) {
 }
 
 /** Queues a file (or a pasted-text stand-in) client-side. No network yet. */
-export function stageAttachment(file) {
+function stageAttachment(file) {
   // Dropped and pasted files arrive here too, not only through the + menu.
   if (!can(isImageFile(file) ? 'images' : 'attachments')) {
     addError(`attach "${file.name}": ${isImageFile(file) ? 'images are' : 'attachments are'} turned off for your account`);

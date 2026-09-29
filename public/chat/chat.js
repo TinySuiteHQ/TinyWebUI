@@ -12,6 +12,7 @@ import { resetOutline } from './outline.js';
 import { renderTasks } from './tasks.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup } from './queue.js';
 import { api } from '../core/api.js';
+import { newId } from '../core/id.js';
 
 const input = $('input');
 let chatLoadCtrl = null;
@@ -235,12 +236,7 @@ async function onSubmit(e) {
 
   // Assigned synchronously (before any await) so the upload below and the
   // /api/chat call after it land on the same not-yet-created chat.
-  // randomUUID needs a secure context (https or localhost); getRandomValues
-  // works on plain-http LAN installs too.
-  if (!state.chat.id) {
-    state.chat.id = crypto.randomUUID?.()
-      ?? [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
+  if (!state.chat.id) state.chat.id = newId();
   // This is the first point anything staged is actually uploaded, extracted
   // and written to the store -- removing a chip before now never touched it.
   const { docs, images, failed } = await commitAttachments(state.chat.id);

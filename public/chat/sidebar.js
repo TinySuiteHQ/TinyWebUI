@@ -43,7 +43,7 @@ function resetSideWidth() {
 
 /* ---------- history: server-side, newest first ---------- */
 
-export function renderChatList() {
+function renderChatList() {
   $('chats').innerHTML = '';
   const isDraft = state.chat && !state.chat.id;
   if (!state.chats.length && !isDraft && !state.folders.length) {

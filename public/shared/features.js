@@ -2,7 +2,7 @@
  * Every feature a role can be granted (access.roles.*.features). Shared by
  * both sides: the server checks them on each API route (src/routes/*,
  * src/access/policy.js) and the page hides what the viewer cannot use
- * (access.js, composer.js, app.js).
+ * (core/access.js, chat/composer.js, app.js).
  */
 export const FEATURE = Object.freeze({
   CHAT: 'chat',

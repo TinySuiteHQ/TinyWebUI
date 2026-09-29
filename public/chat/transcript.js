@@ -335,7 +335,7 @@ async function rewind(payload) {
   return undefined;
 }
 
-export function addAssistant(parent) {
+function addAssistant(parent) {
   const m = el('div', 'msg assistant');
   m.innerHTML = '<div class="who">assistant</div>';
   const b = el('div', 'md');
@@ -544,7 +544,7 @@ export function addSteps(parent) {
 
 const fmt = (n) => n.toLocaleString('en-US');
 
-export function addUsage(u, parent, { label = null, total = false } = {}) {
+function addUsage(u, parent, { label = null, total = false } = {}) {
   const bits = [];
   if (label) bits.push(label);
   bits.push(`${fmt(u.in)} in`, `${fmt(u.out)} out`);

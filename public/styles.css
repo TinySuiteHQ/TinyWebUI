@@ -161,8 +161,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 #chatSearchClear:hover { color: var(--err); }
 #chatSearchClear[hidden] { display: none; }
-.tag-filter-row { flex-shrink: 0; padding: .375rem .5rem; border-bottom: 1px solid var(--line); }
-.tag-filter-row select { width: 100%; min-height: 2rem; }
 
 #chats {
   flex: 1; overflow-y: auto;
