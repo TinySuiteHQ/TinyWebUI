@@ -18,6 +18,7 @@ import {
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { askToolDef, callAskUser } from './ask_tool.js';
+import { taskToolDef, callManageTasks } from './task_tool.js';
 import { Retrieval } from './retrieval.js';
 import { loadEmbedder, defaultModelsDir } from './embedding.js';
 import { extractText } from './documents.js';
@@ -261,6 +262,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // Changes nothing, so it never waits for approval; never alongside
       // other calls, so a question cannot race a write it is asking about.
       .registerLocal(askToolDef(), callAskUser, { readOnly: true, idempotent: false, executionMode: 'sequential' })
+      .registerLocal(taskToolDef(), (args, ctx) => callManageTasks(args, {
+        ...ctx, store, onChange: (tasks) => runs.get(ctx.chatId)?.emit({ type: 'tasks', tasks })
+      }), { executionMode: 'sequential' })
       .registerLocal(automationToolDef(), (args, ctx) => {
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation });
         armScheduler();
@@ -1151,6 +1155,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
           messages: live ? messages.slice(0, run.baseCount) : messages,
           running: Boolean(live),
           queued: store.listQueued(found.id),
+          tasks: store.listTasks(found.id),
           documents: store.listDocuments(found.id)
         });
       }

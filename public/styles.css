@@ -1393,3 +1393,11 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .usage-composition-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .usage-composition-track { display: flex; height: .7rem; overflow: hidden; border-radius: var(--r-xs); margin: .5rem 0; }
 #usageModelFilter select { max-width: 100%; margin-top: .4rem; }
+.task-card { padding: 14px; }
+.task-heading { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.task-heading span { opacity: .65; }
+.task-items { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 9px; }
+.task-item { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.task-mark { flex: none; font-weight: 700; }
+.task-completed { opacity: .6; }
+.task-completed span:last-child { text-decoration: line-through; }
