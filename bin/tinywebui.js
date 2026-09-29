@@ -22,8 +22,9 @@ tinywebui migrate [--check]
                            bring the database to the current schema (--check: exit 1 if behind)
 tinywebui doctor           check config, database, model endpoint and MCP servers
 tinywebui config show      same as effective
-tinywebui models pull <fast|balanced|quality> [--dir path]
-                           fetch an embedding bundle for dense/hybrid retrieval (the only download)
+tinywebui models pull <fast|balanced|quality|multilingual> [--dir path]
+                           fetch an embedding bundle for hybrid retrieval
+tinywebui models ensure    pull the configured model only if missing (npm start runs this)
 tinywebui models verify    load the configured embedding model the way startup does
 tinywebui effective [--role user|admin]
                            what is in effect and how each setting can change

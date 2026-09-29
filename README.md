@@ -34,6 +34,8 @@ Open <http://127.0.0.1:7777>. Use `--port` and `--host` to change the listener:
 npx tinywebui --port 8080 --host 127.0.0.1
 ```
 
+The first `npm start` also downloads the search model once (see [Search](#search-hybrid-by-default)); `npx tinywebui` skips that step and runs keyword search until you run `npx tinywebui models pull fast`.
+
 For development, `npm run dev` watches `src/` and `bin/`; files under `public/` are served directly and need only a browser refresh.
 
 ## Configure a model
@@ -185,17 +187,23 @@ Chats, documents, full tool results, and usage are stored in `tinywebui.db` besi
 
 A running turn belongs to the server rather than the browser tab: reloading or disconnecting does not cancel it. Reopen the chat to rejoin its stream, or use **stop** to cancel it.
 
-### Smarter search (optional)
+### Search: hybrid by default
 
-Everything the model can search goes through one retrieval engine: passages of attached documents (`read_document`) and past conversation turns (`search_chats`). A chat turn is one question plus the answer it finally got, not the narration or tool calls in between. By default the engine uses SQLite's full-text search (BM25): fast, no extra packages, and exact about words. Turn on **hybrid** retrieval to also match meaning, so a question about an "automobile" finds the paragraph about the "sedan". It works the way TinySearch and TinyContext do: the same local ONNX embedding models, BM25 and embeddings fused with Reciprocal Rank Fusion, and nothing leaves the machine.
+Everything the model can search goes through one retrieval engine: passages of attached documents (`read_document`) and past conversation turns (`search_chats`). A chat turn is one question plus the answer it finally got, not the narration or tool calls in between. Search is **hybrid** out of the box: SQLite full-text search (BM25), which is exact about words, fused with a small local embedding model that matches meaning, so a question about an "automobile" finds the paragraph about the "sedan". It works the way TinySearch and TinyContext do: the same local ONNX embedding models, BM25 and embeddings fused with Reciprocal Rank Fusion, and nothing leaves the machine.
+
+`npm install` brings the embedding runtime (`onnxruntime-node`, `@huggingface/tokenizers`, both optional dependencies), and the first `npm start` downloads the `fast` model (about 90 MB) into `models/` once, via `tinywebui models ensure`. The Docker image bakes it in at build time. The server itself never downloads anything.
+
+If the model or the runtime isn't there (offline first start, a platform onnxruntime can't install on, `npm install --omit=optional`), the default mode `auto` starts with BM25 only and logs why. To opt out of hybrid entirely, and skip the download:
 
 ```bash
-npm install onnxruntime-node @huggingface/tokenizers   # optional packages, only for dense/hybrid
-npx tinywebui models pull fast                         # the one explicit download; prints its sha256
+TINYWEBUI_RETRIEVAL_MODE=lexical npm start
 ```
 
+or in the config, where you can also pin the model's checksum:
+
 ```json
-{ "retrieval": { "mode": "hybrid", "model": "fast", "modelSha256": "<sha256 from models pull>" } }
+{ "retrieval": { "mode": "lexical" } }
+{ "retrieval": { "mode": "hybrid", "model": "fast", "modelSha256": "<sha256 from tinywebui models pull>" } }
 ```
 
 **How it works: small-to-big retrieval.** A document is split twice:
@@ -209,14 +217,14 @@ npx tinywebui models pull fast                         # the one explicit downlo
 
 A question is compared with every small chunk, each passage takes its best chunk's score, and the model gets whole passages. Small chunks keep the embedding match precise; big passages give the model enough context to answer. Because chunks follow the model, every part of a passage is embedded, even when the passage is longer than the model can read at once.
 
-- **Modes:** `lexical` (default), `dense` (embeddings only), `hybrid` (both, fused).
+- **Modes:** `auto` (default: `hybrid` when the model is installed, else `lexical`), `lexical` (BM25 only), `dense` (embeddings only), `hybrid` (both, fused). An explicit `dense` or `hybrid` refuses to start without the model instead of falling back.
 - **Models:** `fast` (all-MiniLM-L6-v2), `balanced` (bge-small-en-v1.5) and `quality` (bge-base-en-v1.5), the same presets as TinySearch, are English-only. For documents in other languages, or questions in a different language from the document, use `multilingual` (granite-embedding-107m-multilingual, Apache-2.0): about as fast as `fast`, but a larger download (430 MB). When questions and documents are in different languages, keyword matches rarely help, so `dense` mode or a higher `denseWeight` usually ranks better than the default hybrid. A custom bundle works with `modelDir`.
 - **Embeddings are computed once.** Document chunks are embedded when the document is attached, chat turns when each run ends, and older chats and documents are embedded in the background on startup. Vectors are stored in SQLite; queries embed only the question. Switching models re-embeds automatically, a turn whose answer changes is re-embedded, and deleting a document or chat (or rewinding a chat) deletes its vectors.
 - **Adding a corpus.** The engine in `src/retrieval/retrieval.js` searches any source that describes its units through a small adapter (`units`, `candidates`, `lexical`, `hydrate`, ...). Register one with `retrieval.register(name, corpus)` and it gets lexical, dense and hybrid search, storage and backfill.
-- **Nothing downloads at runtime.** A missing bundle, missing packages or a checksum that doesn't match `modelSha256` stops startup with a clear message. `tinywebui models verify` and `tinywebui doctor` check the same things beforehand. ONNX Runtime's telemetry is switched off.
+- **The server never downloads.** Models arrive through `tinywebui models pull` / `models ensure` (which `npm start` runs first) or the Docker build. A checksum that doesn't match `modelSha256` stops startup in every mode; a missing model stops it under an explicit `dense`/`hybrid`. `tinywebui models verify` and `tinywebui doctor` show which mode will actually run and why. ONNX Runtime's telemetry is switched off.
 - **Tuning:** `passageSize`/`passageOverlap` (what the model gets back), `chunkOverlap`, `denseWeight` (default 0.5), `rrfK` (default 60), and `queryPrefix`/`documentPrefix` for models that expect instructions (for bge, set `queryPrefix` to `"Represent this sentence for searching relevant passages: "`). Bigger passages give more context per hit, but fewer hits fit in one `read_document` result.
 - **Changing settings is safe.** Stored documents are re-split on the next start when the passage settings change, and re-embedded when the model or `chunkOverlap` changes. Passage settings apply in `lexical` mode too.
-- **Containers:** `Dockerfile.hybrid` bakes a model into the image at build time and fails the build if `EMBEDDING_SHA256` doesn't match.
+- **Containers:** the default `Dockerfile` (Debian slim, since onnxruntime needs glibc) bakes the model into the image at build time and fails the build if `EMBEDDING_SHA256` is set and doesn't match. `Dockerfile.lexical` is the small Alpine image without the embedding runtime.
 
 ## Automations
 

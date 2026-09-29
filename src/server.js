@@ -21,7 +21,7 @@ import { taskToolDef, callManageTasks } from './tools/task_tool.js';
 import { automationToolDef, manageAutomation } from './automations/automation.js';
 import { overrideFor } from './config/approval.js';
 import { Retrieval } from './retrieval/retrieval.js';
-import { loadEmbedder, defaultModelsDir } from './retrieval/embedding.js';
+import { loadEmbedder, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.js';
 import { createRuns } from './chat/runs.js';
 import { createScheduler } from './automations/scheduler.js';
 import { authRoutes } from './routes/auth.js';
@@ -90,16 +90,17 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   }
   if (initial.authMode === 'trusted-header') applyAccessPolicy(store, initial);
 
-  // Dense/hybrid retrieval loads its embedding bundle now, so a missing
-  // package, bundle or checksum mismatch stops startup with a clear message
-  // instead of surfacing on the first search.
-  let embedder = null;
-  if (initial.retrieval.mode !== 'lexical') {
-    try {
-      embedder = sourceOpts.embedder || await loadEmbedder(initial.retrieval, defaultModelsDir(source.path()));
-    } catch (err) { store.close(); throw err; }
-    log.info(`retrieval: ${initial.retrieval.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
-  }
+  // The embedding bundle loads now, so a problem with it stops startup with a
+  // clear message instead of surfacing on the first search -- except under
+  // 'auto', where a model that simply isn't installed means lexical.
+  let resolved;
+  try {
+    const load = sourceOpts.embedder ? async () => sourceOpts.embedder : loadEmbedder;
+    resolved = await resolveRetrieval(initial.retrieval, defaultModelsDir(source.path()), load);
+  } catch (err) { store.close(); throw err; }
+  const { embedder } = resolved;
+  if (resolved.fallback) log.warn(`retrieval: lexical only -- ${resolved.fallback}`);
+  else if (embedder) log.info(`retrieval: ${resolved.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
 
   if (initial.authMode === 'single') store.users.ensureOwner(OWNER_ID);
 
@@ -112,7 +113,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     version: VERSION,
     source,
     store,
-    retrieval: new Retrieval(store, initial.retrieval, embedder),
+    retrieval: new Retrieval(store, { ...initial.retrieval, mode: resolved.mode }, embedder),
     cfg: initial,
     hub: null,
     // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD

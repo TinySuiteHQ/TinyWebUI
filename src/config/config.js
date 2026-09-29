@@ -175,12 +175,14 @@ export const DEFAULTS = {
   // true: nothing in the control plane can change from the UI or API --
   // settings, tools, MCP servers. Change the files and reload instead.
   frozen: false,
-  // read_document ranking. 'lexical' is SQLite FTS5 BM25 and needs nothing
-  // extra. 'dense' and 'hybrid' use a local ONNX embedding bundle (fetched
-  // explicitly with `tinywebui models pull`, never at runtime) and the
-  // optional onnxruntime-node + @huggingface/tokenizers packages.
+  // read_document and search_chats ranking. 'lexical' is SQLite FTS5 BM25 and
+  // needs nothing extra. 'dense' and 'hybrid' use a local ONNX embedding
+  // bundle (fetched by `npm start` / `tinywebui models ensure`, or baked into
+  // the Docker image -- never by the server) and the onnxruntime-node +
+  // @huggingface/tokenizers optional dependencies. 'auto' is hybrid when both
+  // are there and lexical, with a warning, when they are not.
   retrieval: {
-    mode: 'lexical',          // lexical | dense | hybrid
+    mode: 'auto',             // auto | lexical | dense | hybrid
     model: 'fast',            // fast | balanced | quality (TinySearch's presets) | multilingual, or a name with modelDir
     modelDir: '',             // bundle folder; default models/<preset> next to the config
     modelSha256: '',          // pin model.onnx; startup refuses a different file
@@ -243,7 +245,9 @@ export function createConfigSource(opts = {}) {
     const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
     // Partial retrieval blocks fill in from the defaults rather than replace them.
-    cfg.retrieval = { ...DEFAULTS.retrieval, ...(fromFile.retrieval || {}), ...(code.retrieval || {}) };
+    // $TINYWEBUI_RETRIEVAL_MODE=lexical is the no-config way to opt out of hybrid.
+    const envRetrieval = process.env.TINYWEBUI_RETRIEVAL_MODE ? { mode: process.env.TINYWEBUI_RETRIEVAL_MODE } : {};
+    cfg.retrieval = { ...DEFAULTS.retrieval, ...(fromFile.retrieval || {}), ...envRetrieval, ...(code.retrieval || {}) };
     // No silent fallbacks: a bad value is reported by configProblems() and
     // refuses to start, rather than quietly becoming a default (a mistyped
     // authMode used to become 'none').
@@ -370,7 +374,7 @@ function retrievalProblems(r) {
   if (!r || typeof r !== 'object' || Array.isArray(r)) return ['retrieval must be an object'];
   const out = [];
   for (const k of Object.keys(r)) if (!(k in DEFAULTS.retrieval)) out.push(`unknown setting "retrieval.${k}"`);
-  if (r.mode !== undefined && !['lexical', 'dense', 'hybrid'].includes(r.mode)) out.push('retrieval.mode must be one of lexical, dense, hybrid');
+  if (r.mode !== undefined && !['auto', 'lexical', 'dense', 'hybrid'].includes(r.mode)) out.push('retrieval.mode must be one of auto, lexical, dense, hybrid');
   for (const k of ['model', 'modelDir', 'modelSha256', 'queryPrefix', 'documentPrefix']) {
     if (r[k] !== undefined && typeof r[k] !== 'string') out.push(`retrieval.${k} must be a string`);
   }

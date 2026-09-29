@@ -270,10 +270,12 @@
       "properties": {
         "mode": {
           "enum": [
+            "auto",
             "lexical",
             "dense",
             "hybrid"
-          ]
+          ],
+          "description": "auto: hybrid when the model is installed, else lexical"
         },
         "model": {
           "type": "string",

@@ -21,3 +21,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  # The default install, end to end: npm ci brings the embedding runtime,
+  # `models ensure` (what npm start runs first) fetches the model, and
+  # `models verify` loads it the way the server does and must say hybrid.
+  hybrid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node bin/tinywebui.js models ensure
+      - run: node bin/tinywebui.js models verify | tee verify.json
+      - run: |
+          grep -q '"mode": "hybrid"' verify.json

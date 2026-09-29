@@ -5,7 +5,7 @@ A small, dependency-light chat UI for any OpenAI-compatible endpoint, with MCP t
 ## Commands
 
 - `npm test` — whole suite, ~10 s (`node --test`, 30 s limit per test). Run it after every change.
-- `npm start` — server on http://127.0.0.1:7777 with `tinywebui.config.json` and `tinywebui.db`.
+- `npm start` — server on http://127.0.0.1:7777 with `tinywebui.config.json` and `tinywebui.db`. It first runs `models ensure`, which fetches the embedding model once; behind the proxy that fails and the server starts lexical (`TINYWEBUI_RETRIEVAL_MODE=lexical` skips it).
 - `node bin/tinywebui.js validate` — check the config; `--help` lists the other CLI commands.
 - Trying the server by hand: point it at a copy of the database, never the real one —
   `TINYWEBUI_DB=<copy>.db node bin/tinywebui.js --port 7790`. Opening a database migrates it.

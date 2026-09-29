@@ -64,7 +64,8 @@ Secrets come from the environment:
 services:
   tinywebui:
     image: tinywebui:0.1.0            # pin a tag or digest
-    build: ../                        # or build from a checkout
+    build: ../                        # or build from a checkout (hybrid search, model baked in;
+                                      # dockerfile: Dockerfile.lexical for the small BM25-only image)
     read_only: true
     env_file: .env
     volumes:

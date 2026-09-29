@@ -138,7 +138,9 @@ export class Retrieval {
   constructor(store, retrieval, embedder = null) {
     this.store = store;
     this.cfg = retrieval;
-    this.mode = retrieval.mode || 'lexical';
+    // 'auto' means whatever the embedder allows (resolveRetrieval decides at startup).
+    const mode = retrieval.mode || 'lexical';
+    this.mode = mode === 'auto' ? (embedder ? 'hybrid' : 'lexical') : mode;
     this.embedder = this.mode === 'lexical' ? null : embedder;
     if (this.mode !== 'lexical' && !this.embedder) throw new Error(`retrieval.mode '${this.mode}' needs an embedding model`);
     this.corpora = new Map();

@@ -10,13 +10,14 @@ import { join, resolve } from 'node:path';
  * vector so a model change re-embeds instead of mixing vectors.
  *
  * One deliberate difference: those services fetch a missing bundle on first
- * start. TinyWebUI never downloads anything at runtime -- a bundle is a
- * deployment artifact, fetched explicitly with `tinywebui models pull` (or
- * baked into an image) and optionally pinned by checksum.
+ * start. The TinyWebUI server never downloads anything -- a bundle is a
+ * deployment artifact, fetched by `tinywebui models pull` / `models ensure`
+ * (which `npm start` runs first) or baked into the image, and optionally
+ * pinned by checksum.
  *
- * onnxruntime-node and @huggingface/tokenizers are optional peers, loaded
- * only when retrieval.mode is 'dense' or 'hybrid'. Lexical installs never
- * need them.
+ * onnxruntime-node and @huggingface/tokenizers are optional dependencies,
+ * imported only when an embedder is loaded. Without them (or without the
+ * bundle) the default mode 'auto' runs lexical -- see resolveRetrieval.
  */
 
 // fast/balanced/quality mirror TinySearch's _PRESET_MODELS
@@ -113,12 +114,36 @@ export function modelKey(spec, onnxSha256, documentPrefix = '', chunkOverlap = 3
   return `onnx:${spec.repoId}:${onnxSha256.slice(0, 16)}:document-prefix:${prefix}:chunks:${spec.maxLength}/${chunkOverlap}`;
 }
 
+// Marks "not installed here" (packages or bundle), as opposed to a broken or
+// mismatched install: only the former lets mode 'auto' fall back to lexical.
+const UNAVAILABLE = 'EMBEDDING_UNAVAILABLE';
+const unavailable = (message) => Object.assign(new Error(message), { code: UNAVAILABLE });
+
 async function importPeer(name) {
   try { return await import(name); } catch (err) {
     if (err?.code === 'ERR_MODULE_NOT_FOUND' || /Cannot find (package|module)/.test(err?.message || '')) {
-      throw new Error(`retrieval.mode 'dense'/'hybrid' needs optional packages: npm install onnxruntime-node @huggingface/tokenizers (missing ${name})`);
+      throw unavailable(`dense/hybrid retrieval needs the optional packages onnxruntime-node and @huggingface/tokenizers (missing ${name}; npm install without --omit=optional)`);
     }
     throw err;
+  }
+}
+
+/**
+ * What retrieval actually runs as: { mode, embedder, fallback }. 'auto' (the
+ * default) is hybrid when the model and packages are installed, and lexical
+ * otherwise, with `fallback` saying why. An explicit 'dense' or 'hybrid'
+ * never falls back -- a missing model stops startup, as asked. Anything
+ * wrong with an installed model (a checksum mismatch, a broken file) fails
+ * in every mode rather than being papered over.
+ */
+export async function resolveRetrieval(retrieval, modelsDir, load = loadEmbedder) {
+  if (retrieval.mode === 'lexical') return { mode: 'lexical', embedder: null, fallback: null };
+  const mode = retrieval.mode === 'auto' ? 'hybrid' : retrieval.mode;
+  try {
+    return { mode, embedder: await load(retrieval, modelsDir), fallback: null };
+  } catch (err) {
+    if (retrieval.mode !== 'auto' || err.code !== UNAVAILABLE) throw err;
+    return { mode: 'lexical', embedder: null, fallback: err.message };
   }
 }
 
@@ -141,7 +166,7 @@ export async function loadEmbedder(retrieval, modelsDir) {
   const tokenizerPath = join(spec.dir, 'tokenizer.json');
   if (!onnxPath || !existsSync(tokenizerPath)) {
     const hint = PRESETS[spec.name] ? `run: tinywebui models pull ${spec.name}` : 'the bundle needs an ONNX model and tokenizer.json';
-    throw new Error(`no embedding bundle at ${spec.dir} (${hint}); TinyWebUI never downloads models at runtime`);
+    throw unavailable(`no embedding bundle at ${spec.dir} (${hint}); the server never downloads models itself`);
   }
   const actual = await sha256File(onnxPath);
   if (retrieval.modelSha256 && retrieval.modelSha256.toLowerCase() !== actual) {
