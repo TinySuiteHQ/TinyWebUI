@@ -71,21 +71,3 @@ export function markFinal(attribution) {
   return { ...attribution, output: { ...attribution.output, buckets: attribution.output.buckets.map((b) =>
     b.category === 'intermediate_text' ? { ...b, category: 'final_text' } : b) } };
 }
-
-export function mergeAttribution(target, snapshot) {
-  if (!snapshot || snapshot.version !== 1) return target;
-  target ||= { requests: 0, input: { total: 0, reported: 0, buckets: [] }, output: { total: 0, reported: 0, buckets: [] }, cached: 0 };
-  target.requests++;
-  for (const side of ['input', 'output']) {
-    const value = snapshot[side];
-    if (!value) continue;
-    if (value.total !== null) { target[side].total += value.total; target[side].reported++; }
-    for (const b of value.buckets || []) {
-      let existing = target[side].buckets.find((x) => x.category === b.category && x.source === b.source && x.capability === b.capability);
-      if (!existing) target[side].buckets.push(existing = { ...b, tokens: 0 });
-      existing.tokens += b.tokens;
-    }
-  }
-  target.cached += snapshot.cached || 0;
-  return target;
-}
