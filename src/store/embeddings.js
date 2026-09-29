@@ -56,4 +56,9 @@ export class EmbeddingStore {
   prune(keepModelKey) {
     return this.db.prepare('DELETE FROM embeddings WHERE model_key != ?').run(keepModelKey).changes;
   }
+
+  /** Drops every vector an owner (a document, a chat) has in a corpus. */
+  deleteOwner(corpus, ownerId) {
+    this.db.prepare('DELETE FROM embeddings WHERE corpus = ? AND owner_id = ?').run(corpus, ownerId);
+  }
 }

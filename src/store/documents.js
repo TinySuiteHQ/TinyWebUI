@@ -47,16 +47,6 @@ function insertPassages(db, docId, chatId, content, size, overlap) {
   return passages.length;
 }
 
-function deletePassages(db, docId) {
-  db.prepare(`
-    DELETE FROM document_passages WHERE rowid IN (
-      SELECT passage_rowid FROM document_passage_map WHERE doc_id = ?
-    )
-  `).run(docId);
-  db.prepare("DELETE FROM embeddings WHERE corpus = 'documents' AND owner_id = ?").run(docId);
-  db.prepare('DELETE FROM document_passage_map WHERE doc_id = ?').run(docId);
-}
-
 export class DocumentStore {
   constructor(db, deps = {}) {
     this.db = db;
@@ -88,7 +78,7 @@ export class DocumentStore {
     if (!doc) return 0;
     this.db.exec('BEGIN');
     try {
-      deletePassages(this.db, docId);
+      this.#deletePassages(docId);
       const n = insertPassages(this.db, doc.id, doc.chat_id, doc.content, size, overlap);
       this.db.prepare('UPDATE documents SET passage_size = ?, passage_overlap = ? WHERE id = ?').run(size, overlap, docId);
       this.db.exec('COMMIT');
@@ -114,8 +104,26 @@ export class DocumentStore {
   /** Drops one document, its passages and their chunk vectors. The rest of the chat is untouched. */
   delete(id, userId) {
     if (!this.get(id, userId)) return false;
-    deletePassages(this.db, id);
+    this.#deletePassages(id);
     return this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
+  }
+
+  /** Drops every document of a chat, with its passages and vectors (the chat is going). */
+  deleteForChat(chatId) {
+    for (const { id } of this.db.prepare('SELECT id FROM documents WHERE chat_id = ?').all(chatId)) this.#deletePassages(id);
+    this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(chatId);
+  }
+
+  // FTS5 has no foreign keys of its own, so passage rows are dropped by rowid
+  // before the map that names them.
+  #deletePassages(docId) {
+    this.db.prepare(`
+      DELETE FROM document_passages WHERE rowid IN (
+        SELECT passage_rowid FROM document_passage_map WHERE doc_id = ?
+      )
+    `).run(docId);
+    this.embeddings.deleteOwner('documents', docId);
+    this.db.prepare('DELETE FROM document_passage_map WHERE doc_id = ?').run(docId);
   }
 
   /** Ranked passage search within one document, via FTS5 bm25() (lexical mode). */

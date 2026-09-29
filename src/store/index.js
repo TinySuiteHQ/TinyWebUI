@@ -62,13 +62,13 @@ export class Store {
     migrateSchema(this.db, { fresh });
 
     const { db } = this;
-    this.chats = new ChatStore(db);
+    this.embeddings = new EmbeddingStore(db);
     this.messages = new MessageStore(db);
     this.automations = new AutomationStore(db);
-    this.usage = new UsageStore(db);
-    this.documents = new DocumentStore(db);
-    this.embeddings = new EmbeddingStore(db);
+    this.documents = new DocumentStore(db, { embeddings: this.embeddings });
+    this.chats = new ChatStore(db, { messages: this.messages, automations: this.automations, documents: this.documents, embeddings: this.embeddings });
     this.turns = new TurnStore(db, { chats: this.chats });
+    this.usage = new UsageStore(db);
     this.search = new SearchStore(db);
     this.users = new UserStore(db);
   }

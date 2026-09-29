@@ -20,7 +20,7 @@
     "start": "node bin/tinywebui.js",
     "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.js",
     "stop": "pkill -f 'bin/tinywebui.js' || true",
-    "test": "node --test",
+    "test": "node --test --test-timeout=30000",
     "eval": "node evals/run.js"
   },
   "dependencies": {

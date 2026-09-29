@@ -15,6 +15,17 @@ export class MessageStore {
   }
 
   /** Appends one message. Append-only by design: rows are never reordered. */
+  /** Drops a chat's messages from `seq` on (a rewind). Returns how many went. */
+  deleteFrom(chatId, seq) {
+    return this.db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?').run(chatId, seq).changes;
+  }
+
+  /** Drops a chat's whole transcript and the artifacts behind it (the chat is going). */
+  deleteForChat(chatId) {
+    this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
+    this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(chatId);
+  }
+
   add(chatId, msg) {
     const seq = this.nextSeq(chatId);
     this.db.prepare(`

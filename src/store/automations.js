@@ -68,6 +68,11 @@ export class AutomationStore {
     return this.db.prepare(`DELETE FROM automations WHERE id=? AND ${s.sql}`).run(id, ...s.params).changes > 0;
   }
 
+  /** Drops every automation that posts into a chat (the chat is going). */
+  deleteForChat(chatId) {
+    this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(chatId);
+  }
+
   /** When the next enabled automation is due, or null when none is. */
   nextDue() {
     return this.db.prepare('SELECT MIN(next_run_at) AS due FROM automations WHERE enabled=1').get()?.due ?? null;

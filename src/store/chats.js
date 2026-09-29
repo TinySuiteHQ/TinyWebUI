@@ -176,9 +176,7 @@ export class ChatStore {
   }
 
   truncateFrom(chatId, seq) {
-    const removed = this.db
-      .prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?')
-      .run(chatId, seq).changes;
+    const removed = this.messages.deleteFrom(chatId, seq);
     // A frozen compaction boundary inside the cut no longer describes anything,
     // so the pinned cache breakpoint it drives has to go with it.
     const chat = this.byId(chatId);
@@ -191,24 +189,13 @@ export class ChatStore {
 
   delete(id, userId) {
     if (!this.get(id, userId)) return false;
-    this.db.prepare('DELETE FROM automations WHERE chat_id = ?').run(id);
-    this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
+    // Each area drops its own part of the chat; tasks go by foreign key.
+    this.automations.deleteForChat(id);
+    this.messages.deleteForChat(id);
+    this.documents.deleteForChat(id);
+    this.embeddings.deleteOwner('chats', id);
     this.db.prepare('DELETE FROM queued_messages WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM questions WHERE chat_id = ?').run(id);
-    this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(id);
-    // FTS5 has no foreign keys of its own, so its rows are dropped by rowid
-    // before the map (and then the documents) that name them go with the chat.
-    this.db.prepare(`
-      DELETE FROM document_passages WHERE rowid IN (
-        SELECT passage_rowid FROM document_passage_map WHERE chat_id = ?
-      )
-    `).run(id);
-    this.db.prepare(`DELETE FROM embeddings WHERE corpus = 'documents' AND owner_id IN (
-      SELECT id FROM documents WHERE chat_id = ?
-    )`).run(id);
-    this.db.prepare("DELETE FROM embeddings WHERE corpus = 'chats' AND owner_id = ?").run(id);
-    this.db.prepare('DELETE FROM document_passage_map WHERE chat_id = ?').run(id);
-    this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
     return true;
   }
