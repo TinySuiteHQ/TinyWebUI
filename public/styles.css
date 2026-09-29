@@ -1401,3 +1401,4 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .task-mark { flex: none; font-weight: 700; }
 .task-completed { opacity: .6; }
 .task-completed span:last-child { text-decoration: line-through; }
+.no-shrink { flex: 0 0 auto; }

@@ -103,7 +103,7 @@ async function readJson(req, limit = BODY_LIMIT) {
 const SECURITY_HEADERS = {
   'content-security-policy': [
     "default-src 'self'", "script-src 'self'", "connect-src 'self'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "style-src 'self' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob:", "object-src 'none'", "base-uri 'none'",
     "frame-ancestors 'none'", "form-action 'self'"

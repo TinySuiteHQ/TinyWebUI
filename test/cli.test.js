@@ -6,9 +6,10 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { configSchema } from '../src/cli.js';
 
-const BIN = new URL('../bin/tinywebui.js', import.meta.url).pathname;
+const BIN = fileURLToPath(new URL('../bin/tinywebui.js', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-cli-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));
 
