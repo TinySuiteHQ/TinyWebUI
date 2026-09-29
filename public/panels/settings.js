@@ -26,159 +26,7 @@ export const configuredModel = () => model;
 function renderToolPanel(data) {
   const box = $('tools');
   box.innerHTML = '';
-
-  const toggleTool = async (name, disabled) => {
-    try { renderToolPanel(await api.post('/api/tools/toggle', { name, disabled })); } catch (err) { addError(err.message); }
-  };
-
-  const toggleServer = async (name, disabled) => {
-    try { renderToolPanel(await api.post(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, { disabled })); } catch (err) { return addError(err.message); }
-    loadMcp(); // the raw editor's disabled: true/false has to catch up too
-  };
-
-  // A checkbox living inside a <summary> still triggers the details' native
-  // open/close on click, since that is the browser's default action for the
-  // element the click landed in, not a listener that stopPropagation alone
-  // would beat -- so the click itself has to be stopped from ever reaching it.
-  const checkbox = (checked, title, onToggle) => {
-    const label = el('label', 'tgl');
-    const cb = el('input');
-    cb.type = 'checkbox';
-    cb.checked = checked;
-    cb.title = title;
-    cb.onclick = (e) => e.stopPropagation();
-    cb.onchange = () => { cb.disabled = true; onToggle(!cb.checked); };
-    if (readOnly) cb.disabled = true;
-    label.appendChild(cb);
-    return label;
-  };
-
-  // What "default" resolves to for this tool under the global mode, so the
-  // select says what will actually happen rather than just "default".
-  const defaultLabel = (t) => {
-    const mode = data.toolApproval || 'writes';
-    if (mode === 'off') return 'never';
-    if (mode === 'all') return 'ask';
-    return t.readOnly === true ? 'never (read-only)' : 'ask (may write)';
-  };
-
-  const approvalSelect = (t) => {
-    const sel = el('select', 'approval');
-    sel.title = 'Whether calls to this tool wait for your approval';
-    for (const [value, label] of [
-      ['default', `approval: ${defaultLabel(t)}`],
-      ['ask', 'approval: always ask'],
-      ['auto', 'approval: never ask']
-    ]) {
-      const o = el('option');
-      o.value = value;
-      o.textContent = label;
-      sel.appendChild(o);
-    }
-    sel.value = t.approval;
-    if (readOnly) sel.disabled = true;
-    // Same reason as the checkbox: a click in a <summary> toggles the details.
-    sel.onclick = (e) => e.stopPropagation();
-    sel.onchange = async () => {
-      sel.disabled = true;
-      try { renderToolPanel(await api.post('/api/tools/approval', { name: t.name, policy: sel.value })); } catch (err) {
-        sel.disabled = false;
-        addError(err.message);
-      }
-    };
-    return sel;
-  };
-
-  const toolRow = (t) => {
-    const d = el('details', 'tool' + (t.disabled ? ' off' : ''));
-    const sum = el('summary');
-    sum.appendChild(checkbox(
-      !t.disabled,
-      t.disabled ? 'Disabled -- click to let the model use this tool again' : 'Click to stop offering this tool to the model',
-      (disabled) => toggleTool(t.name, disabled)
-    ));
-    const name = el('span', 'name');
-    name.textContent = t.name.replace(/^[^_]+__/, '');
-    const desc = el('span', 'desc');
-    desc.textContent = (t.description || '').split('\n')[0];
-    sum.append(name, desc);
-    // MCP tools only: built-ins never ask, so they have no approval state.
-    if (t.approval) sum.appendChild(approvalSelect(t));
-
-    const doc = el('div', 'doc');
-    doc.textContent = t.description || '(no description)';
-    const props = t.parameters?.properties || {};
-    const required = new Set(t.parameters?.required || []);
-    if (Object.keys(props).length) {
-      const list = el('div', 'params');
-      for (const [key, spec] of Object.entries(props)) {
-        const row = el('div', 'param');
-        const b = el('b');
-        b.textContent = key;
-        const ty = el('span', 'ty');
-        ty.textContent = spec.type || (spec.anyOf ? 'any' : '?');
-        const req = el('span', required.has(key) ? 'req' : 'ty');
-        req.textContent = required.has(key) ? 'required' : 'optional';
-        const dd = el('span', 'd');
-        dd.textContent = (spec.description || '').split('\n')[0];
-        row.append(b, ty, req, dd);
-        list.appendChild(row);
-      }
-      doc.appendChild(list);
-    }
-    const raw = el('pre');
-    raw.textContent = JSON.stringify(t.parameters ?? {}, null, 2);
-    doc.appendChild(raw);
-
-    d.append(sum, doc);
-    return d;
-  };
-
-  const STATUS_LABEL = { ok: 'connected', disabled: 'disabled', error: 'failed to connect' };
-
-  const serverGroup = (s) => {
-    const grp = el('div', `tool-group server ${s.status}`);
-    const h = el('div', 'tool-group-h');
-    h.appendChild(checkbox(
-      s.status !== 'disabled',
-      s.status === 'disabled' ? 'Disabled -- click to reconnect' : 'Click to disconnect this server',
-      (disabled) => toggleServer(s.name, disabled)
-    ));
-    const dot = el('span', 'dot');
-    const name = el('span', 'name');
-    name.textContent = s.name;
-    const meta = el('span', 'meta');
-    meta.textContent = s.status === 'ok'
-      ? `${s.tools.length} tool${s.tools.length === 1 ? '' : 's'}`
-      : STATUS_LABEL[s.status];
-    h.append(dot, name, meta);
-    grp.appendChild(h);
-
-    if (s.status === 'error' && s.error) {
-      const err = el('div', 'tool-group-err');
-      err.textContent = s.error;
-      grp.appendChild(err);
-    }
-    if (s.status === 'ok' && s.instructions) {
-      const note = el('details', 'tool-group-instructions');
-      const sum = el('summary');
-      sum.textContent = 'instructions';
-      const body = el('div', 'body');
-      body.textContent = s.instructions;
-      note.append(sum, body);
-      grp.appendChild(note);
-    }
-    if (s.status === 'ok') {
-      if (!s.tools.length) {
-        const empty = el('div', 'empty');
-        empty.textContent = 'no tools';
-        grp.appendChild(empty);
-      } else {
-        for (const t of s.tools) grp.appendChild(toolRow(t));
-      }
-    }
-    return grp;
-  };
+  const mode = data.toolApproval || 'writes';
 
   const enabled = data.internal.filter((t) => !t.disabled).length
     + data.servers.reduce((n, s) => n + s.tools.filter((t) => !t.disabled).length, 0);
@@ -193,14 +41,169 @@ function renderToolPanel(data) {
     const h = el('div', 'tool-group-h');
     h.textContent = 'built-in';
     grp.appendChild(h);
-    for (const t of data.internal) grp.appendChild(toolRow(t));
+    for (const t of data.internal) grp.appendChild(toolRow(t, mode));
     box.appendChild(grp);
   }
-  for (const s of data.servers) box.appendChild(serverGroup(s));
+  for (const s of data.servers) box.appendChild(serverGroup(s, mode));
 
   if (!data.internal.length && !data.servers.length) {
     box.innerHTML = '<div class="empty">no tools</div>';
   }
+}
+
+async function toggleTool(name, disabled) {
+  try { renderToolPanel(await api.post('/api/tools/toggle', { name, disabled })); } catch (err) { addError(err.message); }
+}
+
+async function toggleServer(name, disabled) {
+  try { renderToolPanel(await api.post(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, { disabled })); } catch (err) { return addError(err.message); }
+  loadMcp(); // the raw editor's disabled: true/false has to catch up too
+}
+
+// A checkbox living inside a <summary> still triggers the details' native
+// open/close on click, since that is the browser's default action for the
+// element the click landed in, not a listener that stopPropagation alone
+// would beat -- so the click itself has to be stopped from ever reaching it.
+function checkbox(checked, title, onToggle) {
+  const label = el('label', 'tgl');
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.checked = checked;
+  cb.title = title;
+  cb.onclick = (e) => e.stopPropagation();
+  cb.onchange = () => { cb.disabled = true; onToggle(!cb.checked); };
+  if (readOnly) cb.disabled = true;
+  label.appendChild(cb);
+  return label;
+}
+
+// What "default" resolves to for this tool under the global mode, so the
+// select says what will actually happen rather than just "default".
+function defaultApproval(t, mode) {
+  if (mode === 'off') return 'never';
+  if (mode === 'all') return 'ask';
+  return t.readOnly === true ? 'never (read-only)' : 'ask (may write)';
+}
+
+function approvalSelect(t, mode) {
+  const sel = el('select', 'approval');
+  sel.title = 'Whether calls to this tool wait for your approval';
+  for (const [value, label] of [
+    ['default', `approval: ${defaultApproval(t, mode)}`],
+    ['ask', 'approval: always ask'],
+    ['auto', 'approval: never ask']
+  ]) {
+    const o = el('option');
+    o.value = value;
+    o.textContent = label;
+    sel.appendChild(o);
+  }
+  sel.value = t.approval;
+  if (readOnly) sel.disabled = true;
+  // Same reason as the checkbox: a click in a <summary> toggles the details.
+  sel.onclick = (e) => e.stopPropagation();
+  sel.onchange = async () => {
+    sel.disabled = true;
+    try { renderToolPanel(await api.post('/api/tools/approval', { name: t.name, policy: sel.value })); } catch (err) {
+      sel.disabled = false;
+      addError(err.message);
+    }
+  };
+  return sel;
+}
+
+function toolRow(t, mode) {
+  const d = el('details', 'tool' + (t.disabled ? ' off' : ''));
+  const sum = el('summary');
+  sum.appendChild(checkbox(
+    !t.disabled,
+    t.disabled ? 'Disabled -- click to let the model use this tool again' : 'Click to stop offering this tool to the model',
+    (disabled) => toggleTool(t.name, disabled)
+  ));
+  const name = el('span', 'name');
+  name.textContent = t.name.replace(/^[^_]+__/, '');
+  const desc = el('span', 'desc');
+  desc.textContent = (t.description || '').split('\n')[0];
+  sum.append(name, desc);
+  // MCP tools only: built-ins never ask, so they have no approval state.
+  if (t.approval) sum.appendChild(approvalSelect(t, mode));
+  d.append(sum, toolDoc(t));
+  return d;
+}
+
+/** The expanded part of a tool row: its description, parameters and raw schema. */
+function toolDoc(t) {
+  const doc = el('div', 'doc');
+  doc.textContent = t.description || '(no description)';
+  const props = t.parameters?.properties || {};
+  const required = new Set(t.parameters?.required || []);
+  if (Object.keys(props).length) {
+    const list = el('div', 'params');
+    for (const [key, spec] of Object.entries(props)) {
+      const row = el('div', 'param');
+      const b = el('b');
+      b.textContent = key;
+      const ty = el('span', 'ty');
+      ty.textContent = spec.type || (spec.anyOf ? 'any' : '?');
+      const req = el('span', required.has(key) ? 'req' : 'ty');
+      req.textContent = required.has(key) ? 'required' : 'optional';
+      const dd = el('span', 'd');
+      dd.textContent = (spec.description || '').split('\n')[0];
+      row.append(b, ty, req, dd);
+      list.appendChild(row);
+    }
+    doc.appendChild(list);
+  }
+  const raw = el('pre');
+  raw.textContent = JSON.stringify(t.parameters ?? {}, null, 2);
+  doc.appendChild(raw);
+  return doc;
+}
+
+const SERVER_STATUS_LABEL = { ok: 'connected', disabled: 'disabled', error: 'failed to connect' };
+
+function serverGroup(s, mode) {
+  const grp = el('div', `tool-group server ${s.status}`);
+  const h = el('div', 'tool-group-h');
+  h.appendChild(checkbox(
+    s.status !== 'disabled',
+    s.status === 'disabled' ? 'Disabled -- click to reconnect' : 'Click to disconnect this server',
+    (disabled) => toggleServer(s.name, disabled)
+  ));
+  const dot = el('span', 'dot');
+  const name = el('span', 'name');
+  name.textContent = s.name;
+  const meta = el('span', 'meta');
+  meta.textContent = s.status === 'ok'
+    ? `${s.tools.length} tool${s.tools.length === 1 ? '' : 's'}`
+    : SERVER_STATUS_LABEL[s.status];
+  h.append(dot, name, meta);
+  grp.appendChild(h);
+
+  if (s.status === 'error' && s.error) {
+    const err = el('div', 'tool-group-err');
+    err.textContent = s.error;
+    grp.appendChild(err);
+  }
+  if (s.status === 'ok' && s.instructions) {
+    const note = el('details', 'tool-group-instructions');
+    const sum = el('summary');
+    sum.textContent = 'instructions';
+    const body = el('div', 'body');
+    body.textContent = s.instructions;
+    note.append(sum, body);
+    grp.appendChild(note);
+  }
+  if (s.status === 'ok') {
+    if (!s.tools.length) {
+      const empty = el('div', 'empty');
+      empty.textContent = 'no tools';
+      grp.appendChild(empty);
+    } else {
+      for (const t of s.tools) grp.appendChild(toolRow(t, mode));
+    }
+  }
+  return grp;
 }
 
 export async function loadTools() {

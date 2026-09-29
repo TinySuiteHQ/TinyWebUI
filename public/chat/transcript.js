@@ -428,21 +428,7 @@ export function addSteps(parent) {
       row.d.open = true;
       row.d.classList.add('waiting');
       row.ms.textContent = 'needs approval';
-      const bar = el('div', 'approve');
-      const button = (label, decision, cls) => {
-        const b = el('button', cls);
-        b.textContent = label;
-        b.onclick = () => {
-          for (const x of bar.querySelectorAll('button')) x.disabled = true;
-          onDecide(decision).catch(() => { for (const x of bar.querySelectorAll('button')) x.disabled = false; });
-        };
-        return b;
-      };
-      bar.append(
-        button('allow', 'allow', 'primary'),
-        button('always allow this tool', 'always'),
-        button('deny', 'deny')
-      );
+      const bar = approvalBar(onDecide);
       row.d.appendChild(bar);
       row.ask = bar;
       scroll();
@@ -470,56 +456,8 @@ export function addSteps(parent) {
       row.d.open = true;
       row.d.classList.add('waiting');
       row.ms.textContent = 'waiting for you';
-      const box = el('div', 'ask');
-      const text = el('p', 'ask-q');
-      text.textContent = q.question;
-      box.appendChild(text);
-      const lock = (on) => { for (const x of box.querySelectorAll('button, input')) x.disabled = on; };
-      const send = (body) => { lock(true); onAnswer(body).catch(() => lock(false)); };
-      if (q.choices?.length) {
-        const bar = el('div', 'ask-choices');
-        for (const c of q.choices) {
-          const b = el('button');
-          b.textContent = c;
-          b.onclick = () => send({ answer: c });
-          bar.appendChild(b);
-        }
-        box.appendChild(bar);
-      }
-      const foot = el('div', 'ask-foot');
-      if (q.allowFreeText) {
-        const form = el('form', 'ask-free');
-        const input = el('input');
-        input.placeholder = q.choices?.length ? 'or type an answer…' : 'your answer…';
-        input.setAttribute('aria-label', 'Answer');
-        const go = el('button', 'primary');
-        go.type = 'submit';
-        go.textContent = 'answer';
-        form.append(input, go);
-        form.onsubmit = (e) => {
-          e.preventDefault();
-          if (input.value.trim()) send({ answer: input.value.trim() });
-        };
-        box.appendChild(form);
-        setTimeout(() => input.focus(), 0);
-      }
-      const skip = el('button', 'ask-skip');
-      skip.textContent = 'continue without me';
-      skip.onclick = () => send({ skip: true });
-      const clock = el('span', 'ask-clock');
-      foot.append(skip, clock);
-      box.appendChild(foot);
-      let tick = null;
-      if (q.deadline) {
-        const paint = () => {
-          const left = Math.max(0, Math.ceil((q.deadline - Date.now()) / 1000));
-          clock.textContent = `continues on its own in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-        };
-        paint();
-        tick = setInterval(paint, 1000);
-      }
-      row.d.appendChild(box);
-      row.question = { box, tick };
+      row.question = questionCard(q, onAnswer);
+      row.d.appendChild(row.question.box);
       scroll();
     },
     /** The ask_user call still running here: calls are sequential, so at most one. */
@@ -540,6 +478,81 @@ export function addSteps(parent) {
     // Timings are meaningless on a replayed transcript.
     quiet() { for (const r of rows.values()) r.ms.textContent = ''; }
   };
+}
+
+/** allow / always / deny under a held tool call. Buttons lock while `onDecide` is in flight. */
+function approvalBar(onDecide) {
+  const bar = el('div', 'approve');
+  const lock = (on) => { for (const x of bar.querySelectorAll('button')) x.disabled = on; };
+  const button = (label, decision, cls) => {
+    const b = el('button', cls);
+    b.textContent = label;
+    b.onclick = () => { lock(true); onDecide(decision).catch(() => lock(false)); };
+    return b;
+  };
+  bar.append(
+    button('allow', 'allow', 'primary'),
+    button('always allow this tool', 'always'),
+    button('deny', 'deny')
+  );
+  return bar;
+}
+
+/**
+ * An ask_user card: the question, its choices, a text box when free text is
+ * allowed, "continue without me", and a countdown to the deadline. Returns
+ * `{ box, tick }`; the caller clears `tick` when the question settles.
+ */
+function questionCard(q, onAnswer) {
+  const box = el('div', 'ask');
+  const text = el('p', 'ask-q');
+  text.textContent = q.question;
+  box.appendChild(text);
+  const lock = (on) => { for (const x of box.querySelectorAll('button, input')) x.disabled = on; };
+  const send = (body) => { lock(true); onAnswer(body).catch(() => lock(false)); };
+  if (q.choices?.length) {
+    const bar = el('div', 'ask-choices');
+    for (const c of q.choices) {
+      const b = el('button');
+      b.textContent = c;
+      b.onclick = () => send({ answer: c });
+      bar.appendChild(b);
+    }
+    box.appendChild(bar);
+  }
+  if (q.allowFreeText) {
+    const form = el('form', 'ask-free');
+    const input = el('input');
+    input.placeholder = q.choices?.length ? 'or type an answer…' : 'your answer…';
+    input.setAttribute('aria-label', 'Answer');
+    const go = el('button', 'primary');
+    go.type = 'submit';
+    go.textContent = 'answer';
+    form.append(input, go);
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      if (input.value.trim()) send({ answer: input.value.trim() });
+    };
+    box.appendChild(form);
+    setTimeout(() => input.focus(), 0);
+  }
+  const foot = el('div', 'ask-foot');
+  const skip = el('button', 'ask-skip');
+  skip.textContent = 'continue without me';
+  skip.onclick = () => send({ skip: true });
+  const clock = el('span', 'ask-clock');
+  foot.append(skip, clock);
+  box.appendChild(foot);
+  let tick = null;
+  if (q.deadline) {
+    const paint = () => {
+      const left = Math.max(0, Math.ceil((q.deadline - Date.now()) / 1000));
+      clock.textContent = `continues on its own in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    };
+    paint();
+    tick = setInterval(paint, 1000);
+  }
+  return { box, tick };
 }
 
 const fmt = (n) => n.toLocaleString('en-US');

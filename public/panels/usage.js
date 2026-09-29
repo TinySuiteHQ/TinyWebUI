@@ -76,8 +76,15 @@ function render() {
     });
   renderDistribution(scoped);
 
-  // Stat tiles: totals for whatever is currently in view.
   const models = sumModels(scoped);
+  renderTiles(models);
+  renderModelSplit(models);
+  renderBreadcrumb();
+  renderBars(scoped, level, models);
+}
+
+/** Stat tiles: totals for whatever is currently in view. */
+function renderTiles(models) {
   const totalIn = models.reduce((n, m) => n + m.in, 0);
   const totalOut = models.reduce((n, m) => n + m.out, 0);
   const totalCached = models.reduce((n, m) => n + m.cached, 0);
@@ -98,11 +105,15 @@ function render() {
     tile('tokens out', fmt(totalOut)),
     tile('cached', fmt(totalCached))
   );
+}
 
-  // Per-model breakdown, as its own list rather than crammed into a stat
-  // tile: a model name plus three counts doesn't fit next to "584,746" at
-  // the same width, and comma-joining every model into one string just wraps
-  // wherever it wraps, with no way to see a single model's in/out split.
+/**
+ * Per-model breakdown, as its own list rather than crammed into a stat
+ * tile: a model name plus three counts doesn't fit next to "584,746" at
+ * the same width, and comma-joining every model into one string just wraps
+ * wherever it wraps, with no way to see a single model's in/out split.
+ */
+function renderModelSplit(models) {
   const modelsBox = $('usageModels');
   modelsBox.innerHTML = '';
   if (models.length) {
@@ -143,8 +154,9 @@ function render() {
     }
     modelsBox.appendChild(legend);
   }
+}
 
-  // Breadcrumb.
+function renderBreadcrumb() {
   const crumbs = ['all time', ...path];
   $('usageRange').innerHTML = '';
   crumbs.forEach((label, i) => {
@@ -155,11 +167,15 @@ function render() {
     a.onclick = (e) => { e.preventDefault(); path = path.slice(0, i); render(); };
     $('usageRange').appendChild(a);
   });
+}
 
-  // Bars: years, or months in a year, or individual days. This is the one
-  // place bar *length* means "more tokens than that other bar" -- so this is
-  // also where the per-model split belongs, as colored segments inside each
-  // bar, rather than on the fixed-width rows above.
+/**
+ * Bars: years, or months in a year, or individual days. This is the one
+ * place bar *length* means "more tokens than that other bar" -- so this is
+ * also where the per-model split belongs, as colored segments inside each
+ * bar, rather than on the fixed-width rows above.
+ */
+function renderBars(scoped, level, models) {
   const box = $('usageBars');
   box.innerHTML = '';
   const buckets = level === 'day'

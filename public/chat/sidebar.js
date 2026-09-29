@@ -51,6 +51,26 @@ function renderChatList() {
     e.textContent = 'no saved chats';
     return $('chats').appendChild(e);
   }
+  const groups = groupByFolder(isDraft);
+  const now = Date.now();
+  for (const [folder, chats] of groups) {
+    const contents = folder ? folderSection(folder, chats.length) : $('chats');
+    let lastBucket = null;
+    for (const c of chats) {
+      const bucket = c === DRAFT ? 'Today' : bucketOf(c.updated_at, now);
+      if (bucket !== lastBucket) {
+        lastBucket = bucket;
+        const heading = el('div', 'chat-date-heading');
+        heading.textContent = bucket;
+        contents.appendChild(heading);
+      }
+      contents.appendChild(c === DRAFT ? draftRow() : chatRow(c));
+    }
+  }
+}
+
+/** folder name (null = none) -> its chats, folders alphabetical and the unfiled last. */
+function groupByFolder(isDraft) {
   const groups = new Map();
   // A folder just created and not yet moved into is still a real folder --
   // it needs a row of its own, not just a spot in the organize dropdown.
@@ -69,97 +89,86 @@ function renderChatList() {
     if (!groups.has(null)) groups.set(null, []);
     groups.get(null).unshift(DRAFT);
   }
-  const folderNames = [...groups.keys()].sort((a, b) => a === null ? 1 : b === null ? -1 : a.localeCompare(b));
-  const now = Date.now();
-  for (const folder of folderNames) {
-    let contents = $('chats');
-    if (folder) {
-      // Every folder starts collapsed -- with more than a couple of them,
-      // auto-opening turns the sidebar into a wall of chats.
-      const section = el('details', 'chat-folder');
-      section.open = expandedFolders.has(folder);
-      section.addEventListener('toggle', () => {
-        if (section.open) expandedFolders.add(folder);
-        else expandedFolders.delete(folder);
-      });
-      const heading = el('summary', 'chat-folder-heading');
-      const name = el('span', 'chat-folder-name'); name.textContent = folder;
-      const count = el('span', 'chat-folder-count'); count.textContent = String(groups.get(folder).length);
-      heading.append(name, count);
-      section.appendChild(heading);
-      contents = el('div', 'chat-folder-content');
-      section.appendChild(contents);
-      $('chats').appendChild(section);
-    }
-    let lastBucket = null;
-    for (const c of groups.get(folder)) {
-      if (c === DRAFT) {
-        if (lastBucket !== 'Today') {
-          lastBucket = 'Today';
-          const dateHeading = el('div', 'chat-date-heading');
-          dateHeading.textContent = 'Today';
-          contents.appendChild(dateHeading);
-        }
-        const row = el('div', 'chat-item active draft');
-        row.tabIndex = 0;
-        row.setAttribute('role', 'button');
-        row.setAttribute('aria-current', 'true');
-        const t = el('span', 't');
-        t.textContent = state.chat.title || 'New chat';
-        row.appendChild(t);
-        contents.appendChild(row);
-        continue;
-      }
-    const bucket = bucketOf(c.updated_at, now);
-    if (bucket !== lastBucket) {
-      lastBucket = bucket;
-      const dateHeading = el('div', 'chat-date-heading');
-      dateHeading.textContent = bucket;
-      contents.appendChild(dateHeading);
-    }
-    const row = el('div', 'chat-item' + (state.chat && c.id === state.chat.id ? ' active' : ''));
-    // A div with an onclick is unreachable without a mouse, so the row carries
-    // the button contract explicitly: focusable, named, and activated by key.
-    row.tabIndex = 0;
-    row.setAttribute('role', 'button');
-    if (state.chat && c.id === state.chat.id) row.setAttribute('aria-current', 'true');
-    const t = el('span', 't');
-    t.textContent = c.title;
-    // A turn is the server's, not this tab's, so a chat can be working while
-    // nothing is watching it -- including a chat opened in another window.
-    if (c.running) {
-      const dot = el('span', 'dot');
-      dot.title = 'working';
-      dot.setAttribute('aria-label', 'working');
-      row.appendChild(dot);
-    }
-    const organize = el('button', 'organize-chat');
-    organize.type = 'button';
-    organize.textContent = '⋯';
-    organize.title = 'Chat options';
-    organize.setAttribute('aria-label', `Options for "${c.title}"`);
-    organize.onclick = (e) => {
-      e.stopPropagation();
-      organizingChatId = c.id;
-      fillOrganizeFolders(c.folder || '');
-      $('organizeError').hidden = true;
-      $('organizeDelete').title = `Delete "${c.title}"`;
-      $('organizeDelete').setAttribute('aria-label', `Delete "${c.title}"`);
-      $('organizeDialog').showModal();
-      $('organizeFolder').focus();
-    };
-    organize.onkeydown = (e) => e.stopPropagation();
-    row.prepend(t);
-    row.append(organize);
-    row.onclick = () => openChat(c.id);
-    row.onkeydown = (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault(); // space would scroll the list instead
-      openChat(c.id);
-    };
-    contents.appendChild(row);
-    }
+  const names = [...groups.keys()].sort((a, b) => a === null ? 1 : b === null ? -1 : a.localeCompare(b));
+  return new Map(names.map((n) => [n, groups.get(n)]));
+}
+
+/** Appends a folder's collapsible section and returns the element its rows go in. */
+function folderSection(folder, count) {
+  // Every folder starts collapsed -- with more than a couple of them,
+  // auto-opening turns the sidebar into a wall of chats.
+  const section = el('details', 'chat-folder');
+  section.open = expandedFolders.has(folder);
+  section.addEventListener('toggle', () => {
+    if (section.open) expandedFolders.add(folder);
+    else expandedFolders.delete(folder);
+  });
+  const heading = el('summary', 'chat-folder-heading');
+  const name = el('span', 'chat-folder-name'); name.textContent = folder;
+  const n = el('span', 'chat-folder-count'); n.textContent = String(count);
+  heading.append(name, n);
+  const contents = el('div', 'chat-folder-content');
+  section.append(heading, contents);
+  $('chats').appendChild(section);
+  return contents;
+}
+
+function draftRow() {
+  const row = el('div', 'chat-item active draft');
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  row.setAttribute('aria-current', 'true');
+  const t = el('span', 't');
+  t.textContent = state.chat.title || 'New chat';
+  row.appendChild(t);
+  return row;
+}
+
+function chatRow(c) {
+  const current = state.chat && c.id === state.chat.id;
+  const row = el('div', 'chat-item' + (current ? ' active' : ''));
+  // A div with an onclick is unreachable without a mouse, so the row carries
+  // the button contract explicitly: focusable, named, and activated by key.
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  if (current) row.setAttribute('aria-current', 'true');
+  const t = el('span', 't');
+  t.textContent = c.title;
+  row.appendChild(t);
+  // A turn is the server's, not this tab's, so a chat can be working while
+  // nothing is watching it -- including a chat opened in another window.
+  if (c.running) {
+    const dot = el('span', 'dot');
+    dot.title = 'working';
+    dot.setAttribute('aria-label', 'working');
+    row.appendChild(dot);
   }
+  const organize = el('button', 'organize-chat');
+  organize.type = 'button';
+  organize.textContent = '⋯';
+  organize.title = 'Chat options';
+  organize.setAttribute('aria-label', `Options for "${c.title}"`);
+  organize.onclick = (e) => { e.stopPropagation(); openOrganize(c); };
+  organize.onkeydown = (e) => e.stopPropagation();
+  row.append(organize);
+  row.onclick = () => openChat(c.id);
+  row.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault(); // space would scroll the list instead
+    openChat(c.id);
+  };
+  return row;
+}
+
+/** The ⋯ dialog: move to a folder, or delete. */
+function openOrganize(c) {
+  organizingChatId = c.id;
+  fillOrganizeFolders(c.folder || '');
+  $('organizeError').hidden = true;
+  $('organizeDelete').title = `Delete "${c.title}"`;
+  $('organizeDelete').setAttribute('aria-label', `Delete "${c.title}"`);
+  $('organizeDialog').showModal();
+  $('organizeFolder').focus();
 }
 
 /** Recent chats get familiar rolling buckets; older chats use calendar months. */

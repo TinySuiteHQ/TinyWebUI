@@ -122,34 +122,12 @@ function autosize(t) {
   t.style.height = `${Math.max(t.scrollHeight + 2, 320)}px`;
 }
 
-/** Builds the create/edit form: `existing` is the automation, or null to create. */
-function automationForm(existing) {
-  const initial = existing || {};
-  const form = el('form', 'automation-editor');
-
-  const name = el('input'); name.required = true; name.maxLength = 120;
-  name.placeholder = 'e.g. Morning news digest'; name.value = initial.name || '';
-  const chat = el('select'); chat.required = true;
-  for (const c of snapshot.chats) {
-    const o = el('option'); o.value = c.id; o.textContent = c.title || c.id; chat.appendChild(o);
-  }
-  if (initial.chatId) chat.value = initial.chatId;
-  // Last option: have the server create a fresh chat, named here.
-  const NEW_CHAT = '__new__';
-  const newOpt = el('option'); newOpt.value = NEW_CHAT; newOpt.textContent = '+ New chat…';
-  chat.appendChild(newOpt);
-  if (!snapshot.chats.length) chat.value = NEW_CHAT;
-  const newChatName = el('input'); newChatName.maxLength = 120; newChatName.placeholder = 'Name for the new chat';
-  const newChatField = field('New chat name', newChatName);
-  const syncChat = () => {
-    const on = chat.value === NEW_CHAT;
-    newChatField.hidden = !on; newChatName.required = on;
-    if (on && !newChatName.value) newChatName.value = name.value.trim();
-  };
-  chat.addEventListener('change', () => { syncChat(); if (chat.value === NEW_CHAT) newChatName.select(); });
-  syncChat();
-
-  // Schedule: a plain dropdown, the parts it needs, raw cron as the escape hatch.
+/**
+ * Schedule: a plain dropdown, the parts it needs, raw cron as the escape hatch.
+ * Returns the row plus the cron and timezone inputs the form submits, and
+ * `sync`, which fills cron from the dropdown and shows only the fields it uses.
+ */
+function schedulePicker(initial) {
   const parsed = parseCron(initial.cron || '0 9 * * 1-5');
   let presetValue = parsed.preset;
   if (presetValue === 'days') {
@@ -195,6 +173,40 @@ function automationForm(existing) {
   }
   for (const c of [preset, time, minute, day, dom]) c.addEventListener('input', sync);
 
+  const when = el('div', 'automation-row');
+  when.append(field('Repeats', preset), timeField, minuteField, dayField, domField, cronField, field('Timezone', zone));
+  return { when, cron, zone, sync };
+}
+
+/** Builds the create/edit form: `existing` is the automation, or null to create. */
+function automationForm(existing) {
+  const initial = existing || {};
+  const form = el('form', 'automation-editor');
+
+  const name = el('input'); name.required = true; name.maxLength = 120;
+  name.placeholder = 'e.g. Morning news digest'; name.value = initial.name || '';
+  const chat = el('select'); chat.required = true;
+  for (const c of snapshot.chats) {
+    const o = el('option'); o.value = c.id; o.textContent = c.title || c.id; chat.appendChild(o);
+  }
+  if (initial.chatId) chat.value = initial.chatId;
+  // Last option: have the server create a fresh chat, named here.
+  const NEW_CHAT = '__new__';
+  const newOpt = el('option'); newOpt.value = NEW_CHAT; newOpt.textContent = '+ New chat…';
+  chat.appendChild(newOpt);
+  if (!snapshot.chats.length) chat.value = NEW_CHAT;
+  const newChatName = el('input'); newChatName.maxLength = 120; newChatName.placeholder = 'Name for the new chat';
+  const newChatField = field('New chat name', newChatName);
+  const syncChat = () => {
+    const on = chat.value === NEW_CHAT;
+    newChatField.hidden = !on; newChatName.required = on;
+    if (on && !newChatName.value) newChatName.value = name.value.trim();
+  };
+  chat.addEventListener('change', () => { syncChat(); if (chat.value === NEW_CHAT) newChatName.select(); });
+  syncChat();
+
+  const { when, cron, zone, sync } = schedulePicker(initial);
+
   const prompt = el('textarea'); prompt.required = true; prompt.maxLength = 12000;
   prompt.placeholder = 'What should the assistant do each time this runs?';
   prompt.value = initial.prompt || '';
@@ -206,8 +218,6 @@ function automationForm(existing) {
 
   const top = el('div', 'automation-row');
   top.append(field('Name', name), field('Post results to', chat), newChatField);
-  const when = el('div', 'automation-row');
-  when.append(field('Repeats', preset), timeField, minuteField, dayField, domField, cronField, field('Timezone', zone));
 
   const error = el('div', 'automation-error'); error.setAttribute('role', 'alert');
   const actions = el('div', 'automation-actions');
@@ -338,6 +348,17 @@ function card(automation) {
   edit.onclick = () => { openForm = automation.id; rerender(); };
   actions.append(run, edit);
 
+  const history = runHistory(automation);
+  actions.append(el('span', 'grow'), history);
+
+  article.append(head, facts);
+  if (openForm === automation.id) article.appendChild(automationForm(automation));
+  else article.append(preview, actions);
+  return article;
+}
+
+/** The collapsed "Run history" under a card; its runs are fetched on first open. */
+function runHistory(automation) {
   const history = el('details', 'automation-history');
   const summary = el('summary'); summary.textContent = 'Run history';
   history.appendChild(summary);
@@ -386,12 +407,7 @@ function card(automation) {
     }
     history.appendChild(table);
   });
-  actions.append(el('span', 'grow'), history);
-
-  article.append(head, facts);
-  if (openForm === automation.id) article.appendChild(automationForm(automation));
-  else article.append(preview, actions);
-  return article;
+  return history;
 }
 
 function rerender() {
