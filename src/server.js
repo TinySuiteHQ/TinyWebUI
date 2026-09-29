@@ -10,6 +10,7 @@ import { Store, SCHEMA_VERSION } from './store/index.js';
 import { fingerprint, featuresFor, modelsFor } from './access/policy.js';
 import { hashPassword, applyAccessPolicy } from './access/auth.js';
 import { audit } from './audit.js';
+import { logger } from './log.js';
 import { resolveAuth, OWNER_ID } from './access/auth_gate.js';
 import { json, HttpError, SECURITY_HEADERS, crossSite, serveStatic } from './http.js';
 import { expandToolDef, callExpand } from './tools/context_tool.js';
@@ -31,6 +32,8 @@ import { automationRoutes } from './routes/automations.js';
 import { documentRoutes } from './routes/documents.js';
 import { chatRoutes } from './routes/chats.js';
 import { adminRoutes } from './routes/admin.js';
+
+const log = logger('server');
 
 const VERSION = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -69,7 +72,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   // Runs live in this process, so nothing from before it can still be waiting.
   store.chats.expireQuestions();
   if (store.migratedFrom !== null && store.migratedFrom < SCHEMA_VERSION) {
-    console.log(`[tinywebui] migrated database from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
+    log.info(`migrated database from schema ${store.migratedFrom} to ${SCHEMA_VERSION}`);
   }
   if (initial.authMode === 'trusted-header') applyAccessPolicy(store, initial);
 
@@ -81,7 +84,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     try {
       embedder = sourceOpts.embedder || await loadEmbedder(initial.retrieval, defaultModelsDir(source.path()));
     } catch (err) { store.close(); throw err; }
-    console.log(`[tinywebui] retrieval: ${initial.retrieval.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
+    log.info(`retrieval: ${initial.retrieval.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
   }
 
   if (initial.authMode === 'single') store.users.ensureOwner(OWNER_ID);
@@ -206,13 +209,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   let mcpText = source.readMcpFile();
   const serversOf = (text) => { try { const p = JSON.parse(text); return p.mcpServers || p; } catch { return {}; } };
 
-  console.log(`[tinywebui] config: ${source.path() || '(in code, no file)'}`);
-  console.log(`[tinywebui] mcp:    ${source.mcpPath() || '(in code)'}`);
-  console.log(`[tinywebui] db:     ${source.dbPath(app.cfg)}`);
-  console.log(`[tinywebui] model:  ${app.cfg.model} via ${app.cfg.baseUrl}`);
-  console.log(`[tinywebui] tools:  ${app.hub.tools.length} from ${app.hub.clients.size} MCP server(s)`);
-  console.log(`[tinywebui] policy: ${fingerprint(app.cfg, source.loadMcpServers())} (fingerprint)`);
-  for (const err of app.hub.errors) console.log(`[tinywebui] mcp error: ${err}`);
+  log.info(`config: ${source.path() || '(in code, no file)'}`);
+  log.info(`mcp:    ${source.mcpPath() || '(in code)'}`);
+  log.info(`db:     ${source.dbPath(app.cfg)}`);
+  log.info(`model:  ${app.cfg.model} via ${app.cfg.baseUrl}`);
+  log.info(`tools:  ${app.hub.tools.length} from ${app.hub.clients.size} MCP server(s)`);
+  log.info(`policy: ${fingerprint(app.cfg, source.loadMcpServers())} (fingerprint)`);
 
   const routes = routeTable(app);
 
@@ -258,11 +260,11 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
   await new Promise((resolve) => server.listen(port, host, resolve));
   scheduler.arm();
-  console.log(`[tinywebui] http://${host}:${port}`);
+  log.info(`http://${host}:${port}`);
   // Anything stored before dense retrieval was on (or under another model)
   // is embedded in the background; document queries fill in on demand too.
-  retrieval.backfill((msg) => console.log(`[tinywebui] retrieval: ${msg}`))
-    .catch((err) => console.error(`[tinywebui] retrieval backfill failed: ${err.message}`));
+  retrieval.backfill((msg) => log.info(`retrieval: ${msg}`))
+    .catch((err) => log.error(`retrieval backfill failed: ${err.message}`));
 
   /**
    * Re-reads config.json and mcp.json after a hand or agent edit. All or
@@ -282,7 +284,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         if (!spec || (!spec.command && !spec.url)) throw new Error(`mcp server "${name}" needs either "command" or "url"`);
       }
     } catch (err) {
-      console.error(`[tinywebui] reload rejected (${reason}): ${err.message}`);
+      log.warn(`reload rejected (${reason}): ${err.message}`);
       audit('config.reload_rejected', { reason, problems: [err.message] });
       return false;
     }
@@ -290,7 +292,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     if (next.authMode !== app.cfg.authMode) problems.push('authMode changes need a restart');
     if (JSON.stringify(next.retrieval) !== JSON.stringify(app.cfg.retrieval)) problems.push('retrieval changes need a restart');
     if (problems.length) {
-      console.error(`[tinywebui] reload rejected (${reason}):\n  ${problems.join('\n  ')}`);
+      log.warn(`reload rejected (${reason}):\n  ${problems.join('\n  ')}`);
       audit('config.reload_rejected', { reason, problems });
       return false;
     }
@@ -303,7 +305,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     if (next.authMode === 'trusted-header') applyAccessPolicy(store, next);
     if (mcpChanged) await app.swapHub(servers);
     scheduler.arm();
-    console.log(`[tinywebui] reloaded (${reason}): policy ${after}`);
+    log.info(`reloaded (${reason}): policy ${after}`);
     audit('config.reloaded', { reason, before, after, mcpChanged });
     return true;
   }
@@ -314,7 +316,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   let reloadTimer = null;
   const scheduleReload = (reason) => {
     clearTimeout(reloadTimer);
-    reloadTimer = setTimeout(() => { reloadFromFiles(reason).catch((err) => console.error(`[tinywebui] reload failed: ${err.message}`)); }, 300);
+    reloadTimer = setTimeout(() => { reloadFromFiles(reason).catch((err) => log.error(`reload failed: ${err.message}`)); }, 300);
     reloadTimer.unref?.();
   };
   if (sourceOpts.watch !== false) {
@@ -326,7 +328,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const w = watch(folder, (_, name) => { if (name && names.has(String(name))) scheduleReload('file changed'); });
         w.unref?.();
         watchers.push(w);
-      } catch (err) { console.error(`[tinywebui] cannot watch ${folder}: ${err.message}`); }
+      } catch (err) { log.error(`cannot watch ${folder}: ${err.message}`); }
     }
   }
   const onHup = () => scheduleReload('SIGHUP');

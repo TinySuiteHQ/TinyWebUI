@@ -1,6 +1,9 @@
 import { json, readJson, UPLOAD_LIMIT } from '../http.js';
 import { extractText } from '../files/documents.js';
 import { normalizeImage } from '../files/images.js';
+import { logger } from '../log.js';
+
+const log = logger('retrieval');
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -57,7 +60,7 @@ export function documentRoutes(app) {
       const chat = store.chats.get(chatId, auth.userId) || store.chats.create({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
       const doc = store.documents.add(chat.id, { filename: String(filename), mime: mime || null, content: text }, retrieval.passageSettings());
       // Embedded once, in the background; a question that arrives first waits for it.
-      retrieval.ingest('documents', doc.id).catch((err) => console.error(`[tinywebui] embedding ${doc.id} failed: ${err.message}`));
+      retrieval.ingest('documents', doc.id).catch((err) => log.error(`embedding ${doc.id} failed: ${err.message}`));
       return json(res, 200, { chatId: chat.id, document: doc });
     } },
 

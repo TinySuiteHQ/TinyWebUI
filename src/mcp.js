@@ -2,6 +2,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { logger } from './log.js';
+
+const log = logger('mcp');
 
 const SEP = '__';
 const MAX_NAME = 64;
@@ -133,7 +136,7 @@ export class McpHub {
         }
       } catch (err) {
         this.errors.push(`${name}: ${err.message}`);
-        console.error(`[mcp] ${name} failed to connect: ${err.message}`);
+        log.error(`${name} failed to connect: ${err.message}`);
       }
     }
     return this;
@@ -183,7 +186,7 @@ export class McpHub {
       const lines = buf.split('\n');
       buf = lines.pop();
       for (const line of lines) {
-        if (line.trim() && !this.closing) console.error(`[${name}] ${line}`);
+        if (line.trim() && !this.closing) log.info(`${name}: ${line}`);
       }
     });
     stream.on('error', () => { /* the child is going away; nothing to report */ });

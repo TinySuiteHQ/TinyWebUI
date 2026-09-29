@@ -3,6 +3,9 @@ import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
 import { modelProblems, labelFor } from './models.js';
+import { logger } from '../log.js';
+
+const log = logger('config');
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
   ? resolve(process.env.TINYWEBUI_CONFIG)
@@ -252,7 +255,7 @@ export function createConfigSource(opts = {}) {
       try {
         writeFile({ ...readFile(), sessionSecret: cfg.sessionSecret });
       } catch (err) {
-        console.error(`[tinywebui] could not persist generated sessionSecret: ${err.message}`);
+        log.error(`could not persist generated sessionSecret: ${err.message}`);
       }
     }
     return cfg;
@@ -324,7 +327,7 @@ export function createConfigSource(opts = {}) {
         // Accept both {"mcpServers": {...}} and a bare {...} map.
         return parsed.mcpServers || parsed || {};
       } catch (err) {
-        console.error(`[tinywebui] ${mcpFile} is not valid JSON: ${err.message}`);
+        log.error(`${mcpFile} is not valid JSON: ${err.message}`);
         return {};
       }
     },

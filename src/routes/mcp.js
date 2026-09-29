@@ -3,6 +3,9 @@ import { LockedError } from '../config/config.js';
 import { fingerprint } from '../access/policy.js';
 import { actor } from '../access/auth_gate.js';
 import { toolList } from './settings.js';
+import { logger } from '../log.js';
+
+const log = logger('mcp');
 
 export function mcpRoutes(app) {
   const { source } = app;
@@ -19,7 +22,7 @@ export function mcpRoutes(app) {
       return false;
     }
     await app.swapHub(servers);
-    console.log(`[tinywebui] mcp reloaded: ${app.hub.tools.length} tool(s)`);
+    log.info(`reloaded: ${app.hub.tools.length} tool(s)`);
     return true;
   };
 

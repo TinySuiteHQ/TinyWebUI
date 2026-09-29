@@ -44,7 +44,7 @@ Create a configuration file beside the directory where you run TinyWebUI:
 cp example.tinywebui.config.json tinywebui.config.json
 ```
 
-`tinywebui.config.json` is gitignored. It may contain an API key, so do not commit it. You can place it elsewhere with `TINYWEBUI_CONFIG`; `TINYWEBUI_API_KEY`, `OPENROUTER_API_KEY`, `TINYWEBUI_BASE_URL`, and `TINYWEBUI_MODEL` override file values.
+`tinywebui.config.json` is gitignored. It may contain an API key, so do not commit it. You can place it elsewhere with `TINYWEBUI_CONFIG`; `TINYWEBUI_API_KEY`, `OPENROUTER_API_KEY`, `TINYWEBUI_BASE_URL`, and `TINYWEBUI_MODEL` override file values. `TINYWEBUI_LOG_LEVEL` (`debug`, `info`, `warn`, `error`, `silent`; default `info`) sets how much the server logs; every line is tagged by area, like `[tinywebui:mcp]`. Audit events are always written.
 
 An OpenRouter example:
 

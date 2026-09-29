@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.js';
 import { effectiveConfig } from '../config/models.js';
+import { logger } from '../log.js';
+
+const log = logger('retrieval');
 
 const RETAIN_MS = 5 * 60 * 1000;
 
@@ -128,7 +131,7 @@ export function createRuns(app) {
       } finally {
         store.chats.touch(chat.id);
         run.done = true;
-        app.retrieval.ingest('chats', chat.id).catch((err) => console.error(`[tinywebui] embedding chat ${chat.id} failed: ${err.message}`));
+        app.retrieval.ingest('chats', chat.id).catch((err) => log.error(`embedding chat ${chat.id} failed: ${err.message}`));
         // The run would go idle here, so the oldest queued item starts the
         // next one -- in this same synchronous block, so nothing queued before
         // `done` flipped can be missed. A stop or failure delivers nothing:
