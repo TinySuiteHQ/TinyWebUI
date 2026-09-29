@@ -2,10 +2,10 @@
  * The chat-history sidebar: the draggable width, the chronological list, the
  * full-text search that swaps in over it, and the mobile drawer it lives in.
  */
-import { $, el } from './dom.js';
-import { state } from './state.js';
+import { $, el } from '../core/dom.js';
+import { state } from '../core/state.js';
 import { openChat, newChat } from './chat.js';
-import { api } from './api.js';
+import { api } from '../core/api.js';
 
 let organizingChatId = null;
 const expandedFolders = new Set();

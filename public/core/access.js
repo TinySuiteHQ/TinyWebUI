@@ -5,7 +5,7 @@
  * a chat app, not a settings app with the settings locked.
  */
 import { $ } from './dom.js';
-import { FEATURE } from './shared/features.js';
+import { FEATURE } from '../shared/features.js';
 import { api } from './api.js';
 
 let me = { features: [], models: '*' };

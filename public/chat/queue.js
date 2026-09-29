@@ -8,10 +8,10 @@
  * nowhere until the user clicks their send button -- into the running turn
  * if there still is one, as a new message otherwise.
  */
-import { $, el } from './dom.js';
-import { state } from './state.js';
+import { $, el } from '../core/dom.js';
+import { state } from '../core/state.js';
 import { addError } from './transcript.js';
-import { api } from './api.js';
+import { api } from '../core/api.js';
 
 const box = $('queue');
 

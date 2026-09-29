@@ -3,10 +3,10 @@
  * enough control to approve, disable or promote them. Shown only to admins;
  * the server enforces the same rule on every /api/admin call regardless.
  */
-import { $, el } from './dom.js';
-import { renderMarkdown } from './md.js';
-import { whoami } from './access.js';
-import { api } from './api.js';
+import { $, el } from '../core/dom.js';
+import { renderMarkdown } from '../core/md.js';
+import { whoami } from '../core/access.js';
+import { api } from '../core/api.js';
 
 let me = null;
 let adminLoadRequest = 0;

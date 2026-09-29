@@ -1,4 +1,4 @@
-import { $ } from './dom.js';
+import { $ } from '../core/dom.js';
 import { toggleSettings, loadMcp, loadTools } from './settings.js';
 import { openAutomations } from './automations.js';
 import { loadUsage } from './usage.js';

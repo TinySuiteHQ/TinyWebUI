@@ -4,11 +4,11 @@
  * until the message is actually sent. Before that, removing one just drops
  * it from the local queue; there is nothing server-side to clean up.
  */
-import { $, el } from './dom.js';
-import { can } from './access.js';
-import { state } from './state.js';
+import { $, el } from '../core/dom.js';
+import { can } from '../core/access.js';
+import { state } from '../core/state.js';
 import { addError } from './transcript.js';
-import { api } from './api.js';
+import { api } from '../core/api.js';
 
 const input = $('input');
 const DOC_PREVIEW_COUNT = 3;

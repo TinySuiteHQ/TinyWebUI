@@ -4,13 +4,13 @@
  * events are the same either way, which is what lets a reload pick a run back
  * up instead of starting over.
  */
-import { state } from './state.js';
+import { state } from '../core/state.js';
 import { addTurn, addUser, addThinking, addSteps, addNotice, addError, statusOf } from './transcript.js';
 import { renderQueue } from './queue.js';
 import { loadChats } from './sidebar.js';
 import { renderTasks } from './tasks.js';
-import { EVENT } from './shared/events.js';
-import { api } from './api.js';
+import { EVENT } from '../shared/events.js';
+import { api } from '../core/api.js';
 
 // 409 on a reply means another tab settled it first; its done event updates this one.
 const unless409 = (err) => { if (err.status !== 409) throw err; };

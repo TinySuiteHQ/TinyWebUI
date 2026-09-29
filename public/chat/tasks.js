@@ -1,4 +1,4 @@
-import { $ } from './dom.js';
+import { $ } from '../core/dom.js';
 
 /** Render the current chat's checklist, with model-created text kept as text. */
 export function renderTasks(tasks = []) {

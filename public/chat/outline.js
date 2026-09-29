@@ -4,7 +4,7 @@
  * (or focusing) a tick reveals that question's text and clicking it jumps
  * the transcript there.
  */
-import { $, el } from './dom.js';
+import { $, el } from '../core/dom.js';
 
 let items = []; // { target: Element, text: string }
 

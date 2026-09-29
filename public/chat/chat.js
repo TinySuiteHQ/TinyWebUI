@@ -2,8 +2,8 @@
  * Owns which chat is open and the form that sends into it -- the orchestrator
  * that ties the transcript, the attachment tray and the sidebar together.
  */
-import { $ } from './dom.js';
-import { state } from './state.js';
+import { $ } from '../core/dom.js';
+import { state } from '../core/state.js';
 import { addUser, replay, addError, pinToBottom } from './transcript.js';
 import { consume } from './stream.js';
 import { commitAttachments, invalidAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
@@ -11,7 +11,7 @@ import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
 import { renderTasks } from './tasks.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup, setHeldSender } from './queue.js';
-import { api } from './api.js';
+import { api } from '../core/api.js';
 
 const input = $('input');
 let chatLoadCtrl = null;

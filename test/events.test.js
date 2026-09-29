@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { EVENT } from '../public/shared/events.js';
 
 test('the page handles every stream event', () => {
-  const page = readFileSync(new URL('../public/stream.js', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../public/chat/stream.js', import.meta.url), 'utf8');
   for (const key of Object.keys(EVENT)) assert.ok(page.includes(`EVENT.${key}`), `stream.js does not handle EVENT.${key}`);
 });
 

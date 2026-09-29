@@ -2,18 +2,18 @@
  * Entry point: pulls in every UI module (each wires its own DOM listeners on
  * import) and runs the startup sequence.
  */
-import { $ } from './dom.js';
-import { newChat } from './chat.js';
-import { loadChats } from './sidebar.js';
-import { loadConfig, loadMcp, loadTools } from './settings.js';
-import './attachments.js';
-import './automations.js';
-import './panels.js';
-import { initAdmin } from './admin.js';
-import { loadAccess, can } from './access.js';
+import { $ } from './core/dom.js';
+import { newChat } from './chat/chat.js';
+import { loadChats } from './chat/sidebar.js';
+import { loadConfig, loadMcp, loadTools } from './panels/settings.js';
+import './chat/attachments.js';
+import './panels/automations.js';
+import './panels/panels.js';
+import { initAdmin } from './panels/admin.js';
+import { loadAccess, can } from './core/access.js';
 import { FEATURE } from './shared/features.js';
-import './composer.js';
-import { api } from './api.js';
+import './chat/composer.js';
+import { api } from './core/api.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
 const OLD_CHATS_KEY = 'tinywebui.chats';

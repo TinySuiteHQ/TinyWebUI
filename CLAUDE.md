@@ -27,7 +27,13 @@ src/
   automations/   scheduled runs: automation.js (tool + cron), scheduler.js
   files/         turning uploads into text or wire-safe images
   mcp.js         MCP client hub; log.js; audit.js; cli.js; set-password.js
-public/          the page (plain ES modules). public/shared/ is imported by the server too.
+public/          the page (plain ES modules, no build); app.js is the entry
+  core/        api.js (every JSON call), dom, state, md (renderMarkdown), access
+  chat/        the conversation: chat, stream, transcript, composer, queue,
+               attachments, sidebar, outline, tasks
+  panels/      settings, MCP, automations, usage, admin, and panels.js that opens them
+  shared/      imported by the server too (events, features)
+  themes/      optional themes, loaded by theme-loader.js
 test/            node:test suites; evals/ model-behaviour evals (costs API calls)
 ```
 
@@ -38,6 +44,7 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New table or column:** `store/schema.js` — add to `SCHEMA` or the `migrate()` steps, and bump `SCHEMA_VERSION` when an existing database needs changing.
 - **New built-in tool:** a file in `src/tools/` exporting `xToolDef()` and `callX()`, registered in `connectHub()` in `server.js`, and its name added to `RESERVED` in `mcp.js`.
 - **New stream event:** add it to `public/shared/events.js` and handle it in `public/stream.js` (a test enforces this).
+- **New page module:** in `core/`, `chat/` or `panels/`. Imports go one way: `panels/` → `chat/` → `core/`; `core/` imports only `shared/`.
 - **New API call from the page:** `api.get/post/patch/del` from `public/api.js`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly.
 - **New feature flag:** `public/shared/features.js`.
 - **New searchable corpus:** implement the adapter described at the top of `retrieval/retrieval.js`, add its name to `CORPUS` in `store/embeddings.js`, and `register()` it.

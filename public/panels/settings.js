@@ -1,8 +1,8 @@
 /** The settings panel: model/runtime config, MCP servers, and the tools list. */
-import { $, el, num } from './dom.js';
-import { addError } from './transcript.js';
-import { whoami } from './access.js';
-import { api } from './api.js';
+import { $, el, num } from '../core/dom.js';
+import { addError } from '../chat/transcript.js';
+import { whoami } from '../core/access.js';
+import { api } from '../core/api.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health

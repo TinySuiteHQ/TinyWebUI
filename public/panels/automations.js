@@ -1,8 +1,8 @@
-import { $, el } from './dom.js';
-import { openChat } from './chat.js';
-import { renderMarkdown } from './md.js';
-import { loadChats } from './sidebar.js';
-import { api } from './api.js';
+import { $, el } from '../core/dom.js';
+import { openChat } from '../chat/chat.js';
+import { renderMarkdown } from '../core/md.js';
+import { loadChats } from '../chat/sidebar.js';
+import { api } from '../core/api.js';
 
 const panel = $('automations');
 const list = $('automation-list');

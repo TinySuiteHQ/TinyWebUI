@@ -4,12 +4,12 @@
  * the composer card and rebuilt from the server every time they open, so they
  * never show a state the server has already moved past.
  */
-import { $, el } from './dom.js';
-import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from './settings.js';
-import { can, whoami, loadAccess } from './access.js';
+import { $, el } from '../core/dom.js';
+import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from '../panels/settings.js';
+import { can, whoami, loadAccess } from '../core/access.js';
 import { addError } from './transcript.js';
-import { FEATURE } from './shared/features.js';
-import { api } from './api.js';
+import { FEATURE } from '../shared/features.js';
+import { api } from '../core/api.js';
 
 const form = $('form');
 const attachBtn = $('attach');

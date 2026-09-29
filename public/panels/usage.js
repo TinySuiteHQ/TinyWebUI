@@ -5,8 +5,8 @@
  * everything coarser than a day is folded client-side from that, since a
  * year of daily rows is cheap to carry but expensive to re-derive per click.
  */
-import { $, el } from './dom.js';
-import { api } from './api.js';
+import { $, el } from '../core/dom.js';
+import { api } from '../core/api.js';
 
 let days = []; // raw daily rows from /api/usage
 let path = []; // drill-down breadcrumb, e.g. ['2026'] or ['2026', '2026-03']
