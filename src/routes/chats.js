@@ -1,7 +1,7 @@
 import { json, readJson, TURN_LIMIT, IMPORT_LIMIT } from '../http.js';
 import { LockedError } from '../config/config.js';
 import { toView } from '../store.js';
-import { setOverride } from '../chat/approval.js';
+import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
 import { attachmentNote, normalizeUpload } from './documents.js';
 

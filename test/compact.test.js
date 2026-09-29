@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { digest, planEpoch, applyEpoch, estimateTokens, textMap } from '../src/chat/compact.js';
+import { digest, planEpoch, applyEpoch, estimateTokens } from '../src/chat/compact.js';
+import { textMap } from '../src/tools/context_tool.js';
 import { Store, toWire, toView } from '../src/store.js';
 import { callExpand } from '../src/tools/context_tool.js';
 

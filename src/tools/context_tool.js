@@ -13,9 +13,44 @@
  * so they never disturb the cached prefix.
  */
 
-import { textMap } from '../chat/compact.js';
-
 export const CONTEXT_EXPAND = 'context_expand';
+
+/**
+ * Where the substantial prose actually sits.
+ *
+ * A scraped page is mostly navigation, bylines and short boilerplate; the
+ * article itself is the handful of long lines among them. A stub that keeps
+ * only the ends leaves the model guessing at `offset=` values, which is the
+ * expensive failure -- each blind guess costs a whole round and comes back with
+ * sidebar links. Listing where the long lines start turns that into one aimed
+ * read.
+ *
+ * Character offsets, not line numbers, because that is what context_expand's
+ * `offset` takes. Generic and deterministic: it measures line lengths and
+ * nothing else, and never looks at what a tool is.
+ */
+export const MAP_MIN_LINE = 200;
+export const MAP_MAX_ENTRIES = 12;
+
+export function textMap(text) {
+  const rows = [];
+  let pos = 0;
+  for (const line of String(text ?? '').split('\n')) {
+    const len = line.trim().length;
+    if (len >= MAP_MIN_LINE) rows.push({ pos, len });
+    pos += line.length + 1;
+  }
+  if (!rows.length) return '';
+
+  // Longest first so the densest prose survives the cut, then back into reading
+  // order -- the model pages forward, so the list has to read forward too.
+  const top = rows.slice().sort((a, b) => b.len - a.len || a.pos - b.pos).slice(0, MAP_MAX_ENTRIES);
+  top.sort((a, b) => a.pos - b.pos);
+  const omitted = rows.length - top.length;
+
+  return `Long text at offset= ${top.map((r) => `${r.pos} (${r.len} chars)`).join(', ')}`
+    + (omitted > 0 ? `, +${omitted} more` : '');
+}
 
 export function expandToolDef() {
   return {

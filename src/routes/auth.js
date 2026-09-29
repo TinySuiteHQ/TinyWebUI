@@ -2,8 +2,9 @@ import { json, readJson } from '../http.js';
 import { isClosed, findEntry, labelFor } from '../config/models.js';
 import { modelsFor, fingerprint } from '../access/policy.js';
 import {
-  verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest, audit
+  verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.js';
+import { audit } from '../audit.js';
 import { OWNER_ID } from '../access/auth_gate.js';
 
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.

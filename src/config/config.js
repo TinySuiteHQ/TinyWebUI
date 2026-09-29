@@ -110,7 +110,7 @@ export const DEFAULTS = {
   // IANA zone the model is told the date in (and uses for automations). Empty
   // means the server's own zone.
   timezone: '',
-  // Which tool calls wait for the user (see src/chat/approval.js).
+  // Which tool calls wait for the user (see src/config/approval.js).
   //   'writes'  ask before any call not declared read-only (default)
   //   'all'     ask before every call
   //   'off'     never ask

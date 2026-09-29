@@ -1,5 +1,5 @@
 import { toWire } from '../store.js';
-import { approvalFor } from './approval.js';
+import { approvalFor } from '../config/approval.js';
 import { runHooks } from './agent.js';
 import { digest } from './compact.js';
 

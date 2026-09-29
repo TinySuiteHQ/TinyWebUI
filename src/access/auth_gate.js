@@ -1,6 +1,7 @@
 import { ALL_USERS } from '../store.js';
 import { featuresFor } from './policy.js';
-import { getSessionUser, resolveTrustedUser, audit } from './auth.js';
+import { getSessionUser, resolveTrustedUser } from './auth.js';
+import { audit } from '../audit.js';
 
 /** The one account behind a 'single' password. */
 export const OWNER_ID = 'owner';

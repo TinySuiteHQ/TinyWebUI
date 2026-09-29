@@ -67,7 +67,7 @@ if (envPath && /\.[cm]?js$/.test(envPath)) {
 }
 
 if (args[0] === 'set-password') {
-  const { setPassword } = await import('../src/access/set-password.js');
+  const { setPassword } = await import('../src/set-password.js');
   try { await setPassword(); process.exit(0); }
   catch (err) { console.error(`[tinywebui] ${err.message}`); process.exit(1); }
 }

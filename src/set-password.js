@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { createConfigSource } from '../config/config.js';
-import { hashPassword } from './auth.js';
+import { createConfigSource } from './config/config.js';
+import { hashPassword } from './access/auth.js';
 
 /** Reads one line without echoing it when attached to a terminal. */
 function ask(prompt) {

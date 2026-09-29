@@ -1,6 +1,7 @@
 import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
 import { resolveAccess } from './policy.js';
+import { audit } from '../audit.js';
 
 /**
  * Session/cookie plumbing for authMode 'single' (password login), plus the
@@ -124,14 +125,6 @@ export function getSessionUser(req, store, cfg) {
 }
 
 /* ---------- trusted-header mode ---------- */
-
-/**
- * One JSON line per security-relevant event, on stdout for the deployment's
- * log collector. Never pass content, prompts, tokens or raw header values.
- */
-export function audit(event, fields = {}) {
-  console.log(`[tinywebui:audit] ${JSON.stringify({ ts: new Date().toISOString(), event, ...fields })}`);
-}
 
 /** Parsed once per cidr list; `::ffff:1.2.3.4` peers are checked as IPv4. */
 const blockLists = new WeakMap();

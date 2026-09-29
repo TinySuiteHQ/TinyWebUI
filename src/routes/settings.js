@@ -1,8 +1,8 @@
 import { json, readJson } from '../http.js';
 import { isClosed, enabledEntries, publicEntry } from '../config/models.js';
 import { modelsFor } from '../access/policy.js';
-import { audit } from '../access/auth.js';
-import { setOverride } from '../chat/approval.js';
+import { audit } from '../audit.js';
+import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
 
 export const toolList = (hub) => hub.tools.map((t) => ({
