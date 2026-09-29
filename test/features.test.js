@@ -2,7 +2,6 @@
 // refuses everything else no matter what the browser sends.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { trustedServer } from './trusted-helpers.js';
 import { API_ROUTES } from '../src/server.js';
 
@@ -50,14 +49,15 @@ test('an unknown API route is a 404, not an open door', async () => {
   assert.equal((await admin('/api/secret-new-thing')).status, 404);
 });
 
-test('every route the server handles is in the feature table', () => {
-  // Each `req.url === '/api/...'` literal and each route regex in server.js
-  // must be matched by some table entry.
-  const src = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
-  const literals = [...src.matchAll(/req\.url === '(\/api\/[^']+)'/g)].map((m) => m[1]);
-  assert.ok(literals.length > 10);
-  for (const path of literals) {
-    assert.ok(API_ROUTES.some(([, re]) => re.test(path)), `${path} is not in ROUTES`);
+test('every route declares the feature it needs', () => {
+  // Dispatch and permission are one table: each entry must state a feature
+  // (null meaning any signed-in caller) and only name features that exist.
+  const known = new Set([null, 'settings', 'model-picker', 'tools', 'mcp', 'search', 'statistics', 'folders',
+    'automations', 'attachments', 'images', 'chat', 'admin', 'oversight']);
+  assert.ok(API_ROUTES.length > 30);
+  for (const [method, re, feature] of API_ROUTES) {
+    assert.ok(['GET', 'POST', 'PATCH', 'DELETE'].includes(method), `${method} ${re}`);
+    assert.ok(known.has(feature), `${method} ${re}: unknown feature ${feature}`);
   }
   const samples = ['/api/chats/abc', '/api/chats/abc/stream', '/api/chats/abc/stop', '/api/chats/abc/approve',
     '/api/chats/abc/edit', '/api/chats/abc/organize', '/api/chats/abc/documents', '/api/documents/abc',
