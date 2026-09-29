@@ -16,12 +16,12 @@ export const whoami = () => me;
 
 // Nav items and controls that exist only for one feature.
 const GATED = {
-  settings: ['toggle-settings'],
-  mcp: ['toggle-mcp'],
-  automations: ['toggle-automations'],
-  statistics: ['toggle-statistics'],
-  admin: ['toggle-admin'],
-  folders: ['newFolder']
+  [FEATURE.SETTINGS]: ['toggle-settings'],
+  [FEATURE.MCP]: ['toggle-mcp'],
+  [FEATURE.AUTOMATIONS]: ['toggle-automations'],
+  [FEATURE.STATISTICS]: ['toggle-statistics'],
+  [FEATURE.ADMIN]: ['toggle-admin'],
+  [FEATURE.FOLDERS]: ['newFolder']
 };
 
 export async function loadAccess() {

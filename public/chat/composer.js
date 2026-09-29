@@ -5,9 +5,9 @@
  * never show a state the server has already moved past.
  */
 import { $, el } from '../core/dom.js';
-import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from '../panels/settings.js';
 import { can, whoami, loadAccess } from '../core/access.js';
 import { addError } from './transcript.js';
+import { pickFiles } from './attachments.js';
 import { FEATURE } from '../shared/features.js';
 import { api } from '../core/api.js';
 
@@ -16,6 +16,11 @@ const attachBtn = $('attach');
 const modelBtn = $('modelBtn');
 
 let open = null; // { pop, btn }
+
+// Handed in by initComposer: the deployment config lives in the settings
+// panel, and the MCP panel is what "Manage MCP servers" opens.
+let config;
+let openMcp;
 
 function closeMenu() {
   if (!open) return;
@@ -55,14 +60,22 @@ function fitToViewport(pop) {
   pop.style.maxHeight = `${Math.max(120, Math.min(448, up ? above : below))}px`;
 }
 
-window.visualViewport?.addEventListener('resize', () => { if (open) fitToViewport(open.pop); });
-
-document.addEventListener('pointerdown', (e) => {
-  if (open && !open.pop.contains(e.target) && !open.btn.contains(e.target)) closeMenu();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && open) { const b = open.btn; closeMenu(); b.focus(); }
-});
+/**
+ * `deps.config`: { load, loadTools, loadMcp, isLocked, isReadOnly, model } from
+ * the settings panel. `deps.openMcp()`: shows the MCP servers panel.
+ */
+export function initComposer(deps) {
+  ({ config, openMcp } = deps);
+  window.visualViewport?.addEventListener('resize', () => { if (open) fitToViewport(open.pop); });
+  document.addEventListener('pointerdown', (e) => {
+    if (open && !open.pop.contains(e.target) && !open.btn.contains(e.target)) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && open) { const b = open.btn; closeMenu(); b.focus(); }
+  });
+  attachBtn.addEventListener('click', () => openMenu(attachBtn, 'left', buildToolsMenu));
+  modelBtn.addEventListener('click', () => openMenu(modelBtn, 'right', buildModelMenu));
+}
 
 /** An on/off switch; `onToggle(next)` returns a promise, and the switch holds still until it settles. */
 function toggle(on, label, onToggle) {
@@ -72,7 +85,7 @@ function toggle(on, label, onToggle) {
   sw.setAttribute('aria-checked', String(on));
   sw.setAttribute('aria-label', label);
   // Tool and server switches are deployment config: admins only.
-  if (isReadOnly()) { sw.disabled = true; sw.title = 'Managed by your administrator'; }
+  if (config.isReadOnly()) { sw.disabled = true; sw.title = 'Managed by your administrator'; }
   sw.onclick = async (e) => {
     e.stopPropagation();
     sw.disabled = true;
@@ -89,7 +102,7 @@ async function buildToolsMenu(pop) {
   attach.type = 'button';
   attach.setAttribute('role', 'menuitem');
   attach.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6L15.5 7"/></svg><span>Attach files</span>';
-  attach.onclick = () => { closeMenu(); $('fileInput').click(); };
+  attach.onclick = () => { closeMenu(); pickFiles(); };
   pop.appendChild(attach);
   if (!can(FEATURE.TOOLS)) return;
   pop.appendChild(el('hr', 'pop-sep'));
@@ -102,7 +115,7 @@ async function buildToolsMenu(pop) {
   const manage = el('button', 'pop-item pop-foot');
   manage.type = 'button';
   manage.textContent = 'Manage MCP servers';
-  manage.onclick = () => { closeMenu(); if (!$('mcp').classList.contains('open')) $('toggle-mcp').click(); };
+  manage.onclick = () => { closeMenu(); openMcp(); };
   if (can(FEATURE.MCP)) pop.appendChild(manage);
 
   let data;
@@ -116,7 +129,7 @@ async function buildToolsMenu(pop) {
 /** Groups: built-ins, then one per MCP server. A group's tools expand under it. */
 function renderTools(body, data) {
   body.innerHTML = '';
-  const refresh = (out) => { renderTools(body, out); loadTools(); loadConfig(); };
+  const refresh = (out) => { renderTools(body, out); config.loadTools(); config.load(); };
   const toggleTool = async (name, on) => refresh(await api.post('/api/tools/toggle', { name, disabled: !on }));
 
   const group = ({ title, tools, status, error, serverName, serverOn }) => {
@@ -134,7 +147,7 @@ function renderTools(body, data) {
       head.appendChild(toggle(serverOn, `${title} server`, async (next) => {
         const out = await api.post(`/api/mcp/servers/${encodeURIComponent(serverName)}/toggle`, { disabled: !next });
         refresh(out);
-        loadMcp();
+        config.loadMcp();
       }));
     }
     box.appendChild(head);
@@ -171,10 +184,10 @@ async function buildModelMenu(pop) {
   // Tier 3: the pill is a personal choice among your role's models, saved
   // per user; it never changes anyone else's model.
   const personal = whoami().authMode === 'trusted-header';
-  const current = personal ? whoami().model : $('model').value;
-  if (!personal && isLocked('model')) {
+  const current = personal ? whoami().model : config.model();
+  if (!personal && config.isLocked('model')) {
     pop.appendChild(Object.assign(el('div', 'pop-note'), {
-      textContent: isReadOnly() ? 'The model is managed by your administrator.' : 'The model is set in code and cannot be switched here.'
+      textContent: config.isReadOnly() ? 'The model is managed by your administrator.' : 'The model is set in code and cannot be switched here.'
     }));
     return;
   }
@@ -196,7 +209,7 @@ async function buildModelMenu(pop) {
       if (personal) { await api.post('/api/me/prefs', { model: id }); await loadAccess(); }
       else await api.post('/api/config', { model: id });
     } catch (err) { return addError(err.message); }
-    await loadConfig();
+    await config.load();
   };
 
   let models = [];
@@ -256,6 +269,3 @@ async function buildModelMenu(pop) {
   };
   render();
 }
-
-attachBtn.addEventListener('click', () => openMenu(attachBtn, 'left', buildToolsMenu));
-modelBtn.addEventListener('click', () => openMenu(modelBtn, 'right', buildModelMenu));

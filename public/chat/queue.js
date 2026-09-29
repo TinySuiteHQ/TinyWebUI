@@ -20,10 +20,10 @@ const newId = () => crypto.randomUUID?.()
 
 // Held follow-ups per chat id: [{id, content}]. Survive switching chats, not a reload.
 const held = new Map();
-let onSendHeld = () => {};
+let sendHeld;
 
-/** `fn(text)` is called when a held follow-up's send button is clicked. */
-export function setHeldSender(fn) { onSendHeld = fn; }
+/** `deps.sendHeld(text)` sends a held follow-up once its send button is clicked. */
+export function initQueue(deps) { ({ sendHeld } = deps); }
 
 export function holdFollowup(text) {
   const id = state.chat.id;
@@ -53,7 +53,7 @@ function drawHeld() {
     send.type = 'button';
     send.textContent = 'Send';
     send.setAttribute('aria-label', 'Send held message');
-    send.onclick = () => { forget(); onSendHeld(item.content); };
+    send.onclick = () => { forget(); sendHeld(item.content); };
     chip.append(kind, text, send, drop);
     box.appendChild(chip);
   }

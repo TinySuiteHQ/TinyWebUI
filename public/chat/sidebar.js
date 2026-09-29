@@ -4,7 +4,6 @@
  */
 import { $, el } from '../core/dom.js';
 import { state } from '../core/state.js';
-import { openChat, newChat } from './chat.js';
 import { api } from '../core/api.js';
 
 let organizingChatId = null;
@@ -40,51 +39,6 @@ function resetSideWidth() {
   document.documentElement.style.removeProperty('--side-w');
   try { localStorage.removeItem(SIDE_KEY); } catch { /* as above */ }
 }
-
-(function initSideResize() {
-  const side = $('side');
-  const grip = $('side-resize');
-  if (!side || !grip) return;
-
-  try {
-    const saved = Number(localStorage.getItem(SIDE_KEY));
-    if (Number.isFinite(saved) && saved > 0) setSideWidth(saved);
-  } catch { /* first run, or storage is unavailable; the stylesheet decides */ }
-
-  grip.addEventListener('pointerdown', (e) => {
-    // Pointer capture keeps the drag alive over the transcript, an iframe or
-    // off the window edge, which a plain mousemove listener would lose.
-    grip.setPointerCapture(e.pointerId);
-    document.body.classList.add('resizing');
-    const startX = e.clientX;
-    const startW = side.getBoundingClientRect().width;
-
-    const move = (ev) => setSideWidth(startW + (ev.clientX - startX));
-    const done = () => {
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', done);
-      grip.removeEventListener('pointercancel', done);
-      document.body.classList.remove('resizing');
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', done);
-    grip.addEventListener('pointercancel', done);
-    e.preventDefault();
-  });
-
-  grip.addEventListener('dblclick', resetSideWidth);
-
-  // A drag is not reachable without a pointer, so the separator is operable
-  // from the keyboard too, which is also what its role promises.
-  grip.addEventListener('keydown', (e) => {
-    const step = e.shiftKey ? 48 : 16;
-    if (e.key === 'ArrowLeft') setSideWidth(side.getBoundingClientRect().width - step);
-    else if (e.key === 'ArrowRight') setSideWidth(side.getBoundingClientRect().width + step);
-    else if (e.key === 'Home' || e.key === 'Escape') resetSideWidth();
-    else return;
-    e.preventDefault();
-  });
-}());
 
 /* ---------- history: server-side, newest first ---------- */
 
@@ -311,19 +265,6 @@ function renderSearchResults(results, query) {
 }
 
 let searchDebounce = null;
-$('chatSearch').addEventListener('input', () => {
-  const q = $('chatSearch').value;
-  $('chatSearchClear').hidden = !q;
-  clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(() => runSearch(q), 150);
-});
-$('chatSearch').addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('chatSearch').value) {
-    e.preventDefault();
-    clearSearch();
-  }
-});
-$('chatSearchClear').onclick = () => { clearSearch(); $('chatSearch').focus(); };
 /** Chats can only move into a folder that already exists -- create-then-move,
  * not type-a-new-name-here -- so the dropdown is rebuilt from state.folders
  * (plus the chat's own folder, in case it was removed from that list since). */
@@ -341,69 +282,6 @@ function fillOrganizeFolders(current) {
   }
   select.value = current;
 }
-
-$('newFolder').addEventListener('click', () => {
-  $('newFolderName').value = '';
-  $('newFolderError').hidden = true;
-  $('newFolderDialog').showModal();
-  $('newFolderName').focus();
-});
-$('newFolderCancel').addEventListener('click', () => $('newFolderDialog').close());
-$('newFolderForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const button = $('newFolderForm').querySelector('[type="submit"]');
-  button.disabled = true;
-  $('newFolderError').hidden = true;
-  try {
-    const name = $('newFolderName').value;
-    const body = await api.post('/api/folders', { name });
-    $('newFolderDialog').close();
-    // A freshly created folder starts open -- otherwise the workflow this
-    // exists for (create it, then move chats in) hides its own result.
-    expandedFolders.add(body.folder);
-    await loadChats();
-  } catch (err) {
-    $('newFolderError').textContent = err.message || 'Could not create folder.';
-    $('newFolderError').hidden = false;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-$('organizeCancel').addEventListener('click', () => $('organizeDialog').close());
-$('organizeDelete').addEventListener('click', async () => {
-  if (!organizingChatId) return;
-  const id = organizingChatId;
-  try {
-    await api.del(`/api/chats/${id}`);
-  } catch (err) {
-    $('organizeError').textContent = `Could not delete chat: ${err.message}`;
-    $('organizeError').hidden = false;
-    return;
-  }
-  $('organizeDialog').close();
-  organizingChatId = null;
-  await loadChats();
-  if (state.chat && state.chat.id === id) newChat();
-});
-$('organizeForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!organizingChatId) return;
-  const button = $('organizeForm').querySelector('[type="submit"]');
-  button.disabled = true;
-  $('organizeError').hidden = true;
-  try {
-    await api.post(`/api/chats/${organizingChatId}/organize`, { folder: $('organizeFolder').value });
-    $('organizeDialog').close();
-    organizingChatId = null;
-    await loadChats();
-  } catch (err) {
-    $('organizeError').textContent = err.message || 'Could not save chat organization.';
-    $('organizeError').hidden = false;
-  } finally {
-    button.disabled = false;
-  }
-});
 
 export function clearSearch() {
   clearTimeout(searchDebounce);
@@ -451,24 +329,158 @@ function setSideDrawer(open) {
 }
 export const closeSideDrawer = () => setSideDrawer(false);
 
-// A resize can move a currently open drawer onto the desktop layout (or vice
-// versa). Reset the inert boundary in that transition rather than leaving the
-// transcript inaccessible until the next sidebar interaction.
-matchMedia('(max-width: 720px)').addEventListener('change', () => setSideDrawer(false));
-setSideDrawer(false);
-
 function setCollapsed(on) {
   document.body.classList.toggle('side-collapsed', on);
   try { on ? localStorage.setItem(COLLAPSE_KEY, '1') : localStorage.removeItem(COLLAPSE_KEY); } catch { /* per-viewer nicety only */ }
 }
-try { if (localStorage.getItem(COLLAPSE_KEY)) document.body.classList.add('side-collapsed'); } catch { /* as above */ }
-$('sideCollapse').onclick = () => (narrow() ? closeSideDrawer() : setCollapsed(true));
-$('menu').onclick = () => (narrow() ? setSideDrawer(!$('side').classList.contains('open')) : setCollapsed(false));
-$('side-backdrop').onclick = closeSideDrawer;
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();
-});
 
-$('new').onclick = newChat;
-// The logo and name go home, which here means a fresh chat.
-$('brandHome').onclick = newChat;
+/* ---------- wiring ---------- */
+
+let openChat;
+let newChat;
+
+/** `deps.openChat(id)` and `deps.newChat()` are what picking a chat, or New, does. */
+export function initSidebar(deps) {
+  ({ openChat, newChat } = deps);
+  initSideResize();
+
+  $('chatSearch').addEventListener('input', () => {
+    const q = $('chatSearch').value;
+    $('chatSearchClear').hidden = !q;
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => runSearch(q), 150);
+  });
+  $('chatSearch').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('chatSearch').value) {
+      e.preventDefault();
+      clearSearch();
+    }
+  });
+  $('chatSearchClear').onclick = () => { clearSearch(); $('chatSearch').focus(); };
+
+  $('newFolder').addEventListener('click', () => {
+    $('newFolderName').value = '';
+    $('newFolderError').hidden = true;
+    $('newFolderDialog').showModal();
+    $('newFolderName').focus();
+  });
+  $('newFolderCancel').addEventListener('click', () => $('newFolderDialog').close());
+  $('newFolderForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const button = $('newFolderForm').querySelector('[type="submit"]');
+    button.disabled = true;
+    $('newFolderError').hidden = true;
+    try {
+      const name = $('newFolderName').value;
+      const body = await api.post('/api/folders', { name });
+      $('newFolderDialog').close();
+      // A freshly created folder starts open -- otherwise the workflow this
+      // exists for (create it, then move chats in) hides its own result.
+      expandedFolders.add(body.folder);
+      await loadChats();
+    } catch (err) {
+      $('newFolderError').textContent = err.message || 'Could not create folder.';
+      $('newFolderError').hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('organizeCancel').addEventListener('click', () => $('organizeDialog').close());
+  $('organizeDelete').addEventListener('click', async () => {
+    if (!organizingChatId) return;
+    const id = organizingChatId;
+    try {
+      await api.del(`/api/chats/${id}`);
+    } catch (err) {
+      $('organizeError').textContent = `Could not delete chat: ${err.message}`;
+      $('organizeError').hidden = false;
+      return;
+    }
+    $('organizeDialog').close();
+    organizingChatId = null;
+    await loadChats();
+    if (state.chat && state.chat.id === id) newChat();
+  });
+  $('organizeForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!organizingChatId) return;
+    const button = $('organizeForm').querySelector('[type="submit"]');
+    button.disabled = true;
+    $('organizeError').hidden = true;
+    try {
+      await api.post(`/api/chats/${organizingChatId}/organize`, { folder: $('organizeFolder').value });
+      $('organizeDialog').close();
+      organizingChatId = null;
+      await loadChats();
+    } catch (err) {
+      $('organizeError').textContent = err.message || 'Could not save chat organization.';
+      $('organizeError').hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  try { if (localStorage.getItem(COLLAPSE_KEY)) document.body.classList.add('side-collapsed'); } catch { /* as above */ }
+  $('sideCollapse').onclick = () => (narrow() ? closeSideDrawer() : setCollapsed(true));
+  $('menu').onclick = () => (narrow() ? setSideDrawer(!$('side').classList.contains('open')) : setCollapsed(false));
+  $('side-backdrop').onclick = closeSideDrawer;
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();
+  });
+
+  $('new').onclick = newChat;
+  // The logo and name go home, which here means a fresh chat.
+  $('brandHome').onclick = newChat;
+
+  // A resize can move a currently open drawer onto the desktop layout (or vice
+  // versa). Reset the inert boundary in that transition rather than leaving the
+  // transcript inaccessible until the next sidebar interaction.
+  matchMedia('(max-width: 720px)').addEventListener('change', () => setSideDrawer(false));
+  setSideDrawer(false);
+}
+
+function initSideResize() {
+  const side = $('side');
+  const grip = $('side-resize');
+  if (!side || !grip) return;
+
+  try {
+    const saved = Number(localStorage.getItem(SIDE_KEY));
+    if (Number.isFinite(saved) && saved > 0) setSideWidth(saved);
+  } catch { /* first run, or storage is unavailable; the stylesheet decides */ }
+
+  grip.addEventListener('pointerdown', (e) => {
+    // Pointer capture keeps the drag alive over the transcript, an iframe or
+    // off the window edge, which a plain mousemove listener would lose.
+    grip.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+    const startX = e.clientX;
+    const startW = side.getBoundingClientRect().width;
+
+    const move = (ev) => setSideWidth(startW + (ev.clientX - startX));
+    const done = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', done);
+      grip.removeEventListener('pointercancel', done);
+      document.body.classList.remove('resizing');
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', done);
+    grip.addEventListener('pointercancel', done);
+    e.preventDefault();
+  });
+
+  grip.addEventListener('dblclick', resetSideWidth);
+
+  // A drag is not reachable without a pointer, so the separator is operable
+  // from the keyboard too, which is also what its role promises.
+  grip.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 48 : 16;
+    if (e.key === 'ArrowLeft') setSideWidth(side.getBoundingClientRect().width - step);
+    else if (e.key === 'ArrowRight') setSideWidth(side.getBoundingClientRect().width + step);
+    else if (e.key === 'Home' || e.key === 'Escape') resetSideWidth();
+    else return;
+    e.preventDefault();
+  });
+}

@@ -1,72 +1,52 @@
+/**
+ * The side panels: one open at a time, each toggled by its nav button and
+ * closed by its close button or Escape. This is the only code that opens or
+ * closes one; everything else calls openPanel/closePanel.
+ *
+ * Element ids follow the name: the panel is #<name>, its nav button
+ * #toggle-<name>, its close button #close-<name> unless the panel names another.
+ */
 import { $ } from '../core/dom.js';
-import { toggleSettings, loadMcp, loadTools } from './settings.js';
-import { openAutomations } from './automations.js';
-import { loadUsage } from './usage.js';
-import { loadAdmin } from './admin.js';
 
-const settings = $('settings');
-const automations = $('automations');
-const statistics = $('statistics');
-const mcp = $('mcp');
-const mcpBtn = $('toggle-mcp');
-const automationsBtn = $('toggle-automations');
-const statisticsBtn = $('toggle-statistics');
-const admin = $('admin');
-const adminBtn = $('toggle-admin');
+export const PANEL = Object.freeze({
+  SETTINGS: 'settings',
+  MCP: 'mcp',
+  AUTOMATIONS: 'automations',
+  STATISTICS: 'statistics',
+  ADMIN: 'admin'
+});
 
-function closeOtherPanels(except) {
-  if (except !== settings) toggleSettings(false, { focusComposer: false });
-  if (except !== automations) { automations.classList.remove('open'); automationsBtn.classList.remove('active'); }
-  if (except !== mcp) { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); }
-  if (except !== statistics) { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); }
-  if (except !== admin) { admin.classList.remove('open'); adminBtn.classList.remove('active'); }
+const panels = new Map(); // name -> { onOpen?, onClose?, closeId? }
+
+const isOpen = (name) => $(name).classList.contains('open');
+
+function show(name, on) {
+  $(name).classList.toggle('open', on);
+  $(`toggle-${name}`).classList.toggle('active', on);
 }
 
-$('toggle-settings').onclick = () => {
-  const opening = !settings.classList.contains('open');
-  closeOtherPanels(settings);
-  toggleSettings(opening);
-};
+export async function openPanel(name) {
+  if (isOpen(name)) return;
+  for (const other of panels.keys()) if (other !== name) closePanel(other, { swapping: true });
+  show(name, true);
+  await panels.get(name).onOpen?.();
+}
 
-$('toggle-automations').onclick = async () => {
-  const opening = !automations.classList.contains('open');
-  closeOtherPanels(automations);
-  automations.classList.toggle('open', opening);
-  automationsBtn.classList.toggle('active', opening);
-  if (opening) await openAutomations();
-};
+/** `swapping`: another panel is taking its place, so focus belongs there. */
+export function closePanel(name, { swapping = false } = {}) {
+  if (!isOpen(name)) return;
+  show(name, false);
+  panels.get(name).onClose?.({ swapping });
+}
 
-$('toggle-statistics').onclick = async () => {
-  const opening = !statistics.classList.contains('open');
-  closeOtherPanels(statistics);
-  statistics.classList.toggle('open', opening);
-  statisticsBtn.classList.toggle('active', opening);
-  if (opening) await loadUsage();
-};
-
-$('toggle-admin').onclick = async () => {
-  const opening = !admin.classList.contains('open');
-  closeOtherPanels(admin);
-  admin.classList.toggle('open', opening);
-  adminBtn.classList.toggle('active', opening);
-  if (opening) await loadAdmin();
-};
-$('close-admin').onclick = () => { admin.classList.remove('open'); adminBtn.classList.remove('active'); };
-
-// MCP servers: the config editor and tool list, moved out of Settings.
-// Reloaded on open so it reflects any toggles made from the composer menu.
-$('toggle-mcp').onclick = async () => {
-  const opening = !mcp.classList.contains('open');
-  closeOtherPanels(mcp);
-  mcp.classList.toggle('open', opening);
-  mcpBtn.classList.toggle('active', opening);
-  if (opening) await Promise.all([loadMcp(), loadTools()]);
-};
-$('close-mcp').onclick = () => { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); };
-
-$('close-statistics').onclick = () => { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); };
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') { mcp.classList.remove('open'); mcpBtn.classList.remove('active'); }
-  if (event.key === 'Escape') { statistics.classList.remove('open'); statisticsBtn.classList.remove('active'); }
-  if (event.key === 'Escape') { admin.classList.remove('open'); adminBtn.classList.remove('active'); }
-});
+/** `defs`: { [PANEL.*]: { onOpen?, onClose?({ swapping }), closeId? } } */
+export function initPanels(defs) {
+  for (const [name, def] of Object.entries(defs)) {
+    panels.set(name, def);
+    $(`toggle-${name}`).onclick = () => (isOpen(name) ? closePanel(name) : openPanel(name));
+    $(def.closeId || `close-${name}`).onclick = () => closePanel(name);
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') for (const name of panels.keys()) closePanel(name);
+  });
+}

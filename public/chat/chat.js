@@ -10,7 +10,7 @@ import { commitAttachments, invalidAttachments, renderAttachments, renderChatDoc
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
 import { renderTasks } from './tasks.js';
-import { renderQueue, enqueue, reclaimQueue, holdFollowup, setHeldSender } from './queue.js';
+import { renderQueue, enqueue, reclaimQueue, holdFollowup } from './queue.js';
 import { api } from '../core/api.js';
 
 const input = $('input');
@@ -21,18 +21,30 @@ function cancelChatLoad() {
   chatLoadCtrl = null;
 }
 
-input.addEventListener('input', () => {
-  input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 190) + 'px';
-  if (state.busy) setBusy(true);
-});
-input.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter' || e.shiftKey) return;
-  e.preventDefault();
-  // While a turn runs, Alt+Enter holds it for later; plain Enter steers it.
-  if (e.altKey && state.busy) holdInput();
-  else $('form').requestSubmit();
-});
+export function initChat() {
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 190) + 'px';
+    if (state.busy) setBusy(true);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    // While a turn runs, Alt+Enter holds it for later; plain Enter steers it.
+    if (e.altKey && state.busy) holdInput();
+    else $('form').requestSubmit();
+  });
+  $('form').addEventListener('submit', onSubmit);
+
+  // A run is the server's, so the dot in the sidebar can change without this tab
+  // doing anything at all. Poll only while there is something to watch.
+  setInterval(async () => {
+    if (!state.busy && !state.chats.some((c) => c.running)) return;
+    await loadChats();
+    const id = state.chat?.id;
+    if (!state.busy && id && state.chats.some((chat) => chat.id === id && chat.running)) rejoin(id);
+  }, 4000);
+}
 
 /** Parks what is typed above the composer until its send button is clicked. */
 function holdInput() {
@@ -43,12 +55,12 @@ function holdInput() {
   holdFollowup(text);
 }
 
-// A held follow-up, confirmed: into the running turn, or as the next message.
-setHeldSender((text) => {
+/** A held follow-up, confirmed: into the running turn, or as the next message. */
+export function sendHeld(text) {
   if (!state.busy) input.value = [text, input.value.trim()].filter(Boolean).join('\n\n');
   else input.value = text;
   queueOrSend();
-});
+}
 
 function queueOrSend() {
   if (state.busy) queueInput('steer');
@@ -193,7 +205,7 @@ function setBusy(on) {
   if (!on && wasBusy) input.focus();
 }
 
-$('form').addEventListener('submit', async (e) => {
+async function onSubmit(e) {
   e.preventDefault();
   if (state.busy) {
     if (input.value.trim()) return queueInput('steer');
@@ -270,13 +282,4 @@ $('form').addEventListener('submit', async (e) => {
       afterRun(outcome, state.chat.id);
     }
   }
-});
-
-// A run is the server's, so the dot in the sidebar can change without this tab
-// doing anything at all. Poll only while there is something to watch.
-setInterval(async () => {
-  if (!state.busy && !state.chats.some((c) => c.running)) return;
-  await loadChats();
-  const id = state.chat?.id;
-  if (!state.busy && id && state.chats.some((chat) => chat.id === id && chat.running)) rejoin(id);
-}, 4000);
+}

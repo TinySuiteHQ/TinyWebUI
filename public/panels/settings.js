@@ -3,6 +3,7 @@ import { $, el, num } from '../core/dom.js';
 import { addError } from '../chat/transcript.js';
 import { whoami } from '../core/access.js';
 import { api } from '../core/api.js';
+import { PANEL, closePanel } from './panels.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health
@@ -18,6 +19,9 @@ import { api } from '../core/api.js';
 // cannot change them.
 let readOnly = false;
 export const isReadOnly = () => readOnly;
+// The deployment's model as last loaded; the composer's model menu starts from it.
+let model = '';
+export const configuredModel = () => model;
 
 function renderToolPanel(data) {
   const box = $('tools');
@@ -222,7 +226,12 @@ export async function loadMcp() {
     : locked ? 'set in code (read-only)' : path;
 }
 
-$('saveMcp').onclick = async () => {
+export function initSettings() {
+  $('saveMcp').onclick = saveMcp;
+  $('save').onclick = saveConfig;
+}
+
+async function saveMcp() {
   const btn = $('saveMcp');
   btn.disabled = true;
   btn.textContent = 'reconnecting…';
@@ -237,7 +246,7 @@ $('saveMcp').onclick = async () => {
     btn.disabled = false;
     btn.textContent = 'save & reconnect';
   }
-};
+}
 
 const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'askUserTimeoutSeconds', 'cacheTtl',
   'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
@@ -282,6 +291,7 @@ export async function loadConfig() {
   else if (cfg.frozen) $('saveMsg').textContent = 'frozen deployment: settings are managed in its files';
   if (cfg.frozen) for (const id of FORM_KEYS) $(id).title = 'frozen deployment: change the config file';
   $('systemPrompt').value = cfg.systemPrompt;
+  model = cfg.model;
   $('model').value = cfg.model;
   $('temperature').value = cfg.temperature ?? '';
   $('maxTokens').value = cfg.maxTokens ?? '';
@@ -308,7 +318,7 @@ export async function loadConfig() {
   $('status').textContent = bits.join(' · ');
 }
 
-$('save').onclick = async () => {
+async function saveConfig() {
   const patch = {
     systemPrompt: $('systemPrompt').value,
     model: $('model').value.trim(),
@@ -335,22 +345,17 @@ $('save').onclick = async () => {
   await loadConfig();
   await loadTools(); // the per-tool "default" labels follow the global mode
   $('saveMsg').textContent = 'saved';
-  toggleSettings(false);
-};
-
-$('cancel').onclick = () => toggleSettings(false);
-
-export function toggleSettings(open, { focusComposer = true } = {}) {
-  const panel = $('settings');
-  const on = open ?? !panel.classList.contains('open');
-  panel.classList.toggle('open', on);
-  if (on && !$('save').disabled) $('saveMsg').textContent = '';
-  $('toggle-settings').classList.toggle('active', on);
-  // A panel swap should leave focus to the panel being opened. Focusing the
-  // composer here would otherwise raise the mobile keyboard behind it.
-  if (!on && focusComposer) $('input').focus();
+  closePanel(PANEL.SETTINGS);
 }
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('settings').classList.contains('open')) toggleSettings(false);
-});
+/** The panel's onOpen: a stale "saved" would read as this visit's. */
+export function onSettingsOpen() {
+  if (!$('save').disabled) $('saveMsg').textContent = '';
+}
+
+/** The panel's onClose. */
+export function onSettingsClose({ swapping }) {
+  // A panel swap should leave focus to the panel being opened. Focusing the
+  // composer here would otherwise raise the mobile keyboard behind it.
+  if (!swapping) $('input').focus();
+}

@@ -27,11 +27,11 @@ src/
   automations/   scheduled runs: automation.js (tool + cron), scheduler.js
   files/         turning uploads into text or wire-safe images
   mcp.js         MCP client hub; log.js; audit.js; cli.js; set-password.js
-public/          the page (plain ES modules, no build); app.js is the entry
+public/          the page (plain ES modules, no build); app.js is the entry and the only wiring
   core/        api.js (every JSON call), dom, state, md (renderMarkdown), access
   chat/        the conversation: chat, stream, transcript, composer, queue,
                attachments, sidebar, outline, tasks
-  panels/      settings, MCP, automations, usage, admin, and panels.js that opens them
+  panels/      settings, MCP, automations, usage, admin; panels.js (PANEL, openPanel/closePanel)
   shared/      imported by the server too (events, features)
   themes/      optional themes, loaded by theme-loader.js
 test/            node:test suites; evals/ model-behaviour evals (costs API calls)
@@ -44,7 +44,8 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New table or column:** `store/schema.js` — add to `SCHEMA` or the `migrate()` steps, and bump `SCHEMA_VERSION` when an existing database needs changing.
 - **New built-in tool:** a file in `src/tools/` exporting `xToolDef()` and `callX()`, registered in `connectHub()` in `server.js`, and its name added to `RESERVED` in `mcp.js`.
 - **New stream event:** add it to `public/shared/events.js` and handle it in `public/stream.js` (a test enforces this).
-- **New page module:** in `core/`, `chat/` or `panels/`. Imports go one way: `panels/` → `chat/` → `core/`; `core/` imports only `shared/`.
+- **New page module:** in `core/`, `chat/` or `panels/`. Imports go one way: `panels/` → `chat/` → `core/`; `core/` imports only `shared/`. Nothing runs on import: listeners and timers go in an exported `init…()` called from `app.js`, and a call that would go against the arrows is passed in as a dependency there (`initSidebar({ openChat, newChat })`). `test/page-structure.test.js` enforces all of this.
+- **New panel:** add it to `PANEL` and to `initPanels()` in `app.js`; open or close it only with `openPanel`/`closePanel`.
 - **New API call from the page:** `api.get/post/patch/del` from `public/api.js`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly.
 - **New feature flag:** `public/shared/features.js`.
 - **New searchable corpus:** implement the adapter described at the top of `retrieval/retrieval.js`, add its name to `CORPUS` in `store/embeddings.js`, and `register()` it.
@@ -58,9 +59,3 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - Every read of user-owned rows passes a scope (a user id, `null`, or `ALL_USERS`); `undefined` throws on purpose.
 - Model-written text reaches the page as text (`textContent`) or through `renderMarkdown`, which escapes first. No other `innerHTML` with outside content.
 - Comments explain why, not what.
-
-## Environment quirks (this machine)
-
-- A corporate proxy re-signs HTTPS. Node, npm and gcloud reject its certificate, so model calls, `npm install` of new packages and `models pull` fail here. Don't work around it (no `NODE_TLS_REJECT_UNAUTHORIZED`, no `NODE_USE_SYSTEM_CA`) unless the user says so for that run. CI on GitHub is not behind the proxy.
-- Windows + Git Bash. Files may have CRLF; `.gitattributes` normalizes to LF on commit, so split text on `/\r?\n/` in scripts.
-- `tinywebui.config.json`, `mcp.json` and `tinywebui.db` are gitignored and hold the API key and real chats.

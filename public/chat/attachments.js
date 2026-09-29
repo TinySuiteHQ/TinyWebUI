@@ -262,27 +262,31 @@ export async function commitAttachments(chatId) {
   return { docs, images, failed };
 }
 
-// The + button opens the composer menu (composer.js); "Attach files" in it
-// is what clicks the hidden input now.
-$('fileInput').addEventListener('change', () => {
-  for (const f of $('fileInput').files) stageAttachment(f);
-  $('fileInput').value = '';
-});
-
-for (const ev of ['dragover', 'dragenter']) {
-  $('form').addEventListener(ev, (e) => e.preventDefault());
-}
-$('form').addEventListener('drop', (e) => {
-  e.preventDefault();
-  for (const f of e.dataTransfer.files) stageAttachment(f);
-});
+/** Opens the browser's file picker; what is picked lands in the tray. */
+export const pickFiles = () => $('fileInput').click();
 
 // A long paste reads like ChatGPT's: it becomes an attachment instead of
 // filling the box with a wall of text the user would have to scroll past.
 const PASTE_AS_FILE_THRESHOLD = 2000;
-input.addEventListener('paste', (e) => {
-  const text = e.clipboardData?.getData('text/plain') || '';
-  if (text.length < PASTE_AS_FILE_THRESHOLD) return;
-  e.preventDefault();
-  stageAttachment(new File([text], 'pasted.txt', { type: 'text/plain' }));
-});
+
+export function initAttachments() {
+  $('fileInput').addEventListener('change', () => {
+    for (const f of $('fileInput').files) stageAttachment(f);
+    $('fileInput').value = '';
+  });
+
+  for (const ev of ['dragover', 'dragenter']) {
+    $('form').addEventListener(ev, (e) => e.preventDefault());
+  }
+  $('form').addEventListener('drop', (e) => {
+    e.preventDefault();
+    for (const f of e.dataTransfer.files) stageAttachment(f);
+  });
+
+  input.addEventListener('paste', (e) => {
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (text.length < PASTE_AS_FILE_THRESHOLD) return;
+    e.preventDefault();
+    stageAttachment(new File([text], 'pasted.txt', { type: 'text/plain' }));
+  });
+}

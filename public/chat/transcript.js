@@ -6,7 +6,6 @@
 import { renderMarkdown } from '../core/md.js';
 import { $, el } from '../core/dom.js';
 import { state } from '../core/state.js';
-import { openChat } from './chat.js';
 import { addQuestion } from './outline.js';
 import { api } from '../core/api.js';
 
@@ -14,9 +13,16 @@ const log = $('log');
 const wrap = $('wrap');
 
 let pinned = true;
-log.addEventListener('scroll', () => {
-  pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
-});
+let openChat;
+
+/** `deps.openChat(id)` reopens the chat after an edit rewinds it. */
+export function initTranscript(deps) {
+  ({ openChat } = deps);
+  log.addEventListener('scroll', () => {
+    pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  });
+}
+
 export function scroll() { if (pinned) log.scrollTop = log.scrollHeight; }
 // Switching chats always lands on the newest message, regardless of whether
 // the chat left open before it had been scrolled up to read older ones.

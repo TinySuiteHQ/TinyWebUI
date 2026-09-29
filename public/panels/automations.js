@@ -3,6 +3,7 @@ import { openChat } from '../chat/chat.js';
 import { renderMarkdown } from '../core/md.js';
 import { loadChats } from '../chat/sidebar.js';
 import { api } from '../core/api.js';
+import { PANEL, closePanel } from './panels.js';
 
 const panel = $('automations');
 const list = $('automation-list');
@@ -10,7 +11,7 @@ const createSlot = $('automation-create-slot');
 let snapshot = { automations: [], chats: [] };
 let automationLoadRequest = 0;
 
-function close() { panel.classList.remove('open'); $('toggle-automations').classList.remove('active'); }
+const close = () => closePanel(PANEL.AUTOMATIONS);
 
 /* ---------- schedule helpers ---------- */
 
@@ -432,18 +433,16 @@ async function load() {
   rerender();
 }
 
-export async function openAutomations() {
-  panel.classList.add('open');
-  await load();
-}
+/** The panel's onOpen: the list is fetched fresh every time it is shown. */
+export const loadAutomations = () => load();
 
-$('new-automation').onclick = () => {
-  openForm = 'new'; rerender();
-  createSlot.querySelector('input')?.focus();
-};
-$('close-automations').onclick = close;
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
-// Refresh the relative times and statuses, but never under an open form.
-setInterval(() => {
-  if (panel.classList.contains('open') && !openForm) load();
-}, 30000);
+export function initAutomations() {
+  $('new-automation').onclick = () => {
+    openForm = 'new'; rerender();
+    createSlot.querySelector('input')?.focus();
+  };
+  // Refresh the relative times and statuses, but never under an open form.
+  setInterval(() => {
+    if (panel.classList.contains('open') && !openForm) load();
+  }, 30000);
+}
