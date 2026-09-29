@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store, ALL_USERS } from '../src/store.js';
+import { Store, ALL_USERS } from '../src/store/index.js';
 import { Retrieval, fuse } from '../src/retrieval/retrieval.js';
 import { callReadDocument } from '../src/tools/document_tool.js';
 import { loadEmbedder, PRESETS } from '../src/retrieval/embedding.js';

@@ -1,5 +1,5 @@
 import { json, readJson } from '../http.js';
-import { ALL_USERS, toView } from '../store.js';
+import { ALL_USERS, toView } from '../store/index.js';
 import { validateConfig, fingerprint, resolveAccess } from '../access/policy.js';
 import { destroyUserSessions } from '../access/auth.js';
 import { audit } from '../audit.js';

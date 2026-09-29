@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal } from './attribution.js';
-import { toWire } from '../store.js';
+import { toWire } from '../store/index.js';
 import { toolExecutor } from './tool_executor.js';
 import { ASK_USER } from '../tools/ask_tool.js';
 import { runAgentLoop, runHooks } from './agent.js';

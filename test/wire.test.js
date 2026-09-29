@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildBody, buildMessages, budgetFooter, harnessBlock } from '../src/chat/llm.js';
-import { Store, toWire } from '../src/store.js';
+import { Store, toWire } from '../src/store/index.js';
 
 const CLAUDE = { cache: true, model: 'anthropic/claude-sonnet-5', systemPrompt: 'sys', cacheTtl: '5m' };
 const OPENROUTER_CLAUDE = { ...CLAUDE, baseUrl: 'https://openrouter.ai/api/v1' };

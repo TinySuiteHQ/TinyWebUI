@@ -37,7 +37,7 @@ test('oversized and malformed bodies are refused', async () => {
 });
 
 test('server-made ids are long random values', async () => {
-  const { Store, ALL_USERS } = await import('../src/store.js');
+  const { Store, ALL_USERS } = await import('../src/store/index.js');
   const store = new Store(':memory:');
   const chat = store.createChat({}, ALL_USERS);
   assert.match(chat.id, /^[0-9a-f-]{36}$/);

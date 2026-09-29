@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
 import { createConfigSource, LockedError, configProblems } from './config/config.js';
 import { McpHub } from './mcp.js';
 import { isClosed, findEntry } from './config/models.js';
-import { Store, SCHEMA_VERSION } from './store.js';
+import { Store, SCHEMA_VERSION } from './store/index.js';
 import { fingerprint, featuresFor, modelsFor } from './access/policy.js';
 import { hashPassword, applyAccessPolicy } from './access/auth.js';
 import { audit } from './audit.js';

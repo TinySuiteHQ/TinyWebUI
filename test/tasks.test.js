@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Store } from '../src/store.js';
+import { Store } from '../src/store/index.js';
 import { callManageTasks, taskToolDef } from '../src/tools/task_tool.js';
 
 test('task tool creates and updates a persistent checklist scoped to one chat', () => {

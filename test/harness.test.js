@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { Store } from '../src/store.js';
+import { Store } from '../src/store/index.js';
 import { runChat } from '../src/chat/llm.js';
 import { manageAutomation, runMessage } from '../src/automations/automation.js';
 
@@ -230,7 +230,7 @@ test('the run message says nobody is there to answer', () => {
 /* ---------- old images and the hard window ---------- */
 
 import { planEpoch, applyEpoch, planWindow, windowRows } from '../src/chat/compact.js';
-import { toWire, toView } from '../src/store.js';
+import { toWire, toView } from '../src/store/index.js';
 
 const IMG = { mime: 'image/png', data: 'iVBORw0KGgo=' };
 

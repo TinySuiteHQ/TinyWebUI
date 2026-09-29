@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { Store } from '../src/store.js';
+import { Store } from '../src/store/index.js';
 import { runChat } from '../src/chat/llm.js';
 
 async function scripted(replies) {

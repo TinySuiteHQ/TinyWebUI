@@ -82,7 +82,7 @@ test('search finds a chat whether the word is in the question or the answer', as
 
 test('one result per matching chat, never one per matching message', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-dedupe-'));
-  const { Store, ALL_USERS } = await import('../src/store.js');
+  const { Store, ALL_USERS } = await import('../src/store/index.js');
   const store = new Store(join(dir2, 'x.db'));
 
   // Three messages in one chat all say "lisbon" -- the question, and two
@@ -102,7 +102,7 @@ test('one result per matching chat, never one per matching message', async () =>
 
 test('search does not reach into reasoning, tool calls, tool results, or narration', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-store-'));
-  const { Store, ALL_USERS } = await import('../src/store.js');
+  const { Store, ALL_USERS } = await import('../src/store/index.js');
   const store = new Store(join(dir2, 'x.db'));
   const chat = store.createChat({ title: 'probe' });
   // A round that opens a tool call: narration + reasoning, then the tool

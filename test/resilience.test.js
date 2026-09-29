@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Store } from '../src/store.js';
+import { Store } from '../src/store/index.js';
 import { runChat } from '../src/chat/llm.js';
 import { McpHub } from '../src/mcp.js';
 

@@ -1,4 +1,4 @@
-import { toWire } from '../store.js';
+import { toWire } from '../store/index.js';
 import { approvalFor } from '../config/approval.js';
 import { runHooks } from './agent.js';
 import { digest } from './compact.js';
