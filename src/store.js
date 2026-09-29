@@ -210,19 +210,24 @@ CREATE VIRTUAL TABLE IF NOT EXISTS document_passages USING fts5(
   body, tokenize='unicode61'
 );
 
--- Dense retrieval (retrieval.mode 'dense' / 'hybrid'): the embedded chunks
--- of each passage, one float32 vector per chunk, per embedding model.
+-- Dense retrieval (retrieval.mode 'dense' / 'hybrid') for every corpus
+-- retrieval.js searches: the embedded chunks of one searchable unit (a
+-- document passage, a chat turn), one float32 vector per chunk, per model.
+-- owner_id is what the unit belongs to (document id, chat id), for cleanup.
 -- model_key names the model (and chunking), so switching re-embeds instead
--- of mixing incompatible vectors -- the rule TinyContext follows too.
-CREATE TABLE IF NOT EXISTS document_chunks (
-  passage_rowid INTEGER NOT NULL,
-  doc_id        TEXT NOT NULL,
-  model_key     TEXT NOT NULL,
-  chunk         INTEGER NOT NULL,
-  vec           BLOB NOT NULL,
-  PRIMARY KEY (passage_rowid, model_key, chunk)
+-- of mixing incompatible vectors -- the rule TinyContext follows too. digest
+-- is the embedded text's hash for units whose text can change ('' otherwise).
+CREATE TABLE IF NOT EXISTS embeddings (
+  corpus    TEXT NOT NULL,
+  unit_id   INTEGER NOT NULL,
+  owner_id  TEXT NOT NULL,
+  model_key TEXT NOT NULL,
+  digest    TEXT NOT NULL,
+  chunk     INTEGER NOT NULL,
+  vec       BLOB NOT NULL,
+  PRIMARY KEY (corpus, unit_id, model_key, chunk)
 );
-CREATE INDEX IF NOT EXISTS document_chunks_doc ON document_chunks(doc_id, model_key);
+CREATE INDEX IF NOT EXISTS embeddings_owner ON embeddings(corpus, owner_id, model_key);
 
 -- Full-text search over what was actually said, not how it got answered.
 -- Reasoning and tool results are the "work" the transcript shows collapsed,
@@ -356,7 +361,7 @@ export const PASSAGE_OVERLAP = 200;
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
@@ -403,6 +408,7 @@ export class Store {
     this.db.exec('PRAGMA foreign_keys = ON');
     if (!fresh) this.#renameToPassages();
     this.db.exec(SCHEMA);
+    if (!fresh) this.#moveDocumentVectors();
     // Nullable everywhere: unused (null) when auth is off, the exact behavior
     // installs already have; set only once per-user scoping is opted into.
     ensureColumn(this.db, 'chats', 'user_id', 'TEXT');
@@ -497,6 +503,19 @@ export class Store {
     }
     // Vectors from the unreleased schema 3 layout: recomputed by the backfill.
     this.db.exec('DROP TABLE IF EXISTS document_chunk_embeddings');
+  }
+
+  /** Schema 7 and earlier kept document vectors in their own table; they move into `embeddings` as-is. */
+  #moveDocumentVectors() {
+    const cols = this.db.prepare('PRAGMA table_info(document_chunks)').all().map((c) => c.name);
+    if (!cols.includes('vec')) return;
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec(`INSERT OR IGNORE INTO embeddings (corpus, unit_id, owner_id, model_key, digest, chunk, vec)
+        SELECT 'documents', passage_rowid, doc_id, model_key, '', chunk, vec FROM document_chunks`);
+      this.db.exec('DROP TABLE document_chunks');
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
   schemaVersion() {
@@ -707,9 +726,10 @@ export class Store {
         SELECT passage_rowid FROM document_passage_map WHERE chat_id = ?
       )
     `).run(id);
-    this.db.prepare(`DELETE FROM document_chunks WHERE doc_id IN (
+    this.db.prepare(`DELETE FROM embeddings WHERE corpus = 'documents' AND owner_id IN (
       SELECT id FROM documents WHERE chat_id = ?
     )`).run(id);
+    this.db.prepare("DELETE FROM embeddings WHERE corpus = 'chats' AND owner_id = ?").run(id);
     this.db.prepare('DELETE FROM document_passage_map WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(id);
     this.db.prepare('DELETE FROM chats WHERE id = ?').run(id);
@@ -1078,7 +1098,7 @@ export class Store {
         SELECT passage_rowid FROM document_passage_map WHERE doc_id = ?
       )
     `).run(docId);
-    this.db.prepare('DELETE FROM document_chunks WHERE doc_id = ?').run(docId);
+    this.db.prepare("DELETE FROM embeddings WHERE corpus = 'documents' AND owner_id = ?").run(docId);
     this.db.prepare('DELETE FROM document_passage_map WHERE doc_id = ?').run(docId);
   }
 
@@ -1162,12 +1182,12 @@ export class Store {
   }
 
   /**
-   * BM25 scores for the hybrid's lexical side. Any query word may match
-   * (lexical-only search requires all of them), so partial matches still
-   * rank above none -- dense ranking handles the rest. Higher is better.
+   * BM25 scores per passage, higher is better. `any`: any query word may
+   * match (the hybrid's lexical side, so partial matches still rank above
+   * none -- dense ranking handles the rest); otherwise all of them must.
    */
-  lexicalScores(docId, query) {
-    const q = ftsQuery(query, { any: true });
+  lexicalScores(docId, query, { any = true } = {}) {
+    const q = ftsQuery(query, { any });
     if (!q) return new Map();
     const rows = this.db.prepare(`
       SELECT m.passage_rowid AS rowid, bm25(document_passages) AS rank
@@ -1177,43 +1197,123 @@ export class Store {
     return new Map(rows.map((r) => [r.rowid, -r.rank]));
   }
 
-  /** A document's chunk vectors under one model: Map(passage rowid -> Float32Array[], one per chunk). */
-  chunkVectors(docId, modelKey) {
+  /** Documents with passages not yet embedded under this model (for backfill). */
+  documentsMissingVectors(modelKey) {
+    return this.db.prepare(`
+      SELECT DISTINCT m.doc_id AS id FROM document_passage_map m
+      LEFT JOIN embeddings e ON e.corpus = 'documents' AND e.unit_id = m.passage_rowid AND e.model_key = ? AND e.chunk = 0
+      WHERE e.unit_id IS NULL
+    `).all(modelKey).map((r) => r.id);
+  }
+
+  /* ---------- embeddings (any corpus; see retrieval.js) ---------- */
+
+  /** Chunk vectors of the given units under one model: Map(unit id -> Float32Array[], one per chunk). */
+  unitVectors(corpus, modelKey, unitIds) {
     const out = new Map();
-    for (const r of this.db.prepare('SELECT passage_rowid, vec FROM document_chunks WHERE doc_id = ? AND model_key = ? ORDER BY passage_rowid, chunk').all(docId, modelKey)) {
+    if (!unitIds.length) return out;
+    const rows = this.db.prepare(`
+      SELECT unit_id, vec FROM embeddings
+      WHERE corpus = ? AND model_key = ? AND unit_id IN (SELECT value FROM json_each(?))
+      ORDER BY unit_id, chunk
+    `).all(corpus, modelKey, JSON.stringify(unitIds));
+    for (const r of rows) {
       const buf = r.vec;
-      if (!out.has(r.passage_rowid)) out.set(r.passage_rowid, []);
-      out.get(r.passage_rowid).push(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4).slice());
+      if (!out.has(r.unit_id)) out.set(r.unit_id, []);
+      out.get(r.unit_id).push(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4).slice());
     }
     return out;
   }
 
-  /** rows: [{ rowid (passage), vecs: Float32Array[] (its chunks, in order) }]. */
-  putChunkVectors(docId, modelKey, rows) {
-    const clear = this.db.prepare('DELETE FROM document_chunks WHERE passage_rowid = ? AND model_key = ?');
-    const put = this.db.prepare('INSERT INTO document_chunks (passage_rowid, doc_id, model_key, chunk, vec) VALUES (?, ?, ?, ?, ?)');
+  /** What each of an owner's units was embedded from: Map(unit id -> digest). */
+  unitDigests(corpus, ownerId, modelKey) {
+    const rows = this.db.prepare('SELECT unit_id, digest FROM embeddings WHERE corpus = ? AND owner_id = ? AND model_key = ? AND chunk = 0')
+      .all(corpus, ownerId, modelKey);
+    return new Map(rows.map((r) => [r.unit_id, r.digest]));
+  }
+
+  /** rows: [{ unitId, digest, vecs: Float32Array[] (its chunks, in order) }], replacing what those units had. */
+  putUnitVectors(corpus, ownerId, modelKey, rows) {
+    const clear = this.db.prepare('DELETE FROM embeddings WHERE corpus = ? AND unit_id = ? AND model_key = ?');
+    const put = this.db.prepare('INSERT INTO embeddings (corpus, unit_id, owner_id, model_key, digest, chunk, vec) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.db.exec('BEGIN');
     try {
-      for (const { rowid, vecs } of rows) {
-        clear.run(rowid, modelKey);
-        vecs.forEach((vec, chunk) => put.run(rowid, docId, modelKey, chunk, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength)));
+      for (const { unitId, digest, vecs } of rows) {
+        clear.run(corpus, unitId, modelKey);
+        vecs.forEach((vec, chunk) => put.run(corpus, unitId, ownerId, modelKey, digest, chunk, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength)));
       }
       this.db.exec('COMMIT');
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
-  /** Documents with passages not yet embedded under this model (for backfill). */
-  documentsMissingVectors(modelKey) {
+  /** Drops an owner's vectors for units it no longer has. */
+  dropStaleUnits(corpus, ownerId, keepUnitIds) {
     return this.db.prepare(`
-      SELECT DISTINCT m.doc_id AS id FROM document_passage_map m
-      LEFT JOIN document_chunks c ON c.passage_rowid = m.passage_rowid AND c.model_key = ?
-      WHERE c.passage_rowid IS NULL
-    `).all(modelKey).map((r) => r.id);
+      DELETE FROM embeddings WHERE corpus = ? AND owner_id = ? AND unit_id NOT IN (SELECT value FROM json_each(?))
+    `).run(corpus, ownerId, JSON.stringify(keepUnitIds)).changes;
   }
 
   /** Drops vectors from models (or chunkings) no longer configured. */
   pruneVectors(keepModelKey) {
-    return this.db.prepare('DELETE FROM document_chunks WHERE model_key != ?').run(keepModelKey).changes;
+    return this.db.prepare('DELETE FROM embeddings WHERE model_key != ?').run(keepModelKey).changes;
+  }
+
+  /* ---------- chat turns (the 'chats' corpus) ---------- */
+
+  /**
+   * A chat's turns: each question with the answer it finally got -- the last
+   * assistant message with text before the next question, the one the
+   * transcript shows as the answer. A turn's id is its user message's id.
+   */
+  chatTurns(chatId) {
+    const rows = this.db.prepare(`
+      SELECT id, seq, role, content, created_at FROM messages
+      WHERE chat_id = ? AND role IN ('user', 'assistant') ORDER BY seq
+    `).all(chatId);
+    const turns = [];
+    for (const r of rows) {
+      if (r.role === 'user') turns.push({ id: r.id, chatId, seq: r.seq, question: r.content || '', answer: '', createdAt: r.created_at });
+      else if (turns.length && r.content?.trim()) turns.at(-1).answer = r.content;
+    }
+    return turns;
+  }
+
+  chatOfMessage(messageId) {
+    return this.db.prepare('SELECT chat_id FROM messages WHERE id = ?').get(messageId)?.chat_id ?? null;
+  }
+
+  /** Every turn id a user may search, leaving one chat out (the one asking). */
+  turnIds(userId, { excludeChatId = null } = {}) {
+    const s = scope(userId, 'c.user_id');
+    return this.db.prepare(`
+      SELECT m.id FROM messages m JOIN chats c ON c.id = m.chat_id
+      WHERE m.role = 'user' AND m.chat_id IS NOT ? AND ${s.sql}
+    `).all(excludeChatId, ...s.params).map((r) => r.id);
+  }
+
+  /** BM25 per turn (its best message), higher is better. `any`: any query word may match. */
+  turnLexicalScores(userId, query, { excludeChatId = null, any = true } = {}) {
+    const q = ftsQuery(query, { any });
+    if (!q) return new Map();
+    const s = scope(userId, 'c.user_id');
+    const rows = this.db.prepare(`
+      SELECT bm25(messages_fts) AS rank,
+        (SELECT u.id FROM messages u WHERE u.chat_id = m.chat_id AND u.role = 'user' AND u.seq <= m.seq ORDER BY u.seq DESC LIMIT 1) AS turn
+      FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid JOIN chats c ON c.id = m.chat_id
+      WHERE messages_fts MATCH ? AND m.chat_id IS NOT ? AND ${s.sql}
+    `).all(q, excludeChatId, ...s.params);
+    const out = new Map();
+    for (const r of rows) if (r.turn != null) out.set(r.turn, Math.max(out.get(r.turn) ?? -Infinity, -r.rank));
+    return out;
+  }
+
+  /** Chats with a question not yet embedded under this model (for backfill). */
+  chatsMissingVectors(modelKey) {
+    return this.db.prepare(`
+      SELECT DISTINCT m.chat_id AS id FROM messages m
+      LEFT JOIN embeddings e ON e.corpus = 'chats' AND e.unit_id = m.id AND e.model_key = ? AND e.chunk = 0
+      WHERE m.role = 'user' AND e.unit_id IS NULL
+    `).all(modelKey).map((r) => r.id);
   }
 
   /* ---------- search ---------- */

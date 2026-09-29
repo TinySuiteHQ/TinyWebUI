@@ -1,26 +1,37 @@
+import { createHash } from 'node:crypto';
+
 /**
- * read_document's ranking: lexical (FTS5 BM25, the default), dense (local
- * embeddings), or hybrid (both, fused).
+ * Search for everything the model can look things up in: lexical (FTS5 BM25,
+ * the default), dense (local embeddings), or hybrid (both, fused). One engine,
+ * any number of CORPORA -- documents and past chat turns ship built in.
  *
- * Small-to-big retrieval. A document is split into PASSAGES -- the text
- * read_document hands back (retrieval.passageSize characters). For dense and
- * hybrid search each passage is cut again into CHUNKS sized to the embedding
- * model (its token limit), and every chunk is embedded. A query is matched
- * against the small chunks, each passage takes its best chunk's score, and
- * the model gets the whole big passage. BM25 scores passages directly.
+ * A corpus is a set of searchable UNITS (a document passage, a chat turn),
+ * each belonging to an OWNER (the document, the chat). It tells the engine:
+ *
+ *   units(owner)                  [{ id, text }] -- what to embed for an owner
+ *   ownersMissing(modelKey)       owners with units not yet embedded (backfill)
+ *   candidates(scope)             unit ids one search ranks
+ *   lexical(scope, query, {any})  Map(unit id -> BM25, higher is better)
+ *   hydrate(hits, scope)          the result rows, from [{ id, rank, dense, bm25 }]
+ *   ownersOf?(scope)              owners to embed before searching (else rely on ingest/backfill)
+ *   mutable?                      true when a unit's text can change under the same id
+ *   maintain?(engine, log)        one-time upkeep at backfill (e.g. re-splitting)
+ *
+ * Small-to-big: a unit is cut into CHUNKS sized to the embedding model, every
+ * chunk is embedded, a unit scores by its best chunk, and the caller gets the
+ * whole unit. BM25 scores units directly.
  *
  * The fusion is TinySearch's weighted Reciprocal Rank Fusion
- * (hybrid_embed_search_service.py): each side ranks every passage, which
+ * (hybrid_embed_search_service.py): each side ranks every candidate, which
  * scores
  *
  *     (1 - denseWeight) / (k + bm25Rank) + denseWeight / (k + denseRank)
  *
  * with k = 60 and denseWeight = 0.5 by default, and ties break on the dense
- * score, then the BM25 score, then document order -- fully deterministic.
+ * score, then the BM25 score, then candidate order -- fully deterministic.
  *
- * Chunk vectors are computed once, when a document is ingested, stored in
- * SQLite (document_chunks), and reused by every query; only the query itself
- * is embedded at search time.
+ * Vectors are computed once per unit, stored in SQLite (`embeddings`), and
+ * reused by every query; only the query itself is embedded at search time.
  */
 
 export const RETRIEVAL_MODES = ['lexical', 'dense', 'hybrid'];
@@ -31,12 +42,14 @@ const cosine = (a, b) => {
   return na && nb ? dot / Math.sqrt(na * nb) : 0;
 };
 
+const digestOf = (text) => createHash('sha256').update(text).digest('hex').slice(0, 32);
+
 /**
  * 1-based competition ranks by descending score: equal scores share a rank
  * (1, 2, 2, 4). One deliberate departure from TinySearch's _rank_by_score,
  * which numbers ties in input order -- there, a query with no BM25 match
- * at all still hands the document's first chunk a lexical lead. Shared ranks
- * make a side that cannot tell chunks apart stay neutral.
+ * at all still hands the first candidate a lexical lead. Shared ranks make a
+ * side that cannot tell candidates apart stay neutral.
  */
 function ranksOf(scores) {
   const order = scores.map((s, i) => i).sort((a, b) => scores[b] - scores[a]);
@@ -49,8 +62,8 @@ function ranksOf(scores) {
 }
 
 /**
- * Weighted RRF over parallel score lists. Returns passage indices, best first,
- * with the scores that decided them.
+ * Weighted RRF over parallel score lists. Returns candidate indices, best
+ * first, with the scores that decided them.
  */
 export function fuse(bm25Scores, denseScores, { denseWeight = 0.5, k = 60 } = {}) {
   const sparseWeight = 1 - denseWeight;
@@ -66,10 +79,64 @@ export function fuse(bm25Scores, denseScores, { denseWeight = 0.5, k = 60 } = {}
   return rows;
 }
 
+/** Attached documents: one unit per passage. Scope: { docId }. */
+export function documentsCorpus(store) {
+  return {
+    units: (docId) => store.documentPassages(docId).map((p) => ({ id: p.rowid, text: p.body })),
+    ownersMissing: (key) => store.documentsMissingVectors(key),
+    ownersOf: ({ docId }) => [docId],
+    candidates: ({ docId }) => store.documentPassages(docId).map((p) => p.rowid),
+    lexical: ({ docId }, query, { any }) => store.lexicalScores(docId, query, { any }),
+    hydrate(hits, { docId }) {
+      const byId = new Map(store.documentPassages(docId).map((p) => [p.rowid, p]));
+      return hits.map((h) => {
+        const p = byId.get(h.id);
+        return { passageIdx: p.passageIdx, charStart: p.charStart, body: p.body, rank: h.rank, dense: h.dense, bm25: h.bm25 };
+      });
+    },
+    maintain(engine, log) {
+      const { passageSize, passageOverlap } = engine.passageSettings();
+      const stale = store.documentsWithOtherPassages(passageSize, passageOverlap);
+      for (const id of stale) store.repassageDocument(id, passageSize, passageOverlap);
+      if (stale.length) log(`re-split ${stale.length} document(s) into ${passageSize}-character passages`);
+    }
+  };
+}
+
+// What of a turn gets embedded: the question and the start of the answer.
+const TURN_QUESTION_CHARS = 2000;
+const TURN_ANSWER_CHARS = 6000;
+
 /**
- * The retrieval service for one running instance. `embedder` is null in
+ * Past conversations: one unit per turn -- a question and the answer it
+ * finally got. Scope: { userId, excludeChatId }. A turn's answer can still
+ * change (the run was going when it was last embedded), so it is mutable.
+ */
+export function chatsCorpus(store) {
+  const turnText = (t) => `${t.question.slice(0, TURN_QUESTION_CHARS)}\n\n${t.answer.slice(0, TURN_ANSWER_CHARS)}`.trim();
+  return {
+    mutable: true,
+    units: (chatId) => store.chatTurns(chatId).map((t) => ({ id: t.id, text: turnText(t) })).filter((u) => u.text),
+    ownersMissing: (key) => store.chatsMissingVectors(key),
+    candidates: ({ userId, excludeChatId }) => store.turnIds(userId, { excludeChatId }),
+    lexical: ({ userId, excludeChatId }, query, { any }) => store.turnLexicalScores(userId, query, { excludeChatId, any }),
+    hydrate(hits) {
+      const turns = new Map();
+      for (const chatId of new Set(hits.map((h) => store.chatOfMessage(h.id)))) {
+        if (!chatId) continue;
+        const chat = store.chatById(chatId);
+        for (const t of store.chatTurns(chatId)) turns.set(t.id, { ...t, chatTitle: chat?.title || 'Untitled chat' });
+      }
+      return hits.filter((h) => turns.has(h.id)).map((h) => ({ ...turns.get(h.id), rank: h.rank, dense: h.dense, bm25: h.bm25 }));
+    }
+  };
+}
+
+/**
+ * The retrieval engine for one running instance. `embedder` is null in
  * lexical mode; otherwise it is what loadEmbedder() returned (or a stand-in
  * with the same { key, embed } shape, which is how the tests stay offline).
+ * Documents and chats are registered; `register` adds more.
  */
 export class Retrieval {
   constructor(store, retrieval, embedder = null) {
@@ -78,52 +145,74 @@ export class Retrieval {
     this.mode = retrieval.mode || 'lexical';
     this.embedder = this.mode === 'lexical' ? null : embedder;
     if (this.mode !== 'lexical' && !this.embedder) throw new Error(`retrieval.mode '${this.mode}' needs an embedding model`);
-    this.pending = new Map(); // docId -> in-flight ingestion, so a query can wait for it
+    this.corpora = new Map();
+    this.pending = new Map(); // "corpus:owner" -> in-flight ingestion, so a query can wait for it
+    this.register('documents', documentsCorpus(store));
+    this.register('chats', chatsCorpus(store));
+  }
+
+  register(name, corpus) {
+    this.corpora.set(name, corpus);
+    return this;
+  }
+
+  #corpus(name) {
+    const c = this.corpora.get(name);
+    if (!c) throw new Error(`retrieval: no corpus "${name}"`);
+    return c;
   }
 
   /**
-   * Embeds the chunks of any of a document's passages that have no vectors
-   * for the current model yet, and stores them. Idempotent: an ingested
-   * document costs nothing to "ingest" again.
+   * Embeds whatever of one owner's units has no vectors for the current model
+   * (or, for a mutable corpus, vectors of text that has since changed), and
+   * drops vectors of units the owner no longer has. Idempotent: an owner that
+   * is up to date costs nothing to ingest again.
    */
-  ingest(docId) {
+  ingest(name, ownerId) {
     if (!this.embedder) return Promise.resolve(0);
-    if (this.pending.has(docId)) return this.pending.get(docId);
+    const corpus = this.#corpus(name);
+    const tag = `${name}:${ownerId}`;
+    if (this.pending.has(tag)) return this.pending.get(tag);
     const job = (async () => {
-      const have = this.store.chunkVectors(docId, this.embedder.key);
-      const missing = this.store.documentPassages(docId).filter((p) => !have.has(p.rowid));
+      const key = this.embedder.key;
+      const units = corpus.units(ownerId).map((u) => ({ ...u, digest: corpus.mutable ? digestOf(u.text) : '' }));
+      const have = this.store.unitDigests(name, ownerId, key);
+      if ([...have.keys()].some((id) => !units.some((u) => u.id === id))) this.store.dropStaleUnits(name, ownerId, units.map((u) => u.id));
+      const missing = units.filter((u) => have.get(u.id) !== u.digest);
       if (!missing.length) return 0;
       const prefix = this.cfg.documentPrefix || '';
-      const texts = missing.map((p) => prefix + p.body);
+      const texts = missing.map((u) => prefix + u.text);
       const vecs = this.embedder.embedPassages
         ? await this.embedder.embedPassages(texts)
         : (await this.embedder.embed(texts)).map((v) => [v]);
-      // The document may have been deleted while it was being embedded.
-      if (!this.store.documentPassages(docId).length) return 0;
-      this.store.putChunkVectors(docId, this.embedder.key, missing.map((p, i) => ({ rowid: p.rowid, vecs: vecs[i] })));
-      return missing.length;
-    })().finally(() => this.pending.delete(docId));
-    this.pending.set(docId, job);
+      // The owner may have been deleted while it was being embedded.
+      const still = new Set(corpus.units(ownerId).map((u) => u.id));
+      const rows = missing.map((u, i) => ({ unitId: u.id, digest: u.digest, vecs: vecs[i] })).filter((r) => still.has(r.unitId));
+      if (rows.length) this.store.putUnitVectors(name, ownerId, key, rows);
+      return rows.length;
+    })().finally(() => this.pending.delete(tag));
+    this.pending.set(tag, job);
     return job;
   }
 
   /**
-   * Brings every stored document up to the current settings: re-splits any
-   * stored with other passage settings (every mode), then embeds whatever
-   * the current model has no vectors for, dropping vectors from old ones.
+   * Brings every corpus up to the current settings: each corpus's own upkeep
+   * (every mode), then embeds whatever the current model has no vectors for,
+   * dropping vectors from old models.
    */
   async backfill(log = () => {}) {
-    const { passageSize, passageOverlap } = this.passageSettings();
-    const stale = this.store.documentsWithOtherPassages(passageSize, passageOverlap);
-    for (const id of stale) this.store.repassageDocument(id, passageSize, passageOverlap);
-    if (stale.length) log(`re-split ${stale.length} document(s) into ${passageSize}-character passages`);
+    for (const corpus of this.corpora.values()) corpus.maintain?.(this, log);
     if (!this.embedder) return 0;
     const pruned = this.store.pruneVectors(this.embedder.key);
     if (pruned) log(`dropped ${pruned} chunk vector(s) from a previous model or chunking`);
-    let n = 0;
-    for (const id of this.store.documentsMissingVectors(this.embedder.key)) n += await this.ingest(id);
-    if (n) log(`embedded ${n} passage(s) for ${this.cfg.mode} retrieval`);
-    return n;
+    let total = 0;
+    for (const [name, corpus] of this.corpora) {
+      let n = 0;
+      for (const owner of corpus.ownersMissing(this.embedder.key)) n += await this.ingest(name, owner);
+      if (n) log(`embedded ${n} ${name} unit(s) for ${this.mode} retrieval`);
+      total += n;
+    }
+    return total;
   }
 
   /** The passage split new documents get. */
@@ -132,26 +221,32 @@ export class Retrieval {
   }
 
   /**
-   * The best passages of one document for a query, in the shape
-   * store.searchPassages() returns, so read_document is the same in every mode.
+   * The best units of a corpus for a query, as that corpus hydrates them,
+   * each with the scores that ranked it. Same call in every mode.
    */
-  async search(docId, query, limit = 5) {
-    if (this.mode === 'lexical') return this.store.searchPassages(docId, query, limit);
-    await this.ingest(docId);
-    const passages = this.store.documentPassages(docId);
-    if (!passages.length || !String(query).trim()) return [];
-    const vectors = this.store.chunkVectors(docId, this.embedder.key);
+  async search(name, scope, query, limit = 5) {
+    const corpus = this.#corpus(name);
+    if (!String(query ?? '').trim()) return [];
+    if (this.mode === 'lexical') {
+      // Every query word must match, like a search box; best BM25 first.
+      const hits = [...corpus.lexical(scope, query, { any: false })]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([id, s]) => ({ id, rank: s, dense: null, bm25: s }));
+      return corpus.hydrate(hits, scope);
+    }
+    for (const owner of corpus.ownersOf?.(scope) || []) await this.ingest(name, owner);
+    const ids = corpus.candidates(scope);
+    if (!ids.length) return [];
+    const vectors = this.store.unitVectors(name, this.embedder.key, ids);
     const [q] = await this.embedder.embed([(this.cfg.queryPrefix || '') + query]);
-    // Small-to-big: a passage scores by its best-matching chunk.
-    const dense = passages.map((p) => (vectors.has(p.rowid) ? Math.max(...vectors.get(p.rowid).map((v) => cosine(q, v))) : -1));
-    const lexical = this.store.lexicalScores(docId, query);
-    const bm25 = passages.map((p) => lexical.get(p.rowid) ?? 0);
+    const dense = ids.map((id) => (vectors.has(id) ? Math.max(...vectors.get(id).map((v) => cosine(q, v))) : -1));
+    const lexical = corpus.lexical(scope, query, { any: true });
+    const bm25 = ids.map((id) => lexical.get(id) ?? 0);
     const denseWeight = this.mode === 'dense' ? 1 : (this.cfg.denseWeight ?? 0.5);
-    return fuse(bm25, dense, { denseWeight, k: this.cfg.rrfK ?? 60 })
+    const hits = fuse(bm25, dense, { denseWeight, k: this.cfg.rrfK ?? 60 })
       .slice(0, limit)
-      .map(({ index, rrf, dense: d, bm25: b }) => ({
-        passageIdx: passages[index].passageIdx, charStart: passages[index].charStart, body: passages[index].body,
-        rank: rrf, dense: d, bm25: b
-      }));
+      .map(({ index, rrf, dense: d, bm25: b }) => ({ id: ids[index], rank: rrf, dense: d, bm25: b }));
+    return corpus.hydrate(hits, scope);
   }
 }

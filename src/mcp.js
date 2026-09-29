@@ -8,7 +8,7 @@ const MAX_NAME = 64;
 
 // Built-in tools registered after connect(). An MCP tool that flattened onto
 // one of these would be shadowed by the local handler without a word.
-const RESERVED = new Set(['context_expand', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks']);
+const RESERVED = new Set(['context_expand', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats']);
 
 /**
  * The flat name the model sees for a server's tool. Sanitising and the

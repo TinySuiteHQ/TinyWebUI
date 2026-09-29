@@ -57,7 +57,7 @@ function header(doc, note) {
 }
 
 async function queryView(store, retrieval, doc, query, budget) {
-  const hits = retrieval ? await retrieval.search(doc.id, query, 5) : store.searchPassages(doc.id, query, 5);
+  const hits = retrieval ? await retrieval.search('documents', { docId: doc.id }, query, 5) : store.searchPassages(doc.id, query, 5);
   if (!hits.length) {
     return `${header(doc, `no match for "${query}"`)}\nTry a broader query, or read from the start with offset/limit.`;
   }

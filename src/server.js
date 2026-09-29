@@ -18,6 +18,7 @@ import {
 import { expandToolDef, callExpand } from './context_tool.js';
 import { documentToolDef, callReadDocument } from './document_tool.js';
 import { askToolDef, callAskUser } from './ask_tool.js';
+import { chatSearchToolDef, callSearchChats } from './chat_search_tool.js';
 import { taskToolDef, callManageTasks } from './task_tool.js';
 import { Retrieval } from './retrieval.js';
 import { loadEmbedder, defaultModelsDir } from './embedding.js';
@@ -259,6 +260,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     (await new McpHub(servers).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
       .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
+      .registerLocal(chatSearchToolDef(), (args, ctx) => callSearchChats(args, { ...ctx, store, retrieval }), { readOnly: true })
       // Changes nothing, so it never waits for approval; never alongside
       // other calls, so a question cannot race a write it is asking about.
       .registerLocal(askToolDef(), callAskUser, { readOnly: true, idempotent: false, executionMode: 'sequential' })
@@ -464,6 +466,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       } finally {
         store.touchChat(chat.id);
         run.done = true;
+        retrieval.ingest('chats', chat.id).catch((err) => console.error(`[tinywebui] embedding chat ${chat.id} failed: ${err.message}`));
         // The run would go idle here, so the oldest queued item starts the
         // next one -- in this same synchronous block, so nothing queued before
         // `done` flipped can be missed. A stop or failure delivers nothing:
@@ -1193,7 +1196,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const chat = store.getChat(chatId, auth.userId) || store.createChat({ id: chatId, title: String(filename).slice(0, 60) }, auth.userId);
         const doc = store.addDocument(chat.id, { filename: String(filename), mime: mime || null, content: text }, retrieval.passageSettings());
         // Embedded once, in the background; a question that arrives first waits for it.
-        retrieval.ingest(doc.id).catch((err) => console.error(`[tinywebui] embedding ${doc.id} failed: ${err.message}`));
+        retrieval.ingest('documents', doc.id).catch((err) => console.error(`[tinywebui] embedding ${doc.id} failed: ${err.message}`));
         return json(res, 200, { chatId: chat.id, document: doc });
       }
 

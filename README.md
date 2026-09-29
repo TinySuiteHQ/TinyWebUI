@@ -166,10 +166,14 @@ The Settings panel validates and saves `mcp.json`, then reconnects the hub witho
 
 MCP tool calls that can change something wait for you: the call appears in the transcript with its arguments and **allow**, **always allow this tool**, and **deny**. A tool counts as read-only only when its server marks it with the MCP `readOnlyHint` annotation; anything unmarked is treated as a possible write. Set `toolApproval` to `"writes"` (default), `"all"` or `"off"` in Settings, and override single tools from the tools panel (always ask / never ask, stored as `confirmTools` / `autoApproveTools`). TinyWebUI's own built-in tools never ask. Scheduled automation runs have no one to ask, so a call that would need approval is refused there and the run reports it.
 
-Two local tools are always available:
+These local tools are always available:
 
 - `read_document` searches or reads an attached document.
+- `search_chats` searches the user's earlier conversations (never the current one) and returns matching questions with the answers they got.
 - `context_expand` searches or pages through the complete output behind a compacted tool result.
+- `ask_user` asks the user a question mid-turn, optionally with choices, and waits for the answer.
+- `manage_tasks` keeps a visible checklist for the current chat, shown in the right rail.
+- `manage_automation` creates, edits and runs scheduled automations.
 
 ## Attachments and conversations
 
@@ -181,9 +185,9 @@ Chats, documents, full tool results, and usage are stored in `tinywebui.db` besi
 
 A running turn belongs to the server rather than the browser tab: reloading or disconnecting does not cancel it. Reopen the chat to rejoin its stream, or use **stop** to cancel it.
 
-### Smarter document search (optional)
+### Smarter search (optional)
 
-By default `read_document` finds passages with SQLite's full-text search (BM25): fast, no extra packages, and exact about words. Turn on **hybrid** retrieval to also match meaning, so a question about an "automobile" finds the paragraph about the "sedan". It works the way TinySearch and TinyContext do: the same local ONNX embedding models, BM25 and embeddings fused with Reciprocal Rank Fusion, and nothing leaves the machine.
+Everything the model can search goes through one retrieval engine: passages of attached documents (`read_document`) and past conversation turns (`search_chats`). A chat turn is one question plus the answer it finally got, not the narration or tool calls in between. By default the engine uses SQLite's full-text search (BM25): fast, no extra packages, and exact about words. Turn on **hybrid** retrieval to also match meaning, so a question about an "automobile" finds the paragraph about the "sedan". It works the way TinySearch and TinyContext do: the same local ONNX embedding models, BM25 and embeddings fused with Reciprocal Rank Fusion, and nothing leaves the machine.
 
 ```bash
 npm install onnxruntime-node @huggingface/tokenizers   # optional packages, only for dense/hybrid
@@ -207,7 +211,8 @@ A question is compared with every small chunk, each passage takes its best chunk
 
 - **Modes:** `lexical` (default), `dense` (embeddings only), `hybrid` (both, fused).
 - **Models:** `fast` (all-MiniLM-L6-v2), `balanced` (bge-small-en-v1.5) and `quality` (bge-base-en-v1.5), the same presets as TinySearch, are English-only. For documents in other languages, or questions in a different language from the document, use `multilingual` (granite-embedding-107m-multilingual, Apache-2.0): about as fast as `fast`, but a larger download (430 MB). When questions and documents are in different languages, keyword matches rarely help, so `dense` mode or a higher `denseWeight` usually ranks better than the default hybrid. A custom bundle works with `modelDir`.
-- **Embeddings are computed once.** Each chunk is embedded when the document is attached and stored in SQLite; queries embed only the question. Switching models re-embeds automatically, and deleting a document or chat deletes its vectors.
+- **Embeddings are computed once.** Document chunks are embedded when the document is attached, chat turns when each run ends, and older chats and documents are embedded in the background on startup. Vectors are stored in SQLite; queries embed only the question. Switching models re-embeds automatically, a turn whose answer changes is re-embedded, and deleting a document or chat (or rewinding a chat) deletes its vectors.
+- **Adding a corpus.** The engine in `src/retrieval.js` searches any source that describes its units through a small adapter (`units`, `candidates`, `lexical`, `hydrate`, ...). Register one with `retrieval.register(name, corpus)` and it gets lexical, dense and hybrid search, storage and backfill.
 - **Nothing downloads at runtime.** A missing bundle, missing packages or a checksum that doesn't match `modelSha256` stops startup with a clear message. `tinywebui models verify` and `tinywebui doctor` check the same things beforehand. ONNX Runtime's telemetry is switched off.
 - **Tuning:** `passageSize`/`passageOverlap` (what the model gets back), `chunkOverlap`, `denseWeight` (default 0.5), `rrfK` (default 60), and `queryPrefix`/`documentPrefix` for models that expect instructions (for bge, set `queryPrefix` to `"Represent this sentence for searching relevant passages: "`). Bigger passages give more context per hit, but fewer hits fit in one `read_document` result.
 - **Changing settings is safe.** Stored documents are re-split on the next start when the passage settings change, and re-embedded when the model or `chunkOverlap` changes. Passage settings apply in `lexical` mode too.
