@@ -5,6 +5,7 @@
 import { $, el } from '../core/dom.js';
 import { state } from '../core/state.js';
 import { api } from '../core/api.js';
+import { markSnippet } from '../core/md.js';
 
 let organizingChatId = null;
 const expandedFolders = new Set();
@@ -217,17 +218,6 @@ async function runSearch(q) {
   searchQuery = q;
   searchResults = results;
   renderSearchResults(results, q);
-}
-
-/** Turns snippet()'s ‹...› markers into <mark>, escaping everything else. */
-function markSnippet(raw) {
-  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return raw.split('‹').map((chunk, i) => {
-    if (i === 0) return esc(chunk);
-    const at = chunk.indexOf('›');
-    if (at === -1) return esc(chunk); // an unmatched marker -- show it plainly rather than eat it
-    return `<mark>${esc(chunk.slice(0, at))}</mark>${esc(chunk.slice(at + 1))}`;
-  }).join('');
 }
 
 const SEARCH_ROLE_LABEL = { user: 'you', assistant: 'assistant', tool: 'tool' };

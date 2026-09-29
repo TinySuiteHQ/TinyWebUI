@@ -1,26 +1,29 @@
-// A small, dependency-free Markdown renderer. It covers what chat models
-// actually emit -- headings, emphasis, code, lists, tables, quotes, links --
-// and nothing else. Everything is HTML-escaped before any tag is produced, so
-// model output can never inject markup.
+// The page's only producers of HTML from outside text. A small, dependency-free
+// Markdown renderer that covers what chat models actually emit -- headings,
+// emphasis, code, lists, tables, quotes, links -- and nothing else, plus the
+// search-snippet highlighter. Everything is HTML-escaped before any tag is
+// produced, so model output can never inject markup.
 
 const esc = (s) => s.replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-const MARK = '';
+// A private-use character: stands in for a stashed span while the inline rules run.
+const MARK = '\uE000';
 
 function inline(src) {
-  let out = esc(src);
+  // A MARK typed into the text would otherwise read as a reference to a stash slot.
+  let out = esc(src).replaceAll(MARK, '');
   const spans = [];
   const stash = (html) => `${MARK}${spans.push(html) - 1}${MARK}`;
 
   // Code spans first: nothing inside them should be interpreted further.
   out = out.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${code}</code>`));
 
-  // Only http(s)/mailto/anchor links become anchors; anything else (javascript:,
-  // data:) degrades to its link text.
+  // Only http(s)/mailto/anchor/same-site links become anchors; anything else
+  // (javascript:, data:, a protocol-relative //host) degrades to its link text.
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_, text, href) =>
-    /^(https?:|mailto:|#|\/)/i.test(href)
+    /^(https?:|mailto:|#|\/(?!\/))/i.test(href)
       ? stash(`<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`)
       : text);
   out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, href) =>
@@ -115,4 +118,14 @@ export function renderMarkdown(src) {
   }
 
   return html.join('\n');
+}
+
+/** Turns the search index's ‹...› markers into <mark>, escaping everything else. */
+export function markSnippet(raw) {
+  return String(raw).split('‹').map((chunk, i) => {
+    if (i === 0) return esc(chunk);
+    const at = chunk.indexOf('›');
+    if (at === -1) return esc('‹' + chunk); // an unmatched marker -- show it plainly rather than eat it
+    return `<mark>${esc(chunk.slice(0, at))}</mark>${esc(chunk.slice(at + 1))}`;
+  }).join('');
 }
