@@ -1,4 +1,4 @@
-import { ALL_USERS } from './store.js';
+import { ALL_USERS } from '../store.js';
 
 /**
  * read_document -- lets the model read text the user attached to the chat.

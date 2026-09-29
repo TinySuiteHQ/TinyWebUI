@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { digest, planEpoch, applyEpoch, estimateTokens, textMap } from '../src/compact.js';
 import { Store, toWire, toView } from '../src/store.js';
-import { callExpand } from '../src/context_tool.js';
+import { callExpand } from '../src/tools/context_tool.js';
 
 const big = (n, fill = 'x') => fill.repeat(n);
 

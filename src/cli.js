@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { PRESETS, resolveModel, findOnnxFile, sha256File, loadEmbedder, defaultModelsDir } from './embedding.js';
+import { PRESETS, resolveModel, findOnnxFile, sha256File, loadEmbedder, defaultModelsDir } from './retrieval/embedding.js';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config.js';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,

@@ -13,7 +13,7 @@
  * so they never disturb the cached prefix.
  */
 
-import { textMap } from './compact.js';
+import { textMap } from '../compact.js';
 
 export const CONTEXT_EXPAND = 'context_expand';
 

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal } from './attribution.js';
 import { toWire } from './store.js';
 import { approvalFor } from './approval.js';
-import { ASK_USER } from './ask_tool.js';
+import { ASK_USER } from './tools/ask_tool.js';
 import { runAgentLoop, runHooks } from './agent.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
