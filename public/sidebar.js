@@ -5,6 +5,7 @@
 import { $, el } from './dom.js';
 import { state } from './state.js';
 import { openChat, newChat } from './chat.js';
+import { api } from './api.js';
 
 let organizingChatId = null;
 const expandedFolders = new Set();
@@ -221,17 +222,11 @@ function bucketOf(updatedAt, now) {
 
 let chatsRequest = 0;
 
-async function getJson(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-
 export async function loadChats() {
   // Many callers (polls, stream ends, edits) overlap; only the newest call
   // may write, or an older list could land last and drop a just-made chat.
   const request = ++chatsRequest;
-  const [chats, folders] = await Promise.allSettled([getJson('/api/chats'), getJson('/api/folders')]);
+  const [chats, folders] = await Promise.allSettled([api.get('/api/chats'), api.get('/api/folders')]);
   if (request !== chatsRequest) return;
   // On failure keep whatever is already on screen rather than blanking it.
   if (chats.status === 'fulfilled') state.chats = chats.value.chats || [];
@@ -262,7 +257,7 @@ async function runSearch(q) {
   }
   let results = [];
   try {
-    results = (await (await fetch(`/api/search?q=${encodeURIComponent(q)}`)).json()).results || [];
+    results = (await api.get(`/api/search?q=${encodeURIComponent(q)}`)).results || [];
   } catch { /* leave whatever is on screen; the next keystroke will retry */ }
   if (seq !== searchSeq) return; // a newer query landed first -- this one is stale
   searchQuery = q;
@@ -361,12 +356,7 @@ $('newFolderForm').addEventListener('submit', async (e) => {
   $('newFolderError').hidden = true;
   try {
     const name = $('newFolderName').value;
-    const response = await fetch('/api/folders', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name })
-    });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || 'Could not create folder.');
+    const body = await api.post('/api/folders', { name });
     $('newFolderDialog').close();
     // A freshly created folder starts open -- otherwise the workflow this
     // exists for (create it, then move chats in) hides its own result.
@@ -385,8 +375,7 @@ $('organizeDelete').addEventListener('click', async () => {
   if (!organizingChatId) return;
   const id = organizingChatId;
   try {
-    const res = await fetch(`/api/chats/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `${res.status}`);
+    await api.del(`/api/chats/${id}`);
   } catch (err) {
     $('organizeError').textContent = `Could not delete chat: ${err.message}`;
     $('organizeError').hidden = false;
@@ -404,11 +393,7 @@ $('organizeForm').addEventListener('submit', async (e) => {
   button.disabled = true;
   $('organizeError').hidden = true;
   try {
-    const response = await fetch(`/api/chats/${organizingChatId}/organize`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ folder: $('organizeFolder').value })
-    });
-    if (!response.ok) throw new Error((await response.json()).error || 'Could not save chat organization.');
+    await api.post(`/api/chats/${organizingChatId}/organize`, { folder: $('organizeFolder').value });
     $('organizeDialog').close();
     organizingChatId = null;
     await loadChats();

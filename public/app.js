@@ -13,6 +13,7 @@ import { initAdmin } from './admin.js';
 import { loadAccess, can } from './access.js';
 import { FEATURE } from './shared/features.js';
 import './composer.js';
+import { api } from './api.js';
 
 const MIGRATED_KEY = 'tinywebui.chats.migrated';
 const OLD_CHATS_KEY = 'tinywebui.chats';
@@ -28,11 +29,7 @@ async function migrateLocal() {
   localStorage.setItem(MIGRATED_KEY, '1');
   if (!old.length) return;
   try {
-    await fetch('/api/chats/import', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chats: old })
-    });
+    await api.post('/api/chats/import', { chats: old });
   } catch { /* the transcripts stay in localStorage; nothing is lost */ }
 }
 
@@ -46,15 +43,13 @@ async function needsLogin() {
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginMsg').textContent = '';
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: $('loginPassword').value })
-    });
-    if (res.ok) return location.reload();
-    const out = await res.json().catch(() => ({}));
-    $('loginMsg').textContent = out.error || `${res.status}`;
-    $('loginPassword').select();
+    try {
+      await api.post('/api/auth/login', { password: $('loginPassword').value });
+      return location.reload();
+    } catch (err) {
+      $('loginMsg').textContent = err.message;
+      $('loginPassword').select();
+    }
   };
   return true;
 }

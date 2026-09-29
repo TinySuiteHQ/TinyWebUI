@@ -38,6 +38,7 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New table or column:** `store/schema.js` — add to `SCHEMA` or the `migrate()` steps, and bump `SCHEMA_VERSION` when an existing database needs changing.
 - **New built-in tool:** a file in `src/tools/` exporting `xToolDef()` and `callX()`, registered in `connectHub()` in `server.js`, and its name added to `RESERVED` in `mcp.js`.
 - **New stream event:** add it to `public/shared/events.js` and handle it in `public/stream.js` (a test enforces this).
+- **New API call from the page:** `api.get/post/patch/del` from `public/api.js`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly.
 - **New feature flag:** `public/shared/features.js`.
 - **New searchable corpus:** implement the adapter described at the top of `retrieval/retrieval.js`, add its name to `CORPUS` in `store/embeddings.js`, and `register()` it.
 

@@ -8,6 +8,7 @@ import { $, el } from './dom.js';
 import { state } from './state.js';
 import { openChat } from './chat.js';
 import { addQuestion } from './outline.js';
+import { api } from './api.js';
 
 const log = $('log');
 const wrap = $('wrap');
@@ -319,13 +320,7 @@ function beginEdit(msg, body, text, seq, attachments, images) {
  */
 async function rewind(payload) {
   if (state.busy || !state.chat.id) return;
-  const res = await fetch(`/api/chats/${state.chat.id}/edit`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const out = await res.json().catch(() => ({ error: `${res.status}` }));
-  if (!res.ok) return addError(out.error);
+  try { await api.post(`/api/chats/${state.chat.id}/edit`, payload); } catch (err) { return addError(err.message); }
   // The run is already going; openChat replays the rewound transcript and
   // attaches to it, exactly as a reload mid-turn would.
   const id = state.chat.id;

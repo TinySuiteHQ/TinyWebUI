@@ -6,6 +6,7 @@
 import { $, el } from './dom.js';
 import { renderMarkdown } from './md.js';
 import { whoami } from './access.js';
+import { api } from './api.js';
 
 let me = null;
 let adminLoadRequest = 0;
@@ -19,7 +20,7 @@ export function initAdmin() {
     const btn = $('logout');
     btn.hidden = false;
     btn.onclick = async () => {
-      try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* going anyway */ }
+      try { await api.post('/api/auth/logout'); } catch { /* going anyway */ }
       // Behind a gateway, the gateway owns the session; ending it is its job.
       if (me.logoutUrl) location.href = me.logoutUrl; else location.reload();
     };
@@ -51,13 +52,7 @@ function row(user) {
     sel.disabled = true;
     err.textContent = '';
     try {
-      const res = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || String(res.status));
+      const out = await api.patch(`/api/admin/users/${encodeURIComponent(user.id)}`, body);
       Object.assign(user, out.user);
     } catch (e) {
       sel.value = previous;
@@ -99,19 +94,12 @@ function showView(title, meta) {
   return body;
 }
 
-async function getJson(url) {
-  const res = await fetch(url);
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(out.error || String(res.status));
-  return out;
-}
-
 async function openUser(user) {
   const body = showView(user.name || user.email || user.id, 'loading…');
   $('adminBack').onclick = () => loadAdmin();
   const request = adminViewRequest;
   let out;
-  try { out = await getJson(`/api/admin/users/${encodeURIComponent(user.id)}/chats`); }
+  try { out = await api.get(`/api/admin/users/${encodeURIComponent(user.id)}/chats`); }
   catch (e) { if (request === adminViewRequest) $('adminViewMeta').textContent = e.message; return; }
   if (request !== adminViewRequest) return;
   const s = out.summary || {};
@@ -160,7 +148,7 @@ async function openChat(chatId, user) {
   $('adminBack').onclick = () => openUser(user);
   const request = adminViewRequest;
   let out;
-  try { out = await getJson(`/api/admin/chats/${encodeURIComponent(chatId)}`); }
+  try { out = await api.get(`/api/admin/chats/${encodeURIComponent(chatId)}`); }
   catch (e) { if (request === adminViewRequest) $('adminViewTitle').textContent = e.message; return; }
   if (request !== adminViewRequest) return;
   $('adminViewTitle').textContent = out.title || out.id;
@@ -171,7 +159,7 @@ async function openChat(chatId, user) {
     a.onclick = async (e) => {
       e.preventDefault();
       try {
-        const d = await getJson(`/api/admin/documents/${encodeURIComponent(doc.id)}`);
+        const d = await api.get(`/api/admin/documents/${encodeURIComponent(doc.id)}`);
         const w = window.open('', '_blank');
         if (w) { w.document.title = d.filename; w.document.body.appendChild(Object.assign(w.document.createElement('pre'), { textContent: d.content })); }
       } catch (err) { $('adminViewMeta').textContent = err.message; }
@@ -192,11 +180,9 @@ export async function loadAdmin() {
   $('adminUsers').parentElement.hidden = false;
   const box = $('adminUsers');
   $('adminMsg').textContent = '';
-  let res;
   let out;
   try {
-    res = await fetch('/api/admin/users');
-    out = await res.json().catch(() => ({}));
+    out = await api.get('/api/admin/users');
   } catch (err) {
     if (request === adminLoadRequest) {
       box.innerHTML = '';
@@ -206,7 +192,6 @@ export async function loadAdmin() {
   }
   if (request !== adminLoadRequest) return;
   box.innerHTML = '';
-  if (!res.ok) { $('adminMsg').textContent = out.error || `${res.status}`; return; }
   $('adminCount').textContent = `${out.users.length} · config ${out.fingerprint}`;
   $('adminCount').title = 'Config fingerprint: compare with `tinywebui fingerprint` on the checked-in files';
   for (const u of out.users) box.appendChild(row(u));

@@ -2,6 +2,7 @@ import { $, el } from './dom.js';
 import { openChat } from './chat.js';
 import { renderMarkdown } from './md.js';
 import { loadChats } from './sidebar.js';
+import { api } from './api.js';
 
 const panel = $('automations');
 const list = $('automation-list');
@@ -213,8 +214,7 @@ function automationForm(existing) {
     const del = el('button', 'danger'); del.type = 'button'; del.textContent = 'Delete';
     del.onclick = async () => {
       if (!confirm(`Delete “${existing.name}”? This can't be undone.`)) return;
-      const r = await send('DELETE', url(existing));
-      if (!r.ok) { error.textContent = r.error; return; }
+      try { await api.del(url(existing)); } catch (err) { error.textContent = err.message; return; }
       openForm = null; await load();
     };
     actions.appendChild(del);
@@ -245,9 +245,13 @@ function automationForm(existing) {
     };
     if (chat.value === NEW_CHAT) data.newChatTitle = newChatName.value.trim();
     else data.chatId = chat.value;
-    const r = existing ? await send('PATCH', url(existing), data) : await send('POST', '/api/automations', data);
-    submit.disabled = false; submit.textContent = submitLabel;
-    if (!r.ok) { error.textContent = r.error; return; }
+    try {
+      if (existing) await api.patch(url(existing), data); else await api.post('/api/automations', data);
+    } catch (err) {
+      error.textContent = err.message; return;
+    } finally {
+      submit.disabled = false; submit.textContent = submitLabel;
+    }
     openForm = null; await load();
     if (data.newChatTitle) loadChats(); // the new chat belongs in the sidebar too
   };
@@ -256,14 +260,6 @@ function automationForm(existing) {
 
 /* ---------- api ---------- */
 
-async function send(method, path, body) {
-  const res = await fetch(path, {
-    method, headers: body ? { 'content-type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const out = await res.json().catch(() => ({}));
-  return res.ok ? { ok: true, out } : { ok: false, error: out.error || `request failed (${res.status})` };
-}
 const url = (a, suffix = '') => `/api/automations/${encodeURIComponent(a.id)}${suffix}`;
 
 /* ---------- rendering ---------- */
@@ -295,8 +291,7 @@ function card(automation) {
   box.setAttribute('aria-label', `${automation.name} enabled`);
   box.onchange = async () => {
     box.disabled = true;
-    const r = await send('PATCH', url(automation), { enabled: box.checked });
-    if (!r.ok) { box.checked = !box.checked; alert(r.error); }
+    try { await api.patch(url(automation), { enabled: box.checked }); } catch (err) { box.checked = !box.checked; alert(err.message); }
     await load();
   };
   toggle.append(box, el('span', 'switch-track'));
@@ -332,8 +327,9 @@ function card(automation) {
   const run = el('button'); run.type = 'button'; run.textContent = 'Run now';
   run.onclick = async () => {
     run.disabled = true; run.textContent = 'Starting…';
-    const r = await send('POST', url(automation, '/trigger'));
-    if (!r.ok) { run.disabled = false; run.textContent = 'Run now'; alert(r.error); return; }
+    try { await api.post(url(automation, '/trigger')); } catch (err) {
+      run.disabled = false; run.textContent = 'Run now'; alert(err.message); return;
+    }
     close(); await openChat(automation.chatId);
   };
   const edit = el('button'); edit.type = 'button';
@@ -349,9 +345,7 @@ function card(automation) {
     history.dataset.loaded = '1';
     let runs = [];
     try {
-      const res = await fetch(url(automation, '/runs'));
-      if (!res.ok) throw new Error(`${res.status}`);
-      ({ runs = [] } = await res.json());
+      ({ runs = [] } = await api.get(url(automation, '/runs')));
     } catch (err) {
       // Let the next expand retry instead of leaving the section empty for good.
       delete history.dataset.loaded;
@@ -425,9 +419,7 @@ async function load() {
   const request = ++automationLoadRequest;
   let next;
   try {
-    const res = await fetch('/api/automations');
-    if (!res.ok) throw new Error(`${res.status}`);
-    next = await res.json();
+    next = await api.get('/api/automations');
   } catch (err) {
     if (request === automationLoadRequest && panel.classList.contains('open')) {
       list.replaceChildren(Object.assign(el('div', 'automation-empty'), { textContent: `Couldn't load automations (${err.message}).` }));

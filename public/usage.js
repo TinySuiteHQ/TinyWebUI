@@ -6,6 +6,7 @@
  * year of daily rows is cheap to carry but expensive to re-derive per click.
  */
 import { $, el } from './dom.js';
+import { api } from './api.js';
 
 let days = []; // raw daily rows from /api/usage
 let path = []; // drill-down breadcrumb, e.g. ['2026'] or ['2026', '2026-03']
@@ -270,9 +271,7 @@ export async function loadUsage() {
   const request = ++usageRequest;
   let data;
   try {
-    const response = await fetch('/api/usage');
-    if (!response.ok) throw new Error(`${response.status}`);
-    data = await response.json();
+    data = await api.get('/api/usage');
   } catch (err) {
     if (request !== usageRequest) return;
     const msg = Object.assign(el('div', 'empty'), { textContent: `Couldn't load usage (${err.message}).` });

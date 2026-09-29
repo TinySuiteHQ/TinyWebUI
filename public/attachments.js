@@ -8,6 +8,7 @@ import { $, el } from './dom.js';
 import { can } from './access.js';
 import { state } from './state.js';
 import { addError } from './transcript.js';
+import { api } from './api.js';
 
 const input = $('input');
 const DOC_PREVIEW_COUNT = 3;
@@ -16,9 +17,7 @@ let docsExpanded = false;
 /** Opens a document's full extracted text in a new tab, plain-text. */
 async function openDocument(id) {
   try {
-    const res = await fetch(`/api/documents/${id}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'could not load document');
+    const data = await api.get(`/api/documents/${id}`);
     const blob = new Blob([data.content], { type: 'text/plain;charset=utf-8' });
     window.open(URL.createObjectURL(blob), '_blank');
   } catch (err) {
@@ -149,14 +148,7 @@ function isImageFile(file) {
 async function normalizeStaged(entry) {
   try {
     const dataBase64 = await toBase64(entry.file);
-    const res = await fetch('/api/images/normalize', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mime: entry.file.type, dataBase64 })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'could not read that image');
-    entry.normalized = data;
+    entry.normalized = await api.post('/api/images/normalize', { mime: entry.file.type, dataBase64 });
   } catch (err) {
     entry.error = err.message;
   }
@@ -244,13 +236,7 @@ export async function commitAttachments(chatId) {
       const dataBase64 = await toBase64(file);
       // The chat may not exist yet -- the upload route creates it lazily, the
       // same way the first /api/chat call does.
-      const res = await fetch(`/api/chats/${chatId}/documents`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, mime: file.type, dataBase64 })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'upload failed');
+      const data = await api.post(`/api/chats/${chatId}/documents`, { filename: file.name, mime: file.type, dataBase64 });
       docs.push(data.document);
     } catch (err) {
       entry.error = err.message;

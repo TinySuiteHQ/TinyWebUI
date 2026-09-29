@@ -11,6 +11,7 @@ import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
 import { renderTasks } from './tasks.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup, setHeldSender } from './queue.js';
+import { api } from './api.js';
 
 const input = $('input');
 let chatLoadCtrl = null;
@@ -109,16 +110,13 @@ export async function openChat(id) {
   cancelChatLoad();
   const ctrl = new AbortController();
   chatLoadCtrl = ctrl;
-  let res;
   let found;
   try {
-    res = await fetch(`/api/chats/${id}`, { signal: ctrl.signal });
-    if (!res.ok) throw new Error(`Could not open chat (${res.status})`);
-    found = await res.json();
+    found = await api.get(`/api/chats/${id}`, { signal: ctrl.signal });
   } catch (err) {
     if (chatLoadCtrl === ctrl) {
       chatLoadCtrl = null;
-      if (err.name !== 'AbortError') addError(err.message);
+      if (err.name !== 'AbortError') addError(`Could not open chat (${err.message})`);
     }
     return;
   }
@@ -203,8 +201,7 @@ $('form').addEventListener('submit', async (e) => {
     // actually mean it.
     if (!state.chat.id) return;
     try {
-      const res = await fetch(`/api/chats/${state.chat.id}/stop`, { method: 'POST' });
-      if (!res.ok) throw new Error(`${res.status}`);
+      await api.post(`/api/chats/${state.chat.id}/stop`);
     } catch (err) { addError(`couldn't stop: ${err.message}`); }
     return;
   }

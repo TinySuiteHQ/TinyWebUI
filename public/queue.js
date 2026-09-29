@@ -11,6 +11,7 @@
 import { $, el } from './dom.js';
 import { state } from './state.js';
 import { addError } from './transcript.js';
+import { api } from './api.js';
 
 const box = $('queue');
 
@@ -81,9 +82,9 @@ export function renderQueue(items = []) {
       // 409: already delivered -- the transcript shows it, and the next
       // queue event redraws this list either way.
       try {
-        const res = await fetch(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
-        if (!res.ok && res.status !== 409) throw new Error(`${res.status}`);
+        await api.del(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(item.id)}`);
       } catch (err) {
+        if (err.status === 409) return;
         drop.disabled = false;
         addError(`couldn't remove queued message: ${err.message}`);
       }
@@ -95,14 +96,14 @@ export function renderQueue(items = []) {
 
 /** Queues `text` on the running turn. False when there is no run to take it. */
 export async function enqueue(kind, text) {
-  const res = await fetch(`/api/chats/${state.chat.id}/queue`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: newId(), kind, message: text })
-  });
-  const out = await res.json().catch(() => ({}));
-  if (res.status === 409) return false;
-  if (!res.ok) { addError(out.error || `${res.status}`); return true; }
+  let out;
+  try {
+    out = await api.post(`/api/chats/${state.chat.id}/queue`, { id: newId(), kind, message: text });
+  } catch (err) {
+    if (err.status === 409) return false;
+    addError(err.message);
+    return true;
+  }
   renderQueue(out.items);
   return true;
 }
@@ -120,5 +121,5 @@ export async function reclaimQueue() {
   input.dispatchEvent(new Event('input'));
   renderQueue([]);
   await Promise.all(items.map((i) =>
-    fetch(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(i.id)}`, { method: 'DELETE' }).catch(() => {})));
+    api.del(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(i.id)}`).catch(() => {})));
 }

@@ -2,6 +2,7 @@
 import { $, el, num } from './dom.js';
 import { addError } from './transcript.js';
 import { whoami } from './access.js';
+import { api } from './api.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health
@@ -23,23 +24,11 @@ function renderToolPanel(data) {
   box.innerHTML = '';
 
   const toggleTool = async (name, disabled) => {
-    const out = await (await fetch('/api/tools/toggle', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, disabled })
-    })).json();
-    renderToolPanel(out);
+    try { renderToolPanel(await api.post('/api/tools/toggle', { name, disabled })); } catch (err) { addError(err.message); }
   };
 
   const toggleServer = async (name, disabled) => {
-    const res = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ disabled })
-    });
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok) return addError(out.error || `${res.status}`);
-    renderToolPanel(out);
+    try { renderToolPanel(await api.post(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, { disabled })); } catch (err) { return addError(err.message); }
     loadMcp(); // the raw editor's disabled: true/false has to catch up too
   };
 
@@ -88,14 +77,10 @@ function renderToolPanel(data) {
     sel.onclick = (e) => e.stopPropagation();
     sel.onchange = async () => {
       sel.disabled = true;
-      const res = await fetch('/api/tools/approval', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: t.name, policy: sel.value })
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) return addError(out.error || `${res.status}`);
-      renderToolPanel(out);
+      try { renderToolPanel(await api.post('/api/tools/approval', { name: t.name, policy: sel.value })); } catch (err) {
+        sel.disabled = false;
+        addError(err.message);
+      }
     };
     return sel;
   };
@@ -214,17 +199,9 @@ function renderToolPanel(data) {
   }
 }
 
-/** Fetches JSON, throwing on a network error or a non-2xx status. */
-async function getJson(url) {
-  const res = await fetch(url);
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(out.error || String(res.status));
-  return out;
-}
-
 export async function loadTools() {
   let data;
-  try { data = await getJson('/api/tools'); } catch (err) {
+  try { data = await api.get('/api/tools'); } catch (err) {
     $('tools').replaceChildren(Object.assign(el('div', 'empty'), { textContent: `Couldn't load tools (${err.message}).` }));
     return;
   }
@@ -233,7 +210,7 @@ export async function loadTools() {
 
 export async function loadMcp() {
   let out;
-  try { out = await getJson('/api/mcp'); } catch (err) {
+  try { out = await api.get('/api/mcp'); } catch (err) {
     $('mcpMsg').textContent = `Couldn't load MCP config (${err.message}).`;
     return;
   }
@@ -250,19 +227,12 @@ $('saveMcp').onclick = async () => {
   btn.disabled = true;
   btn.textContent = 'reconnecting…';
   try {
-    const res = await fetch('/api/mcp', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: $('mcpText').value })
-    });
-    const out = await res.json();
-    if (!res.ok) {
-      $('mcpMsg').textContent = out.error;
-    } else {
-      await loadTools();
-      $('mcpMsg').textContent = out.mcpErrors?.length ? out.mcpErrors.join('; ') : 'connected';
-      await loadConfig();
-    }
+    const out = await api.post('/api/mcp', { text: $('mcpText').value });
+    await loadTools();
+    $('mcpMsg').textContent = out.mcpErrors?.length ? out.mcpErrors.join('; ') : 'connected';
+    await loadConfig();
+  } catch (err) {
+    $('mcpMsg').textContent = err.message;
   } finally {
     btn.disabled = false;
     btn.textContent = 'save & reconnect';
@@ -293,7 +263,7 @@ export const isLocked = (key) => readOnly || lockedKeys.has(key);
 
 export async function loadConfig() {
   let cfg;
-  try { cfg = await getJson('/api/config'); } catch (err) {
+  try { cfg = await api.get('/api/config'); } catch (err) {
     // Without the lock list the form can't be edited safely; keep it read-only.
     for (const id of FORM_KEYS) $(id).disabled = true;
     $('save').disabled = true;
@@ -358,14 +328,8 @@ $('save').onclick = async () => {
     toolApproval: $('toolApproval').value
   };
   for (const k of lockedKeys) delete patch[k];
-  const res = await fetch('/api/config', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(patch)
-  });
-  if (!res.ok) {
-    const out = await res.json().catch(() => ({}));
-    $('saveMsg').textContent = out.error || `save failed (${res.status})`;
+  try { await api.post('/api/config', patch); } catch (err) {
+    $('saveMsg').textContent = `save failed (${err.message})`;
     return;
   }
   await loadConfig();

@@ -6,6 +6,7 @@
  */
 import { $ } from './dom.js';
 import { FEATURE } from './shared/features.js';
+import { api } from './api.js';
 
 let me = { features: [], models: '*' };
 let features = new Set();
@@ -24,7 +25,7 @@ const GATED = {
 };
 
 export async function loadAccess() {
-  try { me = await (await fetch('/api/auth/me')).json(); } catch { /* offline: show nothing extra */ }
+  try { me = await api.get('/api/auth/me'); } catch { /* offline: show nothing extra */ }
   features = new Set(me.features || []);
   for (const [feature, ids] of Object.entries(GATED)) {
     for (const id of ids) { const node = $(id); if (node) node.hidden = !can(feature); }

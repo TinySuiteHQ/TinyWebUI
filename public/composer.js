@@ -9,6 +9,7 @@ import { loadConfig, loadMcp, loadTools, isLocked, isReadOnly } from './settings
 import { can, whoami, loadAccess } from './access.js';
 import { addError } from './transcript.js';
 import { FEATURE } from './shared/features.js';
+import { api } from './api.js';
 
 const form = $('form');
 const attachBtn = $('attach');
@@ -63,17 +64,6 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && open) { const b = open.btn; closeMenu(); b.focus(); }
 });
 
-const post = async (url, body) => {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(out.error || `${res.status}`);
-  return out;
-};
-
 /** An on/off switch; `onToggle(next)` returns a promise, and the switch holds still until it settles. */
 function toggle(on, label, onToggle) {
   const sw = el('button', 'switch');
@@ -116,7 +106,7 @@ async function buildToolsMenu(pop) {
   if (can(FEATURE.MCP)) pop.appendChild(manage);
 
   let data;
-  try { data = await (await fetch('/api/tools')).json(); } catch (err) {
+  try { data = await api.get('/api/tools'); } catch (err) {
     body.firstChild.textContent = `Could not load tools: ${err.message}`;
     return;
   }
@@ -127,7 +117,7 @@ async function buildToolsMenu(pop) {
 function renderTools(body, data) {
   body.innerHTML = '';
   const refresh = (out) => { renderTools(body, out); loadTools(); loadConfig(); };
-  const toggleTool = async (name, on) => refresh(await post('/api/tools/toggle', { name, disabled: !on }));
+  const toggleTool = async (name, on) => refresh(await api.post('/api/tools/toggle', { name, disabled: !on }));
 
   const group = ({ title, tools, status, error, serverName, serverOn }) => {
     const box = el('details', 'pop-group');
@@ -142,7 +132,7 @@ function renderTools(body, data) {
     head.append(dot, name, meta);
     if (serverName) {
       head.appendChild(toggle(serverOn, `${title} server`, async (next) => {
-        const out = await post(`/api/mcp/servers/${encodeURIComponent(serverName)}/toggle`, { disabled: !next });
+        const out = await api.post(`/api/mcp/servers/${encodeURIComponent(serverName)}/toggle`, { disabled: !next });
         refresh(out);
         loadMcp();
       }));
@@ -203,8 +193,8 @@ async function buildModelMenu(pop) {
     closeMenu();
     if (!id || id === current) return;
     try {
-      if (personal) { await post('/api/me/prefs', { model: id }); await loadAccess(); }
-      else await post('/api/config', { model: id });
+      if (personal) { await api.post('/api/me/prefs', { model: id }); await loadAccess(); }
+      else await api.post('/api/config', { model: id });
     } catch (err) { return addError(err.message); }
     await loadConfig();
   };
@@ -214,7 +204,7 @@ async function buildModelMenu(pop) {
   // A configured catalog is closed: labels only, no typing arbitrary ids.
   let closed = false;
   try {
-    const out = await (await fetch('/api/models')).json();
+    const out = await api.get('/api/models');
     models = out.models || [];
     supported = out.supported;
     closed = Boolean(out.catalog);

@@ -10,6 +10,10 @@ import { renderQueue } from './queue.js';
 import { loadChats } from './sidebar.js';
 import { renderTasks } from './tasks.js';
 import { EVENT } from './shared/events.js';
+import { api } from './api.js';
+
+// 409 on a reply means another tab settled it first; its done event updates this one.
+const unless409 = (err) => { if (err.status !== 409) throw err; };
 
 /** Resolves to `{ next }`: true when a queued follow-up started a new run. */
 export async function consume(res) {
@@ -63,14 +67,9 @@ export async function consume(res) {
         } else if (ev.type === EVENT.APPROVAL) {
           const chatId = state.chat.id;
           steps?.ask(ev.id, async (decision) => {
-            const r = await fetch(`/api/chats/${chatId}/approve`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ id: ev.id, decision })
-            });
             // 409: already answered, e.g. from another tab -- its
             // approval_done event will settle this row too.
-            if (!r.ok && r.status !== 409) throw new Error(`${r.status}`);
+            await api.post(`/api/chats/${chatId}/approve`, { id: ev.id, decision }).catch(unless409);
           });
           turn.status('waiting for approval');
         } else if (ev.type === EVENT.APPROVAL_DONE) {
@@ -82,14 +81,9 @@ export async function consume(res) {
           // does not carry: it belongs to the ask_user row still running.
           const callId = steps?.pendingAsk?.();
           steps?.question(callId, ev, async (body) => {
-            const r = await fetch(`/api/chats/${chatId}/answer`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ id: ev.id, ...body })
-            });
             // 409: already settled -- answered in another tab, timed out or
             // stopped. Its question_done event settles this card too.
-            if (!r.ok && r.status !== 409) throw new Error(`${r.status}`);
+            await api.post(`/api/chats/${chatId}/answer`, { id: ev.id, ...body }).catch(unless409);
           });
           asks.set(ev.id, callId);
           turn.status('waiting for your answer');
