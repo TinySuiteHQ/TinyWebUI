@@ -121,12 +121,7 @@ export function chatsCorpus(store) {
     candidates: ({ userId, excludeChatId }) => store.turnIds(userId, { excludeChatId }),
     lexical: ({ userId, excludeChatId }, query, { any }) => store.turnLexicalScores(userId, query, { excludeChatId, any }),
     hydrate(hits) {
-      const turns = new Map();
-      for (const chatId of new Set(hits.map((h) => store.chatOfMessage(h.id)))) {
-        if (!chatId) continue;
-        const chat = store.chatById(chatId);
-        for (const t of store.chatTurns(chatId)) turns.set(t.id, { ...t, chatTitle: chat?.title || 'Untitled chat' });
-      }
+      const turns = store.turnsByIds(hits.map((h) => h.id));
       return hits.filter((h) => turns.has(h.id)).map((h) => ({ ...turns.get(h.id), rank: h.rank, dense: h.dense, bm25: h.bm25 }));
     }
   };

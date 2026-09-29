@@ -124,7 +124,7 @@ export function createScheduler(app) {
     if (stopped) return;
     if (timer) clearTimeout(timer);
     refresh();
-    const next = store.db.prepare('SELECT MIN(next_run_at) AS due FROM automations WHERE enabled=1').get()?.due;
+    const next = store.nextAutomationDue();
     if (next == null) { timer = null; return; }
     timer = setTimeout(processDue, Math.max(25, Math.min(2_147_000_000, next - Date.now())));
     timer.unref?.();

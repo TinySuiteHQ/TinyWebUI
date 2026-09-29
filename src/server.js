@@ -83,10 +83,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     console.log(`[tinywebui] retrieval: ${initial.retrieval.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
   }
 
-  if (initial.authMode === 'single') {
-    store.db.prepare(`INSERT INTO users (id, role, status, created_at, approved_at)
-      VALUES (?, 'admin', 'approved', ?, ?) ON CONFLICT(id) DO NOTHING`).run(OWNER_ID, Date.now(), Date.now());
-  }
+  if (initial.authMode === 'single') store.ensureOwner(OWNER_ID);
 
   /**
    * What every part of the server shares. `cfg` and `hub` are replaced, not

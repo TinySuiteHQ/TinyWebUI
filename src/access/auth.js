@@ -1,4 +1,4 @@
-import { randomBytes, createHmac, createHash, timingSafeEqual, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
 import { resolveAccess } from './policy.js';
 
@@ -8,7 +8,7 @@ import { resolveAccess } from './policy.js';
  * No framework, no dependency: a signed HTTP-only cookie names a session
  * token, and the token itself is looked up (by its hash, never the raw
  * value) against the `sessions` table. When authMode is 'none' none of this
- * is ever called -- see withAuth() in server.js.
+ * is ever called -- see auth_gate.js.
  */
 
 const COOKIE_NAME = 'tinywebui_session';
@@ -31,19 +31,16 @@ function verify(value, sig, secret) {
 
 export function createSession(store, userId, ttlDays = 30) {
   const token = randomBytes(32).toString('hex');
-  const now = Date.now();
-  store.db.prepare(
-    'INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
-  ).run(sha256(token), userId, now, now + ttlDays * 86400_000);
+  store.addSession(sha256(token), userId, Date.now() + ttlDays * 86400_000);
   return token;
 }
 
 export function destroySession(store, token) {
-  store.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
+  store.deleteSession(sha256(token));
 }
 
 export function destroyUserSessions(store, userId) {
-  store.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  store.deleteUserSessions(userId);
 }
 
 /** Builds the Set-Cookie header value for a freshly created session token. */
@@ -120,10 +117,10 @@ export function getSessionUser(req, store, cfg) {
   const token = sessionToken(req, cfg);
   if (!token) return null;
 
-  const session = store.db.prepare('SELECT * FROM sessions WHERE token_hash = ?').get(sha256(token));
+  const session = store.getSession(sha256(token));
   if (!session || session.expires_at < Date.now()) return null;
 
-  return store.db.prepare('SELECT * FROM users WHERE id = ?').get(session.user_id) || null;
+  return store.getUser(session.user_id);
 }
 
 /* ---------- trusted-header mode ---------- */
@@ -184,7 +181,6 @@ export function resolveTrustedUser(req, store, cfg) {
   const rawRole = header(req, cfg.trustedRoleHeader).toLowerCase();
   const role = HEADER_ROLES.has(rawRole) ? rawRole : null;
 
-  const db = store.db;
   const now = Date.now();
   // Precedence: the files (bootstrapAdmins, access.users) > gateway role
   // header > defaults. What an admin decided is in access.users, so the file
@@ -195,37 +191,26 @@ export function resolveTrustedUser(req, store, cfg) {
     : policy.users[externalId] || {};
   const wantRole = pinned.role || role;
   const status = pinned.status || policy.newUsers;
-  // The unique index on external_id makes this the atomic provision step:
-  // concurrent first requests race to insert, exactly one wins, all read it.
-  const inserted = db.prepare(`
-    INSERT INTO users (id, external_id, role, status, created_at, approved_at, last_login_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(external_id) DO NOTHING
-  `).run(randomUUID(), externalId, wantRole || 'user', status, now, status === 'approved' ? now : null, now);
-  let user = db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId);
-  if (inserted.changes) audit('user.provisioned', { userId: user.id, role: user.role, status: user.status });
+  let { user, created } = store.provisionUser({ externalId, role: wantRole || 'user', status, now });
+  if (created) audit('user.provisioned', { userId: user.id, role: user.role, status: user.status });
 
-  const sets = []; const vals = [];
+  const changes = {};
   if (email !== user.email) {
     // Emails are unique; one held by another account is dropped, never merged.
-    const holder = email && db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, user.id);
-    const next = holder ? null : email;
-    if (next !== user.email) { sets.push('email = ?'); vals.push(next); }
+    const next = email && store.emailTaken(email, user.id) ? null : email;
+    if (next !== user.email) changes.email = next;
   }
-  if (name !== user.name) { sets.push('name = ?'); vals.push(name); }
+  if (name !== user.name) changes.name = name;
   if (wantRole && wantRole !== user.role) {
-    sets.push('role = ?'); vals.push(wantRole);
+    changes.role = wantRole;
     audit('user.role_changed', { userId: user.id, from: user.role, to: wantRole, by: pinned.role ? 'policy' : 'gateway' });
   }
   if (pinned.status && pinned.status !== user.status) {
-    sets.push('status = ?'); vals.push(pinned.status);
+    changes.status = pinned.status;
     audit('user.status_changed', { userId: user.id, from: user.status, to: pinned.status, by: 'policy' });
   }
-  if (!user.last_login_at || now - user.last_login_at > LOGIN_TOUCH_MS) { sets.push('last_login_at = ?'); vals.push(now); }
-  if (sets.length) {
-    db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, user.id);
-    user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  }
+  if (!user.last_login_at || now - user.last_login_at > LOGIN_TOUCH_MS) changes.last_login_at = now;
+  if (Object.keys(changes).length) user = store.syncUser(user.id, changes);
   return { user };
 }
 
@@ -239,7 +224,7 @@ export function applyAccessPolicy(store, cfg) {
   const pins = { ...policy.users };
   for (const id of policy.bootstrapAdmins) pins[id] = { role: 'admin', status: 'approved' };
   for (const [externalId, pin] of Object.entries(pins)) {
-    const user = store.db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId);
+    const user = store.userByExternalId(externalId);
     if (!user) continue;
     const role = pin.role && pin.role !== user.role ? pin.role : null;
     const status = pin.status && pin.status !== user.status ? pin.status : null;

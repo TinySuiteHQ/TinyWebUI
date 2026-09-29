@@ -786,6 +786,11 @@ export class Store {
     return this.db.prepare(`DELETE FROM automations WHERE id=? AND ${s.sql}`).run(id, ...s.params).changes > 0;
   }
 
+  /** When the next enabled automation is due, or null when none is. */
+  nextAutomationDue() {
+    return this.db.prepare('SELECT MIN(next_run_at) AS due FROM automations WHERE enabled=1').get()?.due ?? null;
+  }
+
   dueAutomations(now = Date.now()) {
     return this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id
       WHERE a.enabled=1 AND a.next_run_at<=? ORDER BY a.next_run_at`).all(now).map(automationView);
@@ -1278,8 +1283,18 @@ export class Store {
     return turns;
   }
 
-  chatOfMessage(messageId) {
-    return this.db.prepare('SELECT chat_id FROM messages WHERE id = ?').get(messageId)?.chat_id ?? null;
+  /** The turns with these ids, each with its chat's title: Map(id -> turn). */
+  turnsByIds(ids) {
+    const chatIds = this.db.prepare(`
+      SELECT DISTINCT chat_id FROM messages WHERE role = 'user' AND id IN (SELECT value FROM json_each(?))
+    `).all(JSON.stringify(ids)).map((r) => r.chat_id);
+    const wanted = new Set(ids);
+    const out = new Map();
+    for (const chatId of chatIds) {
+      const title = this.chatById(chatId)?.title || 'Untitled chat';
+      for (const t of this.chatTurns(chatId)) if (wanted.has(t.id)) out.set(t.id, { ...t, chatTitle: title });
+    }
+    return out;
   }
 
   /** Every turn id a user may search, leaving one chat out (the one asking). */
@@ -1399,6 +1414,63 @@ export class Store {
     }
     if (sets.length) this.db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     return this.getUser(id);
+  }
+
+  userByExternalId(externalId) {
+    return this.db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId) || null;
+  }
+
+  /** Whether another account already holds this email (emails are unique). */
+  emailTaken(email, exceptId) {
+    return Boolean(this.db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, exceptId));
+  }
+
+  /**
+   * Creates the user a gateway vouched for, unless one with that external id
+   * exists. The unique index makes this atomic: concurrent first requests race
+   * to insert, exactly one wins. Returns { user, created }.
+   */
+  provisionUser({ externalId, role, status, now = Date.now() }) {
+    const created = this.db.prepare(`
+      INSERT INTO users (id, external_id, role, status, created_at, approved_at, last_login_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(external_id) DO NOTHING
+    `).run(randomUUID(), externalId, role, status, now, status === 'approved' ? now : null, now).changes > 0;
+    return { user: this.userByExternalId(externalId), created };
+  }
+
+  /** Gateway-side sync of identity metadata; only these columns can be set. */
+  syncUser(id, fields) {
+    const allowed = ['email', 'name', 'role', 'status', 'last_login_at'];
+    const keys = Object.keys(fields).filter((k) => allowed.includes(k));
+    if (keys.length) this.db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id);
+    return this.getUser(id);
+  }
+
+  /** The single approved admin account behind a 'single' password. */
+  ensureOwner(id) {
+    const now = Date.now();
+    this.db.prepare(`INSERT INTO users (id, role, status, created_at, approved_at)
+      VALUES (?, 'admin', 'approved', ?, ?) ON CONFLICT(id) DO NOTHING`).run(id, now, now);
+  }
+
+  /* ---------- sessions (stored by token hash, never the raw token) ---------- */
+
+  addSession(tokenHash, userId, expiresAt) {
+    this.db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(tokenHash, userId, Date.now(), expiresAt);
+  }
+
+  getSession(tokenHash) {
+    return this.db.prepare('SELECT * FROM sessions WHERE token_hash = ?').get(tokenHash) || null;
+  }
+
+  deleteSession(tokenHash) {
+    this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+  }
+
+  deleteUserSessions(userId) {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
   }
 }
 
