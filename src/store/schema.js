@@ -185,6 +185,17 @@ CREATE TABLE IF NOT EXISTS documents (
   content    TEXT NOT NULL
 );
 
+-- The uploaded files as they came in, so the artifacts rail can open the real
+-- thing. Keyed by md5 so the same file attached to many chats is stored once;
+-- documents.md5 points here, and a blob goes when its last document does. Its
+-- own table, not a documents column: documents rows are read whole
+-- (SELECT d.*) by read_document and the text route, which must not drag
+-- megabytes of bytes along. md5 is a content fingerprint here, not a defence.
+CREATE TABLE IF NOT EXISTS document_blobs (
+  md5  TEXT PRIMARY KEY,
+  data BLOB NOT NULL
+);
+
 -- Passages live in FTS5 for BM25. FTS5 can't carry the doc id / passage
 -- index itself, so a plain map table sits next to it, keyed by the same
 -- rowid, the same split messages/messages_fts already uses.
@@ -312,7 +323,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -392,6 +403,10 @@ export function migrate(db, { fresh }) {
   // 1800/200, from before it was configurable.
   ensureColumn(db, 'documents', 'passage_size', 'INTEGER');
   ensureColumn(db, 'documents', 'passage_overlap', 'INTEGER');
+  // Fingerprint of the uploaded bytes (see document_blobs); NULL for documents
+  // stored before originals were kept.
+  ensureColumn(db, 'documents', 'md5', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS documents_md5 ON documents(md5)');
   ensureColumn(db, 'artifacts', 'user_id', 'TEXT');
   ensureColumn(db, 'automation_runs', 'trigger_type', "TEXT NOT NULL DEFAULT 'schedule'");
   // Trusted-header auth: the gateway's immutable subject. Email and name are

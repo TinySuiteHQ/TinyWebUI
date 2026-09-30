@@ -10,6 +10,7 @@ import { addQuestion } from './outline.js';
 import { api } from '../core/api.js';
 import { tally as tallyUsage } from '../shared/usage.js';
 import { ORIGIN } from '../shared/origins.js';
+import { splitAttachmentNotes } from '../shared/attachment_note.js';
 
 const log = $('log');
 const wrap = $('wrap');
@@ -637,7 +638,7 @@ export function addError(text, parent) {
 }
 
 /** Rebuilds the transcript view from stored messages. */
-export function replay(messages) {
+export function replay(messages, documents = []) {
   let steps = null;
   let turn = null;
   const groups = [];
@@ -646,7 +647,12 @@ export function replay(messages) {
     if (m.role === 'user') {
       endTurn();
       if (m.origin?.type === ORIGIN.AUTOMATION) addAutomationRun(m.origin);
-      else addUser(m.content, m.seq, null, m.images);
+      else {
+        // The stored text carries the model's "[Attached document ...]" notes;
+        // the page shows them as chips, and edit needs them as such to remove one.
+        const { text, ids } = splitAttachmentNotes(m.content);
+        addUser(text, m.seq, ids.map((id) => documents.find((d) => d.id === id)).filter(Boolean), m.images);
+      }
     } else if (m.role === 'assistant') {
       turn ||= addTurn();
       if (m.reasoning) {

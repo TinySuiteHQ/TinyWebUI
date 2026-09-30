@@ -3,7 +3,8 @@ import { LockedError } from '../config/config.js';
 import { toView } from '../store/index.js';
 import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
-import { attachmentNote, normalizeUpload } from './documents.js';
+import { normalizeUpload } from './documents.js';
+import { attachmentNote } from '../../public/shared/attachment_note.js';
 import { FEATURE } from '../../public/shared/features.js';
 
 const MAX_IMAGES = 8;

@@ -202,6 +202,23 @@ dialog#organizeDialog::backdrop { background: rgba(0, 0, 0, .62); }
 #organizeForm { display: flex; flex-direction: column; gap: .5rem; }
 #organizeForm h2 { margin: 0 0 .5rem; font-size: var(--fs-body); }
 #organizeForm label { color: var(--muted); font-size: var(--fs-meta); }
+dialog#libraryDialog {
+  width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem;
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--raise); color: var(--fg);
+}
+dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
+#libraryForm { display: flex; flex-direction: column; gap: .5rem; }
+#libraryForm h2 { margin: 0 0 .5rem; font-size: var(--fs-body); }
+.library-list { max-height: min(22rem, 50vh); overflow-y: auto; display: flex; flex-direction: column; }
+.library-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 3.5rem 6.5rem; column-gap: .625rem; align-items: center;
+  padding: .4rem .5rem; border-radius: var(--r-sm); cursor: pointer;
+}
+.library-row:hover { background: var(--accent-soft); }
+.library-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-meta { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
+.library-meta:last-child { text-align: right; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
 .dialog-actions .danger { margin-right: auto; color: var(--err); border-color: var(--err); }
 .organize-error { color: var(--err); font-size: var(--fs-meta); }

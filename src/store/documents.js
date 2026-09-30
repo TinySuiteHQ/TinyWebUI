@@ -1,5 +1,5 @@
 import { scope, ftsQuery } from './scope.js';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { CORPUS } from './embeddings.js';
 
 // Attached documents, split into passages for read_document (BM25 and dense retrieval).
@@ -34,6 +34,8 @@ export function splitPassages(text, size = PASSAGE_SIZE, overlap = PASSAGE_OVERL
   return passages;
 }
 
+const md5Of = (bytes) => createHash('md5').update(bytes).digest('hex');
+
 function insertPassages(db, docId, chatId, content, size, overlap) {
   const passages = splitPassages(content, size, overlap);
   const insertPassage = db.prepare('INSERT INTO document_passages (body) VALUES (?)');
@@ -54,15 +56,83 @@ export class DocumentStore {
     Object.assign(this, deps);
   }
 
-  add(chatId, { filename, mime, content }, { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP } = {}) {
+  /**
+   * `original`: the uploaded bytes, kept (once per distinct file) so the file
+   * itself can be opened later. `md5` names them when the caller already has
+   * the fingerprint, e.g. copying a document into another chat.
+   */
+  add(chatId, { filename, mime, content, original = null, md5 = null }, { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP } = {}) {
     const id = randomBytes(12).toString('hex');
     const createdAt = Date.now();
-    this.db.prepare(`
-      INSERT INTO documents (id, chat_id, filename, mime, char_len, created_at, content, passage_size, passage_overlap)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, chatId, filename, mime ?? null, content.length, createdAt, content, passageSize, passageOverlap);
-    const passages = insertPassages(this.db, id, chatId, content, passageSize, passageOverlap);
-    return { id, filename, mime: mime ?? null, char_len: content.length, created_at: createdAt, passages };
+    const hash = original ? md5Of(original) : md5;
+    this.db.exec('BEGIN');
+    try {
+      if (original) this.db.prepare('INSERT OR IGNORE INTO document_blobs (md5, data) VALUES (?, ?)').run(hash, original);
+      this.db.prepare(`
+        INSERT INTO documents (id, chat_id, filename, mime, char_len, created_at, content, passage_size, passage_overlap, md5)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, chatId, filename, mime ?? null, content.length, createdAt, content, passageSize, passageOverlap, hash);
+      const passages = insertPassages(this.db, id, chatId, content, passageSize, passageOverlap);
+      this.db.exec('COMMIT');
+      return { id, filename, mime: mime ?? null, char_len: content.length, created_at: createdAt, passages };
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
+  /** The chat's document with these bytes, if it already has one -- a file is attached to a chat once. */
+  findInChat(chatId, original) {
+    return this.#inChat(chatId, md5Of(original));
+  }
+
+  #inChat(chatId, md5) {
+    return this.db.prepare('SELECT id, filename, mime, char_len, created_at FROM documents WHERE chat_id = ? AND md5 = ?')
+      .get(chatId, md5) || null;
+  }
+
+  /** The uploaded bytes as a Buffer, or null (no such document, not yours, or stored before originals were kept). */
+  original(id, userId) {
+    const doc = this.get(id, userId);
+    if (!doc?.md5) return null;
+    const row = this.db.prepare('SELECT data FROM document_blobs WHERE md5 = ?').get(doc.md5);
+    return row ? Buffer.from(row.data) : null;
+  }
+
+  /**
+   * What the user has attached before, across all their chats, newest first --
+   * for picking a file again without uploading it. One entry per distinct file:
+   * the same bytes in ten chats is one line, and it names the latest chat.
+   */
+  library(userId, limit = 200) {
+    const s = scope(userId, 'c.user_id');
+    const inner = scope(userId, 'c2.user_id'); // the "latest" must be the user's own copy, not someone else's
+    return this.db.prepare(`
+      SELECT d.id, d.filename, d.mime, d.char_len, d.created_at, c.title AS chatTitle
+      FROM documents d JOIN chats c ON c.id = d.chat_id
+      WHERE ${s.sql}
+        AND d.id = (
+          SELECT d2.id FROM documents d2 JOIN chats c2 ON c2.id = d2.chat_id
+          WHERE ${inner.sql} AND COALESCE(d2.md5, d2.id) = COALESCE(d.md5, d.id)
+          ORDER BY d2.created_at DESC, d2.rowid DESC LIMIT 1
+        )
+      ORDER BY d.created_at DESC
+      LIMIT ?
+    `).all(...s.params, ...inner.params, limit);
+  }
+
+  /**
+   * Puts a copy of one of the user's documents into another chat of theirs.
+   * Documents are chat-scoped (the chat's deletion takes them, its passages
+   * carry its id), so this is a new row: same text, same file blob, its own
+   * passages. Null when the source is not theirs; the chat's existing copy
+   * when it already has this file.
+   */
+  copyToChat(sourceId, chatId, userId, passageSettings) {
+    const src = this.get(sourceId, userId);
+    if (!src) return null;
+    if (src.md5) {
+      const have = this.#inChat(chatId, src.md5);
+      if (have) return { ...have, existing: true };
+    }
+    return this.add(chatId, { filename: src.filename, mime: src.mime, content: src.content, md5: src.md5 }, passageSettings);
   }
 
   /** Documents split with other passage settings than these (NULL = the original 1800/200). */
@@ -106,13 +176,21 @@ export class DocumentStore {
   delete(id, userId) {
     if (!this.get(id, userId)) return false;
     this.#deletePassages(id);
-    return this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
+    const gone = this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
+    this.#dropOrphanBlobs();
+    return gone;
   }
 
   /** Drops every document of a chat, with its passages and vectors (the chat is going). */
   deleteForChat(chatId) {
     for (const { id } of this.db.prepare('SELECT id FROM documents WHERE chat_id = ?').all(chatId)) this.#deletePassages(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(chatId);
+    this.#dropOrphanBlobs();
+  }
+
+  /** A stored file goes when the last document naming it does. */
+  #dropOrphanBlobs() {
+    this.db.exec('DELETE FROM document_blobs WHERE md5 NOT IN (SELECT md5 FROM documents WHERE md5 IS NOT NULL)');
   }
 
   // FTS5 has no foreign keys of its own, so passage rows are dropped by rowid

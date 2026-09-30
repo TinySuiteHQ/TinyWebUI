@@ -18,6 +18,18 @@ function extOf(filename) {
 }
 
 /**
+ * How to hand an uploaded file back to a browser. Decided from the name alone,
+ * never the client-supplied type: this is served from the app's own origin, so
+ * anything a browser would run (html, svg) goes out as inert text or a download.
+ */
+export function servingFor(filename) {
+  const ext = extOf(filename);
+  if (ext === '.pdf') return { type: 'application/pdf', inline: true };
+  if (TEXT_EXTS.has(ext) || ext === '') return { type: 'text/plain; charset=utf-8', inline: true };
+  return { type: 'application/octet-stream', inline: false };
+}
+
+/**
  * @param {Buffer} buf raw file bytes
  * @param {string} filename original filename, used only to pick a parser
  * @returns {Promise<string>} extracted plain text

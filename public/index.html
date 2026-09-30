@@ -72,6 +72,18 @@
   </form>
 </dialog>
 
+<dialog id="libraryDialog" aria-labelledby="libraryTitle">
+  <form id="libraryForm">
+    <h2 id="libraryTitle">Attach from earlier chats</h2>
+    <input id="libraryFilter" type="search" autocomplete="off" placeholder="Filter by file name" aria-label="Filter files">
+    <div id="libraryList" class="library-list"></div>
+    <div class="dialog-actions">
+      <button type="button" id="libraryCancel">cancel</button>
+      <button type="submit" id="libraryAttach" class="primary" disabled>attach</button>
+    </div>
+  </form>
+</dialog>
+
 <main>
   <button id="menu" class="icon-btn" type="button" aria-label="Show sidebar" aria-expanded="false" aria-controls="side"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
   <section id="settings">

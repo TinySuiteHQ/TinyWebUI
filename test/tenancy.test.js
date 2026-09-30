@@ -38,6 +38,8 @@ test('Alice cannot read, change or delete anything of Bob\'s by id', async () =>
     ['POST', '/api/chats/bob-chat/documents', { filename: 'a.txt', mime: 'text/plain', dataBase64: Buffer.from('x').toString('base64') }],
     ['POST', '/api/chat', { chatId: 'bob-chat', message: 'hijack' }],
     ['GET', `/api/documents/${bobDoc.id}`],
+    ['GET', `/api/documents/${bobDoc.id}/original`],
+    ['POST', '/api/chats/alice-own/documents/attach', { documentId: bobDoc.id }],
     ['GET', `/api/automations/${bobAuto.id}/runs`],
     ['PATCH', `/api/automations/${bobAuto.id}`, { enabled: false }],
     ['POST', `/api/automations/${bobAuto.id}/trigger`, {}],
@@ -66,3 +68,14 @@ test('Alice\'s lists, search, folders and usage show none of Bob\'s rows', async
   assert.deepEqual(usage.days, []);
 });
 
+
+test('the earlier-files picker lists only the caller\'s own, and attaching copies it into their chat', async () => {
+  assert.equal((await alice('/api/documents')).data.documents.some((d) => d.id === bobDoc.id), false);
+  const mine = (await bob('/api/documents')).data.documents;
+  assert.ok(mine.some((d) => d.id === bobDoc.id));
+
+  const { status, data } = await bob('/api/chats/bob-second/documents/attach', { method: 'POST', body: { documentId: bobDoc.id } });
+  assert.equal(status, 200);
+  assert.notEqual(data.document.id, bobDoc.id);
+  assert.equal(data.chatId, 'bob-second');
+});

@@ -13,6 +13,7 @@ import { initTranscript } from './chat/transcript.js';
 import { initQueue } from './chat/queue.js';
 import { initSidebar, loadChats } from './chat/sidebar.js';
 import { initAttachments } from './chat/attachments.js';
+import { initLibrary } from './chat/library.js';
 import { initComposer } from './chat/composer.js';
 import { PANEL, initPanels, openPanel } from './panels/panels.js';
 import {
@@ -49,6 +50,7 @@ function wire() {
   initQueue({ sendHeld });
   initSidebar({ openChat, newChat });
   initAttachments();
+  initLibrary();
   initChat();
   initComposer({
     config: { load: loadConfig, loadTools, loadMcp, isLocked, isReadOnly, model: configuredModel },

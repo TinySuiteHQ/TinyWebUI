@@ -8,6 +8,7 @@ import { $, el } from '../core/dom.js';
 import { can, whoami, loadAccess } from '../core/access.js';
 import { addError } from './transcript.js';
 import { pickFiles } from './attachments.js';
+import { openLibrary } from './library.js';
 import { FEATURE } from '../shared/features.js';
 import { api } from '../core/api.js';
 
@@ -104,6 +105,15 @@ async function buildToolsMenu(pop) {
   attach.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6L15.5 7"/></svg><span>Attach files</span>';
   attach.onclick = () => { closeMenu(); pickFiles(); };
   pop.appendChild(attach);
+  // Documents only: an image has no stored text to reuse.
+  if (can(FEATURE.ATTACHMENTS)) {
+    const earlier = el('button', 'pop-item');
+    earlier.type = 'button';
+    earlier.setAttribute('role', 'menuitem');
+    earlier.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg><span>Attach from earlier chats</span>';
+    earlier.onclick = () => { closeMenu(); openLibrary(); };
+    pop.appendChild(earlier);
+  }
   if (!can(FEATURE.TOOLS)) return;
   pop.appendChild(el('hr', 'pop-sep'));
   }

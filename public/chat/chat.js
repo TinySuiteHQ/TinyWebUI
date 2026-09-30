@@ -154,7 +154,7 @@ export async function openChat(id) {
   resetOutline();
   // Mid-turn, the server hands back only the settled part of the transcript;
   // the rest arrives as events, exactly as it did for the tab that started it.
-  replay(found.messages);
+  replay(found.messages, found.documents);
   renderQueue(found.queued || []);
   clearSearch();
   closeSideDrawer();

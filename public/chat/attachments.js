@@ -14,15 +14,9 @@ const input = $('input');
 const DOC_PREVIEW_COUNT = 3;
 let docsExpanded = false;
 
-/** Opens a document's full extracted text in a new tab, plain-text. */
-async function openDocument(id) {
-  try {
-    const data = await api.get(`/api/documents/${id}`);
-    const blob = new Blob([data.content], { type: 'text/plain;charset=utf-8' });
-    window.open(URL.createObjectURL(blob), '_blank');
-  } catch (err) {
-    addError(`open "${id}": ${err.message}`);
-  }
+/** Opens the document as uploaded (a PDF in the viewer, a .docx downloads); older ones open as extracted text. */
+function openDocument(id) {
+  window.open(`/api/documents/${id}/original`, '_blank', 'noopener');
 }
 
 const DOC_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">'
@@ -95,19 +89,20 @@ export function renderAttachments() {
   box.innerHTML = '';
   box.hidden = state.pendingAttachments.length === 0;
   for (const a of state.pendingAttachments) {
+    const name = a.existing?.filename ?? a.file.name;
     const chip = el('span', a.isImage ? 'attachment-chip attachment-chip-image' : 'attachment-chip');
     if (a.isImage) {
       const thumb = el('img', 'attachment-thumb');
-      thumb.alt = a.file.name;
-      thumb.title = a.error ? `${a.file.name}: ${a.error}` : a.file.name;
+      thumb.alt = name;
+      thumb.title = a.error ? `${name}: ${a.error}` : name;
       if (a.normalized) thumb.src = `data:${a.normalized.mime};base64,${a.normalized.data}`;
       else thumb.classList.add(a.error ? 'broken' : 'pending');
       chip.appendChild(thumb);
     } else {
-      chip.appendChild(document.createTextNode(a.file.name));
+      chip.appendChild(document.createTextNode(name));
       if (a.error) {
         chip.classList.add('attachment-chip-error');
-        chip.title = `${a.file.name}: ${a.error}`;
+        chip.title = `${name}: ${a.error}`;
       }
     }
     const remove = el('span', 'remove');
@@ -172,6 +167,16 @@ function unsupportedReason(file) {
   return `unsupported file type "${ext}"`;
 }
 
+/**
+ * Queues a document uploaded in an earlier chat. Like a file it costs nothing
+ * until the message is sent; then the server copies it into this chat.
+ */
+export function stageExisting(doc) {
+  if (state.pendingAttachments.some((e) => e.existing?.id === doc.id)) return;
+  state.pendingAttachments.push({ existing: doc });
+  renderAttachments();
+}
+
 /** Queues a file (or a pasted-text stand-in) client-side. No network yet. */
 function stageAttachment(file) {
   // Dropped and pasted files arrive here too, not only through the + menu.
@@ -226,7 +231,13 @@ export async function commitAttachments(chatId) {
   const failed = [];
   for (const entry of staged) {
     const { file } = entry;
+    const name = entry.existing?.filename ?? file.name;
     try {
+      if (entry.existing) {
+        const data = await api.post(`/api/chats/${chatId}/documents/attach`, { documentId: entry.existing.id });
+        docs.push(data.document);
+        continue;
+      }
       if (entry.isImage) {
         await entry.ready;
         if (!entry.normalized) throw new Error(entry.error || 'could not process that image');
@@ -241,7 +252,7 @@ export async function commitAttachments(chatId) {
     } catch (err) {
       entry.error = err.message;
       failed.push(entry);
-      addError(`attach "${file.name}": ${err.message}`);
+      addError(`attach "${name}": ${err.message}`);
     }
   }
   if (failed.length) {
@@ -253,7 +264,8 @@ export async function commitAttachments(chatId) {
     return { docs: [], images: [], failed };
   }
   if (docs.length || images.length) {
-    state.chatDocuments.push(...docs);
+    // A file the chat already had comes back as its existing document.
+    state.chatDocuments.push(...docs.filter((d) => !state.chatDocuments.some((x) => x.id === d.id)));
     // The staged shape carries dataBase64; the artifacts rail reads the same
     // {mime, data} shape everything replayed from the store uses.
     state.chatImages.push(...images.map((i) => ({ filename: i.filename, mime: i.mime, data: i.dataBase64 })));
