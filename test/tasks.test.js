@@ -47,14 +47,20 @@ test('rewinding a chat undoes the checklist writes made from that point on', () 
     const add = (title) => JSON.parse(callManageTasks({ action: 'add', title }, ctx)).task;
     const set = (id, status) => callManageTasks({ action: 'update', id, status }, ctx);
 
-    store.messages.add(chat.id, { role: 'user', content: 'plan it' });             // seq 0
+    // As in a real turn, the assistant message making the calls is saved before they run.
+    const call = () => store.messages.add(chat.id, { role: 'assistant', content: '', tool_calls: [] });
+    store.messages.add(chat.id, { role: 'user', content: 'plan it' });   // seq 0
+    call();                                                             // seq 1
     const early = add('Early');
-    store.messages.add(chat.id, { role: 'assistant', content: 'planned' });         // seq 1
-    store.messages.add(chat.id, { role: 'user', content: 'do it' });    // seq 2
+    store.messages.add(chat.id, { role: 'user', content: 'do it' });     // seq 2
+    call();                                                             // seq 3
     set(early.id, 'in_progress');
     set(early.id, 'completed');
     add('Late');
-    store.messages.add(chat.id, { role: 'assistant', content: 'done' });            // seq 3
+    // The turn died here with nothing more saved; the next question follows.
+    store.messages.add(chat.id, { role: 'user', content: 'and then?' }); // seq 4
+    store.chats.truncateFrom(chat.id, 4);
+    assert.equal(store.chats.listTasks(chat.id).length, 2, 'editing the next question leaves the dead turn\'s writes alone');
 
     store.chats.truncateFrom(chat.id, 2);
     assert.deepEqual(store.chats.listTasks(chat.id).map((t) => [t.title, t.status]), [['Early', 'pending']],

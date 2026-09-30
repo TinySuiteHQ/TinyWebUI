@@ -16,16 +16,17 @@ export class ChatStore {
   }
 
   /**
-   * Task writes are stamped with the seq of the next message to be saved: the
-   * turn they happen in has not written its tool result yet, so that seq lies
-   * inside the turn, and rewinding to its question (or retrying its answer)
-   * cuts at or before it. See undoTasksFrom.
+   * Task writes are stamped with the seq of the latest saved message: the
+   * assistant message that made the call, which is saved before its tools run.
+   * That seq lies inside the turn, after its question, so rewinding to the
+   * question (or retrying its answer) undoes the write -- and it holds even if
+   * the turn dies before saving anything more. See undoTasksFrom.
    */
   addTask(chatId, title) {
     const id = randomUUID();
     const now = Date.now();
     this.db.prepare('INSERT INTO tasks (id, chat_id, title, created_at, updated_at, created_seq) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, chatId, title, now, now, this.messages.nextSeq(chatId));
+      .run(id, chatId, title, now, now, this.#stamp(chatId));
     return this.listTasks(chatId).find((task) => task.id === id);
   }
 
@@ -33,10 +34,14 @@ export class ChatStore {
     const prev = this.db.prepare('SELECT status FROM tasks WHERE chat_id = ? AND id = ?').get(chatId, id);
     if (!prev) return null;
     this.db.prepare('INSERT INTO task_changes (chat_id, task_id, seq, prev_status) VALUES (?, ?, ?, ?)')
-      .run(chatId, id, this.messages.nextSeq(chatId), prev.status);
+      .run(chatId, id, this.#stamp(chatId), prev.status);
     this.db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE chat_id = ? AND id = ?')
       .run(status, Date.now(), chatId, id);
     return this.listTasks(chatId).find((task) => task.id === id);
+  }
+
+  #stamp(chatId) {
+    return this.messages.nextSeq(chatId) - 1;
   }
 
   /** Undoes the checklist writes made from `seq` on: changes newest first, then the tasks added. */
@@ -198,16 +203,22 @@ export class ChatStore {
   }
 
   truncateFrom(chatId, seq) {
-    const removed = this.messages.deleteFrom(chatId, seq);
-    this.undoTasksFrom(chatId, seq);
-    // A frozen compaction boundary inside the cut no longer describes anything,
-    // so the pinned cache breakpoint it drives has to go with it.
-    const chat = this.byId(chatId);
-    if (chat && chat.boundary_seq >= seq) this.touch(chatId, { boundary_seq: -1 });
-    // Same for the hard window: a cut at or past the rewind point would hide
-    // the very question being asked again.
-    if (chat && chat.window_seq >= seq) this.touch(chatId, { window_seq: -1 });
-    return removed;
+    // One transaction: a crash midway must not leave messages cut but their
+    // task writes (or cache markers) still standing.
+    this.db.exec('BEGIN');
+    try {
+      const removed = this.messages.deleteFrom(chatId, seq);
+      this.undoTasksFrom(chatId, seq);
+      // A frozen compaction boundary inside the cut no longer describes anything,
+      // so the pinned cache breakpoint it drives has to go with it.
+      const chat = this.byId(chatId);
+      if (chat && chat.boundary_seq >= seq) this.touch(chatId, { boundary_seq: -1 });
+      // Same for the hard window: a cut at or past the rewind point would hide
+      // the very question being asked again.
+      if (chat && chat.window_seq >= seq) this.touch(chatId, { window_seq: -1 });
+      this.db.exec('COMMIT');
+      return removed;
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
   delete(id, userId) {
