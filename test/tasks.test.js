@@ -38,3 +38,31 @@ test('task tool creates and updates a persistent checklist scoped to one chat', 
     store.close();
   }
 });
+
+test('rewinding a chat undoes the checklist writes made from that point on', () => {
+  const store = new Store(':memory:');
+  try {
+    const chat = store.chats.create({}, null);
+    const ctx = { store, chatId: chat.id };
+    const add = (title) => JSON.parse(callManageTasks({ action: 'add', title }, ctx)).task;
+    const set = (id, status) => callManageTasks({ action: 'update', id, status }, ctx);
+
+    store.messages.add(chat.id, { role: 'user', content: 'plan it' });             // seq 0
+    const early = add('Early');
+    store.messages.add(chat.id, { role: 'assistant', content: 'planned' });         // seq 1
+    store.messages.add(chat.id, { role: 'user', content: 'do it' });    // seq 2
+    set(early.id, 'in_progress');
+    set(early.id, 'completed');
+    add('Late');
+    store.messages.add(chat.id, { role: 'assistant', content: 'done' });            // seq 3
+
+    store.chats.truncateFrom(chat.id, 2);
+    assert.deepEqual(store.chats.listTasks(chat.id).map((t) => [t.title, t.status]), [['Early', 'pending']],
+      'the later task is gone and the earlier one is back to its status before the edited question');
+
+    store.chats.truncateFrom(chat.id, 0);
+    assert.deepEqual(store.chats.listTasks(chat.id), [], 'rewinding to the start clears the list');
+  } finally {
+    store.close();
+  }
+});

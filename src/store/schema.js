@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_chat ON tasks(chat_id, created_at);
 
+-- Every status change, with the status it replaced, so a rewind can play them back.
+CREATE TABLE IF NOT EXISTS task_changes (
+  chat_id     TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  seq         INTEGER NOT NULL,
+  prev_status TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS task_changes_chat ON task_changes(chat_id, seq);
+
 CREATE TABLE IF NOT EXISTS automations (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -303,7 +312,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -368,6 +377,9 @@ export function migrate(db, { fresh }) {
   // First message the model still sees once the hard window has moved; -1
   // until it ever has. See planWindow in compact.js.
   ensureColumn(db, 'chats', 'window_seq', 'INTEGER NOT NULL DEFAULT -1');
+  // The message seq a task was added at, so a rewind past it removes it. -1
+  // for tasks from before this was tracked: no rewind reaches them.
+  ensureColumn(db, 'tasks', 'created_seq', 'INTEGER NOT NULL DEFAULT -1');
   // Set once an epoch has taken a message's images off the wire; the images
   // themselves stay in images_json for the transcript.
   ensureColumn(db, 'messages', 'images_dropped', 'INTEGER NOT NULL DEFAULT 0');

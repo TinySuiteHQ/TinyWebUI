@@ -15,18 +15,39 @@ export class ChatStore {
     return this.db.prepare('SELECT id, title, status, created_at, updated_at FROM tasks WHERE chat_id = ? ORDER BY created_at, rowid').all(chatId);
   }
 
+  /**
+   * Task writes are stamped with the seq of the next message to be saved: the
+   * turn they happen in has not written its tool result yet, so that seq lies
+   * inside the turn, and rewinding to its question (or retrying its answer)
+   * cuts at or before it. See undoTasksFrom.
+   */
   addTask(chatId, title) {
     const id = randomUUID();
     const now = Date.now();
-    this.db.prepare('INSERT INTO tasks (id, chat_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-      .run(id, chatId, title, now, now);
+    this.db.prepare('INSERT INTO tasks (id, chat_id, title, created_at, updated_at, created_seq) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, chatId, title, now, now, this.messages.nextSeq(chatId));
     return this.listTasks(chatId).find((task) => task.id === id);
   }
 
   updateTask(chatId, id, status) {
-    const changed = this.db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE chat_id = ? AND id = ?')
-      .run(status, Date.now(), chatId, id).changes;
-    return changed ? this.listTasks(chatId).find((task) => task.id === id) : null;
+    const prev = this.db.prepare('SELECT status FROM tasks WHERE chat_id = ? AND id = ?').get(chatId, id);
+    if (!prev) return null;
+    this.db.prepare('INSERT INTO task_changes (chat_id, task_id, seq, prev_status) VALUES (?, ?, ?, ?)')
+      .run(chatId, id, this.messages.nextSeq(chatId), prev.status);
+    this.db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE chat_id = ? AND id = ?')
+      .run(status, Date.now(), chatId, id);
+    return this.listTasks(chatId).find((task) => task.id === id);
+  }
+
+  /** Undoes the checklist writes made from `seq` on: changes newest first, then the tasks added. */
+  undoTasksFrom(chatId, seq) {
+    const changes = this.db.prepare(
+      'SELECT rowid, task_id, prev_status FROM task_changes WHERE chat_id = ? AND seq >= ? ORDER BY rowid DESC'
+    ).all(chatId, seq);
+    const restore = this.db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE chat_id = ? AND id = ?');
+    for (const c of changes) restore.run(c.prev_status, Date.now(), chatId, c.task_id);
+    this.db.prepare('DELETE FROM task_changes WHERE chat_id = ? AND seq >= ?').run(chatId, seq);
+    this.db.prepare('DELETE FROM tasks WHERE chat_id = ? AND created_seq >= ?').run(chatId, seq);
   }
 
   create({ id, title = 'New chat', createdAt = Date.now() } = {}, userId = ALL_USERS) {
@@ -178,6 +199,7 @@ export class ChatStore {
 
   truncateFrom(chatId, seq) {
     const removed = this.messages.deleteFrom(chatId, seq);
+    this.undoTasksFrom(chatId, seq);
     // A frozen compaction boundary inside the cut no longer describes anything,
     // so the pinned cache breakpoint it drives has to go with it.
     const chat = this.byId(chatId);
