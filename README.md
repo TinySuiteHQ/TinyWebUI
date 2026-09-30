@@ -419,3 +419,71 @@ uses the rough character/4 estimator (images count 1,500 tokens) and is marked
 Cache reads are a subset of input, not an extra component. Token views can be
 filtered by model and drilled down from all time to a single day. Requests made
 before this existed are not reconstructed.
+
+
+### Harness context checkpoints
+
+Before each model request, TinyWebUI estimates the complete input (system prompt,
+tool schemas, replayed reasoning and history) and reserves output space.
+Set `contextWindowTokens` to the context capacity of your model. Its default
+`0` uses `maxHistoryTokens` as a conservative fallback; it does not discover
+the provider's actual limit. Estimates use characters/4 plus message overhead
+and 15% headroom, so multilingual or unusual inputs can still differ from a
+provider tokenizer. If `maxTokens` is unset, guarded requests cap output at
+`contextReserveTokens` (default 8192).
+
+`llmCompaction` defaults to true. When a request would exceed that budget,
+older tool outputs first become retrievable artifact stubs. If that is not
+enough, the selected chat model writes a structured checkpoint of older
+conversation: objective, user constraints, decisions, verified findings,
+assumptions and unfinished work/evidence. Recent user turns are preferred for
+retention; a long single turn may compact at a completed tool-batch boundary.
+Calls are never separated from their results.
+
+A checkpoint is reused unchanged until the next compaction. The original
+messages stay in SQLite, and an archive reference lets `expand_context`
+retrieve the summarized transcript. Images are retained in the transcript but
+are not visually interpreted by the summarizer. Editing/retrying at or before
+the checkpoint boundary invalidates it. Automation history boundaries do not
+inherit checkpoints from a different scope.
+
+Summaries are fallible. Empty, malformed, interrupted, truncated or insufficiently
+small summaries do not replace the previous checkpoint or advance the window.
+If a safe request still cannot fit, the run stops with an explanation instead
+of silently discarding requirements. Oversized individual user messages and
+tool schemas may require smaller inputs or a larger configured window.
+`compactionMaxTokens` (default 2048) caps the summary request; increase it for
+models whose reasoning consumes much of their output allowance.
+
+Compaction is an additional paid model request. Its reported tokens and cost
+are included in Statistics, but it does not create an assistant answer in the
+transcript. Such requests count in request/round totals. Auxiliary usage records
+are retained when a chat is rewound and deleted when the chat is deleted.
+
+Reasoning remains stored internally. `reasoningReplay: "auto"` sends
+`reasoning_content` to the direct DeepSeek API and `reasoning_details` to
+OpenRouter (and explicit-cache endpoints). For a custom endpoint, choose
+`"reasoning_content"`, `"reasoning_details"` or `"omit"` explicitly.
+These settings are file-configurable; `contextWindowTokens`,
+`contextReserveTokens`, `compactionMaxTokens` and `reasoningReplay` may also
+be overridden per model in the catalog.
+
+```json
+{
+  "contextWindowTokens": 128000,
+  "contextReserveTokens": 8192,
+  "llmCompaction": true,
+  "compactionMaxTokens": 2048,
+  "reasoningReplay": "auto"
+}
+```
+
+Stopping during approval now records a result for every pending call.
+Incomplete batches recovered from stored history receive explicit
+unknown-outcome results before replay; writes are never automatically retried
+as part of that repair.
+
+Run `npm test` for deterministic regression tests. Run
+`npm run eval -- --only compaction-constraints --repeat 3` against your
+configured model to assess whether early constraints survive an actual
+LLM-written checkpoint. This behavioral evaluation makes paid API calls.

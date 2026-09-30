@@ -122,6 +122,8 @@ export function estimateTokens(wireMessages) {
       }
     }
     if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
+    if (m.reasoning_content) chars += m.reasoning_content.length;
+    if (m.reasoning_details) chars += JSON.stringify(m.reasoning_details).length;
   }
   return Math.ceil(chars / 4);
 }

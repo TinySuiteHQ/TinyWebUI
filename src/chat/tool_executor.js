@@ -173,7 +173,16 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     // Every call is checked and approved before any of them runs, so no
     // write can start while a later call in the batch still waits on the user.
     const prepared = [];
-    for (const call of calls) prepared.push(await prepare(call, round));
+    for (const call of calls) {
+      try {
+        prepared.push(signal?.aborted ? { args: {}, result: STOPPED } : await prepare(call, round));
+      } catch (err) {
+        if (!signal?.aborted) throw err;
+        // The assistant call is already durable. Close every result slot even
+        // when Stop interrupts an approval rather than a running tool.
+        prepared.push({ args: {}, result: STOPPED });
+      }
+    }
 
     // One sequential call makes the whole batch sequential: deterministic, and
     // no guessing at which calls could safely overlap it.

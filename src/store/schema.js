@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS chats (
   tags_json    TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS auxiliary_requests (
+  id INTEGER PRIMARY KEY,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  seq REAL NOT NULL,
+  model TEXT,
+  usage_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'compaction'
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -323,7 +333,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -388,6 +398,7 @@ export function migrate(db, { fresh }) {
   // First message the model still sees once the hard window has moved; -1
   // until it ever has. See planWindow in compact.js.
   ensureColumn(db, 'chats', 'window_seq', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'chats', 'checkpoint_json', 'TEXT');
   // The message seq a task was added at, so a rewind past it removes it. -1
   // for tasks from before this was tracked: no rewind reaches them.
   ensureColumn(db, 'tasks', 'created_seq', 'INTEGER NOT NULL DEFAULT -1');

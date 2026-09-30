@@ -110,6 +110,15 @@ export const DEFAULTS = {
   // the oldest turns stop being sent (they stay in the transcript), cutting
   // back to half this size so it moves rarely. 0 disables it.
   maxHistoryTokens: 100000,
+  // Total request budget (including schemas and reserved output). 0 uses
+  // maxHistoryTokens as a conservative fallback, not model auto-detection.
+  contextWindowTokens: 0,
+  contextReserveTokens: 8192,
+  llmCompaction: true,
+  compactionMaxTokens: 2048,
+  // auto: direct DeepSeek uses reasoning_content, OpenRouter uses details.
+  // Explicit override for custom compatible gateways.
+  reasoningReplay: 'auto',
   // IANA zone the model is told the date in (and uses for automations). Empty
   // means the server's own zone.
   timezone: '',
@@ -355,6 +364,7 @@ export class LockedError extends Error {}
 // Keys that are not in DEFAULTS but are still settings.
 const EXTRA_KEYS = new Set(['access']);
 const ENUMS = {
+  reasoningReplay: ['auto', 'omit', 'reasoning_content', 'reasoning_details'],
   authMode: ['none', 'single', 'multiuser', 'trusted-header'],
   cacheTtl: ['5m', '1h'],
   cacheMode: ['auto', 'implicit', 'explicit', 'rolling', 'off'],
@@ -410,6 +420,12 @@ export function configProblems(cfg) {
       continue;
     }
     if (!(key in DEFAULTS)) continue;
+    if (['contextWindowTokens', 'contextReserveTokens', 'compactionMaxTokens'].includes(key)) {
+      if (!(Number.isInteger(value) && value >= (key === 'contextWindowTokens' ? 0 : 256))) {
+        problems.push(`${key} must be a whole number >= ${key === 'contextWindowTokens' ? 0 : 256}`);
+      }
+      continue;
+    }
     if (key === 'askUserTimeoutSeconds') {
       if (!(Number.isInteger(value) && value >= 0)) problems.push('askUserTimeoutSeconds must be a whole number of seconds >= 0 (0: no timeout)');
       continue;

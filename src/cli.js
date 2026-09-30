@@ -403,6 +403,10 @@ export function configSchema() {
       'x-change': FILE_ONLY.has(k) ? 'file-only' : WRITABLE.has(k) ? 'editable (UI writes it back here)' : 'file-only'
     };
   }
+  for (const key of ['contextWindowTokens', 'contextReserveTokens', 'compactionMaxTokens']) {
+    properties[key] = { type: 'integer', minimum: key === 'contextWindowTokens' ? 0 : 256, 'x-change': 'file-only' };
+  }
+  properties.reasoningReplay = { enum: ['auto', 'omit', 'reasoning_content', 'reasoning_details'], 'x-change': 'file-only' };
   properties.authMode = { enum: ['none', 'single', 'trusted-header'], 'x-change': 'file-only' };
   properties.toolApproval = { enum: ['writes', 'all', 'off'], 'x-change': 'editable (UI writes it back here)' };
   properties.trustedProxyCidrs = { type: 'array', items: { type: 'string' }, 'x-change': 'file-only' };
@@ -439,6 +443,10 @@ export function configSchema() {
         systemPrompt: { type: 'string' },
         temperature: num,
         maxTokens: num,
+        contextWindowTokens: { type: 'integer', minimum: 0 },
+        contextReserveTokens: { type: 'integer', minimum: 256 },
+        compactionMaxTokens: { type: 'integer', minimum: 256 },
+        reasoningReplay: { enum: ['auto', 'omit', 'reasoning_content', 'reasoning_details'] },
         maxToolRounds: { type: 'integer', minimum: 0 },
         cacheMode: { enum: ['auto', 'implicit', 'explicit', 'rolling', 'off'] },
         cacheTtl: { enum: ['5m', '1h'] },

@@ -18,7 +18,7 @@
  */
 
 /** Per-model settings that replace the global value for that model's turns. */
-export const MODEL_OVERRIDES = ['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheMode', 'cacheTtl', 'extraBody'];
+export const MODEL_OVERRIDES = ['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheMode', 'cacheTtl', 'extraBody', 'contextWindowTokens', 'contextReserveTokens', 'compactionMaxTokens', 'reasoningReplay'];
 
 const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', ...MODEL_OVERRIDES]);
 
@@ -85,6 +85,11 @@ export function modelProblems(cfg) {
     for (const k of Object.keys(NUMERIC)) {
       if (e[k] !== undefined && e[k] !== null && !(typeof e[k] === 'number' && Number.isFinite(e[k]))) out.push(`${at}.${k} must be ${NUMERIC[k]}`);
     }
+    for (const key of ['contextWindowTokens', 'contextReserveTokens', 'compactionMaxTokens']) {
+      const min = key === 'contextWindowTokens' ? 0 : 256;
+      if (e[key] !== undefined && !(Number.isInteger(e[key]) && e[key] >= min)) out.push(`${at}.${key} must be a whole number >= ${min}`);
+    }
+    if (e.reasoningReplay !== undefined && !['auto', 'omit', 'reasoning_content', 'reasoning_details'].includes(e.reasoningReplay)) out.push(`${at}.reasoningReplay is invalid`);
     if (e.maxToolRounds !== undefined && !(Number.isInteger(e.maxToolRounds) && e.maxToolRounds >= 0)) out.push(`${at}.maxToolRounds must be a whole number >= 0`);
     if (e.cacheMode !== undefined && !['auto', 'implicit', 'explicit', 'rolling', 'off'].includes(e.cacheMode)) out.push(`${at}.cacheMode must be one of auto, implicit, explicit, rolling, off`);
     if (e.cacheTtl !== undefined && !['5m', '1h'].includes(e.cacheTtl)) out.push(`${at}.cacheTtl must be 5m or 1h`);

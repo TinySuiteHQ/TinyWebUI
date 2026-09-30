@@ -29,6 +29,12 @@ export class UsageStore {
     Object.assign(this, deps);
   }
 
+  addAuxRequest(chatId, model, usage) {
+    const seq = this.db.prepare('SELECT COALESCE(MAX(seq), -1) + 0.5 AS seq FROM messages WHERE chat_id = ?').get(chatId).seq;
+    this.db.prepare('INSERT INTO auxiliary_requests (chat_id, seq, model, usage_json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(chatId, seq, model, JSON.stringify(usage), Date.now());
+  }
+
   /**
    * Rolls up token usage across every assistant round that has it, bucketed
    * by local calendar day ('YYYY-MM-DD', via SQLite's julianday/strftime on
@@ -50,7 +56,9 @@ export class UsageStore {
                THEN strftime('%Y-%m-%d', m.created_at / 1000, 'unixepoch')
                ELSE 'unknown' END AS day,
              m.model, m.usage_json
-      FROM messages m JOIN chats c ON c.id=m.chat_id
+      FROM (SELECT chat_id, model, usage_json, created_at FROM messages
+        UNION ALL SELECT chat_id, model, usage_json, created_at FROM auxiliary_requests) m
+      JOIN chats c ON c.id=m.chat_id
       WHERE m.usage_json IS NOT NULL AND ${s.sql}
     `).all(...s.params);
 
@@ -89,7 +97,9 @@ export class UsageStore {
   statistics(userId) {
     const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`SELECT m.chat_id,m.seq,m.role,m.content,m.tool_calls_json,m.model,m.usage_json
-      FROM messages m JOIN chats c ON c.id=m.chat_id WHERE ${s.sql} ORDER BY m.chat_id,m.seq`).all(...s.params);
+      FROM (SELECT chat_id, seq, role, content, tool_calls_json, model, usage_json FROM messages
+        UNION ALL SELECT chat_id, seq, 'assistant', NULL, NULL, model, usage_json FROM auxiliary_requests) m
+      JOIN chats c ON c.id=m.chat_id WHERE ${s.sql} ORDER BY m.chat_id,m.seq`).all(...s.params);
     const models = new Map();
     const tools = new Map();
     const summary = { rounds: 0, pricedRounds: 0, reportedCost: 0, completedAnswers: 0,

@@ -1,3 +1,5 @@
+import { prepareContext, CHECKPOINT_PROMPT, requestBudget, requestSize } from './checkpoint.js';
+import { repairToolHistory } from './history.js';
 import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal } from './attribution.js';
 import { toWire } from '../store/index.js';
@@ -207,13 +209,19 @@ function cacheDirective(cfg) {
  * message must serialise the same whether it was appended a moment ago or
  * rebuilt from the database next turn, and JSON.stringify follows insertion
  * order. Without one canonical shape the two paths emit different bytes for
- * identical content and the whole prefix misses. Reasoning text is dropped
- * here too: DeepSeek
- * documents that reasoning_content must not be sent back, everyone else just
- * bills for it. The structured form (`reasoning_details`) survives where a
- * gateway knows what to do with it -- see buildMessages.
+ * identical content and the whole prefix misses. Reasoning fields are selected
+ * by the provider's replay contract rather than stripped universally.
  */
-function canonical(m, keepDetails) {
+export function reasoningReplay(cfg) {
+  if (cfg.reasoningReplay && cfg.reasoningReplay !== 'auto') return cfg.reasoningReplay;
+  if (isOpenRouter(cfg)) return 'reasoning_details';
+  let host = '';
+  try { host = new URL(cfg.baseUrl).hostname; } catch { /* unspecified endpoint */ }
+  if (host === 'api.deepseek.com') return 'reasoning_content';
+  return cacheMode(cfg) === 'explicit' ? 'reasoning_details' : 'omit';
+}
+
+function canonical(m, replay) {
   const out = { role: m.role };
   // A tool-only assistant turn stores content as null, but some gateways (seen
   // on DeepInfra via OpenRouter) reject a null text part outright and want an
@@ -222,7 +230,11 @@ function canonical(m, keepDetails) {
   out.content = (m.content == null && m.role === 'assistant' && m.tool_calls) ? '' : (m.content ?? null);
   if (m.tool_calls) out.tool_calls = m.tool_calls;
   if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
-  if (keepDetails && m.reasoning_details) out.reasoning_details = m.reasoning_details;
+  if (replay === 'reasoning_details' && m.reasoning_details) out.reasoning_details = m.reasoning_details;
+  if (replay === 'reasoning_content' && m.role === 'assistant') {
+    const reasoning = m.reasoning_content ?? m.reasoning;
+    if (reasoning != null) out.reasoning_content = reasoning;
+  }
   return out;
 }
 
@@ -266,8 +278,8 @@ export function buildMessages(cfg, history, epochIndex = -1) {
   // the upstream that produced it and drops what that upstream doesn't use.
   // Kept for the whole history, not just the current turn: stripping it once a
   // turn is over would rewrite those bytes and miss the cache on the next turn.
-  const keepDetails = bp || isOpenRouter(cfg);
-  const messages = [system, ...history.map((m) => canonical(m, keepDetails))];
+  const replay = reasoningReplay(cfg);
+  const messages = [system, ...history.map((m) => canonical(m, replay))];
   if (bp) {
     // Rolling breakpoint at the END of what we are sending, not behind it. Each
     // tool round appends an assistant turn and its results, and marking the
@@ -642,7 +654,11 @@ export async function runChat({
   // The hard window, for when stubbing is not enough: a long conversation of
   // plain text has nothing for an epoch to shrink. Checked after the epoch so
   // it only ever moves when compaction has already done what it can.
-  const maxHistory = cfg.maxHistoryTokens || 0;
+  const guarded = Boolean(cfg.llmCompaction || cfg.contextWindowTokens > 0 || chat.checkpoint_json);
+  if (guarded && (cfg.contextWindowTokens || cfg.maxHistoryTokens) > 0 && cfg.maxTokens == null) {
+    cfg = { ...cfg, maxTokens: cfg.contextReserveTokens || 8192 };
+  }
+  const maxHistory = guarded ? 0 : (cfg.maxHistoryTokens || 0);
   const cut = planWindow(rows, {
     maxTokens: maxHistory, targetTokens: Math.floor(maxHistory / 2), keepTurns, toWire
   });
@@ -673,17 +689,31 @@ export async function runChat({
 
   const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
   const saved = [];
+  const startSeq = store.messages.nextSeq(chatId);
+  const forcedStubs = new Set();
   const appended = await runAgentLoop({
     messages: working,
     maxRounds,
     signal,
     runtime: {
       onEvent: emit,
-      streamTurn: ({ messages, lastCall }) => streamTurn({
-        cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall,
-        attributionContext: { systemParts, owner },
-        onSaved: (assistant, seq) => saved.push({ assistant, seq })
-      }),
+      streamTurn: async ({ messages, lastCall }) => {
+        if (signal?.aborted) throw new Error('Stopped.');
+        const context = guarded ? await prepareContext({
+          cfg, store, chatId, tools, startSeq, historyFromSeq, forcedStubs, signal,
+          serialize: (history) => buildMessages(cfg, history),
+          summarize: (source) => summarizeCheckpoint({ cfg, source, signal, emit,
+            recordUsage: (usage) => store.usage.addAuxRequest(chatId, cfg.model, usage) }),
+          notice: (text) => emit({ type: EVENT.NOTICE, text })
+        }) : repairToolHistory(messages);
+        messages.splice(0, messages.length, ...context);
+        return streamTurn({
+          cfg, chatId, store, emit, signal, disabled, tools,
+          epochIndex: guarded ? -1 : epochIndex, messages, lastCall,
+          attributionContext: { systemParts, owner },
+          onSaved: (assistant, seq) => saved.push({ assistant, seq })
+        });
+      },
       executeToolBatch: tools_.execute,
       pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
         const msg = { role: 'user', content };
@@ -692,7 +722,7 @@ export async function runChat({
         return { wire: msg, message: msg };
       })),
       shouldContinue: async ({ round, assistant, results }) => {
-        if (tools_.stopRequested()) return false;
+        if (signal?.aborted || tools_.stopRequested()) return false;
         try {
           return !(await runHooks(hooks.afterTurn, { round, assistant, results, signal }, (o) => o.stop));
         } catch (err) {
@@ -889,4 +919,44 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
   onSaved?.(assistant, seq);
   if (usage) emit({ type: EVENT.USAGE, usage: assistant.usage });
   return assistant;
+}
+
+
+/** A separate, tool-free request. Never writes an assistant reply into the chat. */
+async function summarizeCheckpoint({ cfg, source, signal, emit, recordUsage }) {
+  const summaryCfg = { ...cfg, systemPrompt: CHECKPOINT_PROMPT,
+    maxTokens: cfg.compactionMaxTokens || 2048, cache: false,
+    extraBody: { ...(cfg.extraBody || {}) } };
+  // Operator extraBody may contain tool directives; compaction cannot execute
+  // tools or inherit a forced response format from the main conversation.
+  for (const key of ['tools', 'tool_choice', 'parallel_tool_calls', 'response_format', 'messages']) {
+    delete summaryCfg.extraBody[key];
+  }
+  const turn = [{ role: 'user', content: source }];
+  if (requestSize(buildMessages(summaryCfg, turn)) > requestBudget(summaryCfg)) {
+    throw new Error('Compaction input exceeds the configured context budget.');
+  }
+  const res = await post(summaryCfg, { turn, tools: [], lastCall: true, epochIndex: -1 },
+    signal, new Set(), emit);
+  let text = '';
+  let usage = null;
+  let finished = false;
+  try {
+  for await (const chunk of streamChunks(res)) {
+    if (chunk.error) throw new Error('Compaction failed: ' + (chunk.error.message || 'provider error'));
+    if (chunk.usage) usage = chunk.usage;
+    const choice = chunk.choices?.[0];
+    if (choice?.delta?.tool_calls?.length) throw new Error('Compaction unexpectedly returned tool calls.');
+    if (choice?.delta?.content) text += choice.delta.content;
+    if (choice?.finish_reason) {
+      if (choice.finish_reason !== 'stop') throw new Error('Compaction did not finish normally: ' + choice.finish_reason);
+      finished = true;
+    }
+  }
+  } finally {
+    recordUsage({ ...(usage || {}),
+      ...(usage?.cost != null && isOpenRouter(cfg) && usage.cost_currency == null ? { cost_currency: 'USD' } : {}) });
+  }
+  if (!finished) throw new Error('Compaction stream ended without a completed answer; previous checkpoint retained.');
+  return { text, usage };
 }

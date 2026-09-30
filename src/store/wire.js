@@ -11,11 +11,12 @@ function base(row) {
 
 /**
  * What the model sees. A demoted tool message sends its stub; everything else
- * sends its content verbatim. Reasoning text is dropped here -- `buildMessages`
- * in llm.js strips it anyway, and it has no place in a cached prefix.
+ * sends its content verbatim. Reasoning is retained internally; the provider serializer decides which
+ * fields belong on the wire.
  */
 export function toWire(row) {
   const msg = base(row);
+  if (row.reasoning) msg.reasoning = row.reasoning;
   msg.content = row.role === 'tool' ? (row.stub_text ?? row.content) : (row.content ?? null);
   // An epoch took these images off the wire. The note is a pure function of
   // the row, so every rebuild sends the same bytes.

@@ -82,6 +82,26 @@
           "extraBody": {
             "type": "object",
             "description": "Merged over the global extraBody."
+          },
+          "contextWindowTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contextReserveTokens": {
+            "type": "integer",
+            "minimum": 256
+          },
+          "compactionMaxTokens": {
+            "type": "integer",
+            "minimum": 256
+          },
+          "reasoningReplay": {
+            "enum": [
+              "auto",
+              "omit",
+              "reasoning_content",
+              "reasoning_details"
+            ]
           }
         }
       }
@@ -442,6 +462,34 @@
           }
         }
       }
+    },
+    "contextWindowTokens": {
+      "type": "integer",
+      "minimum": 0,
+      "x-change": "file-only"
+    },
+    "contextReserveTokens": {
+      "type": "integer",
+      "minimum": 256,
+      "x-change": "file-only"
+    },
+    "llmCompaction": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "compactionMaxTokens": {
+      "type": "integer",
+      "minimum": 256,
+      "x-change": "file-only"
+    },
+    "reasoningReplay": {
+      "enum": [
+        "auto",
+        "omit",
+        "reasoning_content",
+        "reasoning_details"
+      ],
+      "x-change": "file-only"
     }
   }
 }

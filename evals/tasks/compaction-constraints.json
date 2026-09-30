@@ -1,0 +1,107 @@
+{
+  "name": "compaction-constraints",
+  "about": "Forces a real LLM checkpoint and checks preservation of early exact constraints. Requires a configured model; not a deterministic unit test.",
+  "config": {
+    "llmCompaction": true,
+    "contextWindowTokens": 9000,
+    "contextReserveTokens": 4096,
+    "maxTokens": 4096,
+    "compactionMaxTokens": 1024,
+    "compactThreshold": 0,
+    "keepTurns": 1
+  },
+  "history": [
+    {
+      "role": "user",
+      "content": "Search constraints: only standard ownership (freehold), never leasehold. Maximum EUR 600000. The reference code is HOUSE-7319. Preserve these requirements throughout."
+    },
+    {
+      "role": "assistant",
+      "content": "I will preserve those requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 0: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 1: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 2: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 3: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 4: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 5: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 6: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    },
+    {
+      "role": "user",
+      "content": "Background note 7: Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. Discuss garden size, transit and room arrangement as secondary preferences. "
+    },
+    {
+      "role": "assistant",
+      "content": "These are secondary preferences and do not replace the original ownership and budget requirements."
+    }
+  ],
+  "prompt": "State the original maximum budget, allowed ownership type, prohibited tenure, and exact reference code. Use digits for the budget. Do not search or guess.",
+  "tools": [],
+  "checks": [
+    {
+      "type": "answer_matches",
+      "pattern": "600[,. ]?000"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "freehold|standard ownership"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "leasehold"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "HOUSE-7319"
+    }
+  ]
+}

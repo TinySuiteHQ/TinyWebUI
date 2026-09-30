@@ -222,7 +222,7 @@ export class ChatStore {
       if (chat && chat.boundary_seq >= seq) this.touch(chatId, { boundary_seq: -1 });
       // Same for the hard window: a cut at or past the rewind point would hide
       // the very question being asked again.
-      if (chat && chat.window_seq >= seq) this.touch(chatId, { window_seq: -1 });
+      if (chat && chat.window_seq >= seq) this.touch(chatId, { window_seq: -1, checkpoint_json: null });
       this.db.exec('COMMIT');
       return removed;
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
@@ -244,7 +244,7 @@ export class ChatStore {
   touch(id, patch = {}) {
     const sets = ['updated_at = ?'];
     const vals = [Date.now()];
-    for (const key of ['title', 'epoch', 'boundary_seq', 'window_seq']) {
+    for (const key of ['title', 'epoch', 'boundary_seq', 'window_seq', 'checkpoint_json']) {
       if (patch[key] !== undefined) { sets.push(`${key} = ?`); vals.push(patch[key]); }
     }
     vals.push(id);
