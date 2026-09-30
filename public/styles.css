@@ -1164,6 +1164,9 @@ main { border-radius: var(--r-lg); }
 }
 .msg-tools { justify-content: flex-end; padding-left: 0; }
 .msg.user .edit-box { padding-left: 0; }
+/* The question shrinks to its bubble; with the bubble hidden for editing it
+   would shrink to a bare textarea, so an edit takes the bubble's full width. */
+.msg.user.editing { width: 85%; }
 
 /* Composer: text on top, a tool bar under it. */
 footer { padding: .25rem 1rem 1rem; }
@@ -1391,12 +1394,24 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .usage-composition-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .usage-composition-track { display: flex; height: .7rem; overflow: hidden; border-radius: var(--r-xs); margin: .5rem 0; }
 #usageModelFilter select { max-width: 100%; margin-top: .4rem; }
-.task-card { padding: 14px; }
-.task-heading { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.task-card {
+  max-width: var(--measure); margin: 0 auto .5rem; padding: .5rem .75rem;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
+}
+.task-card[hidden] { display: none; }
+.task-heading {
+  display: flex; justify-content: space-between; gap: 8px; font-size: 13px;
+  cursor: pointer; list-style: none;
+}
+.task-heading::-webkit-details-marker { display: none; }
 .task-heading span { opacity: .65; }
-.task-items { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 9px; }
+/* Capped so a long list scrolls instead of pushing the composer off screen. */
+.task-items {
+  list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: 6px;
+  max-height: 9rem; overflow-y: auto;
+}
 .task-item { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
-.task-mark { flex: none; font-weight: 700; }
+.task-mark { flex: none; width: 1em; text-align: center; font-weight: 700; }
 .task-completed { opacity: .6; }
 .task-completed span:last-child { text-decoration: line-through; }
 .no-shrink { flex: 0 0 auto; }

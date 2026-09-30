@@ -208,10 +208,6 @@
   <div id="log"><div class="wrap" id="wrap"></div></div>
 
   <aside id="rightRail" class="right-rail">
-    <div id="chatTasks" class="rail-card task-card" hidden>
-      <div class="task-heading"><strong>Tasks</strong><span id="taskCount"></span></div>
-      <ol id="taskItems" class="task-items"></ol>
-    </div>
     <div id="chatDocs" class="rail-card" hidden></div>
   </aside>
 
@@ -223,6 +219,10 @@
   </div>
 
   <footer>
+    <details id="chatTasks" class="task-card" open hidden>
+      <summary class="task-heading"><strong>Tasks</strong><span id="taskCount"></span></summary>
+      <ol id="taskItems" class="task-items"></ol>
+    </details>
     <div id="attachments" class="attachments" hidden></div>
     <form id="form">
       <input type="file" id="fileInput" multiple hidden>

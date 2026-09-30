@@ -14,7 +14,7 @@ export function renderTasks(tasks = []) {
     const mark = document.createElement('span');
     mark.className = 'task-mark';
     mark.setAttribute('aria-hidden', 'true');
-    mark.textContent = task.status === 'completed' ? '✓' : task.status === 'in_progress' ? '◌' : '○';
+    mark.textContent = task.status === 'completed' ? '✓' : task.status === 'in_progress' ? '◐' : '○';
     const title = document.createElement('span');
     title.textContent = task.title;
     row.append(mark, title);
