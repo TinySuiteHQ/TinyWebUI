@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.js';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.js';
@@ -27,6 +29,31 @@ function loadAll(opts) {
   return { source, cfg, servers: servers || {}, mcpError };
 }
 
+const mb = (n) => (n < 1048576 ? `${Math.ceil(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+
+/**
+ * Streams a response body to disk. On a terminal it redraws one progress
+ * line (the model file is ~90 MB and otherwise looks like a hang); piped
+ * output gets just the finished line so logs stay clean.
+ */
+async function download(res, target, label) {
+  const total = Number(res.headers.get('content-length')) || 0;
+  const tty = process.stderr.isTTY;
+  let done = 0;
+  let last = 0;
+  const line = () => `  ${label}  ${mb(done)}${total ? ` / ${mb(total)} (${Math.floor((done / total) * 100)}%)` : ''}`;
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      done += chunk.length;
+      const now = Date.now();
+      if (tty && now - last > 100) { last = now; process.stderr.write(`\r${line()}\x1b[K`); }
+      cb(null, chunk);
+    }
+  });
+  await pipeline(Readable.fromWeb(res.body), counter, createWriteStream(target));
+  process.stderr.write(tty ? `\r${line()}\x1b[K\n` : `${line()}\n`);
+}
+
 /**
  * Downloads a preset bundle into `dest`, via a .partial folder so an
  * interrupted fetch never leaves a half bundle that looks complete.
@@ -44,8 +71,7 @@ async function pullPreset(name, dest) {
       if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
       const target = join(tmp, file);
       mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, Buffer.from(await res.arrayBuffer()));
-      process.stderr.write(`  ${file}\n`);
+      await download(res, target, file);
     }
   } catch (err) {
     rmSync(tmp, { recursive: true, force: true });
