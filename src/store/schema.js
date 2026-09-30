@@ -312,7 +312,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -383,6 +383,10 @@ export function migrate(db, { fresh }) {
   // Set once an epoch has taken a message's images off the wire; the images
   // themselves stay in images_json for the transcript.
   ensureColumn(db, 'messages', 'images_dropped', 'INTEGER NOT NULL DEFAULT 0');
+  // Where a message came from when it was not typed by the user, e.g. an
+  // automation run: the page draws it as that, not as a user bubble. The
+  // model still gets `content` as an ordinary user turn.
+  ensureColumn(db, 'messages', 'origin_json', 'TEXT');
   ensureColumn(db, 'documents', 'user_id', 'TEXT');
   // The passage split a document was stored with; NULL means the original
   // 1800/200, from before it was configurable.

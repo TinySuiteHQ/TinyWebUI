@@ -12,7 +12,7 @@
  *   'all'     ask before every call
  *   'off'     never ask
  *
- * Built-in tools (context_expand, read_document, manage_automation) are the
+ * Built-in tools (expand_context, read_document, manage_automation) are the
  * harness's own and always run; everything here applies to MCP tools.
  *
  * Per-tool overrides win over the mode: `confirmTools` always asks,

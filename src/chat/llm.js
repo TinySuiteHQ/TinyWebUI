@@ -633,7 +633,7 @@ export async function runChat({
       rows = load();
       emit({
         type: EVENT.NOTICE,
-        text: `Context compacted (epoch ${done.epoch}): ${done.saved.toLocaleString('en-US')} chars of earlier tool output and images moved out of the window. Use context_expand to read any of it.`
+        text: `Context compacted (epoch ${done.epoch}): ${done.saved.toLocaleString('en-US')} chars of earlier tool output and images moved out of the window. Use expand_context to read any of it.`
       });
       emit({ type: EVENT.COMPACTED, epoch: done.epoch, boundarySeq: done.boundarySeq, saved: done.saved });
     }

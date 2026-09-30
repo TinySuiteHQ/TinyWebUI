@@ -9,6 +9,7 @@ import { state } from '../core/state.js';
 import { addQuestion } from './outline.js';
 import { api } from '../core/api.js';
 import { tally as tallyUsage } from '../shared/usage.js';
+import { ORIGIN } from '../shared/origins.js';
 
 const log = $('log');
 const wrap = $('wrap');
@@ -172,6 +173,37 @@ export function statusOf(name, args) {
   if (first == null) return short;
   const arg = String(typeof first === 'object' ? JSON.stringify(first) : first);
   return arg ? `${short} ${arg}` : short;
+}
+
+/**
+ * The turn an automation run starts with. The model gets the full run message
+ * (instructions for an unattended run, the previous result); the reader gets
+ * which automation ran and why, with its own prompt folded away. No edit or
+ * rewind controls: nobody typed it.
+ */
+export function addAutomationRun(origin) {
+  const m = el('div', 'msg automation-run');
+  const head = el('div', 'automation-run-head');
+  const name = el('span', 'automation-run-name');
+  name.textContent = origin.name || 'Automation';
+  const meta = el('span', 'automation-run-meta');
+  meta.textContent = [
+    origin.trigger === 'manual' ? 'run manually' : 'scheduled run',
+    origin.cron && `${origin.cron}${origin.timezone ? ` (${origin.timezone})` : ''}`
+  ].filter(Boolean).join(' · ');
+  head.append(name, meta);
+  m.appendChild(head);
+  if (origin.prompt) {
+    const more = el('details', 'automation-run-prompt');
+    const summary = el('summary');
+    summary.textContent = 'What it was asked to do';
+    const body = el('div', 'body');
+    body.textContent = origin.prompt;
+    more.append(summary, body);
+    m.appendChild(more);
+  }
+  wrap.appendChild(m);
+  scroll();
 }
 
 export function addUser(text, seq, attachments, images) {
@@ -613,7 +645,8 @@ export function replay(messages) {
   for (const m of messages) {
     if (m.role === 'user') {
       endTurn();
-      addUser(m.content, m.seq, null, m.images);
+      if (m.origin?.type === ORIGIN.AUTOMATION) addAutomationRun(m.origin);
+      else addUser(m.content, m.seq, null, m.images);
     } else if (m.role === 'assistant') {
       turn ||= addTurn();
       if (m.reasoning) {

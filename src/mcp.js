@@ -11,7 +11,7 @@ const MAX_NAME = 64;
 
 // Built-in tools registered after connect(). An MCP tool that flattened onto
 // one of these would be shadowed by the local handler without a word.
-const RESERVED = new Set(['context_expand', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats']);
+const RESERVED = new Set(['expand_context', 'context_expand', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats']);
 
 /**
  * The flat name the model sees for a server's tool. Sanitising and the
@@ -107,6 +107,18 @@ export class McpHub {
     if (readOnly) this.readOnly.set(def.function.name, readOnly);
     if (idempotent) this.idempotent.add(def.function.name);
     this.tools.push(def);
+    return this;
+  }
+
+  /**
+   * Makes a local tool also answer to an old name, without offering that name
+   * to the model: for calls written against a name that has since changed.
+   */
+  aliasLocal(oldName, name) {
+    this.locals.set(oldName, this.locals.get(name));
+    if (this.modes.has(name)) this.modes.set(oldName, this.modes.get(name));
+    if (this.readOnly.has(name)) this.readOnly.set(oldName, this.readOnly.get(name));
+    if (this.idempotent.has(name)) this.idempotent.add(oldName);
     return this;
   }
 

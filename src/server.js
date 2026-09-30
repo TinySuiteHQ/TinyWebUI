@@ -13,7 +13,7 @@ import { audit } from './audit.js';
 import { logger } from './log.js';
 import { resolveAuth, OWNER_ID } from './access/auth_gate.js';
 import { json, HttpError, SECURITY_HEADERS, crossSite, serveStatic } from './http.js';
-import { expandToolDef, callExpand } from './tools/context_tool.js';
+import { expandToolDef, callExpand, EXPAND_CONTEXT, EXPAND_CONTEXT_LEGACY } from './tools/context_tool.js';
 import { documentToolDef, callReadDocument } from './tools/document_tool.js';
 import { askToolDef, callAskUser } from './tools/ask_tool.js';
 import { chatSearchToolDef, callSearchChats } from './tools/chat_search_tool.js';
@@ -208,6 +208,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const connectHub = async (servers) =>
     (await new McpHub(servers).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
+      .aliasLocal(EXPAND_CONTEXT_LEGACY, EXPAND_CONTEXT)
       .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
       .registerLocal(chatSearchToolDef(), (args, ctx) => callSearchChats(args, { ...ctx, store, retrieval }), { readOnly: true })
       // Changes nothing, so it never waits for approval; never alongside

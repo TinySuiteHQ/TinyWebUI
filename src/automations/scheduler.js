@@ -1,4 +1,5 @@
 import { nextSchedule, runMessage } from './automation.js';
+import { ORIGIN } from '../../public/shared/origins.js';
 
 /**
  * Runs automations: on their cron schedule, or on demand. A run needs its
@@ -15,7 +16,7 @@ export function createScheduler(app) {
   let timer = null;
   let stopped = false;
 
-  function launch(automation, runId) {
+  function launch(automation, runId, trigger = 'schedule') {
     // Nobody is at the keyboard to be turned away, so a disabled or pending
     // owner is checked here: their schedules stop the moment their access does.
     if (automation.userId && (store.users.get(automation.userId)?.status !== 'approved' || !app.ownerFeatures(automation.userId).has('automations'))) {
@@ -28,7 +29,13 @@ export function createScheduler(app) {
       return false;
     }
     if (runs.isRunning(chat.id)) return false;
-    const firstSeq = store.messages.add(chat.id, { role: 'user', content: runMessage(automation) });
+    // A snapshot, not a reference: the card still reads right after the
+    // automation is renamed or deleted.
+    const origin = {
+      type: ORIGIN.AUTOMATION, automationId: automation.id, runId, trigger,
+      name: automation.name, cron: automation.cron, timezone: automation.timezone, prompt: automation.prompt
+    };
+    const firstSeq = store.messages.add(chat.id, { role: 'user', content: runMessage(automation), origin });
     store.automations.updateRun(runId, { status: 'running', startedAt: Date.now() });
     const role = automation.userId ? store.users.get(automation.userId)?.role : null;
     runs.start({
@@ -58,7 +65,7 @@ export function createScheduler(app) {
       pendingManual.set(owned.chatId, queue);
       return { runId, status: 'queued', chatId: owned.chatId };
     }
-    launch(owned, runId);
+    launch(owned, runId, 'manual');
     return { runId, status: 'running', chatId: owned.chatId };
   }
 
@@ -74,7 +81,7 @@ export function createScheduler(app) {
       queueMicrotask(() => drain(chatId));
       return;
     }
-    if (!launch(automation, next.runId)) {
+    if (!launch(automation, next.runId, 'manual')) {
       const remaining = pendingManual.get(chatId) || [];
       remaining.unshift(next);
       pendingManual.set(chatId, remaining);

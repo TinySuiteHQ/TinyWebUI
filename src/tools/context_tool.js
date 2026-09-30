@@ -1,5 +1,5 @@
 /**
- * context_expand -- the restore half of compaction.
+ * expand_context -- the restore half of compaction.
  *
  * Dropping content from the window is only safe if something in what remains
  * can bring it back. Every compacted tool result keeps its artifact id, and
@@ -13,7 +13,11 @@
  * so they never disturb the cached prefix.
  */
 
-export const CONTEXT_EXPAND = 'context_expand';
+export const EXPAND_CONTEXT = 'expand_context';
+// The name this tool had until 2026-09. Compaction stubs already stored in
+// chats tell the model to call it, and stubs are sent verbatim, so the old
+// name keeps working -- it is just no longer offered.
+export const EXPAND_CONTEXT_LEGACY = 'context_expand';
 
 /**
  * Where the substantial prose actually sits.
@@ -25,7 +29,7 @@ export const CONTEXT_EXPAND = 'context_expand';
  * sidebar links. Listing where the long lines start turns that into one aimed
  * read.
  *
- * Character offsets, not line numbers, because that is what context_expand's
+ * Character offsets, not line numbers, because that is what expand_context's
  * `offset` takes. Generic and deterministic: it measures line lengths and
  * nothing else, and never looks at what a tool is.
  */
@@ -56,7 +60,7 @@ export function expandToolDef() {
   return {
     type: 'function',
     function: {
-      name: CONTEXT_EXPAND,
+      name: EXPAND_CONTEXT,
       description: [
         'Read the full text of an earlier tool result that was compacted out of the',
         'conversation. Compacted results appear as "[compacted: artifact <id> ...]" and',

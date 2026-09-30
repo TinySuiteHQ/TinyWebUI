@@ -3,7 +3,7 @@ import { ALL_USERS, CORPUS } from '../store/index.js';
 /**
  * read_document -- lets the model read text the user attached to the chat.
  *
- * Same shape as context_expand: a document is an opaque blob (extracted text
+ * Same shape as expand_context: a document is an opaque blob (extracted text
  * of whatever the user dropped in), scoped to the chat that owns it, read
  * either by a narrowing query or by paging through raw offsets. `query`
  * ranks the document's pre-split passages: FTS5 bm25() by default, or

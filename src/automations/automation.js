@@ -39,16 +39,36 @@ export function automationToolDef() {
     type: 'function',
     function: {
       name: 'manage_automation',
-      description: 'List, create, update, delete, or trigger scheduled automations. Create binds to the current chat and activates immediately. Trigger runs one workflow now; if its target chat is busy, it queues until that chat is free.',
+      description: [
+        'Manage scheduled automations: a prompt that runs on its own, on a cron schedule, in this chat.',
+        'Use it when the user wants something done repeatedly or later without them ("every morning',
+        'summarise...", "check X each Friday"). For steps of the current request use manage_tasks instead.',
+        '',
+        'Each run starts fresh: it sees only its own prompt and the previous run\'s result, not this',
+        'conversation, and nobody is there to answer questions. Write `prompt` so it stands alone:',
+        'what to do, where, and what to report.',
+        '',
+        'Actions and what each needs:',
+        '- list: nothing. Returns every automation with its id, schedule and last result.',
+        '- create: name, prompt, cron, timezone. Starts running on schedule immediately.',
+        '- update: id, plus only the fields to change. cron and timezone are checked together.',
+        '- delete: id. Permanent.',
+        '- trigger: id. Runs it once now; queued if the chat is busy.',
+        '',
+        'An automation keeps running until someone stops it, so before create or delete, make sure',
+        'the user asked for exactly that (schedule, timezone, what it does). If any of those is unclear,',
+        'ask first. Pausing is update with enabled=false.'
+      ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['list', 'create', 'update', 'delete', 'trigger'] },
-          id: { type: 'string', description: 'Automation id for update/delete/trigger.' },
-          name: { type: 'string' }, prompt: { type: 'string' },
-          cron: { type: 'string', description: 'Five-field cron expression.' },
-          timezone: { type: 'string', description: 'IANA timezone, such as Europe/Berlin.' },
-          enabled: { type: 'boolean' }
+          id: { type: 'string', description: 'The automation\'s id, from list or create. For update, delete and trigger.' },
+          name: { type: 'string', description: 'Short label shown to the user, e.g. "Morning inbox summary". Up to 120 characters.' },
+          prompt: { type: 'string', description: 'The instruction each run carries out, written to stand alone (see above). Up to 12000 characters.' },
+          cron: { type: 'string', description: 'Five fields: minute hour day-of-month month day-of-week. "0 9 * * 1-5" is 09:00 on weekdays; "*/30 * * * *" is every 30 minutes.' },
+          timezone: { type: 'string', description: 'IANA timezone the cron is read in, e.g. "Europe/Vienna". Required with cron; use the user\'s timezone, and ask if you do not know it.' },
+          enabled: { type: 'boolean', description: 'false pauses the automation without deleting it; true resumes it. New automations are enabled.' }
         },
         required: ['action']
       }

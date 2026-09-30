@@ -25,7 +25,7 @@ function fixture() {
   hub.routes.set('alpha__fetch', { server: 'alpha', tool: 'fetch' });
   hub.tools.push(fn('alpha__search', 'search the web'), fn('alpha__fetch', 'fetch a url'));
 
-  hub.registerLocal(fn('context_expand', 'read compacted output'), async () => 'ok');
+  hub.registerLocal(fn('expand_context', 'read compacted output'), async () => 'ok');
   return hub;
 }
 
@@ -37,15 +37,23 @@ test('activeTools passes everything through when nothing is disabled', () => {
 
 test('activeTools drops exactly the named tools, built-in or MCP', () => {
   const hub = fixture();
-  const active = hub.activeTools(['alpha__fetch', 'context_expand']);
+  const active = hub.activeTools(['alpha__fetch', 'expand_context']);
   assert.deepEqual(active.map((t) => t.function.name), ['alpha__search']);
+});
+
+test('a local alias answers calls without being offered or listed', async () => {
+  const hub = fixture().aliasLocal('context_expand', 'expand_context');
+  assert.equal(await hub.call('context_expand', {}), 'ok');
+  assert.ok(hub.isLocal('context_expand'), 'so approval treats it as a built-in');
+  assert.ok(!hub.tools.some((t) => t.function.name === 'context_expand'));
+  assert.deepEqual(hub.inventory([]).internal.map((t) => t.name), ['expand_context']);
 });
 
 test('inventory separates built-ins from MCP tools grouped by server', () => {
   const hub = fixture();
   const inv = hub.inventory([]);
 
-  assert.deepEqual(inv.internal.map((t) => t.name), ['context_expand']);
+  assert.deepEqual(inv.internal.map((t) => t.name), ['expand_context']);
   assert.equal(inv.internal[0].disabled, false);
 
   const byName = Object.fromEntries(inv.servers.map((s) => [s.name, s]));

@@ -14,7 +14,6 @@ export class MessageStore {
     return (row?.m ?? -1) + 1;
   }
 
-  /** Appends one message. Append-only by design: rows are never reordered. */
   /** Drops a chat's messages from `seq` on (a rewind). Returns how many went. */
   deleteFrom(chatId, seq) {
     return this.db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?').run(chatId, seq).changes;
@@ -26,14 +25,15 @@ export class MessageStore {
     this.db.prepare('DELETE FROM artifacts WHERE chat_id = ?').run(chatId);
   }
 
+  /** Appends one message. Append-only by design: rows are never reordered. */
   add(chatId, msg) {
     const seq = this.nextSeq(chatId);
     this.db.prepare(`
       INSERT INTO messages
         (chat_id, seq, role, content, tool_call_id, tool_calls_json,
          reasoning, reasoning_details_json, artifact_id, stub_text, usage_json,
-         model, created_at, images_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         model, created_at, images_json, origin_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       chatId, seq, msg.role,
       msg.content ?? null,
@@ -46,7 +46,8 @@ export class MessageStore {
       msg.usage ? JSON.stringify(msg.usage) : null,
       msg.model ?? null,
       Date.now(),
-      msg.images ? JSON.stringify(msg.images) : null
+      msg.images ? JSON.stringify(msg.images) : null,
+      msg.origin ? JSON.stringify(msg.origin) : null
     );
     return seq;
   }

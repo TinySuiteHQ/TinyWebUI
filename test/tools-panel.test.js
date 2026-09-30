@@ -54,7 +54,7 @@ const post = async (path, body) => {
 
 test('the inventory lists the built-in and the toy server together, both healthy', async () => {
   const inv = await get('/api/tools');
-  assert.deepEqual(inv.internal.map((t) => t.name), ['context_expand', 'read_document', 'search_chats', 'ask_user', 'manage_tasks', 'manage_automation']);
+  assert.deepEqual(inv.internal.map((t) => t.name), ['expand_context', 'read_document', 'search_chats', 'ask_user', 'manage_tasks', 'manage_automation']);
 
   const toy = inv.servers.find((s) => s.name === 'toy');
   assert.ok(toy, 'the configured server shows up even before anything is toggled');
@@ -79,7 +79,7 @@ test('disabling a tool keeps it in the inventory but drops it from the wire', as
   const names = (lastBody.tools || []).map((t) => t.function.name);
   assert.ok(!names.includes('toy__echo'), 'the disabled tool was never offered to the model');
   assert.ok(names.includes('toy__boom'), 'its sibling still was');
-  assert.ok(names.includes('context_expand'), 'as was the untouched built-in');
+  assert.ok(names.includes('expand_context'), 'as was the untouched built-in');
 
   await post('/api/tools/toggle', { name: 'toy__echo', disabled: false });
 });

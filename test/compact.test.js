@@ -27,7 +27,7 @@ test('digest shrinks large output and keeps both ends verbatim', () => {
   assert.ok(out.startsWith('[compacted: artifact aabbccdd'));
   assert.ok(out.includes('HEAD-MARKER'));
   assert.ok(out.includes('TAIL-MARKER'));
-  assert.ok(out.includes('context_expand("aabbccdd"'));
+  assert.ok(out.includes('expand_context("aabbccdd"'));
 });
 
 test('digest leaves small output alone rather than growing it', () => {
@@ -154,9 +154,9 @@ test('usage survives a round trip through the store', () => {
   assert.equal(withUsage[0].usage.prompt_tokens, 90000);
 });
 
-/* ---------- context_expand ---------- */
+/* ---------- expand_context ---------- */
 
-test('context_expand greps, windows and refuses cross-chat reads', () => {
+test('expand_context greps, windows and refuses cross-chat reads', () => {
   const { store, chat, a1 } = seeded();
   const store2 = store;
   const other = store2.chats.create({ title: 'other' });
@@ -190,7 +190,7 @@ test('context_expand greps, windows and refuses cross-chat reads', () => {
   assert.ok(callExpand({}, { store, chatId: chat.id }).startsWith('Error: artifact_id is required'));
 });
 
-test('context_expand respects the char budget', () => {
+test('expand_context respects the char budget', () => {
   const store = new Store(':memory:');
   const chat = store.chats.create({ title: 't' });
   const id = store.messages.addArtifact(chat.id, { toolName: 't', args: {}, content: big(50000) });

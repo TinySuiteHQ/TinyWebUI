@@ -99,7 +99,7 @@ export const DEFAULTS = {
   // A single result larger than this is stubbed for every LATER turn the
   // moment it arrives; the turn that fetched it still reads it whole. High
   // enough that an ordinary page or search result stays readable for a
-  // follow-up question without a context_expand round.
+  // follow-up question without an expand_context round.
   maxInlineChars: 30000,
   // Hard cap: a result larger than this is stubbed even for the turn that
   // fetched it, since it would otherwise be resent in full on every remaining
@@ -122,7 +122,7 @@ export const DEFAULTS = {
   // Per-tool overrides, by flat name: always ask / never ask.
   confirmTools: [],
   autoApproveTools: [],
-  // Cap on what one context_expand call may return.
+  // Cap on what one expand_context call may return.
   expandCharBudget: 8000,
   // Flat tool names switched off from the settings panel -- built-in or an
   // MCP server's, named exactly as buildBody sends them. Filtered out of what

@@ -350,7 +350,7 @@ test('flattened tool names never collide', () => {
   assert.equal(two.length, 64);
   assert.notEqual(one, two, 'truncation made these two the same');
 
-  assert.equal(add('context_expand'), 'context_expand_2', 'a built-in name is never shadowed');
+  assert.equal(add('expand_context'), 'expand_context_2', 'a built-in name is never shadowed');
 });
 
 /* ---------- approval ---------- */

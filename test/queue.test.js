@@ -7,7 +7,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Each request plays the next scripted reply (text, or a context_expand call),
+// Each request plays the next scripted reply (text, or a expand_context call),
 // slowly enough to queue something while it streams. Bodies are recorded.
 let script = [];
 let seen = [];
@@ -19,7 +19,7 @@ const fake = createServer((req, res) => {
     const reply = script.shift() || { text: 'ok' };
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const delta = reply.call
-      ? { tool_calls: [{ index: 0, id: `t${seen.length}`, type: 'function', function: { name: 'context_expand', arguments: '{}' } }] }
+      ? { tool_calls: [{ index: 0, id: `t${seen.length}`, type: 'function', function: { name: 'expand_context', arguments: '{}' } }] }
       : { content: reply.text };
     setTimeout(() => {
       res.write(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`);
@@ -166,4 +166,26 @@ test('an automation run takes no interactive input', async () => {
   assert.equal((await queue(id, 'steer', 'mine')).status, 409);
   const chat = await idle(id);
   assert.ok(!chat.messages.some((m) => m.content === 'mine'));
+});
+
+test('an automation run is stored with its origin, and the model still gets the prompt', async () => {
+  const id = await begin('seed', [{ text: 'ok' }]);
+  await idle(id);
+  const auto = (await api('/api/automations', { method: 'POST', body: {
+    chatId: id, name: 'digest', prompt: 'summarise the inbox', cron: '0 9 * * 1-5', timezone: 'Europe/Vienna'
+  } })).data.automation;
+  script = [{ text: 'summary' }];
+  seen = [];
+  await api(`/api/automations/${auto.id}/trigger`, { method: 'POST' });
+  const chat = await idle(id);
+  const run = chat.messages.find((m) => m.origin);
+  assert.deepEqual(
+    { type: run.origin.type, trigger: run.origin.trigger, name: run.origin.name, cron: run.origin.cron, prompt: run.origin.prompt },
+    { type: 'automation', trigger: 'manual', name: 'digest', cron: '0 9 * * 1-5', prompt: 'summarise the inbox' }
+  );
+  assert.equal(run.role, 'user');
+  assert.ok(!chat.messages.find((m) => m.content === 'seed').origin, 'typed messages carry no origin');
+  const sent = seen[0].messages.filter((m) => m.role === 'user').at(-1);
+  assert.match(sent.content, /summarise the inbox/);
+  assert.ok(!('origin' in sent), 'origin never reaches the model');
 });

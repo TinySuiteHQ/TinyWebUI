@@ -8,7 +8,7 @@ Bring an endpoint such as OpenRouter, OpenAI, Groq, Ollama, vLLM, or LM Studio; 
 
 - Persistent SQLite-backed chats, with edit, retry, delete, full-text search, and folders.
 - Streaming answers, tool activity, reasoning display, per-round token usage, and cache-read/write usage when a provider reports it.
-- MCP over stdio, Streamable HTTP, or SSE, plus built-in `read_document` and `context_expand` tools.
+- MCP over stdio, Streamable HTTP, or SSE, plus built-in `read_document` and `expand_context` tools.
 - Attachments: text-based files, PDFs with extractable text, DOCX files, and images for vision-capable models.
 - Long-chat controls: bounded tool turns, deterministic prompt-cache shaping, and compaction that preserves full tool output locally.
 - A settings panel for models, prompts, tools, MCP servers, token/context settings, usage, and themes.
@@ -172,7 +172,7 @@ These local tools are always available:
 
 - `read_document` searches or reads an attached document.
 - `search_chats` searches the user's earlier conversations (never the current one) and returns matching questions with the answers they got.
-- `context_expand` searches or pages through the complete output behind a compacted tool result.
+- `expand_context` searches or pages through the complete output behind a compacted tool result.
 - `ask_user` asks the user a question mid-turn, optionally with choices, and waits for the answer.
 - `manage_tasks` keeps a visible checklist for the current chat, shown in the right rail.
 - `manage_automation` creates, edits and runs scheduled automations.
@@ -236,7 +236,7 @@ Tool results can be much larger than the conversation itself. TinyWebUI keeps th
 
 1. Within a compacted context epoch, history is append-only and serialized deterministically so providers can reuse matching prompt prefixes.
 2. When the history crosses `compactThreshold`, older tool results are replaced once with compact stubs containing an artifact ID, a structural hint, and verbatim head/tail text, and older image attachments are replaced with a short note.
-3. The model can recover exact content later through `context_expand`; the complete result remains available in the chat store.
+3. The model can recover exact content later through `expand_context`; the complete result remains available in the chat store.
 4. If the history is still over `maxHistoryTokens` after that (typically a very long chat with few tool calls), the oldest turns are dropped from what the model sees, cutting on a user message and leaving a note that earlier conversation was omitted.
 
 For OpenRouter, TinyWebUI sends a stable per-chat `session_id` to help provider sticky routing keep prompt caches warm. Claude on OpenRouter uses its automatic rolling cache directive; local and other compatible endpoints receive no OpenRouter-only fields. Set `cacheMode` explicitly only when your gateway needs a different cache dialect, or set `cache: false` to turn the feature off.

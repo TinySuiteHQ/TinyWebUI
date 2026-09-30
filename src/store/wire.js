@@ -49,5 +49,6 @@ export function toView(row) {
   if (row.reasoning) msg.reasoning = row.reasoning;
   if (row.usage_json) msg.usage = JSON.parse(row.usage_json);
   if (row.stub_text) msg.compacted = true;
+  if (row.origin_json) msg.origin = JSON.parse(row.origin_json);
   return msg;
 }

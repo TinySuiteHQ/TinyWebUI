@@ -6,7 +6,7 @@ import { CORPUS } from '../store/index.js';
  * retrieval engine as read_document (retrieval.js, 'chats' corpus), so it is
  * lexical, dense or hybrid with retrieval.mode. Only the asking chat's owner's
  * chats are searched, and never the asking chat itself -- that one is already
- * in context (and context_expand reads what compaction folded away).
+ * in context (and expand_context reads what compaction folded away).
  */
 
 export const SEARCH_CHATS = 'search_chats';

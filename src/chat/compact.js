@@ -1,4 +1,4 @@
-import { textMap } from '../tools/context_tool.js';
+import { textMap, EXPAND_CONTEXT } from '../tools/context_tool.js';
 
 /**
  * Context compaction.
@@ -31,7 +31,7 @@ export const DIGEST_TAIL = 200;
 
 /**
  * A one-line shape hint, derived only from generic structure. Gives the model
- * enough to judge whether re-reading is worth a context_expand call, without
+ * enough to judge whether re-reading is worth an expand_context call, without
  * the stub pretending to summarise content it has not understood.
  */
 function outline(text) {
@@ -96,7 +96,7 @@ export function digest(artifact, { head = DIGEST_HEAD, tail = DIGEST_TAIL } = {}
     text.slice(0, head),
     `\n… ${elided.toLocaleString('en-US')} chars elided …\n`,
     text.slice(len - tail),
-    `[Full output retained. Read it with context_expand("${id}", grep=... or offset/limit).]`
+    `[Full output retained. Read it with ${EXPAND_CONTEXT}("${id}", grep=... or offset/limit).]`
   ].join('\n');
 }
 
