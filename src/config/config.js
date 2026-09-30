@@ -162,8 +162,6 @@ export const DEFAULTS = {
   trustedEmailHeader: 'x-tinysuite-email',
   trustedNameHeader: 'x-tinysuite-name',
   trustedRoleHeader: 'x-tinysuite-role',
-  // 'approved' or 'pending' -- the status a newly provisioned user starts in.
-  trustedDefaultStatus: 'approved',
   // Where "log out" sends the browser (e.g. the Access logout URL).
   logoutUrl: '',
   // Extra origins allowed to send state-changing requests (e.g. an admin

@@ -243,10 +243,6 @@
       "type": "string",
       "x-change": "file-only"
     },
-    "trustedDefaultStatus": {
-      "type": "string",
-      "x-change": "file-only"
-    },
     "logoutUrl": {
       "type": "string",
       "x-change": "file-only"

@@ -36,7 +36,7 @@ const DEFAULT_ROLES = {
  */
 export const FILE_ONLY = new Set([
   'authMode', 'authPassword', 'sessionSecret', 'sessionTtlDays', 'trustedProxyCidrs', 'trustedUserIdHeader',
-  'trustedEmailHeader', 'trustedNameHeader', 'trustedRoleHeader', 'trustedDefaultStatus',
+  'trustedEmailHeader', 'trustedNameHeader', 'trustedRoleHeader',
   'logoutUrl', 'baseUrl', 'apiKey', 'dbPath', 'access', 'models', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
   'googleClientId', 'googleClientSecret', 'googleRedirectUri', 'adminEmails'
 ]);
@@ -65,7 +65,7 @@ export function resolveAccess(cfg) {
   for (const r of ROLES) roles[r] = { ...DEFAULT_ROLES[r], ...(a.roles?.[r] || {}) };
   return {
     bootstrapAdmins: Array.isArray(a.bootstrapAdmins) ? a.bootstrapAdmins.map(String) : [],
-    newUsers: a.newUsers || (cfg.trustedDefaultStatus === 'pending' ? 'pending' : 'approved'),
+    newUsers: a.newUsers || 'approved',
     roles,
     users: a.users && typeof a.users === 'object' ? a.users : {}
   };

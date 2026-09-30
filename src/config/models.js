@@ -28,7 +28,7 @@ export const catalog = (cfg) => (Array.isArray(cfg.models) ? cfg.models : []);
 export const isClosed = (cfg) => catalog(cfg).length > 0;
 export const enabledEntries = (cfg) => catalog(cfg).filter((e) => e.enabled !== false);
 
-/** The enabled entry `key` names: by id, or by provider model id for older prefs. */
+/** The enabled entry `key` names: by id, or by its provider model id (the default `model` may be either). */
 export function findEntry(cfg, key) {
   const list = enabledEntries(cfg);
   return list.find((e) => e.id === key) || list.find((e) => (e.model || e.id) === key) || null;

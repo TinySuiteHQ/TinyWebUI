@@ -21,7 +21,6 @@ export class HttpError extends Error {
 export const BODY_LIMIT = 1024 * 1024;
 export const UPLOAD_LIMIT = 8 * 1024 * 1024;       // one 5 MB file, base64
 export const TURN_LIMIT = 60 * 1024 * 1024;        // up to 8 images of 5 MB, base64
-export const IMPORT_LIMIT = 50 * 1024 * 1024;
 
 /** Reads a JSON body, refusing more than `limit` bytes (413) or bad JSON (400). */
 export async function readJson(req, limit = BODY_LIMIT) {

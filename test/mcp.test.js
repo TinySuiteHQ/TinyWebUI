@@ -41,14 +41,6 @@ test('activeTools drops exactly the named tools, built-in or MCP', () => {
   assert.deepEqual(active.map((t) => t.function.name), ['alpha__search']);
 });
 
-test('a local alias answers calls without being offered or listed', async () => {
-  const hub = fixture().aliasLocal('context_expand', 'expand_context');
-  assert.equal(await hub.call('context_expand', {}), 'ok');
-  assert.ok(hub.isLocal('context_expand'), 'so approval treats it as a built-in');
-  assert.ok(!hub.tools.some((t) => t.function.name === 'context_expand'));
-  assert.deepEqual(hub.inventory([]).internal.map((t) => t.name), ['expand_context']);
-});
-
 test('inventory separates built-ins from MCP tools grouped by server', () => {
   const hub = fixture();
   const inv = hub.inventory([]);

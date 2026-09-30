@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateConfig, featuresFor, modelsFor, resolveAccess, fingerprint, keyClass, mergeAccess } from '../src/access/policy.js';
+import { validateConfig, featuresFor, modelsFor, fingerprint, keyClass, mergeAccess } from '../src/access/policy.js';
 import { createConfigSource, LockedError } from '../src/config/config.js';
 
 const tier3 = (access) => ({ authMode: 'trusted-header', trustedProxyCidrs: ['10.0.0.0/8'], access });
@@ -41,7 +41,6 @@ test('features and models resolve per role, with sensible defaults', () => {
   assert.ok(!featuresFor(tier3(), 'user').has('settings'), 'users get no settings by default');
   const solo = featuresFor({ authMode: 'none' }, null);
   assert.ok(solo.has('settings') && solo.has('mcp') && !solo.has('admin'));
-  assert.equal(resolveAccess({ trustedDefaultStatus: 'pending' }).newUsers, 'pending', 'old key still honoured');
 });
 
 test('code wins over the file in access, per user too', () => {

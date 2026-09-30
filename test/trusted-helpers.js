@@ -30,5 +30,15 @@ export async function trustedServer(extra = {}) {
     const data = await res.json().catch(() => null);
     return { status: res.status, data };
   };
-  return { srv, base, as, dir };
+  /** A chat owned by `who`, with one user message, written straight to the store. */
+  const seedChat = async (who, { id, title = 'Seeded chat', content }) => {
+    const userId = (await as(who)('/api/auth/me')).data.user.id;
+    const { Store } = await import('../src/store/index.js');
+    const store = new Store(join(dir, 'chats.db'));
+    try {
+      store.chats.create({ id, title }, userId);
+      store.messages.add(id, { role: 'user', content });
+    } finally { store.close(); }
+  };
+  return { srv, base, as, dir, seedChat };
 }

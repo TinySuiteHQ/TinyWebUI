@@ -1,4 +1,4 @@
-import { json, readJson, TURN_LIMIT, IMPORT_LIMIT } from '../http.js';
+import { json, readJson, TURN_LIMIT } from '../http.js';
 import { LockedError } from '../config/config.js';
 import { toView } from '../store/index.js';
 import { setOverride } from '../config/approval.js';
@@ -25,27 +25,6 @@ export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor
     { method: 'GET', path: /^\/api\/chats$/, feature: F, handle: ({ res, auth }) => json(res, 200, {
       chats: store.chats.list(200, auth.userId).map((c) => ({ ...c, running: runs.isRunning(c.id) }))
     }) },
-
-    // One-shot migration for transcripts still sitting in localStorage.
-    // Imported tool results become artifacts like any other, so an old chat
-    // is compactable the moment it is carried over.
-    { method: 'POST', path: /^\/api\/chats\/import$/, feature: F, handle: async ({ req, res, auth }) => {
-      const { chats = [] } = await readJson(req, IMPORT_LIMIT);
-      let imported = 0;
-      for (const c of chats) {
-        if (!c?.id || store.chats.byId(c.id)) continue;
-        store.chats.create({ id: c.id, title: c.title || 'Imported chat', createdAt: c.updated || Date.now() }, auth.userId);
-        for (const m of c.messages || []) {
-          const msg = { ...m };
-          if (m.role === 'tool' && typeof m.content === 'string') {
-            msg.artifact_id = store.messages.addArtifact(c.id, { toolName: 'imported', args: {}, content: m.content });
-          }
-          store.messages.add(c.id, msg);
-        }
-        imported++;
-      }
-      return json(res, 200, { imported, chats: store.chats.list(200, auth.userId) });
-    } },
 
     { method: 'GET', path: /^\/api\/chats\/([\w.-]+)$/, feature: F, handle: ({ res, auth, params: [id] }) => {
       const found = store.chats.get(id, auth.userId);

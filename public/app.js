@@ -23,24 +23,6 @@ import { initAutomations, loadAutomations } from './panels/automations.js';
 import { loadUsage } from './panels/usage.js';
 import { initAdmin, loadAdmin } from './panels/admin.js';
 
-const MIGRATED_KEY = 'tinywebui.chats.migrated';
-const OLD_CHATS_KEY = 'tinywebui.chats';
-
-/**
- * Carries transcripts written before the server held them. Runs once; the flag
- * stays behind so a cleared database does not silently re-import stale chats.
- */
-async function migrateLocal() {
-  if (localStorage.getItem(MIGRATED_KEY)) return;
-  let old = [];
-  try { old = JSON.parse(localStorage.getItem(OLD_CHATS_KEY)) || []; } catch { /* nothing to carry */ }
-  localStorage.setItem(MIGRATED_KEY, '1');
-  if (!old.length) return;
-  try {
-    await api.post('/api/chats/import', { chats: old });
-  } catch { /* the transcripts stay in localStorage; nothing is lost */ }
-}
-
 /** 'single' mode with no session: show the password screen and stop there. */
 async function needsLogin() {
   const me = await loadAccess();
@@ -92,6 +74,6 @@ if (!(await needsLogin())) {
   loadConfig().then(() => can(FEATURE.TOOLS) && loadTools());
   if (can(FEATURE.MCP)) loadMcp();
   initAdmin();
-  migrateLocal().then(loadChats);
+  loadChats();
   $('input').focus();
 }

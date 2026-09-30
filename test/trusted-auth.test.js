@@ -6,7 +6,7 @@ import { trustedServer } from './trusted-helpers.js';
 import { Store, ALL_USERS } from '../src/store/index.js';
 import { ipInCidrs } from '../src/access/auth.js';
 
-const { srv, as } = await trustedServer({ logoutUrl: 'https://team.example/cdn-cgi/access/logout' });
+const { srv, as, seedChat } = await trustedServer({ logoutUrl: 'https://team.example/cdn-cgi/access/logout' });
 test.after(() => srv.shutdown());
 
 const admin = as({ id: 'sub-admin', email: 'admin@example.com', role: 'admin' });
@@ -31,7 +31,7 @@ test('first request provisions; concurrent first requests make exactly one user'
 
 test('a changed email with the same subject is the same account', async () => {
   const before = as({ id: 'sub-dave', email: 'dave@old.example' });
-  await before('/api/chats/import', { method: 'POST', body: { chats: [{ id: 'dave-chat', messages: [{ role: 'user', content: 'hi' }] }] } });
+  await seedChat({ id: 'sub-dave', email: 'dave@old.example' }, { id: 'dave-chat', content: 'hi' });
   const after = as({ id: 'sub-dave', email: 'dave@new.example' });
   const me = (await after('/api/auth/me')).data.user;
   assert.equal(me.email, 'dave@new.example');
@@ -138,7 +138,7 @@ test('scoped store reads refuse a missing scope', () => {
 test('admins can read any user\'s chats and documents; users cannot', async () => {
   const hank = as({ id: 'sub-hank', email: 'hank@example.com' });
   const hankId = (await hank('/api/auth/me')).data.user.id;
-  await hank('/api/chats/import', { method: 'POST', body: { chats: [{ id: 'hank-chat', title: 'Hank', messages: [{ role: 'user', content: 'hank says hi' }] }] } });
+  await seedChat({ id: 'sub-hank', email: 'hank@example.com' }, { id: 'hank-chat', title: 'Hank', content: 'hank says hi' });
   const doc = (await hank('/api/chats/hank-chat/documents', { method: 'POST', body: {
     filename: 'h.txt', mime: 'text/plain', dataBase64: Buffer.from('hank doc').toString('base64')
   } })).data.document;

@@ -109,18 +109,10 @@ export class ChatStore {
   }
 
   /** Names only, sorted -- the create-then-move-chats-into-it workflow needs
-   * to list folders even when nothing has been organized into them yet. Also
-   * pulls in any folder name already sitting on a chat's `folder` column:
-   * chats organized before the `folders` table existed (or by anything else
-   * that writes that column directly) never ran through createFolder, so the
-   * table alone would silently drop them from this list. */
+   * to list folders even when nothing has been organized into them yet. */
   listFolders(userId) {
     const s = scope(userId);
-    const own = this.db.prepare(`SELECT name FROM folders WHERE ${s.sql}`).all(...s.params);
-    const used = this.db.prepare(
-      `SELECT DISTINCT folder AS name FROM chats WHERE ${s.sql} AND folder IS NOT NULL AND folder != ''`
-    ).all(...s.params);
-    return [...new Set([...own, ...used].map((r) => r.name))].sort((a, b) => a.localeCompare(b));
+    return this.db.prepare(`SELECT name FROM folders WHERE ${s.sql}`).all(...s.params).map((r) => r.name).sort((a, b) => a.localeCompare(b));
   }
 
   createFolder(name, userId) {

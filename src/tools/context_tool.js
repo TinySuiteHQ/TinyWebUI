@@ -14,10 +14,6 @@
  */
 
 export const EXPAND_CONTEXT = 'expand_context';
-// The name this tool had until 2026-09. Compaction stubs already stored in
-// chats tell the model to call it, and stubs are sent verbatim, so the old
-// name keeps working -- it is just no longer offered.
-export const EXPAND_CONTEXT_LEGACY = 'context_expand';
 
 /**
  * Where the substantial prose actually sits.

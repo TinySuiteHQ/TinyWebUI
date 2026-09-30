@@ -4,14 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { trustedServer } from './trusted-helpers.js';
 
-const { srv, as } = await trustedServer();
+const { srv, as, seedChat } = await trustedServer();
 test.after(() => srv.shutdown());
 
 const alice = as({ id: 'sub-alice', email: 'alice@example.com', role: 'admin' });
 const bob = as({ id: 'sub-bob', email: 'bob@example.com' });
 
 // Bob's world: a chat with a searchable message, a document, a folder, an automation.
-await bob('/api/chats/import', { method: 'POST', body: { chats: [{ id: 'bob-chat', title: 'Bob private', messages: [{ role: 'user', content: 'zanzibarsecret plans' }] }] } });
+await seedChat({ id: 'sub-bob', email: 'bob@example.com' }, { id: 'bob-chat', title: 'Bob private', content: 'zanzibarsecret plans' });
 const bobDoc = (await bob('/api/chats/bob-chat/documents', { method: 'POST', body: {
   filename: 'bob.txt', mime: 'text/plain', dataBase64: Buffer.from('bob document body').toString('base64')
 } })).data.document;
@@ -66,8 +66,3 @@ test('Alice\'s lists, search, folders and usage show none of Bob\'s rows', async
   assert.deepEqual(usage.days, []);
 });
 
-test('import cannot claim an id someone else already holds', async () => {
-  const out = await alice('/api/chats/import', { method: 'POST', body: { chats: [{ id: 'bob-chat', messages: [{ role: 'user', content: 'x' }] }] } });
-  assert.equal(out.data.imported, 0);
-  assert.equal((await bob('/api/chats/bob-chat')).data.messages.length, 1);
-});
