@@ -22,6 +22,21 @@ export class ChatStore {
    * question (or retrying its answer) undoes the write -- and it holds even if
    * the turn dies before saving anything more. See undoTasksFrom.
    */
+  /**
+   * The checklist as the user sees it: a task finished before the latest
+   * question is done with and drops out, the rest stay. A finish is stamped
+   * inside the turn that made it, so it compares against the question's seq
+   * the same way a rewind does; a rewind that reopens a task shows it again.
+   */
+  visibleTasks(chatId) {
+    return this.db.prepare(`
+      SELECT id, title, status, created_at, updated_at FROM tasks t
+      WHERE chat_id = ? AND (status != 'completed'
+        OR COALESCE((SELECT MAX(seq) FROM task_changes c WHERE c.task_id = t.id), t.created_seq)
+           >= COALESCE((SELECT MAX(seq) FROM messages m WHERE m.chat_id = t.chat_id AND m.role = 'user'), -1))
+      ORDER BY created_at, rowid`).all(chatId);
+  }
+
   addTask(chatId, title) {
     const id = randomUUID();
     const now = Date.now();

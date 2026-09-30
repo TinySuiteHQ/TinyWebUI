@@ -1,12 +1,20 @@
 import { $ } from '../core/dom.js';
 
-/** Render the current chat's checklist, with model-created text kept as text. */
+let shown = [];
+
+/**
+ * Render the current chat's checklist, with model-created text kept as text.
+ * A list that is all done folds down to its heading; the server leaves it out
+ * altogether once the next question is asked.
+ */
 export function renderTasks(tasks = []) {
+  shown = tasks;
   const card = $('chatTasks');
   const list = $('taskItems');
   list.replaceChildren();
   card.hidden = !tasks.length;
   if (!tasks.length) return;
+  card.open = tasks.some((task) => task.status !== 'completed');
   $('taskCount').textContent = `${tasks.filter((task) => task.status === 'completed').length}/${tasks.length}`;
   for (const task of tasks) {
     const row = document.createElement('li');
@@ -20,4 +28,9 @@ export function renderTasks(tasks = []) {
     row.append(mark, title);
     list.append(row);
   }
+}
+
+/** A question is going out: finished tasks are done with, as the server will agree. */
+export function dropFinishedTasks() {
+  renderTasks(shown.filter((task) => task.status !== 'completed'));
 }

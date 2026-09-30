@@ -9,7 +9,7 @@ import { consume } from './stream.js';
 import { commitAttachments, invalidAttachments, renderAttachments, renderChatDocs, resetChatDocsView } from './attachments.js';
 import { loadChats, clearSearch, closeSideDrawer } from './sidebar.js';
 import { resetOutline } from './outline.js';
-import { renderTasks } from './tasks.js';
+import { renderTasks, dropFinishedTasks } from './tasks.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup } from './queue.js';
 import { api } from '../core/api.js';
 import { newId } from '../core/id.js';
@@ -230,6 +230,7 @@ async function onSubmit(e) {
   }
   input.value = '';
   input.style.height = 'auto';
+  dropFinishedTasks();
   setBusy(true);
   const ctrl = new AbortController();
   state.viewCtrl = ctrl;

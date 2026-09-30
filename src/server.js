@@ -214,7 +214,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // other calls, so a question cannot race a write it is asking about.
       .registerLocal(askToolDef(), callAskUser, { readOnly: true, idempotent: false, executionMode: 'sequential' })
       .registerLocal(taskToolDef(), (args, ctx) => callManageTasks(args, {
-        ...ctx, store, onChange: (tasks) => runs.get(ctx.chatId)?.emit({ type: EVENT.TASKS, tasks })
+        ...ctx, store, onChange: () => runs.get(ctx.chatId)?.emit({ type: EVENT.TASKS, tasks: store.chats.visibleTasks(ctx.chatId) })
       }), { executionMode: 'sequential' })
       .registerLocal(automationToolDef(), (args, ctx) => {
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation: scheduler.trigger });

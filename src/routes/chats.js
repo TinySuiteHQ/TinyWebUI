@@ -65,7 +65,7 @@ export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor
         messages: live ? messages.slice(0, run.baseCount) : messages,
         running: Boolean(live),
         queued: store.chats.listQueued(found.id),
-        tasks: store.chats.listTasks(found.id),
+        tasks: store.chats.visibleTasks(found.id),
         documents: store.documents.list(found.id)
       });
     } },

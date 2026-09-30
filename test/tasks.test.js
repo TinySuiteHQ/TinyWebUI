@@ -72,3 +72,28 @@ test('rewinding a chat undoes the checklist writes made from that point on', () 
     store.close();
   }
 });
+
+test('finished tasks drop out of view once the next question is asked', () => {
+  const store = new Store(':memory:');
+  try {
+    const chat = store.chats.create({}, null);
+    const ctx = { store, chatId: chat.id };
+    const call = () => store.messages.add(chat.id, { role: 'assistant', content: '', tool_calls: [] });
+    store.messages.add(chat.id, { role: 'user', content: 'go' });
+    call();
+    const done = JSON.parse(callManageTasks({ action: 'add', title: 'Done' }, ctx)).task;
+    callManageTasks({ action: 'add', title: 'Open' }, ctx);
+    callManageTasks({ action: 'update', id: done.id, status: 'completed' }, ctx);
+    const titles = () => store.chats.visibleTasks(chat.id).map((t) => t.title);
+    assert.deepEqual(titles(), ['Done', 'Open'], 'finished this turn: still shown');
+
+    const q = store.messages.add(chat.id, { role: 'user', content: 'next' });
+    assert.deepEqual(titles(), ['Open'], 'the next question hides what was already finished');
+    assert.equal(store.chats.listTasks(chat.id).length, 2, 'hidden, not deleted: the model can still list it');
+
+    store.chats.truncateFrom(chat.id, q);
+    assert.deepEqual(titles(), ['Done', 'Open'], 'rewinding the question brings it back');
+  } finally {
+    store.close();
+  }
+});
