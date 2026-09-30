@@ -3,6 +3,7 @@ import { attributeRequest, completeAttribution, markFinal } from './attribution.
 import { toWire } from '../store/index.js';
 import { toolExecutor } from './tool_executor.js';
 import { ASK_USER } from '../tools/ask_tool.js';
+import { openTasksNote } from '../tools/task_tool.js';
 import { runAgentLoop, runHooks } from './agent.js';
 import { EVENT } from '../../public/shared/events.js';
 import {
@@ -670,7 +671,7 @@ export async function runChat({
     ? rows.findIndex((r) => r.seq >= boundarySeq) - 1
     : -1;
 
-  const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds), hooks, signal });
+  const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
   const saved = [];
   const appended = await runAgentLoop({
     messages: working,
