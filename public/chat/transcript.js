@@ -31,13 +31,23 @@ export function pinToBottom() { pinned = true; }
 // Height also changes with nobody calling scroll(): images decoding after the
 // last paint, the work collapsing at the end of a turn, the composer growing.
 // Re-pin on any of it, or the answer's tail sits below the fold.
-new ResizeObserver(() => scroll()).observe(wrap);
-new ResizeObserver(() => scroll()).observe(log);
+new ResizeObserver(() => { scroll(); settleResync(); }).observe(wrap);
+new ResizeObserver(() => { scroll(); settleResync(); }).observe(log);
 
 // Chrome can keep a stale scroll range for #log after a turn reshapes it (the
 // work collapsing, the last markdown paint): the wheel stops short of the end
 // while scrollTop can still be set past it, until a reload. Flipping overflow
 // off and on for one frame makes it rebuild the range.
+//
+// Once at the end of a turn is not enough: layout keeps moving after it (late
+// markdown paints, images decoding, the task card resizing the log), and any
+// of those can leave the range stale again. So every resize also schedules a
+// resync, debounced so it runs once things go quiet rather than mid-stream.
+let resyncTimer = 0;
+function settleResync() {
+  clearTimeout(resyncTimer);
+  resyncTimer = setTimeout(resyncScroll, 250);
+}
 function resyncScroll() {
   requestAnimationFrame(() => {
     const top = log.scrollTop;
