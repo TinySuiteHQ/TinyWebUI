@@ -101,7 +101,10 @@ export async function prepareContext({ cfg, store, chatId, tools, startSeq, hist
     if (row.role !== 'tool' || !row.artifact_id) continue;
     const artifact = store.messages.getArtifact(row.artifact_id, chatId);
     if (!artifact) continue;
-    const stub = digest(artifact);
+    // Budget/task notes belong to the harness, outside the raw artifact.
+    const footer = (row.content || '').startsWith(artifact.content)
+      ? row.content.slice(artifact.content.length) : '';
+    const stub = digest(artifact) + footer;
     if (stub.length >= (row.content?.length || 0)) continue;
     row.stub_text = stub;
     forced.add(row.seq);

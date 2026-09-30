@@ -722,7 +722,8 @@ export async function runChat({
         return { wire: msg, message: msg };
       })),
       shouldContinue: async ({ round, assistant, results }) => {
-        if (signal?.aborted || tools_.stopRequested()) return false;
+        if (signal?.aborted) throw new Error('Stopped.');
+        if (tools_.stopRequested()) return false;
         try {
           return !(await runHooks(hooks.afterTurn, { round, assistant, results, signal }, (o) => o.stop));
         } catch (err) {
