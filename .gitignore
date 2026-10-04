@@ -1,4 +1,7 @@
 node_modules/
+.env
+.env.*
+!.env.example
 
 # Holds the API key and MCP wiring -- local only.
 tinywebui.config.json
@@ -12,6 +15,8 @@ mcp.json
 tinywebui.db
 tinywebui.db-wal
 tinywebui.db-shm
+*.db
+*.db-*
 
 # Eval run records (evals/run.js).
 evals/results/
