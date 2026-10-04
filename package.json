@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "description": "Ultralight chat UI. Bring your own OpenAI-compatible endpoint (OpenRouter, OpenAI, Ollama, ...), your own system prompt, and your own MCP servers. That's it.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TinySuiteHQ/TinyWebUI.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "tinywebui": "bin/tinywebui.js"
   },
