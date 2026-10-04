@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyWebUI</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="shell">
+
+<div id="side-backdrop"></div>
+
+<aside id="side" aria-label="Chat history">
+  <div class="brand">
+    <button id="brandHome" class="brand-home" type="button" title="New chat" aria-label="TinyWebUI, start a new chat">
+      <img class="logo" src="favicon.svg" alt="" aria-hidden="true">
+      <span class="brand-name">TinyWebUI</span>
+    </button>
+    <button id="sideCollapse" class="icon-btn" type="button" aria-label="Hide sidebar" title="Hide sidebar"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+  </div>
+  <div class="side-scroll">
+  <nav class="nav">
+    <button id="new" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg><span>New chat</span></button>
+    <div class="search-row nav-item">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="chatSearch" type="search" placeholder="Search" aria-label="Search chats" autocomplete="off" spellcheck="false">
+      <button id="chatSearchClear" class="x" type="button" aria-label="Clear search" hidden>×</button>
+    </div>
+    <button id="toggle-automations" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4l2.5 1.5"/><path d="M19 3.5 21.5 6"/><path d="M5 3.5 2.5 6"/><circle cx="12" cy="13" r="8"/></svg><span>Automations</span></button>
+    <button id="toggle-mcp" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>MCP servers</span></button>
+    <button id="toggle-settings" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
+    <button id="toggle-statistics" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Statistics</span></button>
+    <button id="toggle-admin" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Admin</span></button>
+    <button id="logout" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg><span>Log out</span></button>
+  </nav>
+  <div class="side-label"><span>Recent conversations</span><button id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v4M10 13h4"/></svg></button></div>
+  <div id="chats"></div>
+  </div>
+  <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0"
+       aria-label="Resize chat history" title="Drag to resize, double-click to reset"></div>
+</aside>
+
+<dialog id="organizeDialog" aria-labelledby="organizeTitle">
+  <form id="organizeForm">
+    <h2 id="organizeTitle">Chat options</h2>
+    <label for="organizeFolder">folder</label>
+    <select id="organizeFolder">
+      <option value="">(no folder)</option>
+    </select>
+    <div id="organizeError" class="organize-error" role="alert" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" id="organizeDelete" class="danger">delete chat</button>
+      <button type="button" id="organizeCancel">cancel</button>
+      <button type="submit" class="primary">save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="newFolderDialog" aria-labelledby="newFolderTitle">
+  <form id="newFolderForm">
+    <h2 id="newFolderTitle">New folder</h2>
+    <label for="newFolderName">name</label>
+    <input id="newFolderName" maxlength="40" autocomplete="off" placeholder="Folder name">
+    <div id="newFolderError" class="organize-error" role="alert" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" id="newFolderCancel">cancel</button>
+      <button type="submit" class="primary">create</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="libraryDialog" aria-labelledby="libraryTitle">
+  <form id="libraryForm">
+    <h2 id="libraryTitle">Attach from earlier chats</h2>
+    <input id="libraryFilter" type="search" autocomplete="off" placeholder="Filter by file name" aria-label="Filter files">
+    <div id="libraryList" class="library-list"></div>
+    <div class="dialog-actions">
+      <button type="button" id="libraryCancel">cancel</button>
+      <button type="submit" id="libraryAttach" class="primary" disabled>attach</button>
+    </div>
+  </form>
+</dialog>
+
+<main>
+  <button id="menu" class="icon-btn" type="button" aria-label="Show sidebar" aria-expanded="false" aria-controls="side"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+  <section id="settings">
+    <div class="automation-head">
+      <h2>Settings</h2>
+      <span id="saveMsg" class="usage"></span>
+      <button id="cancel">Close</button>
+      <button class="primary" id="save">Save changes</button>
+    </div>
+    <div class="settings-content">
+    <section class="set-group">
+      <header><h3>Model</h3><p>Which model answers, and how it samples.</p></header>
+      <div class="set-grid">
+        <div class="span-2"><label for="model">Model id</label><input id="model" spellcheck="false"><small>Also switchable from the model pill in the message box.</small></div>
+        <div><label for="temperature">Temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="Provider default"></div>
+        <div><label for="maxTokens">Max output tokens</label><input id="maxTokens" type="number" min="1" placeholder="No limit"></div>
+        <div class="span-2"><label for="timezone">Timezone</label><select id="timezone"><option value="">Server's timezone</option></select><small>The zone the model is told today's date in.</small></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Instructions</h3><p>The system prompt sent at the start of every chat.</p></header>
+      <textarea id="systemPrompt" rows="10" aria-label="System prompt"></textarea>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Tools</h3><p>How far the model can go on its own before handing back.</p></header>
+      <div class="set-grid">
+        <div><label for="maxToolRounds">Max tool turns</label><input id="maxToolRounds" type="number" min="1" max="50"><small>Tool calls allowed per reply.</small></div>
+        <div><label for="askUserTimeoutSeconds">Question timeout (s)</label><input id="askUserTimeoutSeconds" type="number" min="0" max="86400"><small>How long a question from the model waits before it continues on its own. 0: wait until answered.</small></div>
+        <div><label for="toolApproval">Ask before running</label><select id="toolApproval"><option value="writes">MCP tools that write</option><option value="all">Every MCP tool call</option><option value="off">Never ask</option></select><small>Built-in tools never ask. Scheduled runs refuse calls that would.</small></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Context &amp; caching</h3><p>Keeps long chats fast and cheap by trimming old tool output.</p></header>
+      <div class="set-grid">
+        <div><label for="compactThreshold">Compact history above</label><input id="compactThreshold" type="number" min="0" step="1000"><small>Tokens. Old tool results are stubbed past this. 0 turns it off.</small></div>
+        <div><label for="keepTurns">Always keep last</label><input id="keepTurns" type="number" min="1" max="20"><small>Recent turns whose tool results stay in full.</small></div>
+        <div><label for="maxInlineChars">Stub single results above</label><input id="maxInlineChars" type="number" min="0" step="1000"><small>Characters. The turn that fetched it still reads it whole.</small></div>
+        <div><label for="maxTurnChars">Stub even this turn above</label><input id="maxTurnChars" type="number" min="0" step="10000"><small>Characters. A result this big is stubbed right away, even for the turn that fetched it.</small></div>
+        <div><label for="compactMinSaved">Only compact if it saves</label><input id="compactMinSaved" type="number" min="0" step="1000"><small>Characters. Compacting costs one cache miss, so small savings are skipped.</small></div>
+        <div><label for="maxHistoryTokens">Hard history limit</label><input id="maxHistoryTokens" type="number" min="0" step="10000"><small>Tokens. Past this, the oldest turns stop being sent (they stay visible). 0 turns it off.</small></div>
+        <div><label for="cacheTtl">Prompt cache lifetime</label><select id="cacheTtl"><option value="5m">5 minutes</option><option value="1h">1 hour</option></select><small>Anthropic models. 1 hour costs more to write, survives longer pauses.</small></div>
+        <div><label for="cacheMode">Cache style</label><select id="cacheMode"><option value="auto">Automatic</option><option value="implicit">Stable prefix only</option><option value="explicit">Anthropic cache_control</option><option value="rolling">OpenRouter automatic</option><option value="off">Off</option></select><small>Automatic is right for OpenRouter and local models; set it for other gateways.</small></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Appearance</h3></header>
+      <div class="set-grid">
+        <div><label for="theme">Theme</label><select id="theme"><option value="">Default</option></select></div>
+      </div>
+    </section>
+    </div>
+  </section>
+
+  <section id="mcp" aria-label="MCP servers">
+    <div class="automation-head"><h2>MCP servers</h2><button id="close-mcp">close</button></div>
+    <div class="settings-content">
+    <div class="sec">
+      <div class="sec-h">config file <span id="mcpPath" class="usage"></span></div>
+      <textarea id="mcpText" rows="9" spellcheck="false"></textarea>
+      <div class="row">
+        <div id="mcpMsg" class="usage"></div>
+        <div class="no-shrink"><button id="saveMcp">save &amp; reconnect</button></div>
+      </div>
+      <div>
+        <label>tools <span id="toolCount" class="usage"></span></label>
+        <div id="tools" class="tool-list"></div>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <section id="statistics" aria-label="Statistics">
+    <div class="automation-head"><h2>Statistics</h2><span id="statisticsFilter"></span><button id="close-statistics">close</button></div>
+    <div class="statistics-content">
+      <section class="statistics-block">
+        <div class="sec-h">cost and averages <span class="usage">provider-reported costs only</span></div>
+        <div id="statisticsSummary" class="row"></div>
+        <div id="statisticsCoverage" class="usage"></div>
+        <div id="statisticsCosts" class="statistics-costs"></div>
+      </section>
+      <section class="statistics-block">
+        <div class="sec-h">token usage <span id="usageRange" class="usage"></span></div>
+        <div id="usageStats" class="row"></div>
+        <div id="usageDistribution"></div>
+        <div id="usageModels" class="usage-models"></div>
+        <div id="usageBars" class="usage-bars"></div>
+      </section>
+      <section class="statistics-block">
+        <div class="sec-h">agentic <span class="usage">tool calls across all rounds</span></div>
+        <div id="statisticsTools" class="statistics-costs"></div>
+      </section>
+      <section class="statistics-block">
+        <div class="sec-h">cache misses <span id="statisticsMissesSummary" class="usage"></span></div>
+        <div id="statisticsMisses" class="statistics-costs"></div>
+      </section>
+    </div>
+  </section>
+
+  <div id="login" hidden>
+    <form id="loginForm" class="login-card">
+      <h2>TinyWebUI</h2>
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Sign in</button>
+      <div id="loginMsg" class="usage" role="alert"></div>
+    </form>
+  </div>
+
+  <section id="admin" aria-label="Admin">
+    <div class="automation-head"><h2>Admin</h2><button id="close-admin">close</button></div>
+    <div class="statistics-content">
+      <section class="statistics-block">
+        <div class="sec-h">users <span id="adminCount" class="usage"></span></div>
+        <div id="adminMsg" class="usage"></div>
+        <div id="adminUsers" class="admin-users"></div>
+      </section>
+      <section id="adminView" class="statistics-block" hidden>
+        <div class="sec-h"><button id="adminBack" type="button">← back</button> <span id="adminViewTitle"></span><span id="adminViewMeta" class="usage"></span></div>
+        <div class="usage admin-note">Read-only admin view. Every view is recorded in the audit log.</div>
+        <div id="adminViewBody"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="automations" aria-label="Automations">
+    <div class="automation-head"><h2>Automations</h2><button id="new-automation" class="primary" type="button">New automation</button><button id="close-automations">close</button></div>
+    <div class="automation-content">
+      <div id="automation-create-slot"></div>
+      <div id="automation-list" class="automation-list"></div>
+    </div>
+  </section>
+
+  <div id="log"><div class="wrap" id="wrap"></div></div>
+
+  <aside id="rightRail" class="right-rail">
+    <div id="chatDocs" class="rail-card" hidden></div>
+  </aside>
+
+  <aside id="chatOutline" class="outline-rail" hidden></aside>
+
+  <div id="hello" aria-hidden="true">
+    <h2>Hello there</h2>
+    <p>Type a message or attach files to get started</p>
+  </div>
+
+  <footer>
+    <details id="chatTasks" class="task-card" open hidden>
+      <summary class="task-heading"><strong>Tasks</strong><span id="taskCount"></span></summary>
+      <ol id="taskItems" class="task-items"></ol>
+    </details>
+    <div id="attachments" class="attachments" hidden></div>
+    <form id="form">
+      <input type="file" id="fileInput" multiple hidden>
+      <div id="queue" class="queue" hidden></div>
+      <textarea id="input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
+      <div class="composer-bar">
+        <button type="button" id="attach" class="icon-btn" title="Attach files and tools" aria-label="Attach files and tools" aria-haspopup="menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <span class="grow"></span>
+        <button type="button" id="modelBtn" class="model-chip" aria-haspopup="menu" aria-expanded="false" title="Switch model"><span id="status" role="status" aria-live="polite"></span><svg class="ic chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button class="primary" id="send" type="submit" aria-label="Send"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+    </form>
+  </footer>
+</main>
+
+</div>
+
+<script type="module" src="themes/theme-loader.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

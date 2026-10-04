@@ -1,0 +1,21 @@
+# Builds the default image (hybrid search). The embedding model is downloaded
+# at build time, so the build needs internet access.
+#
+#   docker compose up --build
+services:
+  tinywebui:
+    build: .
+    image: tinywebui
+    ports:
+      - "7777:7777"
+    environment:
+      # The Dockerfile defaults to a .js path; the config is JSON.
+      TINYWEBUI_CONFIG: /config/tinywebui.config.json
+    volumes:
+      # Writable: the app saves settings and its session secret back to it.
+      - ./tinywebui.config.json:/config/tinywebui.config.json
+      - tinywebui-data:/data
+    restart: unless-stopped
+
+volumes:
+  tinywebui-data:

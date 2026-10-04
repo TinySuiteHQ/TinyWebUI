@@ -1,0 +1,6 @@
+{
+  "themes": [
+    { "id": "fall-fairy", "name": "Fall Fairy", "file": "fall-fairy/fall-fairy.css", "js": "fall-fairy/fall-fairy.js" },
+    { "id": "cyber-grid", "name": "Cyber Grid", "file": "cyber-grid/cyber-grid.css" }
+  ]
+}

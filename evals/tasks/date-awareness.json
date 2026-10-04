@@ -1,0 +1,15 @@
+{
+  "name": "date-awareness",
+  "about": "The harness block gives the date; the model should use it rather than guess or refuse.",
+  "prompt": "What's today's date? Just the date.",
+  "checks": [
+    {
+      "type": "mentions_today"
+    },
+    {
+      "type": "max_calls",
+      "tool": "*",
+      "value": 0
+    }
+  ]
+}

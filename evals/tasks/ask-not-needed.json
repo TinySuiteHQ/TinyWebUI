@@ -1,0 +1,11 @@
+{
+  "name": "ask-not-needed",
+  "about": "A request with a sensible default should be done, not turned into a question: ask_user is for material gaps only.",
+  "prompt": "Write a short poem about autumn.",
+  "ask": { "answer": "any style" },
+  "tools": [],
+  "checks": [
+    { "type": "max_calls", "tool": "ask_user", "value": 0, "why": "form and length have obvious defaults" },
+    { "type": "answer_matches", "pattern": "\\w+\\s+\\w+\\s+\\w+" }
+  ]
+}

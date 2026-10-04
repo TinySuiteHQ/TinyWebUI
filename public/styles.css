@@ -1,0 +1,1455 @@
+:root {
+  --bg: #f8f9fb; --panel: #eef1f5; --line: #d9dee6; --fg: #1c2230;
+  --muted: #555e72; --faint: #6b7385; --accent: #2f55cc; --tool: #0f6e66; --err: #b3261e;
+  --raise: #ffffff; /* the one surface that sits above the page: the composer, dialogs */
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  --bg-soft: var(--panel);
+  --mono: ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, monospace;
+  --sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
+
+  /* Radius is a small, deliberate scale.  Components use these semantic
+     tokens instead of accumulating one-off values, so nested surfaces keep
+     their hierarchy at every viewport. */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 20px;
+  --r-bubble: 18px;
+  --r-composer: 24px;
+  --r-pill: 999px;
+  --fs-small: .875rem;
+
+  /* One type scale, in rem, so the browser's own font-size setting still
+     applies. Nothing below 0.8125rem/13px: that was the floor the old 10-11px
+     metadata kept falling through. */
+  --fs-meta: .8125rem;  /* timestamps, counts, badges */
+  --fs-ui: .9375rem;    /* controls, labels, list rows */
+  --fs-body: 1.0625rem; /* the transcript itself */
+
+  /* Minimum hit target. Every interactive element is at least this tall, which
+     is what drives the bar height and the row padding rather than the reverse. */
+  --tap: 2.25rem;
+  --bar: 3rem;
+  --measure: 46rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171d; --panel: #1b1f27; --line: #2f3542; --fg: #e6e9ef;
+    --muted: #a3abbb; --faint: #8b93a3; --accent: #8ea6ff; --tool: #5fd4c4; --err: #f4a19a;
+    --raise: #20252f;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: var(--fs-body)/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+}
+/* The two panes below the header, previously body's own direct children and
+   row-flexed themselves. Split out so header can run the full page width as
+   one top bar instead of being confined to the main column beside it. */
+#shell { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+/* The one top bar, full page width, above both panes. Centered on the row's
+   own cross axis -- the same rule at every width, which is what keeps menu,
+   title, status and settings sitting on one clean line whether the header is
+   512px or 1514px wide. This only reads as clean because #status below is
+   pinned to a single line: two mismatched buttons and two lines of status
+   text fighting over "centered" is what baseline alignment used to paper
+   over, one font's metrics at a time, instead of removing the actual cause. */
+header {
+  height: var(--bar); flex-shrink: 0; padding: 0 .875rem;
+  display: flex; align-items: center; gap: .5rem;
+  border-bottom: 1px solid var(--line);
+}
+header h1 {
+  font-size: 1rem; margin: 0 .25rem 0 0; font-weight: 650; flex-shrink: 0;
+  letter-spacing: -.01em;
+}
+header button { border-color: transparent; background: none; color: var(--muted); }
+header button:hover { background: var(--panel); border-color: transparent; color: var(--fg); }
+header button.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+header button.active:hover { background: var(--accent-soft); }
+header .grow { flex: 1; }
+/* #status is a long, dynamic string -- model id plus a tool count -- that
+   fits fine on a wide header and does not on a narrow one. Flex items don't
+   shrink past their own content width by default (min-width:auto), so
+   without help here it wraps to a second line instead: the header grows
+   past its own fixed height, and every other child's baseline alignment goes
+   with it -- which is what made the whole bar look wrong, not just this one
+   span. One line, truncated, is what a status string is for anyway; the
+   model and tool count are both one click away in settings if cut off. */
+#status {
+  font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono);
+  min-width: 3rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+#menu { display: none; }
+
+/* One focus ring for everything, drawn outside the element so a dense row does
+   not clip it. Keyboard only -- the mouse never sees it. */
+:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs);
+}
+
+button {
+  font: inherit; font-size: var(--fs-ui); line-height: 1.2;
+  min-height: var(--tap); padding: .375rem .75rem; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--raise); color: var(--fg); cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+button:hover { border-color: var(--faint); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 550; }
+button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); border-color: transparent; }
+button:disabled { opacity: .55; cursor: default; }
+input, textarea, select {
+  font: inherit; font-size: var(--fs-ui); width: 100%; min-height: var(--tap);
+  padding: .375rem .625rem; color: var(--fg);
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm); resize: vertical;
+  transition: border-color .12s, box-shadow .12s;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+textarea#systemPrompt, textarea#mcpText { font-family: var(--mono); font-size: var(--fs-ui); }
+label { font-size: var(--fs-ui); color: var(--muted); display: block; margin-bottom: .25rem; }
+
+/* history sidebar -- scoped to #side, not the bare tag: the right rail and
+   the outline minimap are <aside> too, and don't want the sidebar's chrome. */
+#side {
+  /* Driven by the drag handle below; the fallback is the width it always had. */
+  width: var(--side-w, 15rem);
+  position: relative;
+  flex-shrink: 0; border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; background: var(--panel);
+}
+
+/* The drag handle straddles the sidebar border: a 1px border is not a target,
+   so the grab area is widened without moving anything it sits against. */
+#side-resize {
+  position: absolute; top: 0; bottom: 0; right: -3px; width: 7px;
+  cursor: col-resize; z-index: 2; touch-action: none;
+}
+#side-resize::after {
+  content: ""; position: absolute; inset: 0 3px; background: var(--accent);
+  opacity: 0; transition: opacity .12s;
+}
+#side-resize:hover::after,
+#side-resize:focus-visible::after,
+body.resizing #side-resize::after { opacity: 1; }
+#side-resize:focus-visible { outline: none; }
+/* While dragging, nothing else should be selecting text or fighting the cursor. */
+body.resizing { cursor: col-resize; user-select: none; }
+/* Same fixed height as the header, so the two top bars line up across the
+   sidebar border instead of each sizing to its own contents. */
+#side .head {
+  height: var(--bar); flex-shrink: 0; padding: 0 .5rem; gap: .5rem;
+  display: flex; align-items: center; border-bottom: 1px solid var(--line);
+}
+#side .head button { flex: 1; min-width: 0; }
+
+.search-row {
+  flex-shrink: 0; position: relative; padding: .5rem; border-bottom: 1px solid var(--line);
+}
+.search-row input { padding-right: 2rem; }
+.search-row input::-webkit-search-cancel-button { display: none; }
+#chatSearchClear {
+  position: absolute; top: 50%; right: .75rem; transform: translateY(-50%);
+  width: 1.5rem; height: 1.5rem; min-height: 0; padding: 0; border: 0; background: none;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--faint); font-size: var(--fs-body); line-height: 1;
+}
+#chatSearchClear:hover { color: var(--err); }
+#chatSearchClear[hidden] { display: none; }
+
+#chats {
+  flex: 1; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+#chats::-webkit-scrollbar { width: .5rem; }
+#chats::-webkit-scrollbar-track { background: transparent; }
+#chats::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); }
+#chats::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+#chats { padding: .25rem .375rem .5rem; }
+.chat-item {
+  display: flex; align-items: center; gap: .25rem; padding: .3125rem .375rem .3125rem .625rem;
+  margin: 1px 0; border-radius: var(--r-sm);
+  min-height: var(--tap); cursor: pointer; font-size: var(--fs-ui);
+  color: var(--muted);
+}
+.chat-item:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); color: var(--fg); }
+.chat-item.active { background: var(--raise); color: var(--fg); box-shadow: 0 0 0 1px var(--line); font-weight: 500; }
+.chat-item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The delete control used to appear on hover alone, which put it out of reach
+   of touch and of the keyboard. It is always present now, just quiet. */
+.chat-item .x {
+  flex-shrink: 0; width: 1.75rem; height: 1.75rem; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; background: none; color: var(--faint); font-size: var(--fs-body);
+}
+.chat-item .x:hover, .chat-item .x:focus-visible { color: var(--err); }
+.chat-item .organize-chat {
+  flex: 0 0 auto; min-width: 1.75rem; min-height: 1.75rem; padding: 0;
+  border: 0; background: transparent; color: var(--faint); font-size: 1.1rem;
+}
+.chat-item .organize-chat:hover, .chat-item .organize-chat:focus-visible { color: var(--accent); }
+dialog#organizeDialog {
+  width: min(24rem, calc(100vw - 2rem)); padding: 1.25rem;
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--raise); color: var(--fg);
+}
+dialog#organizeDialog::backdrop { background: rgba(0, 0, 0, .62); }
+#organizeForm { display: flex; flex-direction: column; gap: .5rem; }
+#organizeForm h2 { margin: 0 0 .5rem; font-size: var(--fs-body); }
+#organizeForm label { color: var(--muted); font-size: var(--fs-meta); }
+dialog#libraryDialog {
+  width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem;
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--raise); color: var(--fg);
+}
+dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
+#libraryForm { display: flex; flex-direction: column; gap: .5rem; }
+#libraryForm h2 { margin: 0 0 .5rem; font-size: var(--fs-body); }
+.library-list { max-height: min(22rem, 50vh); overflow-y: auto; display: flex; flex-direction: column; }
+.library-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 3.5rem 6.5rem; column-gap: .625rem; align-items: center;
+  padding: .4rem .5rem; border-radius: var(--r-sm); cursor: pointer;
+}
+.library-row:hover { background: var(--accent-soft); }
+.library-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-meta { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
+.library-meta:last-child { text-align: right; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
+.dialog-actions .danger { margin-right: auto; color: var(--err); border-color: var(--err); }
+.organize-error { color: var(--err); font-size: var(--fs-meta); }
+.empty { padding: .625rem .5rem; font-size: var(--fs-ui); color: var(--muted); }
+
+.chat-folder { margin-bottom: .25rem; }
+.chat-folder-heading { border-radius: var(--r-sm); }
+.chat-folder-heading {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: .5rem;
+  padding: .625rem .625rem; cursor: pointer; list-style: none;
+  background: var(--panel, var(--bg)); color: var(--fg); font-size: var(--fs-ui); font-weight: 600;
+}
+.chat-folder-heading::-webkit-details-marker { display: none; }
+.chat-folder-heading::before { content: '▸'; color: var(--accent); transition: transform .12s ease; }
+.chat-folder[open] > .chat-folder-heading::before { transform: rotate(90deg); }
+.chat-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-folder-count {
+  margin-left: auto; padding: .05rem .4rem; border: 1px solid var(--line); border-radius: var(--r-pill);
+  color: var(--faint); font-size: var(--fs-meta); font-weight: 400;
+}
+.chat-folder-content { padding: 0 0 .25rem .4rem; }
+.chat-date-heading {
+  padding: .75rem .625rem .25rem; color: var(--faint); font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+/* A search result carries a title and a snippet, so it grows past the plain
+   list's single line rather than truncating either one away. */
+.chat-item.search-hit { flex-direction: column; align-items: stretch; gap: .1875rem; padding: .5rem; }
+.chat-item.search-hit .t { flex: initial; white-space: normal; overflow: visible; }
+.hit-title {
+  display: flex; align-items: baseline; gap: .375rem;
+  color: var(--fg); font-size: var(--fs-ui);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hit-role {
+  flex-shrink: 0; margin-left: auto; color: var(--faint); font-size: var(--fs-meta);
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .04em;
+}
+.hit-snippet {
+  color: var(--muted); font-size: var(--fs-meta); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hit-snippet mark {
+  background: none; color: var(--fg); font-weight: 600;
+}
+
+/* main column */
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+
+/* Settings takes the whole main column rather than squeezing the transcript. */
+#settings {
+  display: none; position: absolute; inset: 0; z-index: 10; padding: 0;
+  background: var(--bg); flex-direction: column; overflow: hidden;
+}
+#settings.open { display: flex; }
+.settings-content { overflow-y: auto; }
+#automations {
+  display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
+  flex-direction: column; overflow: hidden;
+}
+#automations.open { display: flex; }
+#statistics {
+  display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
+  flex-direction: column; overflow: hidden;
+}
+#statistics.open { display: flex; }
+#admin {
+  display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
+  flex-direction: column; overflow: hidden;
+}
+#admin.open { display: flex; }
+#login { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; background:var(--bg); }
+#login[hidden] { display:none; }
+.login-card { width:min(22rem,100%); display:flex; flex-direction:column; gap:.6rem; padding:1.5rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
+.login-card h2 { margin:0 0 .5rem; }
+#loginMsg:empty { display:none; }
+.admin-users { display:flex; flex-direction:column; gap:.4rem; }
+.admin-row { display:flex; flex-wrap:wrap; gap:.5rem .75rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--line); font-size:var(--fs-meta); }
+.admin-row:first-child { border-top:0; }
+.admin-who { flex:1 1 14rem; min-width:0; display:flex; flex-direction:column; }
+.admin-who strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-who .usage { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-row select { flex:0 0 auto; }
+.admin-row .admin-err { flex-basis:100%; color:var(--err); }
+.admin-row .admin-err:empty { display:none; }
+#adminMsg:empty { display:none; }
+.admin-note { margin-bottom:.75rem; }
+.admin-chat { display:flex; gap:.75rem; align-items:center; width:100%; text-align:left; padding:.45rem .5rem; border:0; border-top:1px solid var(--line); background:none; color:inherit; font:inherit; cursor:pointer; }
+.admin-chat:hover { background:var(--bg); }
+.admin-chat .usage { margin-left:auto; white-space:nowrap; }
+.admin-live { color:var(--accent, currentColor); font-weight:600; }
+.admin-msg { padding:.6rem 0; border-top:1px solid var(--line); }
+.admin-msg-role { font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); margin-bottom:.25rem; }
+.admin-msg-body { overflow-wrap:anywhere; }
+.admin-msg-body pre { white-space:pre-wrap; }
+.admin-msg details { font-size:var(--fs-meta); }
+.admin-msg details pre { max-height:20rem; overflow:auto; white-space:pre-wrap; }
+.statistics-content { overflow:auto; padding:1rem; }
+.statistics-block { width:min(52rem,100%); margin:0 auto 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
+.statistics-block .sec-h { margin-bottom:.75rem; }
+.statistics-block .sec-h .usage { margin-left:auto; text-transform:none; letter-spacing:normal; font-family:inherit; }
+#statisticsCoverage { margin-top:.75rem; line-height:1.5; }
+.statistics-costs { display:flex; flex-direction:column; gap:.4rem; margin-top:.75rem; padding-top:.75rem; border-top:1px solid var(--line); }
+.statistics-cost-row { display:flex; gap:.75rem; align-items:center; font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); }
+.statistics-cost-row .usage-model-name { flex:1 1 auto; }
+.statistics-tool-row { display:flex; gap:.75rem; align-items:center; font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); }
+.statistics-tool-name { flex:0 0 auto; min-width:11rem; max-width:16rem; white-space:nowrap; color:var(--fg); }
+.statistics-tool-track { flex:1 1 auto; height:.5rem; border-radius:var(--r-xs); background:var(--faint); overflow:hidden; }
+.statistics-tool-bar { display:block; height:100%; background:var(--accent); border-radius:var(--r-xs); }
+.statistics-miss-hint { font-size:var(--fs-meta); color:var(--muted); margin:-.15rem 0 .35rem; }
+.statistics-tool-count { flex:0 0 auto; width:4.5rem; text-align:right; font-variant-numeric:tabular-nums; }
+.automation-head { height: var(--bar); flex: 0 0 auto; padding: 0 1rem; display:flex; align-items:center; gap:.75rem; border-bottom:1px solid var(--line); }
+.automation-head h2 { margin:0; font-size:var(--fs-ui); }
+.automation-head button { margin-left:auto; }
+.automation-head button + button { margin-left:0; }
+.automation-head button[hidden] + button { margin-left:auto; }
+.automation-content { overflow:auto; padding:1rem; }
+.automation-content { display:flex; flex-direction:column; gap:.75rem; }
+.automation-list { display:flex; flex-direction:column; gap:.75rem; }
+.automation-card {
+  width:min(48rem,100%); margin:0 auto; padding:1rem 1.125rem; border:1px solid var(--line);
+  border-radius:var(--r-md); background:var(--raise); display:flex; flex-direction:column; gap:.625rem;
+}
+.automation-card.is-paused .automation-title h3, .automation-card.is-paused .automation-preview { opacity:.6; }
+.automation-card h3 { margin:0; font-size:var(--fs-ui); font-weight:600; line-height:1.35; }
+.automation-card-head { display:flex; align-items:flex-start; gap:.75rem; }
+.automation-title { flex:1; min-width:0; }
+.automation-schedule-line { margin:.125rem 0 0; color:var(--muted); font-size:var(--fs-meta); }
+.automation-facts {
+  display:flex; flex-wrap:wrap; align-items:center; gap:.375rem 1rem;
+  color:var(--muted); font-size:var(--fs-meta);
+}
+.automation-last { display:inline-flex; align-items:center; gap:.375rem; }
+.automation-facts button.link {
+  min-height:0; padding:0; border:0; background:none; color:var(--accent); font-size:var(--fs-meta);
+  max-width:20rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.automation-facts button.link:hover { text-decoration:underline; }
+.automation-preview {
+  margin:0; padding:.5rem .75rem; border-radius:var(--r-sm); background:var(--panel);
+  color:var(--muted); font-size:var(--fs-meta); line-height:1.5; white-space:pre-line;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
+.automation-actions { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }
+.automation-actions .grow { flex:1; }
+.automation-actions .danger { color:var(--err); }
+.automation-actions .danger:hover { border-color:var(--err); }
+
+.automation-pill {
+  display:inline-block; padding:.0625rem .5rem; border-radius:var(--r-pill); font-size:var(--fs-meta);
+  line-height:1.5; border:1px solid var(--line); color:var(--muted); background:var(--panel);
+}
+.automation-pill.is-completed { color:var(--tool); border-color:color-mix(in srgb, var(--tool) 40%, transparent); background:color-mix(in srgb, var(--tool) 10%, transparent); }
+.automation-pill.is-failed { color:var(--err); border-color:color-mix(in srgb, var(--err) 40%, transparent); background:color-mix(in srgb, var(--err) 10%, transparent); }
+.automation-pill.is-running, .automation-pill.is-queued { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); background:var(--accent-soft); }
+
+.automation-switch { position:relative; display:inline-flex; flex:0 0 auto; margin:.125rem 0 0; cursor:pointer; }
+.automation-switch input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+.automation-switch .switch-track {
+  width:2.25rem; height:1.25rem; border-radius:var(--r-pill); background:var(--line); position:relative; transition:background var(--t-fast, .14s);
+}
+.automation-switch .switch-track::after {
+  content:''; position:absolute; top:.1875rem; left:.1875rem; width:.875rem; height:.875rem;
+  border-radius:50%; background:#fff; transition:transform var(--t-fast, .14s);
+}
+.automation-switch input:checked + .switch-track { background:var(--accent); }
+.automation-switch input:checked + .switch-track::after { transform:translateX(1rem); }
+.automation-switch input:focus-visible + .switch-track { box-shadow:0 0 0 3px var(--accent-soft); }
+
+/* Inline create/edit form: one column, instructions full width. */
+.automation-editor { display:flex; flex-direction:column; align-items:stretch; gap:.75rem; margin:0; max-width:none; }
+.automation-card .automation-editor { border-top:1px solid var(--line); padding-top:.75rem; }
+.automation-card > h3 + .automation-editor { border-top:0; padding-top:0; }
+.automation-row { display:flex; flex-wrap:wrap; gap:.75rem; }
+.automation-row > .automation-field { flex:1 1 10rem; }
+.automation-field { display:flex; flex-direction:column; gap:.25rem; margin:0; min-width:0; }
+.automation-field[hidden] { display:none; }
+.automation-label { font-size:var(--fs-meta); color:var(--muted); }
+.automation-editor input.mono { font-family:var(--mono); }
+.automation-editor textarea {
+  min-height:20rem; resize:vertical; font-family:var(--mono); font-size:var(--fs-meta); line-height:1.6;
+}
+.automation-enabled-row { display:flex; align-items:center; gap:.375rem; margin:0; color:var(--fg); font-size:var(--fs-meta); cursor:pointer; }
+.automation-enabled-row input { width:auto; min-height:0; }
+.automation-error { color:var(--err); font-size:var(--fs-meta); }
+.automation-error:empty { display:none; }
+.automation-preview { cursor:pointer; }
+.automation-preview.expanded { -webkit-line-clamp:unset; display:block; }
+
+.automation-history { font-size:var(--fs-meta); color:var(--muted); }
+.automation-history > summary { cursor:pointer; padding:.375rem .25rem; }
+.automation-history[open] { flex-basis:100%; order:10; }
+.automation-runs { display:flex; flex-direction:column; margin-top:.25rem; border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden; }
+.automation-run + .automation-run { border-top:1px solid var(--line); }
+.automation-run > summary {
+  display:flex; flex-wrap:wrap; align-items:center; gap:.375rem .75rem; padding:.375rem .625rem;
+  cursor:pointer; list-style:none;
+}
+.automation-run > summary::-webkit-details-marker { display:none; }
+.automation-run > summary::after { content:'›'; margin-left:auto; color:var(--faint); transition:transform var(--t-fast, .14s); }
+.automation-run[open] > summary::after { transform:rotate(90deg); }
+.automation-run > summary:hover { background:var(--panel); }
+.automation-run .muted { color:var(--faint); }
+.automation-run-body {
+  padding:.75rem 1rem 1rem; border-top:1px dashed var(--line); background:var(--bg);
+  display:flex; flex-direction:column; gap:.625rem; align-items:flex-start;
+}
+.automation-run-output {
+  width:100%; max-height:32rem; overflow:auto; color:var(--fg); font-size:var(--fs-ui); line-height:1.55;
+}
+.automation-run-output table { font-size:var(--fs-meta); }
+.automation-run-error { margin:0; color:var(--err); }
+.automation-run-body button.link {
+  min-height:0; padding:0; border:0; background:none; color:var(--accent); font-size:var(--fs-meta);
+}
+.automation-run-body button.link:hover { text-decoration:underline; }
+.automation-history > p { margin:.35rem .25rem; }
+
+.automation-empty { width:min(48rem,100%); margin:2rem auto; text-align:center; }
+.automation-empty p { margin:.25rem 0; }
+.automation-empty .muted { color:var(--muted); font-size:var(--fs-meta); }
+.sec {
+  display: flex; flex-direction: column; gap: .75rem;
+  padding: 1.125rem; max-width: 48rem; width: 100%; margin: 0 auto;
+}
+.sec + .sec { border-top: 1px solid var(--line); }
+.sec:last-child { padding-bottom: 1.5rem; }
+
+.sec-h {
+  font-size: var(--fs-ui); font-family: var(--mono); text-transform: uppercase;
+  letter-spacing: .08em; color: var(--fg); display: flex; gap: .5rem; align-items: baseline;
+}
+
+/* tool inspector */
+.tool-list { display: flex; flex-direction: column; gap: .625rem; }
+
+/* One group per source: the built-ins, and each MCP server. */
+.tool-group {
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise);
+  overflow: hidden;
+}
+.tool-group-h {
+  display: flex; align-items: center; gap: .5rem; padding: .4375rem .625rem;
+  min-height: var(--tap); background: var(--panel); border-bottom: 1px solid var(--line);
+  font-size: var(--fs-ui);
+}
+/* A group with nothing under it (built-ins with no doc, an empty server) has
+   no border to close, so the header's own bottom rule stands in for it. */
+.tool-group:not(:has(details, .empty)) .tool-group-h { border-bottom: 0; }
+.tool-group-h .name { font-family: var(--mono); color: var(--fg); font-weight: 500; }
+.tool-group-h .meta { color: var(--muted); font-size: var(--fs-meta); margin-left: auto; }
+.tool-group-err {
+  padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta);
+  font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
+}
+/* The fix for a missing launcher, set apart from the error it follows. */
+.install-link { color: var(--accent); font-family: var(--sans); font-weight: 550; white-space: nowrap; }
+.install-link:hover { text-decoration: underline; }
+/* The server's own top-level guidance from MCP initialize -- prose, not a tool
+   doc, so it reads like a note rather than another row in the list. Often
+   long, so it starts collapsed, same as an individual tool's doc. */
+.tool-group-instructions { border-bottom: 1px solid var(--line); }
+.tool-group-instructions > summary {
+  cursor: pointer; list-style: none; padding: .375rem .625rem .375rem 2rem;
+  color: var(--muted); font-size: var(--fs-meta); font-style: italic;
+}
+.tool-group-instructions > .body {
+  padding: 0 .625rem .5rem 2rem; color: var(--muted); font-size: var(--fs-meta);
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* Connection health, read at a glance before the label is even parsed. */
+.tool-group .dot { width: .5rem; height: .5rem; border-radius: 50%; flex-shrink: 0; background: var(--faint); }
+.tool-group.server.ok .dot { background: var(--tool); }
+.tool-group.server.error .dot { background: var(--err); }
+.tool-group.server.disabled .dot,
+.tool-group.server.disabled .name { color: var(--faint); opacity: .7; }
+.tool-group.server.disabled .dot { background: var(--faint); }
+
+/* The switch that disables a tool or a whole server. Plain, like every other
+   control here -- this is not the app's one place for a styled toggle. */
+label.tgl { display: inline-flex; align-items: center; cursor: pointer; }
+label.tgl input { margin: 0; cursor: pointer; }
+
+details.tool + details.tool { border-top: 1px solid var(--line); }
+details.tool > summary {
+  cursor: pointer; list-style: none; padding: .4375rem .625rem; display: flex;
+  align-items: baseline; gap: .5rem; font-size: var(--fs-ui); min-height: var(--tap);
+}
+details.tool > summary::-webkit-details-marker { display: none; }
+details.tool > summary:hover { background: var(--panel); }
+/* A disabled tool stays fully legible -- dimming it away would make the one
+   state you are here to check on the hardest one to read. */
+details.tool.off { background: var(--panel); }
+details.tool.off .name, details.tool.off .desc { opacity: .6; }
+.tool .name { font-family: var(--mono); color: var(--tool); }
+.tool .desc {
+  color: var(--muted); font-size: var(--fs-meta); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool .doc {
+  padding: .625rem .75rem; border-top: 1px solid var(--line); background: var(--panel);
+  font-size: var(--fs-ui); color: var(--muted); white-space: pre-wrap;
+}
+.tool .doc pre {
+  margin: .5rem 0 0; font: var(--fs-meta)/1.55 var(--mono);
+  white-space: pre-wrap; word-break: break-word; max-height: 15rem; overflow: auto;
+}
+.tool .params { margin-top: .5rem; }
+.tool .param {
+  display: flex; gap: .5rem; font-family: var(--mono);
+  font-size: var(--fs-meta); padding: .125rem 0;
+}
+.tool .param b { color: var(--fg); font-weight: 500; }
+.tool .param .ty { color: var(--faint); }
+.tool .param .req { color: var(--err); }
+.tool .param .d { color: var(--muted); flex: 1; min-width: 0; }
+.row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
+.row > * { flex: 1 1 11rem; }
+
+.usage-stat-value {
+  font-family: var(--mono); font-size: var(--fs-ui); color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.usage-stat-sub { font-size: var(--fs-small, .8em); color: var(--muted); font-variant-numeric: tabular-nums; }
+#usageRange a { color: var(--muted); text-decoration: none; }
+#usageRange a:hover, #usageRange a:focus-visible { color: var(--accent); text-decoration: underline; }
+.usage-models {
+  display: flex; flex-direction: column; gap: .375rem; margin-top: .75rem;
+  padding-top: .75rem; border-top: 1px solid var(--line);
+}
+.usage-model-row {
+  display: flex; align-items: center; gap: .625rem;
+  font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted);
+}
+.usage-model-name {
+  flex: 0 0 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--fg);
+}
+.usage-model-track {
+  flex: 1 1 auto; height: .5rem; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden;
+}
+.usage-model-bar { display: flex; height: 100%; width: 100%; }
+.usage-model-seg { display: block; height: 100%; }
+.usage-model-seg.fresh { background: var(--accent); }
+.usage-model-seg.cached { background: var(--tool); }
+.usage-model-seg.out { background: var(--faint); }
+.usage-model-counts { flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
+.usage-model-legend {
+  display: flex; gap: .875rem; margin-top: .125rem;
+  font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted);
+}
+.usage-model-legend-item { display: flex; align-items: center; gap: .3125rem; }
+.usage-model-swatch { width: .625rem; height: .625rem; border-radius: var(--r-xs); }
+.usage-model-swatch.fresh { background: var(--accent); }
+.usage-model-swatch.cached { background: var(--tool); }
+.usage-model-swatch.out { background: var(--faint); }
+.usage-bars { display: flex; flex-direction: column; gap: .25rem; margin-top: .625rem; }
+.usage-bar-row {
+  display: flex; align-items: center; gap: .625rem;
+  font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted);
+}
+button.usage-bar-row {
+  width: 100%; min-height: 0; padding: 0; border: 0; background: none; text-align: inherit;
+}
+.usage-bar-row.clickable { cursor: pointer; border-radius: var(--r-xs); }
+.usage-bar-row.clickable:hover { background: var(--panel); }
+.usage-bar-label { flex: 0 0 4rem; text-align: right; }
+.usage-bar-track {
+  flex: 1 1 auto; height: .5rem; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden;
+}
+.usage-bar-fill { display: flex; height: 100%; background: var(--accent); }
+.usage-bar-seg { display: block; height: 100%; }
+.usage-bar-count {
+  flex: 0 0 auto; min-width: 3.5rem; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--fg);
+}
+
+#log { flex: 1; min-height: 0; overflow-y: auto; padding: 1.25rem .875rem .5rem; }
+.wrap {
+  max-width: var(--measure); margin: 0 auto;
+  display: flex; flex-direction: column; gap: 1rem;
+}
+
+.who {
+  font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin-bottom: .25rem;
+}
+
+/* Three layers, visually distinct:
+   1. the question     -- solid accent bar, full contrast
+   2. the work         -- indented rail, dimmed, mono
+   3. the final answer -- no rail, widest measure, normal prose */
+
+.msg.user { padding-top: .25rem; }
+.msg.user + * { margin-top: .125rem; }
+/* The question is the one tinted block in the transcript, so a long chat
+   scans as question / answer / question without reading a word. */
+.msg.user .body {
+  white-space: pre-wrap; background: var(--accent-soft);
+  border-left: 3px solid var(--accent); border-radius: var(--r-md);
+  padding: .625rem .875rem; font-weight: 500;
+}
+.msg.user .who { display: none; }
+/* A hairline above every question but the first, so turns are countable. */
+.msg.user:not(:first-child)::before {
+  content: ""; display: block; border-top: 1px solid var(--line);
+  margin: .5rem 0 1.125rem;
+}
+
+/* A chat working in the background. The dot is the only thing that says a turn
+   outlived the tab that started it, so it stays visible rather than subtle. */
+.chat-item .dot {
+  width: .4375rem; height: .4375rem; flex: none; border-radius: 50%;
+  background: var(--tool); margin-left: .375rem;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .chat-item .dot { animation: none; } }
+
+/* Send doubles as stop while a turn runs. */
+#send.stop { background: none; color: var(--err); border-color: var(--err); }
+
+/* Controls on a question. Kept out of the way until the question is hovered
+   or focused, so the transcript still reads as a transcript. */
+.msg-tools {
+  display: flex; gap: .75rem; margin-top: .375rem; padding-left: .75rem;
+  opacity: 0; transition: opacity .12s;
+}
+.msg.user:hover .msg-tools,
+.msg.user:focus-within .msg-tools { opacity: 1; }
+@media (hover: none) { .msg-tools { opacity: 1; } }
+
+button.linkish {
+  border: 0; background: none; padding: 0; min-height: 0;
+  color: var(--muted); font: var(--fs-meta) var(--mono);
+  text-transform: uppercase; letter-spacing: .06em; cursor: pointer;
+}
+button.linkish:hover { color: var(--fg); border-color: transparent; }
+
+.edit-box { margin-top: .5rem; padding-left: .75rem; }
+.edit-box textarea { width: 100%; font-size: var(--fs-body); }
+.edit-actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+/* The original text is hidden, not removed: cancel has to put it back. */
+.msg.user.editing .body { display: none; }
+
+.turn { display: flex; flex-direction: column; gap: 1rem; }
+
+/* The work is a disclosure: open and naming its current step while the turn
+   runs, collapsed to a recap once there is an answer to read instead. */
+details.work > summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: .5rem;
+  min-height: 1.9rem;
+  color: var(--faint); font: var(--fs-meta)/1 var(--mono);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+details.work > summary::-webkit-details-marker { display: none; }
+details.work > summary::before { content: "+ "; white-space: pre; }
+details.work[open] > summary::before { content: "- "; white-space: pre; }
+details.work > summary:hover { color: var(--fg); }
+.work .act { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work .tally { margin-left: auto; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+/* In progress: the step name is the live status line, so it carries the accent
+   and the ellipsis that say this is still moving. */
+.work.live .act { color: var(--tool); text-transform: none; letter-spacing: 0; }
+.work.live .act::after { content: "\2026"; }
+
+.work-body {
+  display: flex; flex-direction: column; gap: .375rem;
+  margin-left: 1px; padding: .2rem 0 .2rem .75rem;
+  border-left: 1px dashed var(--line);
+}
+.work-body .steps { background: none; }
+
+/* The answer is the only block with no left rule -- that absence is what marks
+   it as the result rather than another step. */
+.msg.assistant .md { padding-left: 0; }
+/* Narration that turned out not to be the answer: same words, quieter, and
+   filed under the work where it belongs. */
+.msg.assistant.note .md { color: var(--faint); font-size: var(--fs-meta); }
+.msg.assistant.final .who { color: var(--accent); }
+
+/* rendered markdown */
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+.md p { margin: 0 0 .7em; }
+.md h1, .md h2, .md h3, .md h4 { margin: 1.1em 0 .4em; line-height: 1.3; font-weight: 600; font-size: 1em; }
+.md h1 { font-size: 1.15em; } .md h2 { font-size: 1.08em; }
+.md ul, .md ol { margin: 0 0 .7em; padding-left: 1.3em; }
+.md li { margin: .15em 0; }
+.md li > ul, .md li > ol { margin-bottom: 0; }
+.md a { color: var(--accent); }
+.md code { background: var(--panel); border-radius: var(--r-xs); padding: .1em .3em; font: .9em var(--mono); }
+.md pre {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: .625rem .75rem; overflow-x: auto; margin: 0 0 .7em;
+}
+.md pre code { background: none; padding: 0; font-size: .9em; line-height: 1.55; }
+.md blockquote { margin: 0 0 .7em; padding-left: .8em; border-left: 2px solid var(--line); color: var(--muted); }
+.md table { border-collapse: collapse; margin: 0 0 .7em; font-size: .95em; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: .25rem .5rem; text-align: left; }
+.md th { background: var(--panel); font-weight: 600; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+
+/* thinking */
+details.think > summary,
+details.step > summary { cursor: pointer; list-style: none; }
+details.think > summary::-webkit-details-marker,
+details.step > summary::-webkit-details-marker { display: none; }
+details.think > summary {
+  color: var(--faint); font-size: var(--fs-meta); font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .06em;
+  min-height: 1.9rem; display: flex; align-items: center;
+}
+details.think > summary:hover { color: var(--muted); }
+details.think > summary::before { content: "+ "; white-space: pre; }
+details.think[open] > summary::before { content: "- "; white-space: pre; }
+.think-body {
+  margin-top: .2rem; padding-left: .75rem; border-left: 1px solid var(--line);
+  color: var(--faint); white-space: pre-wrap; font-size: var(--fs-meta); line-height: 1.5;
+  max-height: 14rem; overflow-y: auto;
+}
+
+/* tool steps -- deliberately quieter and denser than the answer: this is the
+   model's scratch work, not the result, and shouldn't compete with it. */
+.steps { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+details.step + details.step { border-top: 1px solid var(--line); }
+details.step > summary {
+  padding: .3rem .625rem; display: flex; align-items: baseline; gap: .5rem;
+  font-size: var(--fs-meta); font-family: var(--mono); min-height: 1.9rem;
+}
+details.step > summary:hover { background: var(--panel); }
+.step .name { color: var(--tool); }
+.step.bad .name { color: var(--err); }
+.step .arg { color: var(--faint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .ms { color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.step pre {
+  margin: 0; padding: .45rem .625rem; background: var(--panel); border-top: 1px solid var(--line);
+  font: var(--fs-meta)/1.45 var(--mono); color: var(--faint);
+  white-space: pre-wrap; word-break: break-word; max-height: 14rem; overflow: auto;
+}
+
+.usage { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
+/* The whole turn's cost, under the answer rather than inside the collapsed
+   work: a rule above it separates it from the answer it is reporting on. */
+.usage-total {
+  margin-top: .5rem;
+  padding-top: .375rem;
+  border-top: 1px solid var(--line);
+}
+/* A compacted tool result: the model was sent a short stub, but the transcript
+   still shows the full output, so the badge is the only visible difference. */
+.step.compacted .name::after {
+  content: 'compacted';
+  margin-left: .375rem;
+  padding: 0 .25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+.work-body > .usage { margin: .125rem 0 .375rem; }
+
+/* An automation run opens its turn like a question does, but nobody asked
+   it: a quiet ruled label instead of the tinted user block. */
+.msg.automation-run {
+  font-size: var(--fs-ui); color: var(--muted);
+  border-left: 3px solid var(--tool); padding: .25rem 0 .25rem .875rem;
+}
+.msg.automation-run:not(:first-child) { margin-top: 1.125rem; }
+.automation-run-head { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.automation-run-name { color: var(--fg); font-weight: 600; }
+.automation-run-name::before { content: "⏱ "; }
+.automation-run-meta { font-family: var(--mono); font-size: var(--fs-meta); }
+.automation-run-prompt summary { cursor: pointer; margin-top: .25rem; font-size: var(--fs-meta); }
+.automation-run-prompt .body { white-space: pre-wrap; margin-top: .375rem; color: var(--fg); }
+
+.err { color: var(--err); font-size: var(--fs-ui); font-family: var(--mono); }
+.notice {
+  color: var(--muted); font-size: var(--fs-ui); font-family: var(--mono);
+  border-left: 2px solid var(--err); padding-left: .75rem;
+}
+
+/* The composer: one raised card holding attach, input and send, rather than
+   three loose controls on a ruled strip. The page's one shadow lives here. */
+footer { padding: .5rem .875rem 1rem; flex-shrink: 0; }
+form {
+  max-width: var(--measure); margin: 0 auto;
+  display: flex; gap: .5rem; align-items: flex-end;
+}
+#form {
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: .4375rem; box-shadow: 0 6px 24px -12px color-mix(in srgb, var(--fg) 35%, transparent);
+  transition: border-color .12s, box-shadow .12s;
+}
+#form:focus-within { border-color: var(--accent); }
+#input {
+  max-height: 13rem; font-size: var(--fs-body); resize: none;
+  border: 0; background: none; box-shadow: none; padding: .4375rem .25rem;
+}
+#input:focus { box-shadow: none; }
+#send { min-width: 4.5rem; border-radius: var(--r-md); }
+#attach {
+  flex: 0 0 auto; min-width: var(--tap); padding: 0; border-radius: var(--r-md);
+  background: none; border: 0; color: var(--muted);
+}
+#attach:hover { background: var(--panel); color: var(--fg); }
+.attachments {
+  max-width: var(--measure); margin: 0 auto .5rem; display: flex; flex-wrap: wrap; gap: .4rem;
+}
+.attachments:empty, .attachments[hidden] { display: none; }
+.attachment-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border: 1px solid var(--line); border-radius: var(--r-pill); padding: .2rem .65rem;
+  font-size: var(--fs-small); background: var(--bg-soft, transparent);
+}
+.attachment-chip .remove { cursor: pointer; opacity: .6; }
+.attachment-chip .remove:hover { opacity: 1; }
+.attachment-chip-image { padding: .2rem; border-radius: var(--r-sm); }
+/* Input queued on a running turn, listed above the text box until delivered. */
+.queue { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
+.queue[hidden] { display: none; }
+.queued {
+  display: flex; align-items: center; gap: .5rem; min-width: 0;
+  border: 1px dashed var(--line); border-radius: var(--r-md); padding: .25rem .25rem .25rem .6rem;
+  font-size: var(--fs-small);
+}
+.queued-kind { flex: 0 0 auto; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; }
+.queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queued-drop {
+  flex: 0 0 auto; min-width: var(--tap); min-height: 0; padding: 0 .4rem;
+  background: none; border: 0; color: var(--muted); font-size: 1rem; cursor: pointer;
+}
+.queued-drop:hover { color: var(--fg); }
+.queued.held { border-style: solid; }
+.queued-send {
+  flex: 0 0 auto; min-height: 0; padding: .15rem .6rem; border-radius: var(--r-md);
+  background: var(--fg); color: var(--bg); border: 0; font-size: var(--fs-small); cursor: pointer;
+}
+.queued-send:hover { filter: brightness(1.08); }
+.attachment-thumb {
+  width: 2.5rem; height: 2.5rem; border-radius: var(--r-sm); object-fit: cover;
+  background: var(--bg-soft, transparent);
+}
+.attachment-thumb.pending {
+  animation: attachment-pulse 1.1s ease-in-out infinite;
+}
+.attachment-thumb.broken {
+  opacity: .5; outline: 1px solid var(--danger, #c0392b);
+}
+@keyframes attachment-pulse {
+  0%, 100% { opacity: .35; } 50% { opacity: .7; }
+}
+.edit-artifacts { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
+.attachment-chip.removable { cursor: pointer; user-select: none; }
+.attachment-chip.removable::before { content: '✓'; opacity: .5; font-size: var(--fs-meta); }
+.attachment-chip.removable.removed {
+  opacity: .45; text-decoration: line-through; border-style: dashed;
+}
+.attachment-chip.removable.removed::before { content: '✕'; }
+.attachment-chip.removable.removed .attachment-thumb { filter: grayscale(1); }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
+.msg-images { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; }
+.msg-image-thumb {
+  max-width: 12rem; max-height: 12rem; border-radius: var(--r-sm);
+  border: 1px solid var(--line); object-fit: contain;
+}
+
+/* Pinned to `main`, which never scrolls -- only #log's content does -- so this
+   stays in view the whole time the user is reading back through a chat,
+   instead of riding away with the transcript the way it used to. */
+.right-rail {
+  position: absolute; top: 1.25rem; right: .875rem; width: 12rem;
+  display: flex; flex-direction: column; gap: .6rem; pointer-events: none;
+}
+.right-rail > * { pointer-events: auto; }
+
+.rail-card {
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
+  padding: .4rem;
+  display: flex; flex-direction: column; gap: .05rem;
+}
+.rail-card[hidden] { display: none; }
+.rail-card .label {
+  font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--faint); margin: 0 0 .2rem .35rem;
+}
+.rail-card .rail-item {
+  display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left;
+  background: none; border: none; border-radius: var(--r-sm); padding: .3rem .35rem; margin: 0;
+  min-width: 0; min-height: 0; color: var(--muted); font-size: var(--fs-small);
+  font-family: inherit; line-height: 1.5; cursor: pointer; transition: background .1s, color .1s;
+}
+.rail-card .rail-item:hover { background: var(--bg); color: var(--fg); }
+.rail-card .rail-item .icon {
+  flex-shrink: 0; width: 1em; height: 1em; display: flex; align-items: center;
+  justify-content: center; opacity: .6;
+}
+.rail-card .rail-item .icon svg { width: 100%; height: 100%; }
+.rail-card .rail-item .text {
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.rail-card .rail-more {
+  align-self: stretch; text-align: left; background: none; border: none; border-radius: var(--r-sm);
+  padding: .3rem .35rem; margin: 0; min-height: 0; color: var(--faint); font-size: var(--fs-meta);
+  font-family: inherit; line-height: 1.5; cursor: pointer; transition: background .1s, color .1s;
+}
+.rail-card .rail-more:hover { background: var(--bg); color: var(--muted); }
+
+@media (max-width: 1040px) {
+  /* No room beside the measure column at this width -- would either overlap
+     the transcript or force it to shrink, so it steps aside instead. */
+  .right-rail, .outline-rail { display: none; }
+}
+
+/* The conversation minimap: one flat tick per question, vertically centered
+   like a scrollbar of turns rather than a list -- the text only exists on
+   hover, so at rest it reads as a mark, not a panel. */
+.outline-rail {
+  position: absolute; top: 50%; right: .875rem; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: flex-end; gap: .3rem;
+}
+.outline-rail[hidden] { display: none; }
+.outline-tick {
+  position: relative; background: none; border: none; padding: .2rem 0; margin: 0;
+  cursor: pointer; display: flex; align-items: center; justify-content: flex-end;
+}
+.outline-tick .bar {
+  width: 1.125rem; height: 2px; background: var(--line); border-radius: var(--r-xs);
+  transition: background .1s, width .1s;
+}
+.outline-tick:hover .bar, .outline-tick:focus-visible .bar {
+  background: var(--accent); width: 1.5rem;
+}
+.outline-tick .tip {
+  position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
+  margin-right: .5rem; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--panel); color: var(--fg); font-size: var(--fs-small);
+  padding: .3rem .55rem; white-space: nowrap; max-width: 16rem;
+  overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; pointer-events: none; transition: opacity .1s;
+}
+.outline-tick:hover .tip, .outline-tick:focus-visible .tip { opacity: 1; }
+
+#side-backdrop { display: none; }
+
+@media (max-width: 720px) {
+  /* The drawer slides out under the header rather than over it, so the menu
+     button that opened it -- and the settings button beside it -- stay in
+     place and tappable the whole time it is open, instead of vanishing
+     behind an overlay the moment it appears. */
+  #side {
+    position: fixed; top: var(--bar); bottom: 0; left: 0; width: min(85vw, 22rem);
+    z-index: 20; transform: translateX(-100%); transition: transform .18s ease;
+  }
+  #side.open { transform: none; }
+  /* A fixed width here rather than var(--side-w): the drag handle that sets
+     that variable is mouse-only and hidden on this path, and an overlay
+     drawer has no edge to drag against the content anyway. */
+  #side-resize { display: none; }
+  #menu { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* Closing the drawer needs more ways in than hunting for the menu button
+     again: tapping the dimmed content behind it, or Escape, both close it
+     (wired in app.js). */
+  #side-backdrop {
+    display: block; position: fixed; top: var(--bar); right: 0; bottom: 0; left: 0;
+    z-index: 19; background: rgb(0 0 0 / 40%);
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+  }
+  #side-backdrop.open { opacity: 1; pointer-events: auto; }
+
+  /* iOS zooms the whole page in on focusing any input under 16px -- these are
+     all a notch smaller than that on the desktop type scale. */
+  input, textarea, select { font-size: 16px; }
+}
+
+/* A tool call held for approval: the row stays open with its arguments and
+   the three answers under them until the server settles it. */
+details.step.waiting > summary .ms { color: var(--tool); }
+.step .approve {
+  display: flex; flex-wrap: wrap; gap: .4rem;
+  padding: .5rem .6rem; border-top: 1px solid var(--line);
+}
+.step .approve button { font-size: var(--fs-meta); }
+details.tool > summary select.approval {
+  margin-left: auto; flex-shrink: 0;
+  font-size: var(--fs-meta); max-width: 11rem;
+}
+
+/* ---- motion and softness ----
+   Motion only answers something the user did: a panel opening, a disclosure
+   expanding, a press. Nothing moves on its own, and all of it is switched off
+   under reduced motion at the bottom of this block. */
+:root { --ease: cubic-bezier(.2, .7, .2, 1); --t-fast: .14s; --t-med: .22s; }
+
+/* Full-column panels slide up and fade in instead of popping. They stay in
+   layout (display:flex) and are hidden with visibility, which is what lets
+   the transition run in both directions. */
+#settings, #automations, #statistics, #admin {
+  display: flex; visibility: hidden; opacity: 0; transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease),
+              visibility 0s linear var(--t-med);
+}
+#settings.open, #automations.open, #statistics.open, #admin.open {
+  visibility: visible; opacity: 1; transform: none; pointer-events: auto;
+  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
+}
+
+/* Disclosures (work, thinking, tool steps, folders) ease their content in. */
+details[open] > :not(summary) { animation: reveal var(--t-med) var(--ease); }
+@keyframes reveal { from { opacity: 0; transform: translateY(-3px); } }
+details.work > summary::before, details.think > summary::before { transition: opacity var(--t-fast); }
+
+/* Dialogs rise in over a fading backdrop. */
+dialog[open] { animation: dialog-in var(--t-med) var(--ease); }
+dialog[open]::backdrop { animation: fade var(--t-med) ease; }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(.985); } }
+@keyframes fade { from { opacity: 0; } }
+dialog { border-radius: var(--r-lg); box-shadow: 0 24px 60px -20px rgb(0 0 0 / 45%); }
+
+/* A press is felt, not just seen. */
+button:active:not(:disabled) { transform: scale(.97); }
+button { transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform .08s; }
+.chat-item, details.step > summary, details.tool > summary, .rail-item {
+  transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+#side { transition: transform var(--t-med) var(--ease); }
+
+/* Softer structure: dividers recede to half strength so the content, not the
+   grid, carries the page. */
+header, #side .head, .search-row, .automation-head, .sec + .sec {
+  border-color: color-mix(in srgb, var(--line) 55%, transparent);
+}
+header { background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(8px); }
+
+/* Thin, quiet scrollbars everywhere, not only in the chat list. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--faint) 45%, transparent) transparent; }
+::-webkit-scrollbar { width: .5rem; height: .5rem; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--faint) 45%, transparent); border-radius: var(--r-pill); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* The answer area fades out under the composer instead of being cut off. */
+footer { position: relative; }
+footer::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 1.5rem;
+  background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none;
+}
+
+.md pre, .md code { border-radius: var(--r-sm); }
+.md pre { border-radius: var(--r-md); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, ::backdrop {
+    animation-duration: .01ms !important; transition-duration: .01ms !important;
+  }
+  button:active:not(:disabled) { transform: none; }
+}
+
+/* Sidebar actions: "New chat" is the main action and takes the room; the
+   folder button sizes to its label. Neither may wrap. */
+#side .head button { white-space: nowrap; }
+#side .head #newFolder { flex: 0 0 auto; }
+
+/* Composer row: attach, input and send share one height so a single-line
+   message sits on one centre line; a growing message keeps them at the bottom. */
+#form { --row: 2.5rem; }
+#form > button { height: var(--row); min-height: var(--row); display: inline-flex; align-items: center; justify-content: center; }
+#input { min-height: var(--row); line-height: 1.5; padding: calc((var(--row) - 1.5em) / 2) .25rem; }
+#attach svg { display: block; }
+
+/* ==== Layout v2: floating sidebar, no top bar, centred first message ====
+   Neutral greys; the send button's ink is the only strong mark on the page. */
+:root {
+  --bg: #ffffff; --panel: #f7f7f8; --line: #e7e7ea; --fg: #18181b;
+  --muted: #5f5f68; --faint: #75757e; --accent: #18181b; --tool: #0f6e66; --err: #b3261e;
+  --raise: #ffffff; --accent-soft: color-mix(in srgb, var(--fg) 6%, transparent);
+  --focus: #3b6fe0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618; --panel: #1e1e21; --line: #2e2e33; --fg: #ececef;
+    --muted: #a6a6ae; --faint: #8c8c95; --accent: #ececef; --tool: #5fd4c4; --err: #f4a19a;
+    --raise: #232327; --focus: #86a8ff;
+  }
+}
+:focus-visible { outline-color: var(--focus); }
+input:focus, textarea:focus, select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent); }
+button.primary { color: var(--bg); }
+
+.ic { width: 1.125rem; height: 1.125rem; flex-shrink: 0; display: block; }
+.icon-btn {
+  min-height: 0; width: 2rem; height: 2rem; padding: 0; border: 0; background: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); border-radius: var(--r-sm);
+}
+.icon-btn:hover { background: var(--accent-soft); color: var(--fg); }
+
+/* Sidebar: a floating card inset from the window edge. */
+#shell { padding: .5rem; gap: .5rem; }
+#side {
+  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 8px 24px -16px rgb(0 0 0 / 18%);
+  padding: .5rem; overflow: hidden;
+}
+.brand { display: flex; align-items: center; gap: .5rem; padding: .25rem .25rem .5rem; }
+.logo { width: 2rem; height: 2rem; display: block; flex: none; }
+.brand-name { flex: 1; font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em; }
+
+.nav { display: flex; flex-direction: column; gap: 1px; }
+.nav-item {
+  display: flex; align-items: center; gap: .625rem; width: 100%;
+  min-height: 2.25rem; padding: .375rem .5rem; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--fg); font-size: var(--fs-ui); font-weight: 500; text-align: left;
+}
+.nav-item:hover { background: var(--accent-soft); }
+.nav-item.active { background: var(--accent-soft); color: var(--fg); }
+.nav-item .ic { color: var(--muted); stroke-width: 1.7; transition: color var(--t-fast); }
+.nav-item:hover .ic, .nav-item.active .ic, .search-row:focus-within .ic { color: var(--fg); }
+button.nav-item:active:not(:disabled) { transform: none; }
+
+/* Search looks like a nav row until it is focused. */
+.search-row.nav-item { position: relative; padding: 0 .5rem; border: 0; cursor: text; }
+.search-row.nav-item:focus-within { background: var(--raise); box-shadow: 0 0 0 1px var(--line); }
+.search-row input {
+  border: 0; background: none; padding: .375rem 1.75rem .375rem 0; min-height: 2.25rem;
+  font-weight: 500;
+}
+.search-row input:focus { box-shadow: none; }
+.search-row input::placeholder { color: var(--fg); opacity: 1; }
+.search-row:focus-within input::placeholder { color: var(--faint); }
+#chatSearchClear { right: .375rem; }
+
+.side-label {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem .5rem .25rem; color: var(--faint); font-size: var(--fs-meta); font-weight: 500;
+}
+.side-label .icon-btn { width: 1.75rem; height: 1.75rem; }
+.side-label .ic { width: 1rem; height: 1rem; }
+#chats { padding: 0; margin: 0 -.125rem; }
+
+/* Nav, label and chat list scroll together, as one column under the pinned
+   brand row: scrolling down moves the nav away and brings the chats up. */
+.side-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 -.5rem; padding: 0 .5rem;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.side-scroll::-webkit-scrollbar { width: .5rem; }
+.side-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); }
+.side-scroll #chats { flex: none; overflow: visible; }
+.chat-item { padding-left: .5rem; }
+.chat-item.active { background: var(--accent-soft); box-shadow: none; }
+.chat-date-heading { padding: .625rem .5rem .25rem; font-weight: 500; }
+.chat-folder-heading { background: var(--panel); padding: .5rem; }
+#side-resize { right: -.3125rem; }
+
+/* Collapsed: the sidebar leaves, and the same button that opens the mobile
+   drawer brings it back. */
+#menu { position: absolute; top: .25rem; left: .25rem; z-index: 8; display: none; }
+body.side-collapsed #side { display: none; }
+body.side-collapsed #menu { display: inline-flex; }
+
+/* Full-column panels clip themselves to this frame. Keeping main overflow
+   visible lets focus rings and composer popovers extend where they need to. */
+main { border-radius: var(--r-lg); }
+
+/* Transcript: questions are soft grey bubbles on the right. */
+.msg.user { align-self: flex-end; max-width: 85%; }
+.msg.user:not(:first-child)::before { display: none; }
+.msg.user .body {
+  background: var(--panel); border: 0; border-radius: var(--r-bubble);
+  padding: .625rem 1rem; font-weight: 400;
+}
+.msg-tools { justify-content: flex-end; padding-left: 0; }
+.msg.user .edit-box { padding-left: 0; }
+/* The question shrinks to its bubble; with the bubble hidden for editing it
+   would shrink to a bare textarea, so an edit takes the bubble's full width. */
+.msg.user.editing { width: 85%; }
+
+/* Composer: text on top, a tool bar under it. */
+footer { padding: .25rem 1rem 1rem; }
+#form {
+  flex-direction: column; align-items: stretch; gap: .25rem;
+  border-radius: var(--r-composer); padding: .625rem .625rem .5rem;
+  background: var(--panel); border-color: var(--line);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 30px -18px rgb(0 0 0 / 25%);
+}
+#form:focus-within { border-color: color-mix(in srgb, var(--fg) 22%, transparent); }
+#input { min-height: 2.75rem; padding: .375rem .5rem; line-height: 1.5; }
+.composer-bar { display: flex; align-items: center; gap: .5rem; }
+.composer-bar .grow { flex: 1; }
+#form .composer-bar > button { height: 2.125rem; min-height: 0; }
+#attach {
+  width: 2.125rem; min-width: 0; border-radius: var(--r-pill);
+  background: var(--raise); border: 1px solid var(--line); color: var(--fg);
+}
+#attach:hover { background: var(--accent-soft); }
+#modelBtn.model-chip {
+  max-width: 22rem; padding: .25rem .625rem; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--raise); color: var(--fg); font: 500 var(--fs-meta)/1.4 var(--sans);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0;
+}
+.model-chip:empty { display: none; }
+#send { width: 2.125rem; min-width: 0; padding: 0; border-radius: var(--r-pill); }
+#send.stop { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+footer::before { display: none; }
+
+/* Empty chat: greeting and composer sit together in the middle of the page. */
+#hello { display: none; text-align: center; padding: 0 1rem 1.5rem; }
+#hello h2 { margin: 0 0 .375rem; font-size: 1.875rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
+#hello p { margin: 0; color: var(--muted); }
+main:has(#wrap:empty) { justify-content: center; padding-bottom: 8vh; }
+main:has(#wrap:empty) #log,
+main:has(#wrap:empty) .right-rail,
+main:has(#wrap:empty) .outline-rail { display: none; }
+main:has(#wrap:empty) #hello { display: block; animation: fade var(--t-med) ease; }
+main:has(#wrap:empty) footer { padding-top: 0; }
+main:has(#wrap:empty) #form { max-width: 48rem; }
+
+/* Panels open inside main, so they take its rounded corners too. */
+#settings, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
+
+@media (max-width: 720px) {
+  #shell { padding: 0; gap: 0; }
+  #side { top: 0; border-radius: 0 var(--r-lg) var(--r-lg) 0; box-shadow: 0 0 40px rgb(0 0 0 / 25%); }
+  #side-backdrop { top: 0; }
+  #menu { display: inline-flex; top: .5rem; left: .5rem; }
+  body.side-collapsed #side { display: flex; }
+  #log { padding-top: 3rem; }
+  footer { padding: .25rem .5rem .5rem; }
+  .model-chip { max-width: 55vw; }
+}
+
+/* Icon-only buttons centre their glyph on both axes; a block SVG in a plain
+   button otherwise sits at the left edge. */
+#send, #attach, .icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 0; flex-shrink: 0;
+}
+#send .ic { width: 1.125rem; height: 1.125rem; }
+.composer-bar { min-height: 2.125rem; }
+.nav-item > span { line-height: 1.2; }
+
+/* ---- composer menus ---- */
+#form { position: relative; }
+#modelBtn.model-chip {
+  display: inline-flex; align-items: center; gap: .25rem; height: 2rem; min-height: 0;
+  padding: 0 .5rem 0 .75rem; cursor: pointer; line-height: 1.2;
+}
+#modelBtn:hover, #modelBtn[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--line); }
+#modelBtn #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#modelBtn .chev { width: .875rem; height: .875rem; color: var(--muted); transition: transform var(--t-fast); }
+#modelBtn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+#attach[aria-expanded="true"] { background: var(--accent-soft); }
+#attach .ic { transition: transform var(--t-fast); }
+#attach[aria-expanded="true"] .ic { transform: rotate(45deg); }
+
+.popover {
+  position: absolute; bottom: calc(100% + .5rem); z-index: 30;
+  width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 60vh);
+  display: flex; flex-direction: column; padding: .375rem;
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 28%), 0 2px 6px rgb(0 0 0 / 6%);
+  animation: pop-in var(--t-fast) var(--ease); transform-origin: bottom left;
+  font-size: var(--fs-ui);
+}
+.popover-left { left: 0; }
+.popover-right { right: 0; transform-origin: bottom right; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+/* An empty chat has room below the centred composer, not above it. */
+main:has(#wrap:empty) .popover { bottom: auto; top: calc(100% + .5rem); transform-origin: top left; }
+
+.pop-scroll { overflow-y: auto; min-height: 0; flex: 1; }
+.pop-item {
+  display: flex; align-items: center; gap: .5rem; width: 100%; min-height: 2.25rem;
+  padding: .375rem .5rem; border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--fg); text-align: left; cursor: pointer; font-size: var(--fs-ui);
+}
+.pop-item:hover { background: var(--accent-soft); }
+button.pop-item:active:not(:disabled) { transform: none; }
+.pop-item .ic { color: var(--muted); }
+.pop-sep { border: 0; border-top: 1px solid var(--line); margin: .25rem -.375rem; }
+.pop-label { padding: .5rem .5rem .25rem; color: var(--faint); font-size: var(--fs-meta); font-weight: 500; }
+.pop-note { padding: .5rem; color: var(--muted); font-size: var(--fs-meta); }
+.pop-foot { color: var(--muted); font-size: var(--fs-meta); margin-top: .25rem; border-top: 1px solid var(--line); border-radius: 0 0 var(--r-sm) var(--r-sm); }
+.pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-meta { color: var(--faint); font-size: var(--fs-meta); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+.pop-group > summary { list-style: none; }
+.pop-group > summary::-webkit-details-marker { display: none; }
+.pop-group > summary::before {
+  content: ""; width: .375rem; height: .375rem; flex-shrink: 0; margin: 0 .125rem;
+  border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint);
+  transform: rotate(-45deg); transition: transform var(--t-fast);
+}
+.pop-group[open] > summary::before { transform: rotate(45deg); }
+.pop-dot { width: .5rem; height: .5rem; border-radius: 50%; flex-shrink: 0; background: var(--tool); }
+.pop-dot.error { background: var(--err); }
+.pop-dot.disabled { background: var(--faint); opacity: .6; }
+.pop-tools { padding: 0 0 .25rem 1.5rem; }
+.pop-tool { display: flex; align-items: center; gap: .5rem; min-height: 2rem; padding: 0 .5rem; border-radius: var(--r-sm); }
+.pop-tool:hover { background: var(--accent-soft); }
+.pop-tool-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-meta) var(--mono); color: var(--muted); }
+
+.switch {
+  position: relative; flex-shrink: 0; width: 2rem; height: 1.125rem; min-height: 0; padding: 0;
+  border: 0; border-radius: var(--r-pill); background: var(--line); cursor: pointer;
+  transition: background var(--t-fast);
+}
+.switch::after {
+  content: ""; position: absolute; top: .125rem; left: .125rem; width: .875rem; height: .875rem;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  transition: transform var(--t-fast) var(--ease);
+}
+.switch[aria-checked="true"] { background: var(--fg); }
+.switch[aria-checked="true"]::after { transform: translateX(.875rem); }
+.switch[aria-checked="true"]::after { background: var(--bg); }
+.switch:disabled { opacity: .5; }
+.switch:active:not(:disabled) { transform: none; }
+
+.pop-search { margin-bottom: .375rem; min-height: 2.25rem; }
+/* Model rows stack the description under the name, so a long description can
+   never squeeze the name down to an ellipsis on a narrow screen. */
+.pop-model { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .5rem; row-gap: .0625rem; }
+.pop-model .pop-name { grid-column: 1; }
+.pop-model .pop-meta {
+  grid-column: 1; flex-shrink: 1; min-width: 0; font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pop-model::after { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.pop-model[aria-checked="true"] { background: var(--accent-soft); }
+.pop-model[aria-checked="true"] .pop-name { font-weight: 600; }
+.pop-model[aria-checked="true"]::after {
+  content: ""; width: .5rem; height: .875rem; margin-right: .25rem; flex-shrink: 0;
+  border-right: 2px solid var(--fg); border-bottom: 2px solid var(--fg); transform: rotate(45deg) translate(-2px, -2px);
+}
+
+/* MCP servers: its own full-column panel, same behaviour as the others. */
+#mcp {
+  position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
+  display: flex; flex-direction: column; overflow: hidden;
+  visibility: hidden; opacity: 0; transform: translateY(8px); pointer-events: none;
+  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s linear var(--t-med);
+}
+#mcp.open {
+  visibility: visible; opacity: 1; transform: none; pointer-events: auto;
+  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
+}
+
+/* Settings: one card per concern, a title and one line saying what it is
+   for, fields laid out two to a row with their help text under them. */
+#settings .settings-content { padding: 1.25rem 1rem 2rem; }
+.set-group {
+  width: min(46rem, 100%); margin: 0 auto 1rem; padding: 1.125rem 1.25rem 1.25rem;
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.set-group > header { margin-bottom: .875rem; }
+.set-group h3 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -.005em; }
+.set-group > header p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
+.set-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1rem; }
+.set-grid .span-2 { grid-column: 1 / -1; }
+.set-group label { color: var(--fg); font-weight: 500; font-size: var(--fs-small); margin-bottom: .3125rem; }
+.set-group small { display: block; margin-top: .3125rem; color: var(--faint); font-size: var(--fs-meta); line-height: 1.4; }
+.set-group textarea#systemPrompt { font-family: var(--sans); font-size: var(--fs-ui); line-height: 1.55; }
+@media (max-width: 720px) { .set-grid { grid-template-columns: 1fr; } }
+
+.brand-home {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;
+  min-height: 0; padding: .125rem .375rem .125rem .125rem; margin: -.125rem 0 -.125rem -.125rem;
+  border: 0; border-radius: var(--r-pill); background: none; color: var(--fg); text-align: left;
+}
+.brand-home:hover { background: var(--accent-soft); }
+.brand-home:active:not(:disabled) { transform: none; }
+.attachment-chip-error {
+  border-color: var(--danger, #c0392b); color: var(--danger, #c0392b);
+}
+
+#modelBtn.static { cursor: default; }
+#modelBtn.static .chev { display: none; }
+[hidden] { display: none !important; }
+
+/* An ask_user question: the run is paused on it until it is answered,
+   skipped, times out or is stopped. */
+.step .ask {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .6rem; border-top: 1px solid var(--line);
+}
+.step .ask-q { margin: 0; white-space: pre-wrap; color: var(--fg); }
+.step .ask-choices { display: flex; flex-wrap: wrap; gap: .4rem; }
+.step .ask-free { display: flex; gap: .4rem; }
+.step .ask-free input { flex: 1; min-width: 0; }
+.step .ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.step .ask button { font-size: var(--fs-meta); }
+.step .ask-clock { color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+
+/* Saved request attribution */
+#usageDistribution { margin: 1rem 0; }
+.usage-composition { margin: 1rem 0; }
+.usage-composition h3 { font-size: 1rem; margin: .5rem 0; }
+.usage-attribution-note { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.usage-composition-table { width: 100%; font-size: .8rem; border-collapse: collapse; }
+.usage-composition-table td { padding: .35rem .25rem; overflow-wrap: anywhere; }
+.usage-composition-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-composition-track { display: flex; height: .7rem; overflow: hidden; border-radius: var(--r-xs); margin: .5rem 0; }
+#statisticsFilter { margin-left: auto; min-width: 0; }
+#statisticsFilter select { max-width: 100%; }
+#statisticsFilter + button { margin-left: 0; }
+.task-card {
+  max-width: var(--measure); margin: 0 auto .5rem; padding: .5rem .75rem;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
+}
+.task-card[hidden] { display: none; }
+.task-heading {
+  display: flex; justify-content: space-between; gap: 8px; font-size: 13px;
+  cursor: pointer; list-style: none;
+}
+.task-heading::-webkit-details-marker { display: none; }
+.task-heading span { opacity: .65; }
+/* Capped so a long list scrolls instead of pushing the composer off screen. */
+.task-items {
+  list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: 6px;
+  max-height: 9rem; overflow-y: auto;
+}
+.task-item { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.task-mark { flex: none; width: 1em; text-align: center; font-weight: 700; }
+.task-completed { opacity: .6; }
+.task-completed span:last-child { text-decoration: line-through; }
+.no-shrink { flex: 0 0 auto; }

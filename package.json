@@ -1,0 +1,42 @@
+{
+  "name": "tinywebui",
+  "version": "0.1.0",
+  "description": "Ultralight chat UI. Bring your own OpenAI-compatible endpoint (OpenRouter, OpenAI, Ollama, ...), your own system prompt, and your own MCP servers. That's it.",
+  "type": "module",
+  "bin": {
+    "tinywebui": "bin/tinywebui.js"
+  },
+  "main": "src/server.js",
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "prestart": "node bin/tinywebui.js models ensure",
+    "start": "node bin/tinywebui.js",
+    "predev": "node bin/tinywebui.js models ensure",
+    "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.js",
+    "stop": "pkill -f 'bin/tinywebui.js' || true",
+    "test": "node --test --test-timeout=30000",
+    "eval": "node evals/run.js"
+  },
+  "dependencies": {
+    "@jsquash/avif": "^2.1.1",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "cron-parser": "^5.10.1",
+    "heic-convert": "^2.1.0",
+    "jpeg-js": "^0.4.4",
+    "mammoth": "^1.12.3",
+    "unpdf": "^1.8.1"
+  },
+  "license": "AGPL-3.0-or-later",
+  "optionalDependencies": {
+    "@huggingface/tokenizers": "^0.2.0",
+    "onnxruntime-node": "^1.30.0"
+  }
+}

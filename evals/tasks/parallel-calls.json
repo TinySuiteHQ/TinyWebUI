@@ -1,0 +1,69 @@
+{
+  "name": "parallel-calls",
+  "about": "Independent lookups belong in one round; the budget rules explain rounds.",
+  "prompt": "Weather in Vienna, Graz and Linz?",
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Current weather for a city.",
+      "readOnly": true,
+      "idempotent": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      },
+      "responses": [
+        {
+          "match": {
+            "city": "vienna|wien"
+          },
+          "result": "Vienna: 11°C, rain"
+        },
+        {
+          "match": {
+            "city": "graz"
+          },
+          "result": "Graz: 14°C, sunny"
+        },
+        {
+          "match": {
+            "city": "linz"
+          },
+          "result": "Linz: 9°C, fog"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "called",
+      "tool": "weather",
+      "min": 3,
+      "max": 3
+    },
+    {
+      "type": "max_rounds",
+      "value": 1,
+      "why": "all three fit in one round"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "11\\s?°"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "14\\s?°"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "\\b9\\s?°"
+    }
+  ]
+}

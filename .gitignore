@@ -1,0 +1,24 @@
+node_modules/
+
+# Holds the API key and MCP wiring -- local only.
+tinywebui.config.json
+tinywebui.config.js
+tinywebui.config.mjs
+
+# Local MCP wiring (paths, tokens).
+mcp.json
+
+# Conversation store (holds every tool result in full).
+tinywebui.db
+tinywebui.db-wal
+tinywebui.db-shm
+
+# Eval run records (evals/run.js).
+evals/results/
+
+# Embedding bundles (tinywebui models pull): large, fetched per deployment.
+models/
+.playwright-mcp/
+
+# Local agent notes.
+CLAUDE.md

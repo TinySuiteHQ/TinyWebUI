@@ -1,0 +1,69 @@
+{
+  "name": "budget-exhaustion",
+  "about": "With a tiny budget the model must still answer, and say what is missing.",
+  "prompt": "Find the weather in Vienna, then search for tomorrow's forecast for Vienna, then search for this week's forecast for Vienna, and summarise all three.",
+  "config": {
+    "maxToolRounds": 1
+  },
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Current weather for a city.",
+      "readOnly": true,
+      "idempotent": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      },
+      "responses": [
+        {
+          "result": "Vienna: 11°C, rain"
+        }
+      ]
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web. Returns result snippets.",
+      "readOnly": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "responses": [
+        {
+          "match": {
+            "query": "tomorrow"
+          },
+          "result": "Tomorrow Vienna: 13°C, cloudy"
+        },
+        {
+          "result": "This week Vienna: mixed, 9–15°C"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "answer_not_matches",
+      "pattern": "^\\(No answer|^\\(The model returned"
+    },
+    {
+      "type": "judge",
+      "rubric": "The assistant gives an answer based on what it did retrieve, and if any of the three requested pieces is missing it says so rather than inventing it."
+    }
+  ]
+}

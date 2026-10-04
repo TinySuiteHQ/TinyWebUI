@@ -1,0 +1,467 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TinyWebUI configuration",
+  "type": "object",
+  "properties": {
+    "baseUrl": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "apiKey": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "model": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "models": {
+      "type": "array",
+      "x-change": "file-only",
+      "description": "The model catalog. Empty: any model id. Listed: only these can be picked, by id, shown by label.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable handle: what model, roles and prefs name."
+          },
+          "model": {
+            "type": "string",
+            "description": "Provider model id; defaults to id."
+          },
+          "label": {
+            "type": "string",
+            "description": "What people see in the picker."
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "false: keep the settings, hide and refuse the model."
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "temperature": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maxTokens": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maxToolRounds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cacheMode": {
+            "enum": [
+              "auto",
+              "implicit",
+              "explicit",
+              "rolling",
+              "off"
+            ]
+          },
+          "cacheTtl": {
+            "enum": [
+              "5m",
+              "1h"
+            ]
+          },
+          "reasoningReplay": {
+            "enum": [
+              "auto",
+              "omit",
+              "reasoning_content",
+              "reasoning_details"
+            ]
+          },
+          "extraBody": {
+            "type": "object",
+            "description": "Merged over the global extraBody."
+          }
+        }
+      }
+    },
+    "systemPrompt": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "temperature": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxTokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxToolRounds": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "askUserTimeoutSeconds": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "extraBody": {
+      "type": "object",
+      "x-change": "file-only"
+    },
+    "cache": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "cacheMode": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "cacheTtl": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "reasoningReplay": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "dbPath": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "compactThreshold": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "keepTurns": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "compactMinSaved": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxInlineChars": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxTurnChars": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "maxHistoryTokens": {
+      "type": "number",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "llmCompaction": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "compactionMaxTokens": {
+      "type": "number",
+      "x-change": "file-only"
+    },
+    "timezone": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "toolApproval": {
+      "enum": [
+        "writes",
+        "all",
+        "off"
+      ],
+      "x-change": "editable (UI writes it back here)"
+    },
+    "confirmTools": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "autoApproveTools": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "expandCharBudget": {
+      "type": "number",
+      "x-change": "file-only"
+    },
+    "disabledTools": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)"
+    },
+    "authMode": {
+      "enum": [
+        "none",
+        "single",
+        "trusted-header"
+      ],
+      "x-change": "file-only"
+    },
+    "authPassword": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "sessionSecret": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "googleClientId": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "googleClientSecret": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "googleRedirectUri": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "adminEmails": {
+      "type": "array",
+      "x-change": "file-only"
+    },
+    "sessionTtlDays": {
+      "type": "number",
+      "x-change": "file-only"
+    },
+    "trustedProxyCidrs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "x-change": "file-only"
+    },
+    "trustedUserIdHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedEmailHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedNameHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "trustedRoleHeader": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "logoutUrl": {
+      "type": "string",
+      "x-change": "file-only"
+    },
+    "allowedOrigins": {
+      "type": "array",
+      "x-change": "file-only"
+    },
+    "autoMigrate": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "frozen": {
+      "type": "boolean",
+      "x-change": "file-only"
+    },
+    "retrieval": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-change": "file-only (restart to apply)",
+      "properties": {
+        "mode": {
+          "enum": [
+            "auto",
+            "lexical",
+            "dense",
+            "hybrid"
+          ],
+          "description": "auto: hybrid when the model is installed, else lexical"
+        },
+        "model": {
+          "type": "string",
+          "description": "fast | balanced | quality | multilingual, or a name with modelDir"
+        },
+        "modelDir": {
+          "type": "string"
+        },
+        "modelSha256": {
+          "type": "string",
+          "pattern": "^([0-9a-fA-F]{64})?$"
+        },
+        "denseWeight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "rrfK": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queryPrefix": {
+          "type": "string"
+        },
+        "documentPrefix": {
+          "type": "string"
+        }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-change": "file-only (admins write access.users back)",
+      "properties": {
+        "bootstrapAdmins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Gateway user ids that are always approved admins."
+        },
+        "newUsers": {
+          "enum": [
+            "approved",
+            "pending"
+          ]
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "admin": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "features": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "chat",
+                          "attachments",
+                          "images",
+                          "search",
+                          "folders",
+                          "automations",
+                          "statistics",
+                          "model-picker",
+                          "tools",
+                          "settings",
+                          "mcp",
+                          "admin",
+                          "oversight"
+                        ]
+                      },
+                      "uniqueItems": true
+                    }
+                  ]
+                },
+                "models": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "user": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "features": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "chat",
+                          "attachments",
+                          "images",
+                          "search",
+                          "folders",
+                          "automations",
+                          "statistics",
+                          "model-picker",
+                          "tools",
+                          "settings",
+                          "mcp",
+                          "admin",
+                          "oversight"
+                        ]
+                      },
+                      "uniqueItems": true
+                    }
+                  ]
+                },
+                "models": {
+                  "oneOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "users": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "enum": [
+                  "admin",
+                  "user"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "approved",
+                  "disabled"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

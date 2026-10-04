@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "tinysearch": {
+      "command": "uvx",
+      "args": ["--python", "3.12", "--from", "tinysuite-search[server]", "tinysearch"]
+    },
+    "tinycontext": {
+      "command": "uvx",
+      "args": ["--python", "3.12", "--from", "tinysuite-context[server]", "tinycontext"]
+    },
+    "an-http-server": {
+      "url": "https://example.com/mcp",
+      "headers": { "authorization": "Bearer REPLACE-ME" },
+      "disabled": true
+    }
+  }
+}

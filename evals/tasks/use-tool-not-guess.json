@@ -1,0 +1,49 @@
+{
+  "name": "use-tool-not-guess",
+  "about": "Live data must come from the tool, and the answer must carry the tool's value.",
+  "prompt": "What is the weather in Vienna right now?",
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Current weather for a city.",
+      "readOnly": true,
+      "idempotent": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      },
+      "responses": [
+        {
+          "match": {
+            "city": "vienna|wien"
+          },
+          "result": "Vienna: 11°C, light rain, wind 23 km/h"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "called",
+      "tool": "weather",
+      "args": {
+        "city": "vienna|wien"
+      }
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "11"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "rain"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+/*
+ * Cyber Grid — minimalist, utilitarian cyberpunk skin.
+ * Near-black terminal surface, one hot accent, hard corners, monospace
+ * everywhere. No scenery module: the palette and a few sharp-edge overrides
+ * are the whole theme.
+ */
+
+:root[data-theme="cyber-grid"] {
+  --bg: #08090a;
+  --panel: #101214;
+  --line: #262b2e;
+  --fg: #d8fdf2;
+  --muted: #7a8a87;
+  --faint: #58635f;
+  --accent: #ff1f6d;
+  --tool: #00e5c7;
+  --err: #ff4d4d;
+  --mono: "JetBrains Mono", "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Hard, square edges everywhere — no rounded utilitarian hardware. */
+:root[data-theme="cyber-grid"] * {
+  border-radius: 0 !important;
+}
+
+/* Everything reads as terminal output, not prose. */
+:root[data-theme="cyber-grid"] body {
+  font-family: var(--mono);
+}
+
+:root[data-theme="cyber-grid"] ::selection {
+  background: var(--accent);
+  color: #08090a;
+}
+
+/* Focus ring reads as a targeting reticle, not a soft glow. */
+:root[data-theme="cyber-grid"] :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Panels and inputs get a hairline-only look; no shadows, no gradients. */
+:root[data-theme="cyber-grid"] .tool-group,
+:root[data-theme="cyber-grid"] .steps,
+:root[data-theme="cyber-grid"] pre,
+:root[data-theme="cyber-grid"] textarea,
+:root[data-theme="cyber-grid"] input {
+  background: var(--panel);
+  border-color: var(--line);
+}
+
+/* Accent stays functional: status dots, tool names, links — never decorative. */
+:root[data-theme="cyber-grid"] a {
+  color: var(--tool);
+}
+
+:root[data-theme="cyber-grid"] .tool-group .dot {
+  background: var(--tool);
+}

@@ -1,0 +1,124 @@
+/**
+ * Messages sent while a turn is still running. Steering lands at the next
+ * safe point inside the run; a follow-up starts its own turn once the run is
+ * done. The server owns the queue -- this draws it, from whatever list the
+ * latest `queue` event or chat load carried.
+ *
+ * Follow-ups are different: they are held here, in the browser, and go
+ * nowhere until the user clicks their send button -- into the running turn
+ * if there still is one, as a new message otherwise.
+ */
+import { $, el } from '../core/dom.js';
+import { state } from '../core/state.js';
+import { addError } from './transcript.js';
+import { api } from '../core/api.js';
+import { newId } from '../core/id.js';
+
+const box = $('queue');
+
+
+// Held follow-ups per chat id: [{id, content}]. Survive switching chats, not a reload.
+const held = new Map();
+let sendHeld;
+
+/** `deps.sendHeld(text)` sends a held follow-up once its send button is clicked. */
+export function initQueue(deps) { ({ sendHeld } = deps); }
+
+export function holdFollowup(text) {
+  const id = state.chat.id;
+  held.set(id, [...(held.get(id) || []), { id: newId(), content: text }]);
+  renderQueue(state.queue);
+}
+
+function drawHeld() {
+  for (const item of held.get(state.chat?.id) || []) {
+    const chip = el('div', 'queued held');
+    const kind = el('span', 'queued-kind');
+    kind.textContent = 'held';
+    kind.title = 'Waits here until you send it';
+    const text = el('span', 'queued-text');
+    text.textContent = item.content;
+    const drop = el('button', 'queued-drop');
+    drop.type = 'button';
+    drop.setAttribute('aria-label', 'Remove held message');
+    drop.textContent = '×';
+    const forget = () => {
+      const id = state.chat.id;
+      held.set(id, (held.get(id) || []).filter((i) => i !== item));
+      renderQueue(state.queue);
+    };
+    drop.onclick = forget;
+    const send = el('button', 'queued-send');
+    send.type = 'button';
+    send.textContent = 'Send';
+    send.setAttribute('aria-label', 'Send held message');
+    send.onclick = () => { forget(); sendHeld(item.content); };
+    chip.append(kind, text, send, drop);
+    box.appendChild(chip);
+  }
+}
+
+export function renderQueue(items = []) {
+  state.queue = items;
+  box.innerHTML = '';
+  box.hidden = !items.length && !(held.get(state.chat?.id) || []).length;
+  drawHeld();
+  for (const item of items) {
+    const chip = el('div', `queued ${item.kind}`);
+    const kind = el('span', 'queued-kind');
+    kind.textContent = item.kind === 'steer' ? 'next step' : 'after this';
+    kind.title = item.kind === 'steer'
+      ? 'Delivered as soon as the current tool calls finish'
+      : 'Sent as a new message once this turn is done';
+    const text = el('span', 'queued-text');
+    text.textContent = item.content;
+    const drop = el('button', 'queued-drop');
+    drop.type = 'button';
+    drop.setAttribute('aria-label', 'Remove queued message');
+    drop.textContent = '×';
+    drop.onclick = async () => {
+      drop.disabled = true;
+      // 409: already delivered -- the transcript shows it, and the next
+      // queue event redraws this list either way.
+      try {
+        await api.del(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(item.id)}`);
+      } catch (err) {
+        if (err.status === 409) return;
+        drop.disabled = false;
+        addError(`couldn't remove queued message: ${err.message}`);
+      }
+    };
+    chip.append(kind, text, drop);
+    box.appendChild(chip);
+  }
+}
+
+/** Queues `text` on the running turn. False when there is no run to take it. */
+export async function enqueue(kind, text) {
+  let out;
+  try {
+    out = await api.post(`/api/chats/${state.chat.id}/queue`, { id: newId(), kind, message: text });
+  } catch (err) {
+    if (err.status === 409) return false;
+    addError(err.message);
+    return true;
+  }
+  renderQueue(out.items);
+  return true;
+}
+
+/**
+ * A run that was stopped (or failed, or a server that restarted) delivers
+ * nothing it had queued. Rather than send it anyway or drop it, it goes back
+ * into the composer, to be sent or edited by hand.
+ */
+export async function reclaimQueue() {
+  const items = state.queue;
+  if (!items.length || !state.chat.id) return;
+  const input = $('input');
+  input.value = [...items.map((i) => i.content), input.value].filter(Boolean).join('\n\n');
+  input.dispatchEvent(new Event('input'));
+  renderQueue([]);
+  await Promise.all(items.map((i) =>
+    api.del(`/api/chats/${state.chat.id}/queue/${encodeURIComponent(i.id)}`).catch(() => {})));
+}

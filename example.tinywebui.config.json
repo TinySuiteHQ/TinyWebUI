@@ -1,0 +1,25 @@
+{
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "apiKey": "sk-or-v1-REPLACE-ME",
+  "model": "deepseek/deepseek-v4.1-flash",
+
+  "temperature": null,
+  "maxTokens": null,
+  "maxToolRounds": 12,
+
+  "cache": true,
+  "cacheMode": "auto",
+  "cacheTtl": "5m",
+
+  "compactThreshold": 60000,
+  "keepTurns": 2,
+  "compactMinSaved": 20000,
+  "maxInlineChars": 30000,
+  "maxTurnChars": 120000,
+  "maxHistoryTokens": 100000,
+  "expandCharBudget": 8000,
+
+  "dbPath": "",
+  "disabledTools": [],
+  "extraBody": {}
+}
