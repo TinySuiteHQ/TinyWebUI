@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { watch, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { createConfigSource, LockedError, configProblems } from './config/config.js';
+import { createConfigSource, LockedError, configProblems, redactSecrets } from './config/config.js';
 import { McpHub } from './mcp.js';
 import { isClosed, findEntry } from './config/models.js';
 import { Store, SCHEMA_VERSION } from './store/index.js';
-import { fingerprint, featuresFor, modelsFor } from './access/policy.js';
+import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/policy.js';
 import { hashPassword, applyAccessPolicy } from './access/auth.js';
 import { audit } from './audit.js';
 import { logger } from './log.js';
@@ -56,6 +56,7 @@ function routeTable(app) {
     saveConfig: (patch, by) => app.saveConfig(patch, by), refreshConfig: () => app.refreshConfig(),
     auditMcp: (by, before) => app.auditMcp(by, before), swapHub: (servers) => app.swapHub(servers),
     multiUser: () => app.multiUser(), modelFor: (userId, role) => app.modelFor(userId, role),
+    instructionsFor: (userId) => app.instructionsFor(userId),
     toolsFor: (features) => app.toolsFor(features), toolsView: () => app.toolsView(), configFor: (auth) => app.configFor(auth)
   };
   return [
@@ -69,7 +70,7 @@ export const API_ROUTES = routeTable({}).map((r) => [r.method, r.path, r.feature
 
 // Fields a non-admin never sees: credentials, and where the deployment's
 // trust boundary sits.
-const ADMIN_ONLY_FIELDS = /^(apiKey|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails|models$)/;
+const ADMIN_ONLY_FIELDS = /^(apiKey|keyHint|connectors|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails|models$)/;
 
 /**
  * Starts an instance. Everything but port/host is optional and passed to
@@ -126,7 +127,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     saveConfig(patch, by) {
       const before = fingerprint(app.cfg, source.loadMcpServers());
       app.cfg = source.save(patch);
-      audit('config.changed', { by: by ?? 'local', keys: Object.keys(patch), values: patch, before, after: fingerprint(app.cfg, source.loadMcpServers()) });
+      audit('config.changed', { by: by ?? 'local', keys: Object.keys(patch), values: redactSecrets(patch), before, after: fingerprint(app.cfg, source.loadMcpServers()) });
       return app.cfg;
     },
     /** Re-reads the config after something other than saveConfig wrote the file. */
@@ -158,6 +159,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       return allowed.map(known).find(Boolean) || fallback;
     },
 
+    /** A person's own instructions, added after the system prompt, when an admin lets users set them. */
+    instructionsFor(userId) {
+      if (!userId || app.cfg.authMode !== 'trusted-header') return null;
+      if (!resolveAccess(app.cfg).customize.includes('instructions')) return null;
+      return store.users.getPrefs(userId).instructions || null;
+    },
+
     /** The tools a turn gets: what is switched on, minus manage_automation for
      * anyone whose role has no automations. */
     toolsFor: (features) => app.hub.activeTools(app.cfg.disabledTools)
@@ -182,7 +190,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
     configFor(auth) {
       const pub = source.public(app.cfg);
-      if (auth.features.has(FEATURE.SETTINGS)) return pub;
+      if (auth.features.has(FEATURE.SETTINGS) && auth.isAdmin) return pub;
+      if (auth.features.has(FEATURE.SETTINGS)) {
+        // Allowed to edit settings, but not to see where the deployment's keys point.
+        const out = {};
+        for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
+        return out;
+      }
       const out = {};
       for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
       return { ...out, readOnly: true };

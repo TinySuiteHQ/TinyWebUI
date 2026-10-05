@@ -132,7 +132,51 @@
       </div>
     </section>
 
+    <div id="adminSettings" hidden>
+    <div class="set-divider"><h2>Admin</h2><p id="adminSettingsNote">Deployment-wide: these apply to everyone and are stored in the config file, so copying it reproduces this setup.</p></div>
+
     <section class="set-group">
+      <header><h3>Default endpoint</h3><p>The OpenAI-compatible API used by every model that does not name a connector.</p></header>
+      <div class="set-grid">
+        <div class="span-2"><label for="baseUrl">API URL</label><input id="baseUrl" spellcheck="false" placeholder="https://openrouter.ai/api/v1"></div>
+        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><small id="apiKeyNote">Write-only: stored in the config file, never shown again. Leave blank to keep the current key.</small></div>
+        <div class="span-2"><button id="testDefault" type="button">Test connection</button> <span id="testDefaultMsg" class="usage"></span></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Connectors</h3><p>More endpoints, each with its own URL and key. A model picks one by name.</p></header>
+      <div id="connectorsBox"></div>
+      <button id="addConnector" type="button">Add connector</button>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Models</h3><p>The catalog. Once any model is listed, only listed models can be picked, and people see the label, never the provider id.</p></header>
+      <div id="modelsBox"></div>
+      <button id="addModel" type="button">Add model</button>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Advanced model behaviour</h3><p>Rarely changed. Per-model values in the catalog override these.</p></header>
+      <div class="set-grid">
+        <div><label for="llmCompaction">Summarise dropped turns</label><select id="llmCompaction"><option value="true">Yes, with the chat's model</option><option value="false">No, just drop them</option></select></div>
+        <div><label for="compactionMaxTokens">Summary length cap</label><input id="compactionMaxTokens" type="number" min="256" step="256"><small>Output tokens for that summary request.</small></div>
+        <div><label for="expandCharBudget">Expand budget</label><input id="expandCharBudget" type="number" min="0" step="1000"><small>Characters one expand_context call may return.</small></div>
+        <div><label for="cache">Prompt caching</label><select id="cache"><option value="true">On</option><option value="false">Off</option></select></div>
+        <div><label for="reasoningReplay">Replay past reasoning</label><select id="reasoningReplay"><option value="auto">Automatic</option><option value="omit">Never</option><option value="reasoning_content">reasoning_content</option><option value="reasoning_details">reasoning_details</option></select></div>
+        <div class="span-2"><label for="extraBody">Extra request body (JSON)</label><textarea id="extraBody" rows="4" spellcheck="false" placeholder="{}"></textarea><small>Merged into every completion request, e.g. gateway routing.</small></div>
+      </div>
+    </section>
+    </div>
+
+    <div class="set-divider mine" id="myPrefsHead"><h2>My preferences</h2><p>Only for you.</p></div>
+
+    <section class="set-group mine" id="myInstructionsGroup" hidden>
+      <header><h3>My instructions</h3><p>Added after the system prompt on your chats only.</p></header>
+      <textarea id="myInstructions" rows="5" maxlength="4000" aria-label="My instructions"></textarea>
+    </section>
+
+    <section class="set-group mine" id="themeGroup">
       <header><h3>Appearance</h3></header>
       <div class="set-grid">
         <div><label for="theme">Theme</label><select id="theme"><option value="">Default</option></select></div>
@@ -203,6 +247,15 @@
         <div class="sec-h">users <span id="adminCount" class="usage"></span></div>
         <div id="adminMsg" class="usage"></div>
         <div id="adminUsers" class="admin-users"></div>
+      </section>
+      <section id="adminPolicy" class="statistics-block">
+        <div class="sec-h">what users can do <span id="policyMsg" class="usage"></span></div>
+        <div class="usage admin-note">Applies to everyone with the user role. Admins always have everything. Saved to the config file.</div>
+        <div class="policy-group"><b>Features</b><div id="policyFeatures" class="policy-checks"></div></div>
+        <div class="policy-group" id="policyModelsGroup"><b>Models they may pick</b><div id="policyModels" class="policy-checks"></div></div>
+        <div class="policy-group"><b>They may customise</b><div id="policyCustomize" class="policy-checks"></div></div>
+        <div class="policy-group"><b>New users start as</b> <select id="policyNewUsers"><option value="approved">approved</option><option value="pending">pending (an admin approves)</option></select></div>
+        <button id="policySave" class="primary" type="button">Save policy</button>
       </section>
       <section id="adminView" class="statistics-block" hidden>
         <div class="sec-h"><button id="adminBack" type="button">← back</button> <span id="adminViewTitle"></span><span id="adminViewMeta" class="usage"></span></div>

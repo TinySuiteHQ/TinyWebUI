@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
-import { modelProblems, labelFor, REASONING_REPLAY } from './models.js';
+import { modelProblems, connectorProblems, labelFor, REASONING_REPLAY } from './models.js';
 import { logger } from '../log.js';
 
 const log = logger('config');
@@ -26,6 +26,9 @@ export const DEFAULTS = {
   // only these can be picked, `model` names one by id, and people see each
   // entry's label, with its own prompt and sampling settings if it has them.
   models: [],
+  // Named endpoints a catalog entry can point at (`connector: <id>`): each has
+  // its own baseUrl and apiKey. Entries without one use baseUrl/apiKey above.
+  connectors: [],
   systemPrompt: [
     'You are a direct, technically precise assistant.',
     '',
@@ -290,7 +293,7 @@ export function createConfigSource(opts = {}) {
     const blocked = Object.keys(patch).filter((k) => WRITABLE.has(k) && locked.has(k));
     if (blocked.length) throw new LockedError(`set in code, not editable here: ${blocked.join(', ')}`);
     const current = readFile();
-    for (const [k, v] of Object.entries(patch)) {
+    for (const [k, v] of Object.entries(mergeSecrets(patch, current))) {
       if (WRITABLE.has(k)) current[k] = v;
     }
     // Validate what the file would become before writing it.
@@ -420,7 +423,7 @@ export function configProblems(cfg) {
       if (!ENUMS[key].includes(value)) problems.push(`${key} must be one of ${ENUMS[key].join(', ')} (got ${JSON.stringify(value)})`);
       continue;
     }
-    if (key === 'models') continue; // modelProblems, below, knows the shape
+    if (key === 'models' || key === 'connectors') continue; // modelProblems/connectorProblems, below, know the shape
     if (key === 'retrieval') {
       problems.push(...retrievalProblems(value));
       continue;
@@ -446,7 +449,7 @@ export function configProblems(cfg) {
       : got === want;
     if (!ok) problems.push(`${key} must be ${want === 'null' ? 'a number or null' : `a${want === 'array' || want === 'object' ? 'n' : ''} ${want}`} (got ${got})`);
   }
-  return [...problems, ...modelProblems(cfg), ...validateConfig(cfg)];
+  return [...problems, ...connectorProblems(cfg), ...modelProblems(cfg), ...validateConfig(cfg)];
 }
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
@@ -454,13 +457,54 @@ export const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'askUserTimeoutSeconds',
   'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
   'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone',
-  'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools'
+  'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools',
+  // The deployment's endpoints and catalog: only the sole user or an admin may
+  // send these (see SECRET_PATCH_KEYS in policy.js); keys are write-only.
+  'baseUrl', 'apiKey', 'models', 'connectors',
+  'llmCompaction', 'compactionMaxTokens', 'expandCharBudget', 'cache', 'reasoningReplay', 'extraBody'
 ]);
 
+// A short tail is enough to tell two keys apart in a list; short keys show none.
+const keyHint = (key) => (key && key.length >= 12 ? key.slice(-4) : null);
+
+/**
+ * API keys are write-only: the page learns that one is set (and its last four
+ * characters), never the value. On save, a connector sent without `apiKey`
+ * keeps its stored key; `apiKey: null` clears it.
+ */
+export function mergeSecrets(patch, current) {
+  const out = { ...patch };
+  if ('apiKey' in out && (out.apiKey === undefined || out.apiKey === '')) delete out.apiKey;
+  else if (out.apiKey === null) out.apiKey = '';
+  if (Array.isArray(out.connectors)) {
+    const old = new Map((Array.isArray(current.connectors) ? current.connectors : []).map((c) => [c?.id, c]));
+    out.connectors = out.connectors.map((c) => {
+      if (!c || typeof c !== 'object') return c;
+      const { apiKey, ...rest } = c;
+      if (apiKey === null) return { ...rest, apiKey: '' };
+      if (apiKey === undefined || apiKey === '') return old.get(c.id)?.apiKey ? { ...rest, apiKey: old.get(c.id).apiKey } : rest;
+      return c;
+    });
+  }
+  return out;
+}
+
+/** The patch as it may be logged: secret values replaced by whether they were set. */
+export function redactSecrets(patch) {
+  const out = { ...patch };
+  if ('apiKey' in out) out.apiKey = Boolean(out.apiKey);
+  if (Array.isArray(out.connectors)) {
+    out.connectors = out.connectors.map((c) => (c && typeof c === 'object' && 'apiKey' in c ? { ...c, apiKey: Boolean(c.apiKey) } : c));
+  }
+  return out;
+}
+
 export function publicConfig(cfg) {
-  const { apiKey, authPassword, sessionSecret, googleClientSecret, ...rest } = cfg;
+  const { apiKey, authPassword, sessionSecret, googleClientSecret, connectors, ...rest } = cfg;
   return {
     ...rest,
+    connectors: (Array.isArray(connectors) ? connectors : []).map(({ apiKey: key, ...c }) => ({ ...c, hasApiKey: Boolean(key), keyHint: keyHint(key) })),
+    keyHint: keyHint(apiKey),
     modelLabel: labelFor(cfg, cfg.model),
     hasApiKey: Boolean(apiKey),
     hasGoogleAuth: Boolean(cfg.googleClientId),

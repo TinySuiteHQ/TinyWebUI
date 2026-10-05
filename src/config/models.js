@@ -23,7 +23,14 @@ export const MODEL_OVERRIDES = ['systemPrompt', 'temperature', 'maxTokens', 'max
 /** Values of `reasoningReplay`; see reasoningReplay in harness/provider.js. */
 export const REASONING_REPLAY = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
 
-const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', ...MODEL_OVERRIDES]);
+/** What a model can do; the page uses these (e.g. `vision` gates image upload). */
+export const MODEL_TAGS = ['vision', 'reasoning', 'tools'];
+
+const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', ...MODEL_OVERRIDES]);
+
+/** Named endpoints: { id, label?, baseUrl, apiKey? }. The top-level baseUrl/apiKey stay the implicit default. */
+export const connectors = (cfg) => (Array.isArray(cfg.connectors) ? cfg.connectors : []);
+export const findConnector = (cfg, id) => connectors(cfg).find((c) => c.id === id) || null;
 
 export const catalog = (cfg) => (Array.isArray(cfg.models) ? cfg.models : []);
 // Closed whenever entries are listed, even if all are disabled: parking every
@@ -44,7 +51,7 @@ export function labelFor(cfg, key) {
 }
 
 /** What the picker lists for one entry. Prompts and knobs stay server-side. */
-export const publicEntry = (e) => ({ id: e.id, name: e.label || e.id, description: e.description || null });
+export const publicEntry = (e) => ({ id: e.id, name: e.label || e.id, description: e.description || null, tags: e.tags || [] });
 
 /**
  * The config one turn runs with: the entry's overrides over the global
@@ -63,6 +70,38 @@ export function effectiveConfig(cfg, key) {
     out.extraBody.provider = { ...(cfg.extraBody?.provider || {}), ...(e.extraBody?.provider || {}) };
   }
   out.model = e.model || e.id;
+  // The entry's endpoint replaces the global one; provider.js only ever reads
+  // cfg.baseUrl and cfg.apiKey, so nothing downstream knows about connectors.
+  const conn = e.connector ? findConnector(cfg, e.connector) : null;
+  if (conn) {
+    out.baseUrl = String(conn.baseUrl).replace(/\/+$/, '');
+    out.apiKey = conn.apiKey || '';
+  }
+  return out;
+}
+
+/** Every problem with the connector list. */
+export function connectorProblems(cfg) {
+  const list = cfg.connectors;
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) return ['connectors must be a list of { id, baseUrl, apiKey?, label? } entries'];
+  const out = [];
+  const ids = new Set();
+  list.forEach((c, i) => {
+    const at = `connectors[${i}]`;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${at} must be an object`); return; }
+    if (typeof c.id !== 'string' || !c.id.trim()) { out.push(`${at}.id must be a non-empty string`); return; }
+    if (ids.has(c.id)) out.push(`${at}.id "${c.id}" is listed twice`);
+    ids.add(c.id);
+    for (const k of Object.keys(c)) if (!['id', 'label', 'baseUrl', 'apiKey'].includes(k)) out.push(`${at}.${k} is not a known setting (known: id, label, baseUrl, apiKey)`);
+    for (const k of ['label', 'apiKey']) if (c[k] !== undefined && typeof c[k] !== 'string') out.push(`${at}.${k} must be a string`);
+    try {
+      if (!/^https?:$/.test(new URL(c.baseUrl).protocol)) throw new Error('scheme');
+    } catch { out.push(`${at}.baseUrl must be an http(s) URL`); }
+  });
+  for (const [i, e] of (Array.isArray(cfg.models) ? cfg.models : []).entries()) {
+    if (e?.connector !== undefined && !ids.has(e.connector)) out.push(`models[${i}].connector "${e.connector}" is not in connectors`);
+  }
   return out;
 }
 
@@ -93,6 +132,8 @@ export function modelProblems(cfg) {
     if (e.reasoningReplay !== undefined && !REASONING_REPLAY.includes(e.reasoningReplay)) out.push(`${at}.reasoningReplay must be one of ${REASONING_REPLAY.join(', ')}`);
     if (e.cacheTtl !== undefined && !['5m', '1h'].includes(e.cacheTtl)) out.push(`${at}.cacheTtl must be 5m or 1h`);
     if (e.enabled !== undefined && typeof e.enabled !== 'boolean') out.push(`${at}.enabled must be true or false`);
+    if (e.connector !== undefined && typeof e.connector !== 'string') out.push(`${at}.connector must be a connector id`);
+    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t) => MODEL_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${MODEL_TAGS.join(', ')}`);
     if (e.extraBody !== undefined && !(e.extraBody && typeof e.extraBody === 'object' && !Array.isArray(e.extraBody))) out.push(`${at}.extraBody must be an object`);
   });
   if (!list.length || out.length) return out;

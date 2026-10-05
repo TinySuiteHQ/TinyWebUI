@@ -1,6 +1,7 @@
 import { json, readJson } from '../http.js';
 import { ALL_USERS, toView } from '../store/index.js';
-import { validateConfig, fingerprint, resolveAccess } from '../access/policy.js';
+import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.js';
+import { catalog, modelProblems } from '../config/models.js';
 import { destroyUserSessions } from '../access/auth.js';
 import { audit } from '../audit.js';
 import { FEATURE } from '../../public/shared/features.js';
@@ -75,6 +76,42 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
         if (status !== 'approved') destroyUserSessions(store, target.id);
       }
       return json(res, 200, { user: adminUserView(updated) });
+    }) },
+
+    // What the `user` role may do, what new users start as, and what users may
+    // personalise. The admin role is not editable here: it cannot be locked
+    // out of the panel that edits it. Written to the file like every decision.
+    { method: 'GET', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
+      const a = resolveAccess(config());
+      return json(res, 200, {
+        features: FEATURES, customizable: CUSTOMIZABLE, models: catalog(config()).map((m) => m.id),
+        user: a.roles.user, newUsers: a.newUsers, customize: a.customize,
+        locked: source.lockedKeys().has('access')
+      });
+    }) },
+
+    { method: 'POST', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
+      if (source.isFrozen() || source.lockedKeys().has('access')) return json(res, 409, { error: 'access is set in code or frozen: change the files instead' });
+      const { features, models, newUsers, customize } = await readJson(req);
+      const file = source.readFile();
+      const access = file.access && typeof file.access === 'object' ? file.access : {};
+      const user = { ...(access.roles?.user || {}) };
+      if (features !== undefined) user.features = features;
+      if (models !== undefined) user.models = models;
+      const merged = {
+        ...access,
+        roles: { ...(access.roles || {}), user },
+        ...(newUsers !== undefined ? { newUsers } : {}),
+        ...(customize !== undefined ? { customize } : {})
+      };
+      const next = { ...file, access: merged };
+      const problems = [...validateConfig({ ...config(), access: merged }), ...modelProblems({ ...config(), access: merged })];
+      if (problems.length) return json(res, 400, { error: problems.join('; ') });
+      source.writeFile(next);
+      refreshConfig();
+      audit('admin.policy_changed', { by: auth.userId, user, newUsers: merged.newUsers ?? null, customize: merged.customize ?? null });
+      const a = resolveAccess(config());
+      return json(res, 200, { user: a.roles.user, newUsers: a.newUsers, customize: a.customize });
     }) },
 
     // Oversight: read-only, every view audited. Reached through ALL_USERS on

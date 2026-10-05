@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.js';
 import { isClosed, findEntry, labelFor } from '../config/models.js';
-import { modelsFor, fingerprint } from '../access/policy.js';
+import { modelsFor, fingerprint, resolveAccess } from '../access/policy.js';
 import {
   verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.js';
@@ -24,10 +24,15 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
         authMode: cfg.authMode,
         logoutUrl: cfg.logoutUrl || '',
         isAdmin: Boolean(auth.isAdmin),
+        // What this person may personalise, and their saved instructions (multi-user only).
+        customize: cfg.authMode === 'trusted-header' && auth.user ? resolveAccess(cfg).customize : [],
+        instructions: cfg.authMode === 'trusted-header' && auth.user ? store.users.getPrefs(auth.user.id).instructions || '' : '',
         features: [...auth.features],
         models: signedIn ? modelsFor(cfg, auth.role) : [],
         model,
         modelLabel: signedIn ? labelFor(cfg, model) : null,
+        // What the catalog says this model can do; empty when it says nothing.
+        modelTags: signedIn ? findEntry(cfg, model)?.tags || [] : [],
         user: auth.user
           ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
           : null
@@ -71,10 +76,17 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
 
     // Tier 3's model pill: a personal choice among the role's models. In
     // tiers 1-2 the pill changes the configured model instead (/api/config).
-    { method: 'POST', path: /^\/api\/me\/prefs$/, feature: FEATURE.MODEL_PICKER, handle: async ({ req, res, auth }) => {
+    { method: 'POST', path: /^\/api\/me\/prefs$/, feature: null, handle: async ({ req, res, auth }) => {
       const cfg = config();
       if (!multiUser()) return json(res, 400, { error: 'preferences are per-user; set the model in settings' });
-      const { model } = await readJson(req);
+      const { model, instructions } = await readJson(req);
+      if (instructions !== undefined) {
+        if (!resolveAccess(cfg).customize.includes('instructions')) return json(res, 403, { error: 'your administrator has not enabled personal instructions' });
+        if (instructions !== null && (typeof instructions !== 'string' || instructions.length > 4000)) return json(res, 400, { error: 'instructions must be text of at most 4000 characters, or null' });
+        store.users.setPref(auth.user.id, 'instructions', instructions && instructions.trim() ? instructions.trim() : null);
+        if (model === undefined) return json(res, 200, { instructions: instructions && instructions.trim() ? instructions.trim() : '' });
+      }
+      if (!auth.features.has(FEATURE.MODEL_PICKER)) return json(res, 403, { error: 'feature not available to your role', feature: FEATURE.MODEL_PICKER });
       if (model !== null && (typeof model !== 'string' || !model.trim())) return json(res, 400, { error: 'model must be a model id or null' });
       const allowed = modelsFor(cfg, auth.role);
       if (model && isClosed(cfg) && !findEntry(cfg, model)) return json(res, 403, { error: 'that model is not available to you' });

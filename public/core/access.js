@@ -14,6 +14,9 @@ let features = new Set();
 export const can = (feature) => features.has(feature);
 export const whoami = () => me;
 
+/** False only when the catalog tags the current model and `vision` is not among them: untagged means unknown, so allowed. */
+export const modelAcceptsImages = () => !me.modelTags?.length || me.modelTags.includes('vision');
+
 // Nav items and controls that exist only for one feature.
 const GATED = {
   [FEATURE.SETTINGS]: ['toggle-settings'],
@@ -30,6 +33,8 @@ export async function loadAccess() {
   for (const [feature, ids] of Object.entries(GATED)) {
     for (const id of ids) { const node = $(id); if (node) node.hidden = !can(feature); }
   }
+  // Settings also opens for someone whose admin lets them customise their own experience.
+  $('toggle-settings').hidden = !(can(FEATURE.SETTINGS) || me.customize?.length);
   const search = $('chatSearch')?.closest('.search-row');
   if (search) search.hidden = !can(FEATURE.SEARCH);
   // The + button opens attach and tools; with neither there is nothing in it.

@@ -86,6 +86,7 @@ function showView(title, meta) {
   adminViewRequest++;
   stopPoll();
   $('adminUsers').parentElement.hidden = true;
+  $('adminPolicy').hidden = true;
   $('adminView').hidden = false;
   $('adminViewTitle').textContent = title;
   $('adminViewMeta').textContent = meta || '';
@@ -172,12 +173,53 @@ async function openChat(chatId, user) {
   if (out.running) pollTimer = setTimeout(() => { if (request === adminViewRequest && $('admin').classList.contains('open') && !$('adminView').hidden) openChat(chatId, user); }, 4000);
 }
 
+/* ---------- access policy: what the user role may do ---------- */
+
+function checks(box, name, options, chosen, label = (v) => v) {
+  box.replaceChildren(...options.map((v) => {
+    const cb = Object.assign(el('input'), { type: 'checkbox', value: v, checked: chosen.includes(v) });
+    const l = el('label');
+    l.append(cb, ` ${label(v)}`);
+    return l;
+  }));
+}
+const picked = (box) => [...box.querySelectorAll('input:checked')].map((i) => i.value);
+
+async function loadPolicy() {
+  let p;
+  try { p = await api.get('/api/admin/policy'); } catch (err) { $('policyMsg').textContent = err.message; return; }
+  const all = (v, list) => (v === '*' ? list : v || []);
+  checks($('policyFeatures'), 'features', p.features.filter((f) => f !== 'admin' && f !== 'oversight'), all(p.user.features, p.features));
+  $('policyModelsGroup').hidden = !p.models.length;
+  checks($('policyModels'), 'models', p.models, all(p.user.models, p.models));
+  checks($('policyCustomize'), 'customize', p.customizable, p.customize);
+  $('policyNewUsers').value = p.newUsers;
+  const locked = p.locked;
+  for (const n of $('adminPolicy').querySelectorAll('input,select,button')) n.disabled = locked;
+  $('policyMsg').textContent = locked ? 'set in code or frozen: change the files' : '';
+  $('policySave').onclick = async () => {
+    const models = picked($('policyModels'));
+    try {
+      await api.post('/api/admin/policy', {
+        features: picked($('policyFeatures')),
+        // Everything ticked means "no restriction", so a model added later is not silently excluded.
+        ...(p.models.length ? { models: models.length === p.models.length ? '*' : models } : {}),
+        customize: picked($('policyCustomize')),
+        newUsers: $('policyNewUsers').value
+      });
+      $('policyMsg').textContent = 'saved';
+    } catch (err) { $('policyMsg').textContent = err.message; }
+  };
+}
+
 export async function loadAdmin() {
   const request = ++adminLoadRequest;
   adminViewRequest++;
   stopPoll();
   $('adminView').hidden = true;
   $('adminUsers').parentElement.hidden = false;
+  $('adminPolicy').hidden = false;
+  loadPolicy();
   const box = $('adminUsers');
   $('adminMsg').textContent = '';
   let out;

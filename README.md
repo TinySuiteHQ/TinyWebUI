@@ -89,9 +89,9 @@ cp example.tinywebui.config.json tinywebui.config.json
 ```
 
 > [!WARNING]
-> `tinywebui.config.json` can hold your API key. It is gitignored, so keep it that way.
+> `tinywebui.config.json` holds your API keys, including each connector's, and the Settings panel writes them there so the file alone reproduces an instance. It is gitignored, so keep it that way. If you commit a config, leave the keys out and supply them through the environment instead (`TINYWEBUI_API_KEY`); a connector's `apiKey` can't come from an environment variable yet, so keep connectors out of committed config or use `tinywebui.config.js`.
 
-The Settings panel can change the model, system prompt, generation settings, tool budget, context controls and enabled tools, and it writes every change back to this file. The API key is never sent to the browser.
+The Settings panel can change the model, system prompt, generation settings, tool budget, context controls and enabled tools, and it writes every change back to this file. The sole user or an admin also gets an **Admin** block there for the endpoint, connectors, model catalog and advanced model behaviour. API keys are write-only: the browser learns that one is set and its last four characters, never the value, and leaving the field blank keeps the stored key.
 
 **OpenRouter:**
 
@@ -181,7 +181,9 @@ By default, any model id works. To fix the list of models people can use, and to
 - **People only see `label` and `description`.** They can't type in an id, and the provider id never reaches the browser.
 - **Per-model overrides.** An entry can set `systemPrompt`, `temperature`, `maxTokens`, `maxToolRounds`, `cacheMode`, `cacheTtl`, `reasoningReplay` and `extraBody`. These replace the global values for turns with that model, except `extraBody`, which is merged with the global one.
 - **`"enabled": false`** hides an entry but keeps its settings. Anyone who had picked it falls back to the default model. The default must be an enabled entry.
-- **The catalog is file-only.** Startup and reload refuse a catalog with an unknown key, a duplicate id, or a reference to an entry that doesn't exist.
+- **`connector`** names an entry in `connectors` (`{ "id", "label", "baseUrl", "apiKey" }`), so one catalog can mix endpoints. Without it, an entry uses the top-level `baseUrl` and `apiKey`.
+- **`tags`** (`vision`, `reasoning`, `tools`) say what a model can do. An untagged model is treated as unknown and allowed everything; a tagged model without `vision` refuses image attachments in the page.
+- **Editable from the UI by the sole user or an admin**, in Settings, with the same checks as the file. Startup, reload and every save refuse a catalog with an unknown key, a duplicate id, or a reference to an entry that doesn't exist.
 
 ## MCP tools
 
@@ -467,7 +469,7 @@ The `tinywebui` command does the same when it finds `tinywebui.config.js` (or `.
 
 | Kind | Where it lives | Can the UI change it? |
 | --- | --- | --- |
-| **File-only:** `authMode`, passwords, `trusted*`, `logoutUrl`, `baseUrl`, `apiKey`, `dbPath`, `access`, `models` | `tinywebui.config.js` or `tinywebui.config.json` | Never. The API refuses, even for admins. |
+| **File-only:** `authMode`, passwords, `trusted*`, `logoutUrl`, `dbPath`, `retrieval`, `access` (admins edit the user role's features and models, new-user policy and `customize` through the Admin panel) | `tinywebui.config.js` or `tinywebui.config.json` | Never. The API refuses, even for admins. |
 | **Locked:** anything set in `tinywebui.config.js`, including `mcpServers` | `tinywebui.config.js` | No. Shown read-only. |
 | **Editable:** everything else | `tinywebui.config.json`, `mcp.json` | Yes, and every change is **written back to the file**. |
 

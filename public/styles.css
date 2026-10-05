@@ -1390,6 +1390,22 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .set-group small { display: block; margin-top: .3125rem; color: var(--faint); font-size: var(--fs-meta); line-height: 1.4; }
 .set-group textarea#systemPrompt { font-family: var(--sans); font-size: var(--fs-ui); line-height: 1.55; }
 @media (max-width: 720px) { .set-grid { grid-template-columns: 1fr; } }
+.set-divider { width: min(46rem, 100%); margin: 1.5rem auto .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.set-divider h2 { margin: 0; font-size: 1.0625rem; }
+.set-divider p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
+.policy-group { margin: .75rem 0; }
+.policy-checks { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin-top: .25rem; }
+.policy-checks label { display: inline-flex; gap: .3rem; align-items: center; }
+/* A person without the settings feature sees only what an admin lets them customise. */
+#settings.prefs-only .set-group:not(.mine), #settings.prefs-only .set-divider:not(.mine), #settings.prefs-only #adminSettings { display: none; }
+#settings .mine[hidden] { display: none; }
+/* Connector and model editors: one bordered row per entry. */
+.cfg-row { margin: 0 0 .75rem; padding: .75rem; border: 1px solid var(--line); border-radius: var(--r-sm, 6px); }
+.cfg-row .set-grid { gap: .75rem; }
+.cfg-row textarea { font-family: var(--mono, monospace); font-size: var(--fs-small); }
+.cfg-row .cfg-actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+.cfg-row .cfg-tags { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+.cfg-row .cfg-tags label { display: inline-flex; gap: .3rem; align-items: center; margin: 0; }
 
 .brand-home {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;

@@ -43,7 +43,7 @@ export function createRuns(app) {
    * `lead` is a queued follow-up that starts this run: stored after baseCount
    * and sent as an event, so a live view and a reload each show it once.
    */
-  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null }) {
+  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null }) {
     const run = {
       events: [],
       subs: new Set(),
@@ -127,7 +127,12 @@ export function createRuns(app) {
 
     run.promise = (async () => {
       try {
-        await runChat({ cfg: effectiveConfig(app.cfg, model), chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
+        const base = effectiveConfig(app.cfg, model);
+        const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}
+
+The user's own instructions:
+${instructions}` } : base;
+        await runChat({ cfg, chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
       } catch (err) {
         emit({ type: EVENT.ERROR, error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {

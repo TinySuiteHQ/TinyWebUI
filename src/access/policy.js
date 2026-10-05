@@ -20,6 +20,9 @@ import { FEATURE } from '../../public/shared/features.js';
 /** Every feature a role can be granted. Each maps to UI and API routes. */
 export const FEATURES = Object.values(FEATURE);
 
+/** What a signed-in user may personalise (access.customize). Model choice is the model-picker feature's. */
+export const CUSTOMIZABLE = ['theme', 'instructions'];
+
 export const ROLES = ['admin', 'user'];
 export const STATUSES = ['pending', 'approved', 'disabled'];
 
@@ -37,9 +40,15 @@ const DEFAULT_ROLES = {
 export const FILE_ONLY = new Set([
   'authMode', 'authPassword', 'sessionSecret', 'sessionTtlDays', 'trustedProxyCidrs', 'trustedUserIdHeader',
   'trustedEmailHeader', 'trustedNameHeader', 'trustedRoleHeader',
-  'logoutUrl', 'baseUrl', 'apiKey', 'dbPath', 'access', 'models', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
+  'logoutUrl', 'dbPath', 'access', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
   'googleClientId', 'googleClientSecret', 'googleRedirectUri', 'adminEmails'
 ]);
+
+/**
+ * Writable, but where credentials and routing live: in a multi-user
+ * deployment only an admin may send these, whatever features a role has.
+ */
+export const SECRET_PATCH_KEYS = new Set(['baseUrl', 'apiKey', 'models', 'connectors']);
 
 // Never logged, never fingerprinted as values, never sent to a browser.
 export const SECRET_KEYS = new Set(['apiKey', 'authPassword', 'sessionSecret', 'googleClientSecret']);
@@ -66,6 +75,7 @@ export function resolveAccess(cfg) {
   return {
     bootstrapAdmins: Array.isArray(a.bootstrapAdmins) ? a.bootstrapAdmins.map(String) : [],
     newUsers: a.newUsers || 'approved',
+    customize: Array.isArray(a.customize) ? a.customize : ['theme'],
     roles,
     users: a.users && typeof a.users === 'object' ? a.users : {}
   };
@@ -114,13 +124,16 @@ export function validateConfig(cfg, { env = process.env } = {}) {
   const a = cfg.access;
   if (a !== undefined) {
     if (!a || typeof a !== 'object' || Array.isArray(a)) return [...errors, 'access must be an object'];
-    const known = new Set(['bootstrapAdmins', 'newUsers', 'roles', 'users']);
+    const known = new Set(['bootstrapAdmins', 'newUsers', 'roles', 'users', 'customize']);
     for (const k of Object.keys(a)) if (!known.has(k)) errors.push(`access.${k} is not a known setting`);
     if (a.bootstrapAdmins !== undefined && !(Array.isArray(a.bootstrapAdmins) && a.bootstrapAdmins.every((x) => typeof x === 'string' && x))) {
       errors.push('access.bootstrapAdmins must be a list of gateway user ids');
     }
     if (a.newUsers !== undefined && !['approved', 'pending'].includes(a.newUsers)) {
       errors.push("access.newUsers must be 'approved' or 'pending'");
+    }
+    if (a.customize !== undefined && !(Array.isArray(a.customize) && a.customize.every((c) => CUSTOMIZABLE.includes(c)))) {
+      errors.push(`access.customize must be a list from ${CUSTOMIZABLE.join(', ')}`);
     }
     for (const [role, spec] of Object.entries(a.roles || {})) {
       if (!ROLES.includes(role)) { errors.push(`access.roles.${role}: unknown role (known: ${ROLES.join(', ')})`); continue; }
@@ -168,6 +181,9 @@ export function fingerprint(cfg, mcpServers = {}) {
     // not policy; leaving it out keeps the CLI and the server in agreement.
     if (k === 'sessionSecret') continue;
     redacted[k] = SECRET_KEYS.has(k) ? Boolean(v) : v;
+  }
+  if (Array.isArray(redacted.connectors)) {
+    redacted.connectors = redacted.connectors.map((c) => (c && typeof c === 'object' ? { ...c, apiKey: Boolean(c.apiKey) } : c));
   }
   return createHash('sha256').update(canonical({ config: redacted, mcpServers })).digest('hex').slice(0, 16);
 }

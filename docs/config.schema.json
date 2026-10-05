@@ -5,11 +5,11 @@
   "properties": {
     "baseUrl": {
       "type": "string",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "apiKey": {
       "type": "string",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "model": {
       "type": "string",
@@ -17,7 +17,7 @@
     },
     "models": {
       "type": "array",
-      "x-change": "file-only",
+      "x-change": "editable (UI writes it back here)",
       "description": "The model catalog. Empty: any model id. Listed: only these can be picked, by id, shown by label.",
       "items": {
         "type": "object",
@@ -44,6 +44,22 @@
           "enabled": {
             "type": "boolean",
             "description": "false: keep the settings, hide and refuse the model."
+          },
+          "connector": {
+            "type": "string",
+            "description": "Id of an entry in connectors; absent: the default baseUrl/apiKey."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "vision",
+                "reasoning",
+                "tools"
+              ]
+            },
+            "uniqueItems": true,
+            "description": "What the model can do."
           },
           "systemPrompt": {
             "type": "string"
@@ -94,6 +110,33 @@
         }
       }
     },
+    "connectors": {
+      "type": "array",
+      "x-change": "editable (UI writes it back here)",
+      "description": "Named endpoints a catalog entry can use. apiKey is a secret: prefer an env var in committed config.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "baseUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "systemPrompt": {
       "type": "string",
       "x-change": "editable (UI writes it back here)"
@@ -122,11 +165,11 @@
     },
     "extraBody": {
       "type": "object",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "cache": {
       "type": "boolean",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "cacheMode": {
       "type": "string",
@@ -138,7 +181,7 @@
     },
     "reasoningReplay": {
       "type": "string",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "dbPath": {
       "type": "string",
@@ -170,11 +213,11 @@
     },
     "llmCompaction": {
       "type": "boolean",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "compactionMaxTokens": {
       "type": "number",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "timezone": {
       "type": "string",
@@ -198,7 +241,7 @@
     },
     "expandCharBudget": {
       "type": "number",
-      "x-change": "file-only"
+      "x-change": "editable (UI writes it back here)"
     },
     "disabledTools": {
       "type": "array",
@@ -338,6 +381,17 @@
             "approved",
             "pending"
           ]
+        },
+        "customize": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "theme",
+              "instructions"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "What users may personalise."
         },
         "roles": {
           "type": "object",

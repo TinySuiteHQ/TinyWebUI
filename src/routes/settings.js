@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.js';
-import { isClosed, enabledEntries, publicEntry } from '../config/models.js';
-import { modelsFor } from '../access/policy.js';
+import { isClosed, enabledEntries, publicEntry, findConnector } from '../config/models.js';
+import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.js';
 import { audit } from '../audit.js';
 import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
@@ -50,7 +50,12 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
     }) },
 
     { method: 'POST', path: /^\/api\/config$/, feature: FEATURE.SETTINGS, handle: async ({ req, res, auth }) => {
-      saveConfig(await readJson(req), actor(auth));
+      const patch = await readJson(req);
+      // Credentials and routing: the sole user or an admin, not any role that
+      // was merely granted the settings feature.
+      const secret = Object.keys(patch).filter((k) => SECRET_PATCH_KEYS.has(k));
+      if (secret.length && !auth.isAdmin) return json(res, 403, { error: `only an admin can change: ${secret.join(', ')}` });
+      saveConfig(patch, actor(auth));
       audit('admin.config_changed', { by: auth.userId ?? null });
       return json(res, 200, configFor(auth));
     } },
@@ -72,6 +77,32 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
       // it knows them, listed even when it does not.
       const byId = new Map(all.models.map((m) => [m.id, m]));
       return json(res, 200, { supported: true, restricted: true, models: allowed.map((id) => byId.get(id) || { id, name: null }) });
+    } },
+
+    // "Test connection" for the connector editor. A key typed into the form is
+    // used as is; a blank one means the stored key of that connector ('default'
+    // is the top-level baseUrl/apiKey), since the page never holds keys.
+    { method: 'POST', path: /^\/api\/connectors\/test$/, feature: FEATURE.SETTINGS, handle: async ({ req, res, auth }) => {
+      if (!auth.isAdmin) return json(res, 403, { error: 'only an admin can test connectors' });
+      const body = await readJson(req);
+      const cfg = config();
+      const stored = body.id && body.id !== 'default' ? findConnector(cfg, body.id) : { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
+      const baseUrl = String(body.baseUrl || stored?.baseUrl || '').replace(/\/+$/, '');
+      const apiKey = body.apiKey || stored?.apiKey || '';
+      if (!/^https?:\/\//.test(baseUrl)) return json(res, 400, { error: 'baseUrl must be an http(s) URL' });
+      try {
+        const r = await fetch(`${baseUrl}/models`, {
+          headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+          signal: AbortSignal.timeout(8000)
+        });
+        if (r.status === 401 || r.status === 403) return json(res, 200, { ok: false, error: `${r.status}: the endpoint rejected the key` });
+        // Not every OpenAI-compatible server lists models; reachable is the point.
+        const list = r.ok ? await r.json().catch(() => null) : null;
+        const rows = Array.isArray(list?.data) ? list.data : Array.isArray(list?.models) ? list.models : null;
+        return json(res, 200, { ok: r.status < 500, status: r.status, models: rows ? rows.length : null });
+      } catch (err) {
+        return json(res, 200, { ok: false, error: err.message });
+      }
     } },
 
     // The grouped view behind the tools panel: built-ins, and every MCP

@@ -4,10 +4,10 @@ import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.js';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.js';
-import { REASONING_REPLAY } from './config/models.js';
+import { REASONING_REPLAY, MODEL_TAGS } from './config/models.js';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
-  FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS
+  FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
 } from './access/policy.js';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.js';
 
@@ -426,8 +426,16 @@ export function configSchema() {
     }
   };
   const num = { type: ['number', 'null'] };
+  properties.connectors = {
+    type: 'array', 'x-change': 'editable (UI writes it back here)',
+    description: 'Named endpoints a catalog entry can use. apiKey is a secret: prefer an env var in committed config.',
+    items: {
+      type: 'object', additionalProperties: false, required: ['id', 'baseUrl'],
+      properties: { id: { type: 'string' }, label: { type: 'string' }, baseUrl: { type: 'string' }, apiKey: { type: 'string' } }
+    }
+  };
   properties.models = {
-    type: 'array', 'x-change': 'file-only',
+    type: 'array', 'x-change': 'editable (UI writes it back here)',
     description: 'The model catalog. Empty: any model id. Listed: only these can be picked, by id, shown by label.',
     items: {
       type: 'object', additionalProperties: false, required: ['id'],
@@ -437,6 +445,8 @@ export function configSchema() {
         label: { type: 'string', description: 'What people see in the picker.' },
         description: { type: 'string' },
         enabled: { type: 'boolean', description: 'false: keep the settings, hide and refuse the model.' },
+        connector: { type: 'string', description: 'Id of an entry in connectors; absent: the default baseUrl/apiKey.' },
+        tags: { type: 'array', items: { enum: MODEL_TAGS }, uniqueItems: true, description: 'What the model can do.' },
         systemPrompt: { type: 'string' },
         temperature: num,
         maxTokens: num,
@@ -453,6 +463,7 @@ export function configSchema() {
     properties: {
       bootstrapAdmins: { type: 'array', items: { type: 'string' }, description: 'Gateway user ids that are always approved admins.' },
       newUsers: { enum: ['approved', 'pending'] },
+      customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What users may personalise.' },
       roles: { type: 'object', additionalProperties: false, properties: Object.fromEntries(ROLES.map((r) => [r, role])) },
       users: {
         type: 'object',

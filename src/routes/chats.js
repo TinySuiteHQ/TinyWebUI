@@ -17,7 +17,7 @@ function refusedFeature(auth, { images, documentIds }) {
   return null;
 }
 
-export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor }) {
+export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig, store, toolsFor }) {
   const noChat = (res) => json(res, 404, { error: 'no such chat' });
 
   return [
@@ -105,7 +105,7 @@ export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor
       // rewound transcript and then attaches, the same path a reload takes,
       // rather than reading a stream through a response it also has to
       // redraw behind.
-      runs.start({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role) });
+      runs.start({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role), instructions: instructionsFor(auth.user?.id) });
       return json(res, 200, { ok: true, running: true });
     } },
 
@@ -225,7 +225,7 @@ export function chatRoutes({ config, modelFor, runs, saveConfig, store, toolsFor
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role) });
+        : runs.start({ chat, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role), instructions: instructionsFor(auth.user?.id) });
       return runs.attach(run, res, 0);
     } }
   ];

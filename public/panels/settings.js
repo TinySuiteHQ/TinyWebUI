@@ -1,9 +1,10 @@
 /** The settings panel: model/runtime config, MCP servers, and the tools list. */
 import { $, el, num, installLink } from '../core/dom.js';
 import { addError } from '../chat/transcript.js';
-import { whoami } from '../core/access.js';
+import { whoami, loadAccess } from '../core/access.js';
 import { api } from '../core/api.js';
 import { PANEL, closePanel } from './panels.js';
+import { initConnectors, renderConnectors, collectConnectors, lockConnectors } from './connectors.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health
@@ -233,6 +234,17 @@ export async function loadMcp() {
 export function initSettings() {
   $('saveMcp').onclick = saveMcp;
   $('save').onclick = saveConfig;
+  $('testDefault').onclick = testDefault;
+  initConnectors();
+}
+
+async function testDefault() {
+  const msg = $('testDefaultMsg');
+  msg.textContent = 'testing…';
+  try {
+    const out = await api.post('/api/connectors/test', { id: 'default', baseUrl: $('baseUrl').value.trim(), apiKey: $('apiKey').value });
+    msg.textContent = out.ok ? `reachable${out.models != null ? ` · ${out.models} models` : ''}` : out.error || `status ${out.status}`;
+  } catch (err) { msg.textContent = err.message; }
 }
 
 async function saveMcp() {
@@ -254,7 +266,8 @@ async function saveMcp() {
 
 const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'askUserTimeoutSeconds', 'cacheTtl',
   'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
-  'maxHistoryTokens', 'toolApproval'];
+  'maxHistoryTokens', 'toolApproval', 'baseUrl', 'apiKey', 'llmCompaction', 'compactionMaxTokens', 'expandCharBudget',
+  'cache', 'reasoningReplay', 'extraBody'];
 
 // The browser's IANA zones, plus whatever the config holds if the browser
 // doesn't list it, so a saved value is never silently swapped for another.
@@ -285,13 +298,19 @@ export async function loadConfig() {
   }
   lockedKeys = new Set(cfg.lockedKeys || []);
   readOnly = Boolean(cfg.readOnly);
+  const mine = whoami().customize || [];
+  $('settings').classList.toggle('prefs-only', readOnly);
+  $('myInstructionsGroup').hidden = !mine.includes('instructions');
+  $('myInstructions').value = whoami().instructions || '';
+  $('themeGroup').hidden = readOnly && !mine.includes('theme');
+  $('myPrefsHead').hidden = readOnly ? !mine.length : false;
   for (const id of FORM_KEYS) {
     const locked = readOnly || lockedKeys.has(id);
     $(id).disabled = locked;
     $(id).title = readOnly ? 'managed by your administrator' : locked ? 'set in code' : '';
   }
-  $('save').disabled = readOnly || Boolean(cfg.frozen);
-  if (readOnly) $('saveMsg').textContent = 'managed by your administrator';
+  $('save').disabled = readOnly ? !mine.includes('instructions') : Boolean(cfg.frozen);
+  if (readOnly) $('saveMsg').textContent = mine.length ? '' : 'managed by your administrator';
   else if (cfg.frozen) $('saveMsg').textContent = 'frozen deployment: settings are managed in its files';
   if (cfg.frozen) for (const id of FORM_KEYS) $(id).title = 'frozen deployment: change the config file';
   $('systemPrompt').value = cfg.systemPrompt;
@@ -312,6 +331,22 @@ export async function loadConfig() {
   fillTimezones(cfg.timezone);
   $('timezone').value = cfg.timezone ?? '';
   $('toolApproval').value = cfg.toolApproval ?? 'writes';
+  // The admin block is only sent to (and only meaningful for) the sole user or an admin.
+  const admin = Boolean(whoami().isAdmin) && !readOnly && cfg.baseUrl !== undefined;
+  $('adminSettings').hidden = !admin;
+  if (admin) {
+    $('baseUrl').value = cfg.baseUrl ?? '';
+    $('apiKey').value = '';
+    $('apiKey').placeholder = cfg.hasApiKey ? `set (…${cfg.keyHint || ''}) — blank keeps it` : 'not set';
+    $('llmCompaction').value = String(cfg.llmCompaction !== false);
+    $('compactionMaxTokens').value = cfg.compactionMaxTokens ?? 8192;
+    $('expandCharBudget').value = cfg.expandCharBudget ?? 8000;
+    $('cache').value = String(cfg.cache !== false);
+    $('reasoningReplay').value = cfg.reasoningReplay ?? 'auto';
+    $('extraBody').value = Object.keys(cfg.extraBody || {}).length ? JSON.stringify(cfg.extraBody, null, 2) : '';
+    renderConnectors(cfg);
+    lockConnectors(Boolean(cfg.frozen) || lockedKeys.has('models') || lockedKeys.has('connectors'));
+  }
   // The chip is the model picker's button now; the tool count lives in the
   // + menu, where the tools themselves are.
   // Tier 3 shows your own model; the configured one is only the default.
@@ -323,6 +358,15 @@ export async function loadConfig() {
 }
 
 async function saveConfig() {
+  // Personal instructions go to the person's own prefs, whatever else they may edit.
+  if (!$('myInstructionsGroup').hidden) {
+    try { await api.post('/api/me/prefs', { instructions: $('myInstructions').value.trim() || null }); } catch (err) {
+      $('saveMsg').textContent = `save failed (${err.message})`;
+      return;
+    }
+    await loadAccess();
+    if (readOnly) { $('saveMsg').textContent = 'saved'; closePanel(PANEL.SETTINGS); return; }
+  }
   const patch = {
     systemPrompt: $('systemPrompt').value,
     model: $('model').value.trim(),
@@ -341,12 +385,32 @@ async function saveConfig() {
     timezone: $('timezone').value,
     toolApproval: $('toolApproval').value
   };
+  if (!$('adminSettings').hidden) {
+    try {
+      const apiKey = $('apiKey').value;
+      Object.assign(patch, {
+        baseUrl: $('baseUrl').value.trim(),
+        ...(apiKey ? { apiKey } : {}),
+        llmCompaction: $('llmCompaction').value === 'true',
+        compactionMaxTokens: Number($('compactionMaxTokens').value) || 8192,
+        expandCharBudget: Number($('expandCharBudget').value) || 0,
+        cache: $('cache').value === 'true',
+        reasoningReplay: $('reasoningReplay').value,
+        extraBody: $('extraBody').value.trim() ? JSON.parse($('extraBody').value) : {},
+        ...collectConnectors()
+      });
+    } catch (err) {
+      $('saveMsg').textContent = `save failed (${err.message})`;
+      return;
+    }
+  }
   for (const k of lockedKeys) delete patch[k];
   try { await api.post('/api/config', patch); } catch (err) {
     $('saveMsg').textContent = `save failed (${err.message})`;
     return;
   }
   await loadConfig();
+  await loadAccess(); // a changed model changes what it can take
   await loadTools(); // the per-tool "default" labels follow the global mode
   $('saveMsg').textContent = 'saved';
   closePanel(PANEL.SETTINGS);

@@ -45,8 +45,8 @@ test('the picker lists the role\'s catalog entries by label, never provider ids'
   const out = (await alice('/api/models')).data;
   assert.equal(out.catalog, true);
   assert.deepEqual(out.models, [
-    { id: 'quick', name: 'Quick', description: 'Everyday questions' },
-    { id: 'deep', name: 'Thorough', description: null }
+    { id: 'quick', name: 'Quick', description: 'Everyday questions', tags: [] },
+    { id: 'deep', name: 'Thorough', description: null, tags: [] }
   ]);
   assert.equal(JSON.stringify(out).includes('vendor/'), false);
   const me = (await alice('/api/auth/me')).data;

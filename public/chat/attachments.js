@@ -5,7 +5,7 @@
  * it from the local queue; there is nothing server-side to clean up.
  */
 import { $, el } from '../core/dom.js';
-import { can } from '../core/access.js';
+import { can, modelAcceptsImages } from '../core/access.js';
 import { state } from '../core/state.js';
 import { addError } from './transcript.js';
 import { api } from '../core/api.js';
@@ -182,6 +182,10 @@ function stageAttachment(file) {
   // Dropped and pasted files arrive here too, not only through the + menu.
   if (!can(isImageFile(file) ? 'images' : 'attachments')) {
     addError(`attach "${file.name}": ${isImageFile(file) ? 'images are' : 'attachments are'} turned off for your account`);
+    return;
+  }
+  if (isImageFile(file) && !modelAcceptsImages()) {
+    addError(`attach "${file.name}": the current model does not take images`);
     return;
   }
   const entry = { file };

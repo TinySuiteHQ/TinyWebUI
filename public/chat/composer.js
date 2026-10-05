@@ -228,6 +228,7 @@ async function buildModelMenu(pop) {
       else await api.post('/api/config', { model: id });
     } catch (err) { return addError(err.message); }
     await config.load();
+    await loadAccess(); // the new model's capability tags
   };
 
   let models = [];
