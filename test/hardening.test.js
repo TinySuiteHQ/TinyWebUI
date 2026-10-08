@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 const { start } = await import('../src/server.js');
 const srv = await start({ port: 0, host: '127.0.0.1', configFile: false, mcpServers: {}, dbPath: ':memory:',
-  config: { baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' } });
+  config: { authMode: 'none', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' } });
 test.after(() => srv.shutdown());
 const base = `http://127.0.0.1:${srv.address().port}`;
 

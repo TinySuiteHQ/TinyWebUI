@@ -5,10 +5,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hashPassword } from '../src/access/auth.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-reload-'));
 const configFile = join(dir, 'tinywebui.config.json');
-writeFileSync(configFile, JSON.stringify({ systemPrompt: 'v1' }));
+writeFileSync(configFile, JSON.stringify({ authMode: 'none', systemPrompt: 'v1' }));
 writeFileSync(join(dir, 'mcp.json'), '{ "mcpServers": {} }\n');
 
 const { start } = await import('../src/server.js');
@@ -19,7 +20,7 @@ const srv = await start({
 test.after(async () => { await srv.shutdown(); rmSync(dir, { recursive: true, force: true }); });
 const base = `http://127.0.0.1:${srv.address().port}`;
 const cfg = async () => (await fetch(`${base}/api/config`)).json();
-const edit = (obj) => writeFileSync(configFile, JSON.stringify(obj, null, 2));
+const edit = (obj) => writeFileSync(configFile, JSON.stringify({ authMode: 'none', ...obj }, null, 2));
 
 test('a valid edit applies on reload', async () => {
   edit({ systemPrompt: 'v2' });
@@ -37,7 +38,7 @@ test('an invalid edit is rejected and nothing changes', async () => {
 });
 
 test('authMode cannot change without a restart', async () => {
-  edit({ systemPrompt: 'v4', authMode: 'single', authPassword: 'scrypt$00$00' });
+  edit({ systemPrompt: 'v4', authMode: 'single', authPassword: hashPassword('a long test password') });
   assert.equal(await srv.reload('test'), false);
   assert.equal((await cfg()).authMode, 'none');
 });

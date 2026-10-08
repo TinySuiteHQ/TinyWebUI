@@ -79,7 +79,7 @@ test('the checked-in schema matches the code', () => {
 
 test('migrate creates, then reports up to date; --check flags an old database', async () => {
   const d = mkdtempSync(join(tmpdir(), 'tinywebui-migrate-'));
-  writeFileSync(join(d, 'tinywebui.config.json'), JSON.stringify({ dbPath: join(d, 'x.db'), autoMigrate: false }));
+  writeFileSync(join(d, 'tinywebui.config.json'), JSON.stringify({ authMode: 'none', dbPath: join(d, 'x.db'), autoMigrate: false }));
   const go = (...args) => spawnSync(process.execPath, [BIN, ...args, '--config', join(d, 'tinywebui.config.json')], { encoding: 'utf8' });
   assert.match(go('migrate').stdout, /created .* at schema \d+/);
   assert.match(go('migrate').stdout, /up to date/);
@@ -98,7 +98,7 @@ test('migrate creates, then reports up to date; --check flags an old database', 
 
 test('doctor reports each check as a JSON line and fails on an unreachable model', () => {
   const d = mkdtempSync(join(tmpdir(), 'tinywebui-doctor-'));
-  writeFileSync(join(d, 'tinywebui.config.json'), JSON.stringify({ dbPath: ':memory:', baseUrl: 'http://127.0.0.1:9/v1' }));
+  writeFileSync(join(d, 'tinywebui.config.json'), JSON.stringify({ authMode: 'none', dbPath: ':memory:', baseUrl: 'http://127.0.0.1:9/v1' }));
   writeFileSync(join(d, 'mcp.json'), '{ "mcpServers": {} }');
   const r = spawnSync(process.execPath, [BIN, 'doctor', '--config', join(d, 'tinywebui.config.json')], { encoding: 'utf8' });
   const lines = r.stdout.trim().split('\n').map((l) => JSON.parse(l));

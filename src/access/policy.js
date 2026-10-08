@@ -103,6 +103,8 @@ export function modelsFor(cfg, role) {
   return m === '*' || m === undefined ? '*' : m.map(String);
 }
 
+export const MIN_PASSWORD_LENGTH = 15;
+
 /** Every problem with a config, as readable strings. Empty means valid. */
 export function validateConfig(cfg, { env = process.env } = {}) {
   const errors = [];
@@ -114,10 +116,12 @@ export function validateConfig(cfg, { env = process.env } = {}) {
     errors.push("authMode 'trusted-header' requires trustedProxyCidrs: identity headers are only believed from those peers");
   }
   if (mode === 'single') {
-    if (cfg.authPassword && !String(cfg.authPassword).startsWith('scrypt$')) {
+    if (cfg.authPassword && !/^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/i.test(String(cfg.authPassword))) {
       errors.push('authPassword must be a hash: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD');
     } else if (!cfg.authPassword && !env.TINYWEBUI_PASSWORD) {
       errors.push("authMode 'single' needs a password: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD");
+    } else if (!cfg.authPassword && env.TINYWEBUI_PASSWORD.length < MIN_PASSWORD_LENGTH) {
+      errors.push(`TINYWEBUI_PASSWORD needs at least ${MIN_PASSWORD_LENGTH} characters`);
     }
   }
 

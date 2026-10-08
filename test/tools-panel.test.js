@@ -39,7 +39,7 @@ writeFileSync(process.env.TINYWEBUI_MCP, JSON.stringify({
 }));
 
 const { start } = await import('../src/server.js');
-const srv = await start({ port: 0, host: '127.0.0.1' });
+const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'none' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 
 const get = async (path) => (await fetch(`${base}${path}`)).json();

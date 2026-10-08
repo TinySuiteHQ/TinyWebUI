@@ -83,6 +83,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const initial = source.load();
   const problems = configProblems(initial);
   if (problems.length) throw new Error(problems.join('\n'));
+  if (initial.authMode === 'none' && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
+    throw new Error("authMode 'none' is limited to loopback; use password login or a trusted-header gateway for network access");
+  }
 
   const store = new Store(source.dbPath(initial), { migrate: initial.autoMigrate !== false });
   // Runs live in this process, so nothing from before it can still be waiting.

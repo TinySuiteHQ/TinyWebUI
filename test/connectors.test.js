@@ -24,7 +24,7 @@ test('an entry runs against its connector; others keep the global endpoint', () 
 });
 
 test('connector problems are named', () => {
-  const bad = (extra) => configProblems({ ...DEFAULTS, ...extra });
+  const bad = (extra) => configProblems({ ...DEFAULTS, authMode: 'none', ...extra });
   assert.match(bad({ connectors: [{ id: 'x', baseUrl: 'ftp://nope' }] }).join(), /baseUrl must be an http\(s\) URL/);
   assert.match(bad({ connectors: [{ id: 'x', baseUrl: 'http://h' }, { id: 'x', baseUrl: 'http://h' }] }).join(), /listed twice/);
   assert.match(bad({ models: [{ id: 'm', connector: 'missing' }] }).join(), /"missing" is not in connectors/);

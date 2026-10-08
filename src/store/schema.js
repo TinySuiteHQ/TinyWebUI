@@ -2,7 +2,7 @@
 
 export const SCHEMA = `
 -- Optional auth/RBAC (config authMode 'single'/'multiuser'). Unused and
--- empty when authMode is 'none', the default -- these tables cost nothing
+-- empty when authMode is explicitly 'none' -- these tables cost nothing
 -- to have around.
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,

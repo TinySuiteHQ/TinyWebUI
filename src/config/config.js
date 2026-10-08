@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
@@ -143,15 +143,13 @@ export const DEFAULTS = {
   // is offered to the model; a server can still be reached by name, so this
   // is a per-tool block, not a substitute for disabling the whole server.
   disabledTools: [],
-  // Optional auth/RBAC. Off by default -- TinyWebUI stays single-user and
-  // local-first unless this is deliberately opted into for a managed deploy.
-  //   'none'           no login: just you, on localhost (default)
+  //   'none'           explicit local-only use without login
   //   'single'         just you, behind a password (authPassword or
   //                    $TINYWEBUI_PASSWORD; set it with `tinywebui set-password`)
   //   'trusted-header' many users: an upstream gateway (Cloudflare Access,
   //                    oauth2-proxy, Authelia, ...) signs people in with
   //                    Google, Apple, SSO etc. and passes identity headers
-  authMode: 'none',
+  authMode: 'single',
   // Level 'single': an scrypt hash (never plaintext), from `tinywebui
   // set-password`; never writable through /api/config.
   authPassword: '',
@@ -249,7 +247,8 @@ export function createConfigSource(opts = {}) {
   };
   const writeFile = (obj) => {
     if (!file) { memory = obj; return; }
-    writeFileSync(file, JSON.stringify(obj, null, 2) + '\n');
+    if (existsSync(file) && process.platform !== 'win32') chmodSync(file, 0o600);
+    writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
   };
 
   function load({ persistSecret = true } = {}) {

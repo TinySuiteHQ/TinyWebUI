@@ -55,7 +55,7 @@ Secrets come from the environment:
 | --- | --- |
 | `MODEL_API_KEY` | read by the config above (any name works; it is plain JS) |
 | `TINYWEBUI_SESSION_SECRET` | signs session cookies; set it so restarts keep sessions (tier 2) |
-| `TINYWEBUI_PASSWORD` | tier 2 only: the password, when not using `set-password` |
+| `TINYWEBUI_PASSWORD` | single-owner mode only: a password of at least 15 characters when not using `set-password` |
 | `TINYWEBUI_API_KEY` | alternative to `apiKey` for JSON-only configs |
 
 **`compose.yaml`**:
@@ -68,6 +68,8 @@ services:
                                       # dockerfile: Dockerfile.lexical for the small BM25-only image)
     read_only: true
     env_file: .env
+    environment:
+      TINYWEBUI_CONFIG: /config/tinywebui.config.js
     volumes:
       - ./config:/config:ro
       - tinywebui-data:/data

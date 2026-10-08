@@ -47,7 +47,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Hybrid local search** (BM25 plus a small on-device embedding model) over documents and past chats.
 - **Long chats that stay affordable.** Cache-friendly prefixes, one-time compaction of large tool results, and per-round token statistics.
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
-- **Scales up when needed.** A password for remote access, or an SSO gateway for a team with roles and an admin panel.
+- **Private by default.** Interactive first runs ask for an owner password; a team can use an SSO gateway with roles and an admin panel.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
 - **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
 
@@ -59,7 +59,7 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-Open <http://127.0.0.1:7777>, then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
+The first run asks you to create an owner password of at least 15 characters. Open <http://127.0.0.1:7777>, sign in, then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
 
 ```json
 {
@@ -69,16 +69,21 @@ Open <http://127.0.0.1:7777>, then connect a model. Put an endpoint and key in `
 }
 ```
 
-`tinywebui.config.json` holds your API keys and is gitignored. Keep it that way.
+`tinywebui.config.json` holds your password hash and API keys and is gitignored. Keep it that way. Use `npx tinywebui set-password` to change the password later.
 
 `npx tinywebui` uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 
-From a clone, run `npm install && npm start`. With Docker:
+From a clone, run `npm install && npm start`. With Docker, create the owner password in the persistent volume before starting the service:
 
 ```bash
-cp example.tinywebui.config.json tinywebui.config.json   # add your API key
-docker compose up --build
+docker compose build
+docker compose run --rm -it tinywebui set-password
+docker compose up -d
 ```
+
+The Compose example publishes port 7777 on the host's loopback interface. The Docker image also accepts `TINYWEBUI_PASSWORD` for a headless first start; use a password of at least 15 characters and keep the container's data volume. Without credentials, a headless start exits before opening a port.
+
+The Compose example now stores config in its named data volume. If you used the previous bind-mounted `tinywebui.config.json`, copy its settings into the volume before starting, then run `set-password` there.
 
 ## Documentation
 

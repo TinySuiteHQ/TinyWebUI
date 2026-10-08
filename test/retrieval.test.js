@@ -139,7 +139,7 @@ test('no bundle means a clear startup error, never a download', async () => {
 test('retrieval settings are validated', () => {
   const bad = configProblems({ ...DEFAULTS, retrieval: { mode: 'vector', denseWeight: 1, rrfK: -1, modelSha256: 'abc', colour: 1 } }).join('\n');
   for (const needle of ['retrieval.mode', 'retrieval.denseWeight', 'retrieval.rrfK', 'retrieval.modelSha256', 'retrieval.colour']) assert.ok(bad.includes(needle), needle);
-  assert.deepEqual(configProblems({ ...DEFAULTS, retrieval: { ...DEFAULTS.retrieval, mode: 'hybrid' } }), []);
+  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'none', retrieval: { ...DEFAULTS.retrieval, mode: 'hybrid' } }), []);
 });
 
 // Real model, when one is on disk: TINYWEBUI_TEST_MODELS_DIR=<dir holding

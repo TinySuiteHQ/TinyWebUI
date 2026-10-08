@@ -20,7 +20,7 @@ const failing = (code) => async () => { throw Object.assign(new Error(`boom ${co
 
 test('hybrid through auto is the default', () => {
   assert.equal(DEFAULTS.retrieval.mode, 'auto');
-  assert.deepEqual(configProblems({ ...DEFAULTS }), []);
+  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'none' }), []);
 });
 
 test('auto runs hybrid when the model loads', async () => {

@@ -76,14 +76,14 @@ test('turns use the entry\'s provider id, prompt and settings', async () => {
 });
 
 test('the catalog is validated, and everything that names a model must name an entry', () => {
-  const base = { ...DEFAULTS, models };
+  const base = { ...DEFAULTS, authMode: 'none', models };
   assert.deepEqual(configProblems({ ...base, model: 'quick' }), []);
   assert.deepEqual(configProblems({ ...base, model: 'vendor/large-v2' }), [], 'a provider id finds its entry');
   assert.match(configProblems({ ...base, model: 'nope' }).join(), /not in the models catalog/);
   assert.match(configProblems({ ...base, model: 'quick', access: { roles: { user: { models: ['ghost'] } } } }).join(), /"ghost" is not a models catalog id/);
   assert.match(configProblems({ ...base, model: 'quick', models: [{ id: 'a', tempurature: 1 }] }).join(), /tempurature is not a known setting/);
   assert.match(configProblems({ ...base, model: 'a', models: [{ id: 'a' }, { id: 'a' }] }).join(), /listed twice/);
-  assert.deepEqual(configProblems({ ...DEFAULTS }), [], 'no catalog: nothing changes');
+  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'none' }), [], 'no catalog: nothing changes');
 });
 
 test('effectiveConfig leaves unknown ids alone when there is no catalog', () => {

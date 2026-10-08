@@ -40,7 +40,7 @@ process.env.TINYWEBUI_MODEL = 'fake-model';
 process.env.TINYWEBUI_DB = join(dir, 'chats.db');
 
 const { start } = await import('../src/server.js');
-const srv = await start({ port: 0, host: '127.0.0.1' });
+const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'none' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 test.after(() => { srv.shutdown?.(); srv.close(); fake.close(); });
 

@@ -28,7 +28,8 @@ test('every mistake is named', () => {
   }
   assert.match(validateConfig({ authMode: 'single', authPassword: 'plain' }).join(), /must be a hash/);
   assert.match(validateConfig({ authMode: 'single' }, { env: {} }).join(), /needs a password/);
-  assert.deepEqual(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: 'x' } }), []);
+  assert.match(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: 'short' } }).join(), /at least 15 characters/);
+  assert.deepEqual(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: 'a long test password' } }), []);
   assert.match(validateConfig({ authMode: 'multiuser' }).join(), /trusted-header/);
 });
 
@@ -64,7 +65,7 @@ test('fingerprints ignore key order and never contain secret values', () => {
 test('file-only keys are refused by save even when nothing locks them', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-policy-'));
   const file = join(dir, 'c.json');
-  writeFileSync(file, '{}');
+  writeFileSync(file, '{"authMode":"none"}');
   const source = createConfigSource({ configFile: file, config: { model: 'frozen-model' } });
   assert.throws(() => source.save({ authMode: 'none' }), LockedError);
   assert.throws(() => source.save({ access: { roles: {} } }), LockedError);

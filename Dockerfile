@@ -13,7 +13,7 @@ FROM node:22-slim
 
 WORKDIR /app
 ENV NODE_ENV=production \
-    TINYWEBUI_CONFIG=/config/tinywebui.config.js \
+    TINYWEBUI_CONFIG=/data/tinywebui.config.json \
     TINYWEBUI_DB=/data/tinywebui.db \
     TINYWEBUI_MODELS_DIR=/app/models \
     ORT_DISABLE_TELEMETRY=1
@@ -30,7 +30,7 @@ COPY public ./public
 
 ARG EMBEDDING_MODEL=fast
 ARG EMBEDDING_SHA256=
-# No config exists at build time (it is mounted at runtime) and the pull needs none.
+# No config exists at build time (it is created in /data at runtime) and the pull needs none.
 RUN env -u TINYWEBUI_CONFIG node bin/tinywebui.js models pull "$EMBEDDING_MODEL" > /tmp/pull.json \
  && node -e "const p=require('/tmp/pull.json'),w=process.env.EMBEDDING_SHA256; \
     if(w&&w.toLowerCase()!==p.sha256){console.error('model checksum mismatch: expected '+w+', got '+p.sha256);process.exit(1)} \

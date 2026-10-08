@@ -16,7 +16,7 @@ if (configArg) process.env.TINYWEBUI_CONFIG = resolve(configArg);
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`tinywebui [start] [--port 7777] [--host 127.0.0.1] [--config path]
-tinywebui set-password     turn on password login ("single" auth mode)
+tinywebui set-password     create or change the owner password
 tinywebui validate [path]  check the config files; prints the fingerprint, exits 1 on problems
 tinywebui migrate [--check]
                            bring the database to the current schema (--check: exit 1 if behind)
@@ -67,12 +67,6 @@ if (envPath && /\.[cm]?js$/.test(envPath)) {
   }
 }
 
-if (args[0] === 'set-password') {
-  const { setPassword } = await import('../src/set-password.js');
-  try { await setPassword(); process.exit(0); }
-  catch (err) { console.error(`[tinywebui] ${err.message}`); process.exit(1); }
-}
-
 try {
   let opts = {};
   if (jsPath && !existsSync(jsPath)) throw new Error(`config file not found: ${jsPath}`);
@@ -83,6 +77,11 @@ try {
     // stderr, so a command's stdout stays pure JSON for scripts.
     console.error(`[tinywebui] options: ${jsPath}`);
   }
+  if (args[0] === 'set-password') {
+    const { setPassword } = await import('../src/set-password.js');
+    await setPassword(opts);
+    process.exit(0);
+  }
   const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config', 'models'];
   if (COMMANDS.includes(args[0])) {
     const { runCli } = await import('../src/cli.js');
@@ -91,6 +90,16 @@ try {
   if (args[0] && !args[0].startsWith('--') && args[0] !== 'start') {
     console.error(`[tinywebui] unknown command "${args[0]}" (see --help)`);
     process.exit(1);
+  }
+  const { createConfigSource } = await import('../src/config/config.js');
+  const initial = createConfigSource(opts).load({ persistSecret: false });
+  if (initial.authMode === 'single' && !initial.authPassword && !process.env.TINYWEBUI_PASSWORD) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error('owner password required: run `tinywebui set-password` in a terminal, or set TINYWEBUI_PASSWORD before starting');
+    }
+    const { setPassword } = await import('../src/set-password.js');
+    console.log('[tinywebui] Set an owner password before the first start.');
+    await setPassword(opts);
   }
   const { start } = await import('../src/server.js');
   // Command-line flags beat the file; the file beats the built-in defaults.

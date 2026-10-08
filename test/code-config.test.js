@@ -17,7 +17,7 @@ const srv = await start({
   host: '127.0.0.1',
   configFile: false,
   dbPath: ':memory:',
-  config: { apiKey: 'k', model: 'code-model', toolApproval: 'all' },
+  config: { authMode: 'none', apiKey: 'k', model: 'code-model', toolApproval: 'all' },
   mcpServers: {},
 });
 const base = `http://127.0.0.1:${srv.address().port}`;
@@ -38,7 +38,7 @@ test('code values are in effect and reported as locked', async () => {
   assert.equal(cfg.toolApproval, 'all');
   assert.equal(cfg.hasApiKey, true);
   assert.equal(cfg.apiKey, undefined);
-  assert.deepEqual(cfg.lockedKeys.sort(), ['apiKey', 'model', 'toolApproval']);
+  assert.deepEqual(cfg.lockedKeys.sort(), ['apiKey', 'authMode', 'model', 'toolApproval']);
   assert.equal(cfg.mcpLocked, true);
 });
 

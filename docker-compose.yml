@@ -7,13 +7,9 @@ services:
     build: .
     image: tinywebui
     ports:
-      - "7777:7777"
-    environment:
-      # The Dockerfile defaults to a .js path; the config is JSON.
-      TINYWEBUI_CONFIG: /config/tinywebui.config.json
+      - "127.0.0.1:7777:7777"
     volumes:
-      # Writable: the app saves settings and its session secret back to it.
-      - ./tinywebui.config.json:/config/tinywebui.config.json
+      # Holds the database, owner password hash, settings and session secret.
       - tinywebui-data:/data
     restart: unless-stopped
 

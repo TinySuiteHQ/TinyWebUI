@@ -4,13 +4,12 @@
 #
 #   docker build -f Dockerfile.lexical -t tinywebui:lexical .
 #
-# Config comes in read-only at /config, data lives in /data, secrets come
-# from the environment.
+# Config and data live in the persistent /data volume.
 FROM node:22-alpine
 
 WORKDIR /app
 ENV NODE_ENV=production \
-    TINYWEBUI_CONFIG=/config/tinywebui.config.js \
+    TINYWEBUI_CONFIG=/data/tinywebui.config.json \
     TINYWEBUI_DB=/data/tinywebui.db
 
 COPY package.json package-lock.json ./
