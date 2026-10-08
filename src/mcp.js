@@ -13,7 +13,25 @@ const MAX_NAME = 64;
 
 // Built-in tools registered after connect(). An MCP tool that flattened onto
 // one of these would be shadowed by the local handler without a word.
-const RESERVED = new Set(['expand_context', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats']);
+const RESERVED = new Set(['expand_context', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats', 'manage_mcp']);
+
+const REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+/**
+ * Fills `${NAME}` from the environment, so a key can live outside mcp.json (and
+ * out of any chat that set the server up). A name that is not set fails the
+ * connection with its name, never a silent empty string: an empty bearer token
+ * reads as "unauthorised" and sends people looking in the wrong place.
+ */
+export function expandRefs(value, env = process.env) {
+  if (typeof value !== 'string') return value;
+  return value.replace(REF, (_, name) => {
+    if (env[name] === undefined) throw new Error(`mcp.json refers to \${${name}}, which is not set in TinyWebUI's environment`);
+    return env[name];
+  });
+}
+
+const expandAll = (obj) => obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandRefs(v)]));
 
 /**
  * The flat name the model sees for a server's tool. Sanitising and the
@@ -87,8 +105,8 @@ function transportFor(name, spec) {
   if (spec.command) {
     return new StdioClientTransport({
       command: spec.command,
-      args: spec.args || [],
-      env: { ...process.env, ...(spec.env || {}) },
+      args: (spec.args || []).map((a) => expandRefs(a)),
+      env: { ...process.env, ...(expandAll(spec.env) || {}) },
       cwd: spec.cwd,
       // Piped rather than inherited so we can label it and, more importantly,
       // drop the shutdown noise -- a stdio server killed by Ctrl-C prints a full
@@ -97,8 +115,8 @@ function transportFor(name, spec) {
     });
   }
   if (spec.url) {
-    const opts = spec.headers ? { requestInit: { headers: spec.headers } } : undefined;
-    const url = new URL(spec.url);
+    const opts = spec.headers ? { requestInit: { headers: expandAll(spec.headers) } } : undefined;
+    const url = new URL(expandRefs(spec.url));
     return spec.transport === 'sse'
       ? new SSEClientTransport(url, opts)
       : new StreamableHTTPClientTransport(url, opts);
@@ -126,6 +144,9 @@ export class McpHub {
     // default policy: name -> true, or a function of the call's arguments.
     // Same opt-in rule -- silence means "may write".
     this.readOnly = new Map();
+    // Local tools that change the deployment itself and so ask every time,
+    // unlike the other built-ins: name -> true, or a function of the arguments.
+    this.gated = new Map();
     // Explicit 'parallel' | 'sequential' overrides for tools whose safety to
     // run alongside others is known better than the hints above say.
     this.modes = new Map();
@@ -142,8 +163,9 @@ export class McpHub {
    * Registered after connect() so locals always land at the end of the block,
    * keeping the tool list byte-identical between runs.
    */
-  registerLocal(def, handler, { readOnly = false, idempotent = readOnly === true, executionMode = null } = {}) {
+  registerLocal(def, handler, { readOnly = false, idempotent = readOnly === true, executionMode = null, gated = false } = {}) {
     this.locals.set(def.function.name, handler);
+    if (gated) this.gated.set(def.function.name, gated);
     if (executionMode) this.modes.set(def.function.name, executionMode);
     if (readOnly) this.readOnly.set(def.function.name, readOnly);
     if (idempotent) this.idempotent.add(def.function.name);
@@ -333,6 +355,12 @@ export class McpHub {
   /** True for a tool this process implements rather than an MCP server. */
   isLocal(flatName) {
     return this.locals.has(flatName);
+  }
+
+  /** True when this call is to a local tool that must ask, whatever the approval mode. */
+  isGated(flatName, args) {
+    const v = this.gated.get(flatName);
+    return typeof v === 'function' ? Boolean(v(args || {})) : Boolean(v);
   }
 
   /** True when this call is declared to change nothing. */
