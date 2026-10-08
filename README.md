@@ -81,7 +81,7 @@ docker compose run --rm -it tinywebui set-password
 docker compose up -d
 ```
 
-The Compose example publishes port 7777 on the host's loopback interface. The Docker image also accepts `TINYWEBUI_PASSWORD` for a headless first start; use a password of at least 15 characters and keep the container's data volume. Without credentials, a headless start exits before opening a port.
+The Compose example publishes port 7777 on the host's loopback interface. The Docker image also accepts `TINYWEBUI_PASSWORD` for a headless first start; use a password of at least 15 characters and keep the container's data volume. Without credentials, a headless start exits before opening a port. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
 
 The Compose example now stores config in its named data volume. If you used the previous bind-mounted `tinywebui.config.json`, copy its settings into the volume before starting, then run `set-password` there.
 
