@@ -38,7 +38,7 @@
     "cron-parser": "^5.10.1",
     "heic-convert": "^2.1.0",
     "jpeg-js": "^0.4.4",
-    "mammoth": "^1.12.3",
+    "mammoth": "^1.13.0",
     "unpdf": "^1.8.1"
   },
   "license": "AGPL-3.0-or-later",

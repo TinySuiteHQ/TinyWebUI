@@ -7,13 +7,24 @@
 # Config and data live in the persistent /data volume.
 FROM node:22-alpine
 
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 ENV NODE_ENV=production \
     TINYWEBUI_CONFIG=/data/tinywebui.config.json \
     TINYWEBUI_DB=/data/tinywebui.db
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
+# Keep npm/npx for user-configured stdio MCP servers. npm 12.2.0 still bundles
+# brace-expansion 5.0.9, so replace it with the patched 5.0.11 release.
+RUN npm ci --omit=dev --omit=optional --ignore-scripts \
+ && npm install -g npm@12.2.0 --ignore-scripts --no-audit --no-fund \
+ && npm pack brace-expansion@5.0.11 --pack-destination /tmp --silent \
+ && tar -xzf /tmp/brace-expansion-5.0.11.tgz -C /tmp \
+ && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+ && mv /tmp/package /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+ && rm /tmp/brace-expansion-5.0.11.tgz \
+ && npm cache clean --force
 
 COPY bin ./bin
 COPY src ./src

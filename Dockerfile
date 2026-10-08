@@ -11,6 +11,10 @@
 # lexical-only image, build Dockerfile.lexical instead.
 FROM node:22-slim
 
+RUN apt-get update \
+ && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 ENV NODE_ENV=production \
     TINYWEBUI_CONFIG=/data/tinywebui.config.json \
@@ -22,7 +26,16 @@ COPY package.json package-lock.json ./
 # Optional dependencies (onnxruntime-node, @huggingface/tokenizers) are
 # included; --ignore-scripts skips onnxruntime's GPU download, the CPU build
 # ships in the package.
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+# Keep npm/npx for user-configured stdio MCP servers. npm 12.2.0 still bundles
+# brace-expansion 5.0.9, so replace it with the patched 5.0.11 release.
+RUN npm ci --omit=dev --ignore-scripts \
+ && npm install -g npm@12.2.0 --ignore-scripts --no-audit --no-fund \
+ && npm pack brace-expansion@5.0.11 --pack-destination /tmp --silent \
+ && tar -xzf /tmp/brace-expansion-5.0.11.tgz -C /tmp \
+ && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+ && mv /tmp/package /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+ && rm /tmp/brace-expansion-5.0.11.tgz \
+ && npm cache clean --force
 
 COPY bin ./bin
 COPY src ./src
