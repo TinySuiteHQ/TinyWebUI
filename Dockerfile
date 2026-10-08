@@ -9,7 +9,7 @@
 #
 # EMBEDDING_MODEL must match retrieval.model (default 'fast'). For the small
 # lexical-only image, build Dockerfile.lexical instead.
-FROM node:22-slim
+FROM node:22.23.3-slim
 
 RUN apt-get update \
  && apt-get upgrade -y \

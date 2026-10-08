@@ -5,7 +5,7 @@
 #   docker build -f Dockerfile.lexical -t tinywebui:lexical .
 #
 # Config and data live in the persistent /data volume.
-FROM node:22-alpine
+FROM node:22.23.3-alpine
 
 RUN apk upgrade --no-cache
 
