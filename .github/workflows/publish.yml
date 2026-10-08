@@ -26,3 +26,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm publish --access public
+
+  record-deployment:
+    name: Record npm deployment
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      deployments: write
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/tinywebui
+    steps:
+      - run: echo "Published $GITHUB_REF_NAME to npm"
