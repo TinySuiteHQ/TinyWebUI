@@ -25,6 +25,7 @@ let openMcp;
 
 function closeMenu() {
   if (!open) return;
+  open.watch.disconnect();
   open.pop.remove();
   open.btn.setAttribute('aria-expanded', 'false');
   open = null;
@@ -38,27 +39,35 @@ function openMenu(btn, side, build) {
   pop.setAttribute('role', 'menu');
   form.appendChild(pop);
   btn.setAttribute('aria-expanded', 'true');
-  open = { pop, btn };
+  // Menus fill in after a fetch and change height when a group expands, so
+  // refit whenever their contents change, not just once at open.
+  const watch = new MutationObserver(() => fitToViewport(pop));
+  watch.observe(pop, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] });
+  open = { pop, btn, watch };
   build(pop);
   fitToViewport(pop);
 }
 
 /**
- * Opens the popover on whichever side of the composer has more room and caps
- * its height to that room, so it never hangs off the viewport (short phone
- * screens, the centred empty-chat composer, an open mobile keyboard).
+ * Opens the popover below the composer in a new chat, where the composer is
+ * centred, and in a conversation, where it is pinned to the bottom, below if
+ * the menu fits there and above otherwise. Its height is capped to the chosen
+ * side's room so it never hangs off the viewport (an open mobile keyboard).
  */
 function fitToViewport(pop) {
   const gap = 8;
+  pop.style.maxHeight = 'none';
+  const want = Math.min(pop.offsetHeight, 448);
   const rect = form.getBoundingClientRect();
   const vh = window.visualViewport?.height ?? window.innerHeight;
   const above = rect.top - gap * 2;
   const below = vh - rect.bottom - gap * 2;
-  const up = above >= below;
+  const centred = !!form.closest('main:has(#wrap:empty)');
+  const up = !centred && below < want && above > below;
   pop.style.top = up ? 'auto' : 'calc(100% + .5rem)';
   pop.style.bottom = up ? 'calc(100% + .5rem)' : 'auto';
   pop.style.transformOrigin = `${up ? 'bottom' : 'top'} ${pop.classList.contains('popover-right') ? 'right' : 'left'}`;
-  pop.style.maxHeight = `${Math.max(120, Math.min(448, up ? above : below))}px`;
+  pop.style.maxHeight = `${Math.max(64, Math.min(want, up ? above : below))}px`;
 }
 
 /**

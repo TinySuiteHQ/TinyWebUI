@@ -13,7 +13,9 @@
  *   'off'     never ask
  *
  * Built-in tools (expand_context, read_document, manage_automation) are the
- * harness's own and always run; everything here applies to MCP tools.
+ * harness's own and always run; everything here applies to MCP tools. The one
+ * exception is a built-in that edits the MCP servers themselves (manage_mcp):
+ * it is gated, and asks before any call that changes something.
  *
  * Per-tool overrides win over the mode: `confirmTools` always asks,
  * `autoApproveTools` never does.
@@ -24,7 +26,12 @@ export const APPROVAL_MODES = ['writes', 'all', 'off'];
 export function approvalFor(cfg, hub, name, args) {
   // The harness's own tools are part of the harness, not third-party code:
   // they never ask, whatever the mode or overrides say. Approval is for MCP.
-  if (hub?.isLocal?.(name)) return 'auto';
+  if (hub?.isLocal?.(name)) {
+    if (!hub.isGated?.(name, args)) return 'auto';
+    // manage_mcp can add a server that runs a command on this machine, so it
+    // asks even when the mode is 'off'. Only an explicit per-tool "auto" skips it.
+    return (cfg.autoApproveTools || []).includes(name) ? 'auto' : 'ask';
+  }
   if ((cfg.confirmTools || []).includes(name)) return 'ask';
   if ((cfg.autoApproveTools || []).includes(name)) return 'auto';
   // Missing means off, not the config default: a caller that builds its own

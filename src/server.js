@@ -4,7 +4,7 @@ import { watch, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { createConfigSource, LockedError, configProblems, redactSecrets } from './config/config.js';
-import { McpHub } from './mcp.js';
+import { McpHub, missingCommand } from './mcp.js';
 import { isClosed, findEntry } from './config/models.js';
 import { Store, SCHEMA_VERSION } from './store/index.js';
 import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/policy.js';
@@ -18,6 +18,7 @@ import { documentToolDef, callReadDocument } from './tools/document_tool.js';
 import { askToolDef, callAskUser } from './tools/ask_tool.js';
 import { chatSearchToolDef, callSearchChats } from './tools/chat_search_tool.js';
 import { taskToolDef, callManageTasks } from './tools/task_tool.js';
+import { mcpToolDef, callManageMcp, MANAGE_MCP } from './tools/mcp_tool.js';
 import { automationToolDef, manageAutomation } from './automations/automation.js';
 import { overrideFor } from './config/approval.js';
 import { Retrieval } from './retrieval/retrieval.js';
@@ -134,7 +135,32 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     refreshConfig() {
       app.cfg = source.load();
     },
-    auditMcp: (by, before) => audit('mcp.changed', { by: by ?? 'local', before, after: fingerprint(app.cfg, source.loadMcpServers()) }),
+    // `change` (action and server name, never a value) says what the assistant did.
+    auditMcp: (by, before, change) => audit('mcp.changed', { by: by ?? 'local', ...(change ? { change } : {}), before, after: fingerprint(app.cfg, source.loadMcpServers()) }),
+
+    /** What manage_mcp may do. It works on the file, not the live hub, so it sees what the next connect will. */
+    mcpEdit: {
+      locked: () => source.mcpLocked,
+      servers() {
+        let parsed;
+        try { parsed = JSON.parse(source.readMcpFile()); }
+        catch (err) { throw new Error(`mcp.json is not valid JSON (${err.message}); ask the user to fix it before anything is changed`); }
+        return structuredClone(parsed.mcpServers || parsed);
+      },
+      save(servers, { by, change }) {
+        const before = fingerprint(app.cfg, source.loadMcpServers());
+        source.saveMcpFile(JSON.stringify({ mcpServers: servers }, null, 2));
+        app.auditMcp(by, before, change);
+        // Noted now so the file watcher takes this write for our own. The
+        // reconnect waits for the reply to finish (onRunIdle): swapping now
+        // would close the servers the running turn is still calling.
+        mcpText = source.readMcpFile();
+        mcpDirty = true;
+      },
+      status: () => Object.fromEntries(app.hub.inventory(app.cfg.disabledTools).servers
+        .map((s) => [s.name, { status: s.status, error: s.error, tools: s.tools.length }])),
+      check: (spec) => missingCommand(spec)?.message ?? null
+    },
 
     multiUser: () => app.cfg.authMode === 'trusted-header',
 
@@ -169,7 +195,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     /** The tools a turn gets: what is switched on, minus manage_automation for
      * anyone whose role has no automations. */
     toolsFor: (features) => app.hub.activeTools(app.cfg.disabledTools)
-      .filter((t) => features.has(FEATURE.AUTOMATIONS) || t.function.name !== 'manage_automation'),
+      .filter((t) => features.has(FEATURE.AUTOMATIONS) || t.function.name !== 'manage_automation')
+      .filter((t) => features.has(FEATURE.MCP) || t.function.name !== MANAGE_MCP),
 
     /** A stored owner's features: null (tiers 1-2) is the one person. */
     ownerFeatures: (userId) => featuresFor(app.cfg, userId ? store.users.get(userId)?.role : null),
@@ -221,7 +248,15 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       return run;
     },
 
-    onRunIdle: (chatId) => app.scheduler.drain(chatId)
+    onRunIdle: (chatId) => {
+      app.scheduler.drain(chatId);
+      // manage_mcp saved mcp.json during that run. Re-read the file rather than
+      // reuse what it saved: someone may have edited it since.
+      if (mcpDirty) {
+        mcpDirty = false;
+        app.swapHub(source.loadMcpServers()).catch((err) => log.error(`mcp reconnect failed: ${err.message}`));
+      }
+    }
   };
   app.runs = createRuns(app);
   app.scheduler = createScheduler(app);
@@ -244,12 +279,21 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const out = manageAutomation(args, { ...ctx, store, triggerAutomation: scheduler.trigger });
         scheduler.arm();
         return out;
+      })
+      // Unlike the tools above it asks before anything but "list": a local
+      // server is a command run on this machine, and mcp.json holds credentials.
+      .registerLocal(mcpToolDef(), (args, ctx) => callManageMcp(args, { ...ctx, mcp: app.mcpEdit }), {
+        readOnly: (args) => args?.action === 'list',
+        gated: (args) => args?.action !== 'list',
+        executionMode: 'sequential'
       });
 
   app.hub = await connectHub(source.loadMcpServers());
   // What mcp.json said when the hub was last (re)built, so a reload can tell
   // a real edit from the echo of the UI's own save.
   let mcpText = source.readMcpFile();
+  // Set when manage_mcp has saved mcp.json and the hub still has to follow.
+  let mcpDirty = false;
   // The hub swap in progress, if any, and whether shutdown has begun.
   let swapping = Promise.resolve();
   let stopping = false;
