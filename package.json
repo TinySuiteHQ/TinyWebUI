@@ -1,6 +1,6 @@
 {
   "name": "tinywebui",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A small, local-first chat workspace for any OpenAI-compatible model, with MCP tools.",
   "type": "module",
   "repository": {
