@@ -179,6 +179,9 @@ export const DEFAULTS = {
   // Extra origins allowed to send state-changing requests (e.g. an admin
   // tool on another host). The page's own origin is always allowed.
   allowedOrigins: [],
+  // Extra Host names answered when authMode is 'none' (e.g. a LAN name for a
+  // local-only install). Loopback names are always allowed.
+  allowedHosts: [],
   // false: refuse to start on a database that needs migrating; run
   // `tinywebui migrate` as its own deployment step instead.
   autoMigrate: true,

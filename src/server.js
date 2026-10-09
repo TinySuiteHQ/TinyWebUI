@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { watch, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -12,7 +13,7 @@ import { hashPassword, applyAccessPolicy } from './access/auth.js';
 import { audit } from './audit.js';
 import { logger } from './log.js';
 import { resolveAuth, OWNER_ID } from './access/auth_gate.js';
-import { json, HttpError, SECURITY_HEADERS, crossSite, serveStatic } from './http.js';
+import { json, HttpError, SECURITY_HEADERS, crossSite, badHost, serveStatic } from './http.js';
 import { expandToolDef, callExpand } from './tools/context_tool.js';
 import { documentToolDef, callReadDocument } from './tools/document_tool.js';
 import { askToolDef, callAskUser } from './tools/ask_tool.js';
@@ -53,7 +54,7 @@ function routeTable(app) {
   const deps = {
     store: app.store, runs: app.runs, scheduler: app.scheduler, retrieval: app.retrieval,
     source: app.source, version: app.version,
-    config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash,
+    config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash, launchToken: () => app.launchToken,
     saveConfig: (patch, by) => app.saveConfig(patch, by), refreshConfig: () => app.refreshConfig(),
     auditMcp: (by, before) => app.auditMcp(by, before), swapHub: (servers) => app.swapHub(servers),
     multiUser: () => app.multiUser(), modelFor: (userId, role) => app.modelFor(userId, role),
@@ -73,6 +74,12 @@ export const API_ROUTES = routeTable({}).map((r) => [r.method, r.path, r.feature
 // trust boundary sits.
 const ADMIN_ONLY_FIELDS = /^(apiKey|keyHint|connectors|authPassword|sessionSecret|google|baseUrl|trusted|adminEmails|models$)/;
 
+const LOOPBACK_BINDS = ['127.0.0.1', '::1', 'localhost'];
+
+// 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
+// (handy for containers); null means sign-in is by launch link only.
+const ownerHash = (cfg) => cfg.authPassword || (process.env.TINYWEBUI_PASSWORD ? hashPassword(process.env.TINYWEBUI_PASSWORD) : null);
+
 /**
  * Starts an instance. Everything but port/host is optional and passed to
  * createConfigSource: `config` (keys set here win and are locked in the UI),
@@ -83,8 +90,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const initial = source.load();
   const problems = configProblems(initial);
   if (problems.length) throw new Error(problems.join('\n'));
-  if (initial.authMode === 'none' && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
+  const loopback = LOOPBACK_BINDS.includes(host);
+  if (initial.authMode === 'none' && !loopback) {
     throw new Error("authMode 'none' is limited to loopback; use password login or a trusted-header gateway for network access");
+  }
+  if (initial.authMode === 'single' && !ownerHash(initial) && !loopback) {
+    throw new Error("authMode 'single' needs a password on a network bind: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD");
   }
 
   const store = new Store(source.dbPath(initial), { migrate: initial.autoMigrate !== false });
@@ -121,9 +132,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     retrieval: new Retrieval(store, { ...initial.retrieval, mode: resolved.mode }, embedder),
     cfg: initial,
     hub: null,
-    // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
-    // (handy for containers). validateConfig already refused a plaintext one.
-    passwordHash: initial.authMode === 'single' ? initial.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD) : null,
+    passwordHash: initial.authMode === 'single' ? ownerHash(initial) : null,
+    // A passwordless loopback install signs in with this instead: printed as a
+    // link at startup, so only someone who can read this terminal gets in.
+    // Made whenever it could be needed, so a reload that drops the password
+    // still leaves a way in.
+    launchToken: initial.authMode === 'single' && loopback ? randomBytes(32).toString('hex') : null,
 
     // Every UI/API change lands in config.json (source.save) and is audited:
     // who, which keys, the new values (none of these keys are secrets), and the
@@ -321,6 +335,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
       const url = new URL(req.url || '/', 'http://x');
       const { pathname } = url;
+      if (badHost(req, app.cfg)) {
+        audit('request.bad_host_rejected', { host: String(req.headers.host).slice(0, 100), path: pathname });
+        return json(res, 403, { error: 'unknown host' });
+      }
       if (crossSite(req, app.cfg)) {
         audit('request.cross_site_rejected', { method: req.method, path: pathname });
         return json(res, 403, { error: 'cross-site request refused' });
@@ -358,7 +376,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
   await new Promise((resolve) => server.listen(port, host, resolve));
   scheduler.arm();
-  log.info(`http://${host}:${port}`);
+  const origin = `http://${host.includes(':') ? `[${host}]` : host}:${server.address().port}`;
+  // In the fragment, so it never reaches a server log or a Referer header.
+  app.launchUrl = app.launchToken ? `${origin}/#token=${app.launchToken}` : origin;
+  log.info(app.launchToken && !app.passwordHash ? `sign in: ${app.launchUrl}` : origin);
   // Anything stored before dense retrieval was on (or under another model)
   // is embedded in the background; document queries fill in on demand too.
   retrieval.backfill((msg) => log.info(`retrieval: ${msg}`))
@@ -399,7 +420,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     const mcpChanged = text !== mcpText;
     if (before === after && !mcpChanged) return true; // our own write, or a no-op save
     app.cfg = next;
-    if (next.authMode === 'single') app.passwordHash = next.authPassword || hashPassword(process.env.TINYWEBUI_PASSWORD);
+    if (next.authMode === 'single') {
+      app.passwordHash = ownerHash(next);
+      if (!app.passwordHash) log.info(`sign in: ${app.launchUrl}`);
+    }
     if (next.authMode === 'trusted-header') applyAccessPolicy(store, next);
     if (mcpChanged) await app.swapHub(servers);
     scheduler.arm();
@@ -432,6 +456,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const onHup = () => scheduleReload('SIGHUP');
   process.on('SIGHUP', onHup);
   server.reload = reloadFromFiles;
+  server.launchUrl = app.launchUrl;
 
   // Real teardown, reused two ways: on SIGINT/SIGTERM it exits the process, and
   // as `server.shutdown()` it does not -- which is what a test harness needs.

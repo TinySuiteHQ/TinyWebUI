@@ -24,12 +24,32 @@ import { initAutomations, loadAutomations } from './panels/automations.js';
 import { loadUsage } from './panels/usage.js';
 import { initAdmin, loadAdmin } from './panels/admin.js';
 
-/** 'single' mode with no session: show the password screen and stop there. */
+/**
+ * 'single' mode with no session: trade a launch link's token for a session,
+ * or show the sign-in screen and stop there.
+ */
 async function needsLogin() {
+  const token = new URLSearchParams(location.hash.slice(1)).get('token');
+  // Off the address bar first, so it isn't bookmarked or shared by accident.
+  if (token) history.replaceState(null, '', location.pathname + location.search);
   const me = await loadAccess();
   if (me.authMode !== 'single' || me.user) return false;
+  if (token && me.login === 'link') {
+    try {
+      await api.post('/api/auth/login', { token });
+      location.reload();
+      return true;
+    } catch { /* stale link: fall through to the sign-in screen */ }
+  }
   const box = $('login');
   box.hidden = false;
+  if (me.login === 'link') {
+    $('loginForm').hidden = true;
+    $('loginLink').hidden = false;
+    // The link pasted into this same tab only changes the hash: start over.
+    addEventListener('hashchange', () => location.reload());
+    return true;
+  }
   $('loginPassword').focus();
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();

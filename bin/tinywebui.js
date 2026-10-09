@@ -91,16 +91,6 @@ try {
     console.error(`[tinywebui] unknown command "${args[0]}" (see --help)`);
     process.exit(1);
   }
-  const { createConfigSource } = await import('../src/config/config.js');
-  const initial = createConfigSource(opts).load({ persistSecret: false });
-  if (initial.authMode === 'single' && !initial.authPassword && !process.env.TINYWEBUI_PASSWORD) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      throw new Error('owner password required: run `tinywebui set-password` in a terminal, or set TINYWEBUI_PASSWORD before starting');
-    }
-    const { setPassword } = await import('../src/set-password.js');
-    console.log('[tinywebui] Set an owner password before the first start.');
-    await setPassword(opts);
-  }
   const { start } = await import('../src/server.js');
   // Command-line flags beat the file; the file beats the built-in defaults.
   await start({

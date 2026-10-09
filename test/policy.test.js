@@ -27,7 +27,8 @@ test('every mistake is named', () => {
     assert.match(errs, new RegExp(needle), needle);
   }
   assert.match(validateConfig({ authMode: 'single', authPassword: 'plain' }).join(), /must be a hash/);
-  assert.match(validateConfig({ authMode: 'single' }, { env: {} }).join(), /needs a password/);
+  // No password is valid: start() allows it on loopback only, with a launch link.
+  assert.deepEqual(validateConfig({ authMode: 'single' }, { env: {} }), []);
   assert.match(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: 'short' } }).join(), /at least 15 characters/);
   assert.deepEqual(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: 'a long test password' } }), []);
   assert.match(validateConfig({ authMode: 'multiuser' }).join(), /trusted-header/);

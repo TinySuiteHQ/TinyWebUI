@@ -75,6 +75,20 @@ export function crossSite(req, cfg) {
   return req.headers['sec-fetch-site'] === 'cross-site';
 }
 
+/**
+ * DNS-rebinding guard. With no login, a hostile site can point its own name at
+ * 127.0.0.1 and pass the same-origin check above (Origin and Host both name it),
+ * so a no-login install only answers to loopback names and allowedHosts.
+ * Logged-in modes are safe: the attacker's origin has no session cookie.
+ */
+export function badHost(req, cfg) {
+  if (cfg.authMode !== 'none') return false;
+  let hostname;
+  try { hostname = new URL(`http://${req.headers.host}`).hostname.toLowerCase(); } catch { return true; }
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '[::1]') return false;
+  return !(cfg.allowedHosts || []).some((h) => h.toLowerCase() === hostname);
+}
+
 export async function serveStatic(req, res) {
   // Resolve the index BEFORE normalising: on Windows normalize('/') returns a
   // lone backslash, so a check for '/' after it never matches and the root

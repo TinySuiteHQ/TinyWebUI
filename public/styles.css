@@ -295,7 +295,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 #login[hidden] { display:none; }
 .login-card { width:min(22rem,100%); display:flex; flex-direction:column; gap:.6rem; padding:1.5rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
 .login-card h2 { margin:0 0 .5rem; }
-#loginMsg:empty { display:none; }
+#loginMsg:empty, .login-card[hidden] { display:none; }
 .admin-users { display:flex; flex-direction:column; gap:.4rem; }
 .admin-row { display:flex; flex-wrap:wrap; gap:.5rem .75rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--line); font-size:var(--fs-meta); }
 .admin-row:first-child { border-top:0; }

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { json, readJson } from '../http.js';
 import { isClosed, findEntry, labelFor } from '../config/models.js';
 import { modelsFor, fingerprint, resolveAccess } from '../access/policy.js';
@@ -12,7 +13,12 @@ import { FEATURE } from '../../public/shared/features.js';
 const LOGIN_MAX = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 
-export function authRoutes({ config, modelFor, multiUser, passwordHash, source, store, version }) {
+const sameSecret = (given, expected) => {
+  const a = Buffer.from(String(given ?? '')), b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+export function authRoutes({ config, modelFor, multiUser, passwordHash, launchToken, source, store, version }) {
   const loginFailures = new Map();
 
   return [
@@ -22,6 +28,8 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
       const model = signedIn ? modelFor(auth.user?.id, auth.role) : null;
       return json(res, 200, {
         authMode: cfg.authMode,
+        // How 'single' signs in: a password, or the link printed at startup.
+        login: cfg.authMode === 'single' ? (passwordHash() ? 'password' : 'link') : null,
         logoutUrl: cfg.logoutUrl || '',
         isAdmin: Boolean(auth.isAdmin),
         // What this person may personalise, and their saved instructions (multi-user only).
@@ -50,11 +58,14 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
       if (entry && entry.count >= LOGIN_MAX) {
         return json(res, 429, { error: 'too many attempts, try again later' });
       }
-      const { password } = await readJson(req);
-      if (!verifyPassword(password, passwordHash())) {
+      const { password, token: given } = await readJson(req);
+      const hash = passwordHash();
+      // The launch link only stands in for a password that doesn't exist.
+      const ok = hash ? verifyPassword(password, hash) : Boolean(launchToken()) && sameSecret(given, launchToken());
+      if (!ok) {
         loginFailures.set(who, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
-        audit('auth.rejected', { reason: 'bad_password' });
-        return json(res, 401, { error: 'wrong password' });
+        audit('auth.rejected', { reason: hash ? 'bad_password' : 'bad_launch_token' });
+        return json(res, 401, { error: hash ? 'wrong password' : 'open the sign-in link printed in the terminal' });
       }
       loginFailures.delete(who);
       const token = createSession(store, OWNER_ID, cfg.sessionTtlDays);

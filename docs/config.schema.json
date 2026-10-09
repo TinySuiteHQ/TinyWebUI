@@ -314,6 +314,10 @@
       "type": "array",
       "x-change": "file-only"
     },
+    "allowedHosts": {
+      "type": "array",
+      "x-change": "file-only"
+    },
     "autoMigrate": {
       "type": "boolean",
       "x-change": "file-only"

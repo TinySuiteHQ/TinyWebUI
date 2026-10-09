@@ -47,7 +47,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Hybrid local search** (BM25 plus a small on-device embedding model) over documents and past chats.
 - **Long chats that stay affordable.** Cache-friendly prefixes, one-time compaction of large tool results, and per-round token statistics.
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
-- **Private by default.** Interactive first runs ask for an owner password; a team can use an SSO gateway with roles and an admin panel.
+- **Private by default.** Local starts sign in with a one-time link from the terminal, network binds need a password, and a team can use an SSO gateway with roles and an admin panel.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
 - **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
 
@@ -59,7 +59,7 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-The first run asks you to create an owner password of at least 15 characters. Open <http://127.0.0.1:7777>, sign in, then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
+There is no password to set up. The terminal prints a sign-in link (`http://127.0.0.1:7777/#token=…`); open it and the browser stays signed in. Only someone who can read that terminal gets in. Then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
 
 ```json
 {
@@ -69,7 +69,7 @@ The first run asks you to create an owner password of at least 15 characters. Op
 }
 ```
 
-`tinywebui.config.json` holds your password hash and API keys and is gitignored. Keep it that way. Use `npx tinywebui set-password` to change the password later.
+`tinywebui.config.json` holds your API keys (and password hash, if you set one) and is gitignored. Keep it that way. Run `npx tinywebui set-password` to sign in with a password instead of the link; you need one to listen on anything other than loopback.
 
 `npx tinywebui` uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 

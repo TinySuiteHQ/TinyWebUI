@@ -40,7 +40,7 @@ const DEFAULT_ROLES = {
 export const FILE_ONLY = new Set([
   'authMode', 'authPassword', 'sessionSecret', 'sessionTtlDays', 'trustedProxyCidrs', 'trustedUserIdHeader',
   'trustedEmailHeader', 'trustedNameHeader', 'trustedRoleHeader',
-  'logoutUrl', 'dbPath', 'access', 'allowedOrigins', 'frozen', 'autoMigrate', 'retrieval',
+  'logoutUrl', 'dbPath', 'access', 'allowedOrigins', 'allowedHosts', 'frozen', 'autoMigrate', 'retrieval',
   'googleClientId', 'googleClientSecret', 'googleRedirectUri', 'adminEmails'
 ]);
 
@@ -118,9 +118,7 @@ export function validateConfig(cfg, { env = process.env } = {}) {
   if (mode === 'single') {
     if (cfg.authPassword && !/^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/i.test(String(cfg.authPassword))) {
       errors.push('authPassword must be a hash: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD');
-    } else if (!cfg.authPassword && !env.TINYWEBUI_PASSWORD) {
-      errors.push("authMode 'single' needs a password: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD");
-    } else if (!cfg.authPassword && env.TINYWEBUI_PASSWORD.length < MIN_PASSWORD_LENGTH) {
+    } else if (!cfg.authPassword && env.TINYWEBUI_PASSWORD && env.TINYWEBUI_PASSWORD.length < MIN_PASSWORD_LENGTH) {
       errors.push(`TINYWEBUI_PASSWORD needs at least ${MIN_PASSWORD_LENGTH} characters`);
     }
   }

@@ -1,11 +1,14 @@
 # Security
 
-New installs require an owner password before the server listens. Interactive
-starts prompt for one; headless starts refuse to run until `tinywebui
-set-password` has written a hash into the persistent config, or
-`TINYWEBUI_PASSWORD` is provided. The bundled Compose file binds only to the
-host's loopback interface. An explicit `authMode: "none"` is allowed only on a
-loopback bind. For access from another machine, put the app behind HTTPS and
+A new install on loopback needs no password: each start prints a sign-in link
+carrying a random token (in the URL fragment, so it never reaches a log or a
+Referer). Opening it trades the token for a session cookie, so only someone who
+can read the terminal gets in. Binding to any other interface requires an
+owner password, from `tinywebui set-password` or `TINYWEBUI_PASSWORD`; once a
+password is set, the link no longer signs anyone in. The bundled Compose file
+binds only to the host's loopback interface. An explicit `authMode: "none"` is
+allowed only on a loopback bind, and then answers only to loopback host names
+(plus `allowedHosts`), which stops DNS-rebinding pages from reaching it. For access from another machine, put the app behind HTTPS and
 use password login or a trusted identity gateway. With password login behind
 a reverse proxy, set `trustedProxyCidrs` to that proxy's address range and
 forward `X-Forwarded-Proto: https` so session cookies receive the `Secure`
