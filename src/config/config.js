@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
-import { modelProblems, connectorProblems, labelFor, REASONING_REPLAY } from './models.js';
+import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, REASONING_REPLAY } from './models.js';
 import { logger } from '../log.js';
 
 const log = logger('config');
@@ -22,12 +22,13 @@ export const DEFAULTS = {
   // A cheap, fast, tool-capable default that caches well on a stable prefix and
   // needs no cache_control fields. Any OpenAI-compatible model id works.
   model: 'deepseek/deepseek-v4.1-flash',
-  // The model catalog (see src/config/models.js). Empty: any model id goes. Listed:
-  // only these can be picked, `model` names one by id, and people see each
-  // entry's label, with its own prompt and sampling settings if it has them.
+  // The model catalog (see src/config/models.js), on the endpoint above.
+  // Empty everywhere: any model id goes. Listed: only these can be picked,
+  // `model` names one by id, and people see each entry's label. An entry may
+  // set its own prompt, sampling and caching; the top-level values below are
+  // what it inherits.
   models: [],
-  // Named endpoints a catalog entry can point at (`connector: <id>`): each has
-  // its own baseUrl and apiKey. Entries without one use baseUrl/apiKey above.
+  // Named endpoints, each with its own baseUrl, apiKey and `models` list.
   connectors: [],
   systemPrompt: [
     'You are a direct, technically precise assistant.',
@@ -274,6 +275,7 @@ export function createConfigSource(opts = {}) {
     // refuses to start, rather than quietly becoming a default (a mistyped
     // authMode used to become 'none').
     if (typeof cfg.baseUrl === 'string') cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
+    Object.assign(cfg, flattenCatalog(cfg));
     // A session secret is required the moment auth is on; generate and persist
     // one rather than signing cookies with an empty key.
     if (cfg.authMode !== 'none' && !cfg.sessionSecret && persistSecret) {
@@ -294,14 +296,16 @@ export function createConfigSource(opts = {}) {
     if (fileOnly.length) throw new LockedError(`set in files only, not editable here: ${fileOnly.join(', ')}`);
     const blocked = Object.keys(patch).filter((k) => WRITABLE.has(k) && locked.has(k));
     if (blocked.length) throw new LockedError(`set in code, not editable here: ${blocked.join(', ')}`);
+    // Edits apply to the flat catalog the page sees; the file gets it nested.
     const current = readFile();
+    Object.assign(current, flattenCatalog(current));
     for (const [k, v] of Object.entries(mergeSecrets(patch, current))) {
       if (WRITABLE.has(k)) current[k] = v;
     }
     // Validate what the file would become before writing it.
     const problems = configProblems({ ...DEFAULTS, ...current, ...code });
     if (problems.length) throw new Error(problems.join('; '));
-    writeFile(current);
+    writeFile({ ...current, ...nestCatalog(current) });
     return load();
   }
 
@@ -418,6 +422,7 @@ function retrievalProblems(r) {
 }
 
 export function configProblems(cfg) {
+  cfg = { ...cfg, ...flattenCatalog(cfg) };
   const problems = [];
   for (const [key, value] of Object.entries(cfg)) {
     if (!(key in DEFAULTS) && !EXTRA_KEYS.has(key)) { problems.push(`unknown setting "${key}"`); continue; }

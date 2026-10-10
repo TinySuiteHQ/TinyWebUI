@@ -426,37 +426,41 @@ export function configSchema() {
     }
   };
   const num = { type: ['number', 'null'] };
+  const modelEntry = (nested) => ({
+    type: 'object', additionalProperties: false, required: ['id'],
+    properties: {
+      id: { type: 'string', description: 'Stable handle: what model, roles and prefs name.' },
+      model: { type: 'string', description: "Provider model id; defaults to id." },
+      label: { type: 'string', description: 'What people see in the picker.' },
+      description: { type: 'string' },
+      enabled: { type: 'boolean', description: 'false: keep the settings, hide and refuse the model.' },
+      ...(nested ? {} : { connector: { type: 'string', description: 'Older flat form: id of an entry in connectors. Prefer listing the model under that connector.' } }),
+      tags: { type: 'array', items: { enum: MODEL_TAGS }, uniqueItems: true, description: 'What the model can do.' },
+      systemPrompt: { type: 'string', description: 'Replaces the top-level systemPrompt for this model.' },
+      temperature: num,
+      maxTokens: num,
+      maxToolRounds: { type: 'integer', minimum: 0 },
+      cacheMode: { enum: ['auto', 'implicit', 'explicit', 'rolling', 'off'] },
+      cacheTtl: { enum: ['5m', '1h'] },
+      reasoningReplay: { enum: REASONING_REPLAY },
+      extraBody: { type: 'object', description: 'Merged over the global extraBody.' }
+    }
+  });
   properties.connectors = {
     type: 'array', 'x-change': 'editable (UI writes it back here)',
-    description: 'Named endpoints a catalog entry can use. apiKey is a secret: prefer an env var in committed config.',
+    description: 'Named endpoints, each with the models it serves. apiKey is a secret: prefer an env var in committed config.',
     items: {
       type: 'object', additionalProperties: false, required: ['id', 'baseUrl'],
-      properties: { id: { type: 'string' }, label: { type: 'string' }, baseUrl: { type: 'string' }, apiKey: { type: 'string' } }
+      properties: {
+        id: { type: 'string' }, label: { type: 'string' }, baseUrl: { type: 'string' }, apiKey: { type: 'string' },
+        models: { type: 'array', items: modelEntry(true), description: 'Catalog entries served by this connector.' }
+      }
     }
   };
   properties.models = {
     type: 'array', 'x-change': 'editable (UI writes it back here)',
-    description: 'The model catalog. Empty: any model id. Listed: only these can be picked, by id, shown by label.',
-    items: {
-      type: 'object', additionalProperties: false, required: ['id'],
-      properties: {
-        id: { type: 'string', description: 'Stable handle: what model, roles and prefs name.' },
-        model: { type: 'string', description: "Provider model id; defaults to id." },
-        label: { type: 'string', description: 'What people see in the picker.' },
-        description: { type: 'string' },
-        enabled: { type: 'boolean', description: 'false: keep the settings, hide and refuse the model.' },
-        connector: { type: 'string', description: 'Id of an entry in connectors; absent: the default baseUrl/apiKey.' },
-        tags: { type: 'array', items: { enum: MODEL_TAGS }, uniqueItems: true, description: 'What the model can do.' },
-        systemPrompt: { type: 'string' },
-        temperature: num,
-        maxTokens: num,
-        maxToolRounds: { type: 'integer', minimum: 0 },
-        cacheMode: { enum: ['auto', 'implicit', 'explicit', 'rolling', 'off'] },
-        cacheTtl: { enum: ['5m', '1h'] },
-        reasoningReplay: { enum: REASONING_REPLAY },
-        extraBody: { type: 'object', description: 'Merged over the global extraBody.' }
-      }
-    }
+    description: 'The model catalog on the default endpoint (models of a connector go under it). Empty everywhere: any model id. Listed: only these can be picked, by id, shown by label. Top-level settings are the defaults each entry may override.',
+    items: modelEntry(false)
   };
   properties.access = {
     type: 'object', additionalProperties: false, 'x-change': 'file-only (admins write access.users back)',

@@ -88,53 +88,28 @@
   <button id="menu" class="icon-btn" type="button" aria-label="Show sidebar" aria-expanded="false" aria-controls="side"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
   <section id="settings">
     <div class="automation-head">
-      <h2>Settings</h2>
+      <button id="setBack" type="button" class="set-back" hidden aria-label="Back to settings">‹ Back</button>
+      <h2 id="setTitle">Settings</h2>
       <span id="saveMsg" class="usage"></span>
       <button id="cancel">Close</button>
       <button class="primary" id="save">Save changes</button>
     </div>
     <div class="settings-content">
-    <section class="set-group">
-      <header><h3>Model</h3><p>Which model answers, and how it samples.</p></header>
-      <div class="set-grid">
-        <div class="span-2"><label for="model">Model id</label><input id="model" spellcheck="false"><small>Also switchable from the model pill in the message box.</small></div>
-        <div><label for="temperature">Temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="Provider default"></div>
-        <div><label for="maxTokens">Max output tokens</label><input id="maxTokens" type="number" min="1" placeholder="No limit"></div>
-        <div class="span-2"><label for="timezone">Timezone</label><select id="timezone"><option value="">Server's timezone</option></select><small>The zone the model is told today's date in.</small></div>
+
+    <div class="set-view" data-view="home" data-title="Settings">
+      <div id="adminConnection" hidden>
+        <div class="set-divider set-first"><h2>Connections &amp; models</h2><p>Each endpoint and the models it serves. Open a model to set its prompt, sampling and caching.</p></div>
+        <div id="endpointCards"></div>
+        <div class="set-add"><button id="addConnector" type="button">+ Add connector</button></div>
       </div>
-    </section>
+      <nav class="set-nav" aria-label="More settings">
+        <button type="button" class="set-link" data-open="defaults"><span><b>Defaults for all models</b><small>Prompt, sampling, tool turns and caching every model inherits.</small></span></button>
+        <button type="button" class="set-link" data-open="conversation"><span><b>Conversation</b><small>Timezone, questions, tool approval and how long chats are trimmed.</small></span></button>
+        <button type="button" class="set-link mine" data-open="prefs" id="myPrefsLink"><span><b>My preferences</b><small>Only for you: your instructions and theme.</small></span></button>
+      </nav>
+    </div>
 
-    <section class="set-group">
-      <header><h3>Instructions</h3><p>The system prompt sent at the start of every chat.</p></header>
-      <textarea id="systemPrompt" rows="10" aria-label="System prompt"></textarea>
-    </section>
-
-    <section class="set-group">
-      <header><h3>Tools</h3><p>How far the model can go on its own before handing back.</p></header>
-      <div class="set-grid">
-        <div><label for="maxToolRounds">Max tool turns</label><input id="maxToolRounds" type="number" min="1" max="50"><small>Tool calls allowed per reply.</small></div>
-        <div><label for="askUserTimeoutSeconds">Question timeout (s)</label><input id="askUserTimeoutSeconds" type="number" min="0" max="86400"><small>How long a question from the model waits before it continues on its own. 0: wait until answered.</small></div>
-        <div><label for="toolApproval">Ask before running</label><select id="toolApproval"><option value="writes">MCP tools that write</option><option value="all">Every MCP tool call</option><option value="off">Never ask</option></select><small>Built-in tools never ask. Scheduled runs refuse calls that would.</small></div>
-      </div>
-    </section>
-
-    <section class="set-group">
-      <header><h3>Context &amp; caching</h3><p>Keeps long chats fast and cheap by trimming old tool output.</p></header>
-      <div class="set-grid">
-        <div><label for="compactThreshold">Compact history above</label><input id="compactThreshold" type="number" min="0" step="1000"><small>Tokens. Old tool results are stubbed past this. 0 turns it off.</small></div>
-        <div><label for="keepTurns">Always keep last</label><input id="keepTurns" type="number" min="1" max="20"><small>Recent turns whose tool results stay in full.</small></div>
-        <div><label for="maxInlineChars">Stub single results above</label><input id="maxInlineChars" type="number" min="0" step="1000"><small>Characters. The turn that fetched it still reads it whole.</small></div>
-        <div><label for="maxTurnChars">Stub even this turn above</label><input id="maxTurnChars" type="number" min="0" step="10000"><small>Characters. A result this big is stubbed right away, even for the turn that fetched it.</small></div>
-        <div><label for="compactMinSaved">Only compact if it saves</label><input id="compactMinSaved" type="number" min="0" step="1000"><small>Characters. Compacting costs one cache miss, so small savings are skipped.</small></div>
-        <div><label for="maxHistoryTokens">Hard history limit</label><input id="maxHistoryTokens" type="number" min="0" step="10000"><small>Tokens. Past this, the oldest turns stop being sent (they stay visible). 0 turns it off.</small></div>
-        <div><label for="cacheTtl">Prompt cache lifetime</label><select id="cacheTtl"><option value="5m">5 minutes</option><option value="1h">1 hour</option></select><small>Anthropic models. 1 hour costs more to write, survives longer pauses.</small></div>
-        <div><label for="cacheMode">Cache style</label><select id="cacheMode"><option value="auto">Automatic</option><option value="implicit">Stable prefix only</option><option value="explicit">Anthropic cache_control</option><option value="rolling">OpenRouter automatic</option><option value="off">Off</option></select><small>Automatic is right for OpenRouter and local models; set it for other gateways.</small></div>
-      </div>
-    </section>
-
-    <div id="adminSettings" hidden>
-    <div class="set-divider"><h2>Admin</h2><p id="adminSettingsNote">Deployment-wide: these apply to everyone and are stored in the config file, so copying it reproduces this setup.</p></div>
-
+    <div class="set-view" data-view="endpoint" data-title="Default endpoint" hidden>
     <section class="set-group">
       <header><h3>Default endpoint</h3><p>The OpenAI-compatible API used by every model that does not name a connector.</p></header>
       <div class="set-grid">
@@ -143,34 +118,88 @@
         <div class="span-2"><button id="testDefault" type="button">Test connection</button> <span id="testDefaultMsg" class="usage"></span></div>
       </div>
     </section>
+    </div>
 
-    <section class="set-group">
-      <header><h3>Connectors</h3><p>More endpoints, each with its own URL and key. A model picks one by name.</p></header>
-      <div id="connectorsBox"></div>
-      <button id="addConnector" type="button">Add connector</button>
+    <div class="set-view" data-view="connector" data-title="Connector" hidden><div id="connectorSlot"></div></div>
+    <div class="set-view" data-view="model" data-title="Model" hidden><div id="modelSlot"></div></div>
+
+    <div class="set-view" data-view="defaults" data-title="Defaults for all models" hidden>
+    <section class="set-group" id="defaultModelGroup">
+      <header><h3>Default model</h3><p>The model new chats start with. Also switchable from the model pill in the message box.</p></header>
+      <div id="defaultModelField"><label for="model">Model id</label><input id="model" spellcheck="false"></div>
     </section>
 
     <section class="set-group">
-      <header><h3>Models</h3><p>The catalog. Once any model is listed, only listed models can be picked, and people see the label, never the provider id.</p></header>
-      <div id="modelsBox"></div>
-      <button id="addModel" type="button">Add model</button>
+      <header><h3>Prompt</h3><p>The system prompt sent at the start of every chat.</p></header>
+      <textarea id="systemPrompt" rows="10" aria-label="System prompt"></textarea>
     </section>
 
     <section class="set-group">
-      <header><h3>Advanced model behaviour</h3><p>Rarely changed. Per-model values in the catalog override these.</p></header>
+      <header><h3>Sampling</h3></header>
       <div class="set-grid">
-        <div><label for="llmCompaction">Summarise dropped turns</label><select id="llmCompaction"><option value="true">Yes, with the chat's model</option><option value="false">No, just drop them</option></select></div>
-        <div><label for="compactionMaxTokens">Summary length cap</label><input id="compactionMaxTokens" type="number" min="256" step="256"><small>Output tokens for that summary request.</small></div>
-        <div><label for="expandCharBudget">Expand budget</label><input id="expandCharBudget" type="number" min="0" step="1000"><small>Characters one expand_context call may return.</small></div>
-        <div><label for="cache">Prompt caching</label><select id="cache"><option value="true">On</option><option value="false">Off</option></select></div>
+        <div><label for="temperature">Temperature</label><input id="temperature" type="number" step="0.1" min="0" max="2" placeholder="Provider default"></div>
+        <div><label for="maxTokens">Max output tokens</label><input id="maxTokens" type="number" min="1" placeholder="No limit"></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Tools</h3></header>
+      <div class="set-grid">
+        <div><label for="maxToolRounds">Max tool turns</label><input id="maxToolRounds" type="number" min="1" max="50"><small>Tool calls allowed per reply.</small></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Caching</h3><p>Keeps the repeated start of a chat cheap to resend.</p></header>
+      <div class="set-grid">
+        <div class="admin-only"><label for="cache">Prompt caching</label><select id="cache"><option value="true">On</option><option value="false">Off</option></select></div>
+        <div><label for="cacheMode">Cache style</label><select id="cacheMode"><option value="auto">Automatic</option><option value="implicit">Stable prefix only</option><option value="explicit">Anthropic cache_control</option><option value="rolling">OpenRouter automatic</option><option value="off">Off</option></select><small>Automatic is right for OpenRouter and local models; set it for other gateways.</small></div>
+        <div><label for="cacheTtl">Prompt cache lifetime</label><select id="cacheTtl"><option value="5m">5 minutes</option><option value="1h">1 hour</option></select><small>Anthropic models. 1 hour costs more to write, survives longer pauses.</small></div>
+      </div>
+    </section>
+
+    <section class="set-group admin-only">
+      <header><h3>Advanced</h3><p>Rarely changed.</p></header>
+      <div class="set-grid">
         <div><label for="reasoningReplay">Replay past reasoning</label><select id="reasoningReplay"><option value="auto">Automatic</option><option value="omit">Never</option><option value="reasoning_content">reasoning_content</option><option value="reasoning_details">reasoning_details</option></select></div>
         <div class="span-2"><label for="extraBody">Extra request body (JSON)</label><textarea id="extraBody" rows="4" spellcheck="false" placeholder="{}"></textarea><small>Merged into every completion request, e.g. gateway routing.</small></div>
       </div>
     </section>
     </div>
 
-    <div class="set-divider mine" id="myPrefsHead"><h2>My preferences</h2><p>Only for you.</p></div>
+    <div class="set-view" data-view="conversation" data-title="Conversation" hidden>
+    <section class="set-group">
+      <header><h3>Date</h3></header>
+      <div class="set-grid">
+        <div class="span-2"><label for="timezone">Timezone</label><select id="timezone"><option value="">Server's timezone</option></select><small>The zone the model is told today's date in.</small></div>
+      </div>
+    </section>
 
+    <section class="set-group">
+      <header><h3>Questions &amp; approval</h3><p>When the model waits for you.</p></header>
+      <div class="set-grid">
+        <div><label for="askUserTimeoutSeconds">Question timeout (s)</label><input id="askUserTimeoutSeconds" type="number" min="0" max="86400"><small>How long a question from the model waits before it continues on its own. 0: wait until answered.</small></div>
+        <div><label for="toolApproval">Ask before running</label><select id="toolApproval"><option value="writes">MCP tools that write</option><option value="all">Every MCP tool call</option><option value="off">Never ask</option></select><small>Built-in tools never ask. Scheduled runs refuse calls that would.</small></div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <header><h3>Context &amp; compaction</h3><p>Keeps long chats fast and cheap by trimming old tool output.</p></header>
+      <div class="set-grid">
+        <div><label for="compactThreshold">Compact history above</label><input id="compactThreshold" type="number" min="0" step="1000"><small>Tokens. Old tool results are stubbed past this. 0 turns it off.</small></div>
+        <div><label for="keepTurns">Always keep last</label><input id="keepTurns" type="number" min="1" max="20"><small>Recent turns whose tool results stay in full.</small></div>
+        <div><label for="maxInlineChars">Stub single results above</label><input id="maxInlineChars" type="number" min="0" step="1000"><small>Characters. The turn that fetched it still reads it whole.</small></div>
+        <div><label for="maxTurnChars">Stub even this turn above</label><input id="maxTurnChars" type="number" min="0" step="10000"><small>Characters. A result this big is stubbed right away, even for the turn that fetched it.</small></div>
+        <div><label for="compactMinSaved">Only compact if it saves</label><input id="compactMinSaved" type="number" min="0" step="1000"><small>Characters. Compacting costs one cache miss, so small savings are skipped.</small></div>
+        <div><label for="maxHistoryTokens">Hard history limit</label><input id="maxHistoryTokens" type="number" min="0" step="10000"><small>Tokens. Past this, the oldest turns stop being sent (they stay visible). 0 turns it off.</small></div>
+        <div class="admin-only"><label for="llmCompaction">Summarise dropped turns</label><select id="llmCompaction"><option value="true">Yes, with the chat's model</option><option value="false">No, just drop them</option></select></div>
+        <div class="admin-only"><label for="compactionMaxTokens">Summary length cap</label><input id="compactionMaxTokens" type="number" min="256" step="256"><small>Output tokens for that summary request.</small></div>
+        <div class="admin-only"><label for="expandCharBudget">Expand budget</label><input id="expandCharBudget" type="number" min="0" step="1000"><small>Characters one expand_context call may return.</small></div>
+      </div>
+    </section>
+    </div>
+
+    <div class="set-view" data-view="prefs" data-title="My preferences" hidden>
     <section class="set-group mine" id="myInstructionsGroup" hidden>
       <header><h3>My instructions</h3><p>Added after the system prompt on your chats only.</p></header>
       <textarea id="myInstructions" rows="5" maxlength="4000" aria-label="My instructions"></textarea>
@@ -182,6 +211,8 @@
         <div><label for="theme">Theme</label><select id="theme"><option value="">Default</option></select></div>
       </div>
     </section>
+    </div>
+
     </div>
   </section>
 

@@ -1381,7 +1381,12 @@ button.pop-item:active:not(:disabled) { transform: none; }
   width: min(46rem, 100%); margin: 0 auto 1rem; padding: 1.125rem 1.25rem 1.25rem;
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-md);
 }
-.set-group > header { margin-bottom: .875rem; }
+.set-group > header {
+  /* Not the page's top bar: plain block, no bar height, padding or blur. */
+  display: block; height: auto; padding: 0; border: 0; background: none; backdrop-filter: none;
+  margin-bottom: .875rem;
+}
+#settings input[type="checkbox"] { width: auto; min-height: 0; padding: 0; flex: none; accent-color: var(--accent); }
 .set-group h3 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -.005em; }
 .set-group > header p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
 .set-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1rem; }
@@ -1397,15 +1402,53 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .policy-checks { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin-top: .25rem; }
 .policy-checks label { display: inline-flex; gap: .3rem; align-items: center; }
 /* A person without the settings feature sees only what an admin lets them customise. */
-#settings.prefs-only .set-group:not(.mine), #settings.prefs-only .set-divider:not(.mine), #settings.prefs-only #adminSettings { display: none; }
-#settings .mine[hidden] { display: none; }
-/* Connector and model editors: one bordered row per entry. */
-.cfg-row { margin: 0 0 .75rem; padding: .75rem; border: 1px solid var(--line); border-radius: var(--r-sm, 6px); }
-.cfg-row .set-grid { gap: .75rem; }
-.cfg-row textarea { font-family: var(--mono, monospace); font-size: var(--fs-small); }
-.cfg-row .cfg-actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
-.cfg-row .cfg-tags { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
-.cfg-row .cfg-tags label { display: inline-flex; gap: .3rem; align-items: center; margin: 0; }
+#settings.prefs-only .set-group:not(.mine), #settings.prefs-only .set-link:not(.mine), #settings.prefs-only #adminConnection { display: none; }
+.set-divider.set-first { margin-top: 0; padding-top: 0; border-top: 0; }
+#settings .mine[hidden], #settings .set-view[hidden], #settings .set-group[hidden] { display: none; }
+.automation-head .set-back { margin-left: -.375rem; }
+.automation-head .set-back + h2 { margin-right: auto; }
+
+/* Home: one card per endpoint with its models under it, then links to the other pages. */
+.ep-head { display: flex; align-items: flex-start; gap: .75rem; }
+.ep-head > div { flex: 1; min-width: 0; }
+.ep-head p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.model-list { margin: .25rem -.5rem .5rem; display: flex; flex-direction: column; }
+.model-link {
+  display: flex; align-items: center; gap: .75rem; width: 100%; padding: .5rem; text-align: left;
+  background: none; border: 0; border-radius: var(--r-sm); color: var(--fg);
+}
+.model-link:hover { background: var(--accent-soft); }
+.model-link.off { opacity: .55; }
+.model-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.model-name { font-weight: 500; }
+.model-sub { color: var(--faint); font-size: var(--fs-meta); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-chips { display: flex; gap: .25rem; flex-wrap: wrap; justify-content: flex-end; }
+.chip { padding: .0625rem .5rem; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-meta); color: var(--muted); }
+.chip-default { border-color: currentColor; color: var(--fg); font-weight: 500; }
+.chev { color: var(--faint); font-size: 1.25rem; line-height: 1; }
+.add-model { margin-top: .25rem; }
+.ep-open { margin: .25rem 0 .75rem; }
+.ep-open small { display: block; }
+.set-add { width: min(46rem, 100%); margin: 0 auto 1.5rem; }
+.set-nav { width: min(46rem, 100%); margin: 0 auto; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise); overflow: hidden; }
+.set-link {
+  display: flex; align-items: center; width: 100%; padding: .875rem 1.25rem; text-align: left;
+  background: none; border: 0; border-radius: 0; color: var(--fg);
+}
+.set-link + .set-link { border-top: 1px solid var(--line); }
+.set-link:hover { background: var(--accent-soft); }
+.set-link::after { content: '›'; margin-left: auto; padding-left: .75rem; color: var(--faint); font-size: 1.25rem; }
+.set-link b { display: block; font-weight: 600; }
+.set-link small { display: block; color: var(--muted); font-size: var(--fs-small); }
+.set-link[hidden] { display: none; }
+.set-foot { width: min(46rem, 100%); margin: 0 auto 1rem; display: flex; justify-content: flex-end; }
+.danger { color: var(--err); }
+.inline-check { display: inline-flex !important; gap: .375rem; align-items: center; margin: 0 !important; font-weight: 400 !important; }
+/* Editor fields inside the model and connector pages. */
+#modelSlot textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small); }
+.cfg-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.cfg-tags { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+.cfg-tags label { display: inline-flex; gap: .3rem; align-items: center; margin: 0; font-weight: 400; }
 
 .brand-home {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;

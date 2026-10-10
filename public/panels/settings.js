@@ -4,7 +4,8 @@ import { addError } from '../chat/transcript.js';
 import { whoami, loadAccess } from '../core/access.js';
 import { api } from '../core/api.js';
 import { PANEL, closePanel } from './panels.js';
-import { initConnectors, renderConnectors, collectConnectors, lockConnectors } from './connectors.js';
+import { initModelEditor, renderCatalog, collectCatalog, setLocked, newConnector, modelPages } from './model-editor.js';
+import { renderHome } from './settings-home.js';
 
 /**
  * The tools panel: built-ins first, then every MCP server with its own health
@@ -231,11 +232,59 @@ export async function loadMcp() {
     : locked ? 'set in code (read-only)' : path;
 }
 
+/* ---------- pages ----------
+ * Settings is a home page (endpoints and their models) and a page per thing
+ * opened from it. Every page edits the same unsaved draft, so moving between
+ * them loses nothing and one Save writes it all. */
+
+let view = 'home';
+// Whether this person edits the deployment's endpoints and catalog.
+let admin = false;
+let defaultKey = { set: false, hint: '' };
+let modelField = null; // the default-model field, moved between its two homes
+
+function showView(name, page) {
+  view = name;
+  for (const v of document.querySelectorAll('#settings .set-view')) v.hidden = v.dataset.view !== name;
+  const current = document.querySelector(`#settings .set-view[data-view="${name}"]`);
+  let title = current.dataset.title;
+  if (name === 'connector' || name === 'model') {
+    $(`${name}Slot`).replaceChildren(page);
+    page.refresh?.();
+    const s = page.summary();
+    title = s.label || s.id || (name === 'model' ? 'New model' : 'New connector');
+  }
+  if (name === 'home' && admin) renderHome({ open: showView, defaultModel: $('model').value.trim(), defaultKey, defaultModelField: modelField });
+  // Off the home card (catalog not empty, or not an admin) the field lives on
+  // the defaults page; an admin with a catalog picks the default per model.
+  if (!modelField.isConnected || name !== 'home') $('defaultModelGroup').appendChild(modelField);
+  $('defaultModelGroup').hidden = admin;
+  $('setTitle').textContent = title;
+  $('setBack').hidden = name === 'home' || readOnly;
+  document.querySelector('#settings .settings-content').scrollTop = 0;
+}
+
+/** Esc and Back: one page up, or false when already at the top. */
+export function settingsBack() {
+  if (view === 'home' || readOnly) return false;
+  showView('home');
+  return true;
+}
+
 export function initSettings() {
   $('saveMcp').onclick = saveMcp;
   $('save').onclick = saveConfig;
   $('testDefault').onclick = testDefault;
-  initConnectors();
+  modelField = $('defaultModelField');
+  $('setBack').onclick = settingsBack;
+  for (const b of document.querySelectorAll('#settings [data-open]')) b.onclick = () => showView(b.dataset.open);
+  $('addConnector').onclick = () => showView('connector', newConnector());
+  initModelEditor({
+    isDefault: (id) => Boolean(id) && $('model').value.trim() === id,
+    makeDefault: (id) => { $('model').value = id; },
+    renameDefault: (from, to) => { if (from && $('model').value.trim() === from) $('model').value = to; },
+    removed: () => showView('home')
+  });
 }
 
 async function testDefault() {
@@ -303,7 +352,7 @@ export async function loadConfig() {
   $('myInstructionsGroup').hidden = !mine.includes('instructions');
   $('myInstructions').value = whoami().instructions || '';
   $('themeGroup').hidden = readOnly && !mine.includes('theme');
-  $('myPrefsHead').hidden = readOnly ? !mine.length : false;
+  $('myPrefsLink').hidden = readOnly ? !mine.length : false;
   for (const id of FORM_KEYS) {
     const locked = readOnly || lockedKeys.has(id);
     $(id).disabled = locked;
@@ -332,9 +381,11 @@ export async function loadConfig() {
   $('timezone').value = cfg.timezone ?? '';
   $('toolApproval').value = cfg.toolApproval ?? 'writes';
   // The admin block is only sent to (and only meaningful for) the sole user or an admin.
-  const admin = Boolean(whoami().isAdmin) && !readOnly && cfg.baseUrl !== undefined;
-  $('adminSettings').hidden = !admin;
+  admin = Boolean(whoami().isAdmin) && !readOnly && cfg.baseUrl !== undefined;
+  $('adminConnection').hidden = !admin;
+  for (const n of document.querySelectorAll('#settings .admin-only')) n.hidden = !admin;
   if (admin) {
+    defaultKey = { set: Boolean(cfg.hasApiKey), hint: cfg.keyHint || '' };
     $('baseUrl').value = cfg.baseUrl ?? '';
     $('apiKey').value = '';
     $('apiKey').placeholder = cfg.hasApiKey ? `set (…${cfg.keyHint || ''}) — blank keeps it` : 'not set';
@@ -344,9 +395,12 @@ export async function loadConfig() {
     $('cache').value = String(cfg.cache !== false);
     $('reasoningReplay').value = cfg.reasoningReplay ?? 'auto';
     $('extraBody').value = Object.keys(cfg.extraBody || {}).length ? JSON.stringify(cfg.extraBody, null, 2) : '';
-    renderConnectors(cfg);
-    lockConnectors(Boolean(cfg.frozen) || lockedKeys.has('models') || lockedKeys.has('connectors'));
+    renderCatalog(cfg);
+    setLocked(Boolean(cfg.frozen) || lockedKeys.has('models') || lockedKeys.has('connectors'));
+    $('addConnector').hidden = Boolean(cfg.frozen) || lockedKeys.has('connectors');
   }
+  showView(readOnly ? 'prefs' : 'home');
+  saved = draftState();
   // The chip is the model picker's button now; the tool count lives in the
   // + menu, where the tools themselves are.
   // Tier 3 shows your own model; the configured one is only the default.
@@ -357,16 +411,8 @@ export async function loadConfig() {
   $('status').textContent = bits.join(' · ');
 }
 
-async function saveConfig() {
-  // Personal instructions go to the person's own prefs, whatever else they may edit.
-  if (!$('myInstructionsGroup').hidden) {
-    try { await api.post('/api/me/prefs', { instructions: $('myInstructions').value.trim() || null }); } catch (err) {
-      $('saveMsg').textContent = `save failed (${err.message})`;
-      return;
-    }
-    await loadAccess();
-    if (readOnly) { $('saveMsg').textContent = 'saved'; closePanel(PANEL.SETTINGS); return; }
-  }
+/** The config patch the pages currently hold. Throws on bad JSON. */
+function buildPatch() {
   const patch = {
     systemPrompt: $('systemPrompt').value,
     model: $('model').value.trim(),
@@ -385,26 +431,55 @@ async function saveConfig() {
     timezone: $('timezone').value,
     toolApproval: $('toolApproval').value
   };
-  if (!$('adminSettings').hidden) {
-    try {
-      const apiKey = $('apiKey').value;
-      Object.assign(patch, {
-        baseUrl: $('baseUrl').value.trim(),
-        ...(apiKey ? { apiKey } : {}),
-        llmCompaction: $('llmCompaction').value === 'true',
-        compactionMaxTokens: Number($('compactionMaxTokens').value) || 8192,
-        expandCharBudget: Number($('expandCharBudget').value) || 0,
-        cache: $('cache').value === 'true',
-        reasoningReplay: $('reasoningReplay').value,
-        extraBody: $('extraBody').value.trim() ? JSON.parse($('extraBody').value) : {},
-        ...collectConnectors()
-      });
-    } catch (err) {
+  if (admin) {
+    const apiKey = $('apiKey').value;
+    Object.assign(patch, {
+      baseUrl: $('baseUrl').value.trim(),
+      ...(apiKey ? { apiKey } : {}),
+      llmCompaction: $('llmCompaction').value === 'true',
+      compactionMaxTokens: Number($('compactionMaxTokens').value) || 8192,
+      expandCharBudget: Number($('expandCharBudget').value) || 0,
+      cache: $('cache').value === 'true',
+      reasoningReplay: $('reasoningReplay').value,
+      extraBody: $('extraBody').value.trim() ? JSON.parse($('extraBody').value) : {},
+      ...collectCatalog()
+    });
+  }
+  for (const k of lockedKeys) delete patch[k];
+  return patch;
+}
+
+// The draft as of the last load, to tell whether closing would lose edits.
+let saved = '';
+function draftState() {
+  if (readOnly) return $('myInstructions').value;
+  try { return JSON.stringify([buildPatch(), $('myInstructions').value]); } catch { return null; }
+}
+
+/** Whether closing now would drop unsaved edits; asks, and on yes reloads the saved settings. */
+export function settingsCanClose() {
+  const now = draftState();
+  if (now === saved) return true;
+  if (!window.confirm('Discard unsaved settings changes?')) return false;
+  loadConfig();
+  return true;
+}
+
+async function saveConfig() {
+  // Personal instructions go to the person's own prefs, whatever else they may edit.
+  if (!$('myInstructionsGroup').hidden) {
+    try { await api.post('/api/me/prefs', { instructions: $('myInstructions').value.trim() || null }); } catch (err) {
       $('saveMsg').textContent = `save failed (${err.message})`;
       return;
     }
+    await loadAccess();
+    if (readOnly) { $('saveMsg').textContent = 'saved'; saved = draftState(); closePanel(PANEL.SETTINGS, { force: true }); return; }
   }
-  for (const k of lockedKeys) delete patch[k];
+  let patch;
+  try { patch = buildPatch(); } catch (err) {
+    $('saveMsg').textContent = `save failed (${err.message})`;
+    return;
+  }
   try { await api.post('/api/config', patch); } catch (err) {
     $('saveMsg').textContent = `save failed (${err.message})`;
     return;
@@ -413,12 +488,13 @@ async function saveConfig() {
   await loadAccess(); // a changed model changes what it can take
   await loadTools(); // the per-tool "default" labels follow the global mode
   $('saveMsg').textContent = 'saved';
-  closePanel(PANEL.SETTINGS);
+  closePanel(PANEL.SETTINGS, { force: true });
 }
 
 /** The panel's onOpen: a stale "saved" would read as this visit's. */
 export function onSettingsOpen() {
   if (!$('save').disabled) $('saveMsg').textContent = '';
+  showView(readOnly ? 'prefs' : 'home');
 }
 
 /** The panel's onClose. */

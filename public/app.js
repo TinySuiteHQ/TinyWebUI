@@ -17,7 +17,7 @@ import { initLibrary } from './chat/library.js';
 import { initComposer } from './chat/composer.js';
 import { PANEL, initPanels, openPanel } from './panels/panels.js';
 import {
-  initSettings, onSettingsOpen, onSettingsClose,
+  initSettings, onSettingsOpen, onSettingsClose, settingsBack, settingsCanClose,
   loadConfig, loadMcp, loadTools, isLocked, isReadOnly, configuredModel
 } from './panels/settings.js';
 import { initAutomations, loadAutomations } from './panels/automations.js';
@@ -79,7 +79,7 @@ function wire() {
   initSettings();
   initAutomations();
   initPanels({
-    [PANEL.SETTINGS]: { onOpen: onSettingsOpen, onClose: onSettingsClose, closeId: 'cancel' },
+    [PANEL.SETTINGS]: { onOpen: onSettingsOpen, onClose: onSettingsClose, onEscape: settingsBack, canClose: settingsCanClose, closeId: 'cancel' },
     // The raw editor and the tool list are reloaded on open, so they reflect
     // any toggles made from the composer menu.
     [PANEL.MCP]: { onOpen: () => Promise.all([loadMcp(), loadTools()]) },

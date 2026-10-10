@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configProblems, DEFAULTS } from '../src/config/config.js';
-import { effectiveConfig } from '../src/config/models.js';
+import { effectiveConfig, flattenCatalog, nestCatalog } from '../src/config/models.js';
 import { fingerprint } from '../src/access/policy.js';
 
 const SECRET = 'sk-test-abcdef123456';
@@ -30,6 +30,32 @@ test('connector problems are named', () => {
   assert.match(bad({ models: [{ id: 'm', connector: 'missing' }] }).join(), /"missing" is not in connectors/);
   assert.match(bad({ models: [{ id: 'm', tags: ['telepathy'] }] }).join(), /tags must be a list/);
   assert.deepEqual(bad({ connectors: [{ id: 'x', baseUrl: 'http://h' }], models: [{ id: 'm', connector: 'x', tags: ['vision'] }], model: 'm' }), []);
+});
+
+test('the file nests models under their endpoint; runtime sees one flat list', () => {
+  const file = {
+    models: [{ id: 'a', model: 'vendor/a', systemPrompt: 'Be brief.' }],
+    connectors: [{ id: 'local', baseUrl: 'http://localhost:11434/v1', models: [{ id: 'b', model: 'llama', temperature: 0.2 }] }]
+  };
+  const flat = flattenCatalog(file);
+  assert.deepEqual(flat.models.map((m) => [m.id, m.connector]), [['a', undefined], ['b', 'local']]);
+  assert.ok(!('models' in flat.connectors[0]));
+  assert.deepEqual(nestCatalog(flat), file, 'nesting undoes flattening');
+  const cfg = { ...DEFAULTS, model: 'b', ...flat };
+  const b = effectiveConfig(cfg, 'b');
+  assert.deepEqual([b.baseUrl, b.model, b.temperature], ['http://localhost:11434/v1', 'llama', 0.2]);
+  assert.equal(effectiveConfig(cfg, 'a').systemPrompt, 'Be brief.');
+  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'none', model: 'b', ...file }), []);
+  const bad = configProblems({ ...DEFAULTS, authMode: 'none', connectors: [{ id: 'x', baseUrl: 'http://h', models: { id: 'm' } }] });
+  assert.match(bad.join(), /connectors\[0\]\.models must be a list/);
+});
+
+test('an old flat file still loads, and an entry naming an unknown connector stays flat', () => {
+  const flat = { connectors: [{ id: 'x', baseUrl: 'http://h' }], models: [{ id: 'm', connector: 'x' }, { id: 'n', connector: 'gone' }] };
+  assert.deepEqual(flattenCatalog(flat), flat);
+  const nested = nestCatalog(flat);
+  assert.deepEqual(nested.connectors[0].models, [{ id: 'm' }]);
+  assert.deepEqual(nested.models, [{ id: 'n', connector: 'gone' }], 'validation still reports it');
 });
 
 test('a fingerprint never contains a connector key', () => {
@@ -92,6 +118,25 @@ test('the top-level key follows the same rules', async () => {
   assert.equal(readCfg().apiKey, 'sk-top-level-key-9999');
   await post(root, { apiKey: '' });
   assert.equal(readCfg().apiKey, 'sk-top-level-key-9999', 'empty means unchanged');
+});
+
+test('a saved catalog is written nested under its connector, and read back flat', async () => {
+  await post(root, { connectors: [{ id: 'local', baseUrl: 'http://localhost:11434/v1', apiKey: SECRET }] });
+  const r = await post(root, {
+    connectors: [{ id: 'local', baseUrl: 'http://localhost:11434/v1' }],
+    models: [{ id: 'a', model: 'vendor/a' }, { id: 'b', model: 'llama', connector: 'local', cacheTtl: '1h' }],
+    model: 'a'
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const file = readCfg();
+  assert.deepEqual(file.models, [{ id: 'a', model: 'vendor/a' }]);
+  assert.deepEqual(file.connectors[0].models, [{ id: 'b', model: 'llama', cacheTtl: '1h' }]);
+  assert.equal(file.connectors[0].apiKey, SECRET, 'the key survives the reshaping');
+  const got = (await root('/api/config')).data;
+  assert.deepEqual(got.models.map((m) => [m.id, m.connector]), [['a', undefined], ['b', 'local']]);
+  assert.ok(!('models' in got.connectors[0]));
+  // Back to no catalog, so later tests see the open default.
+  await post(root, { models: [], connectors: [], model: DEFAULTS.model });
 });
 
 test('a role with the settings feature cannot touch credentials or see connectors', async () => {

@@ -18,7 +18,7 @@
     "models": {
       "type": "array",
       "x-change": "editable (UI writes it back here)",
-      "description": "The model catalog. Empty: any model id. Listed: only these can be picked, by id, shown by label.",
+      "description": "The model catalog on the default endpoint (models of a connector go under it). Empty everywhere: any model id. Listed: only these can be picked, by id, shown by label. Top-level settings are the defaults each entry may override.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -47,7 +47,7 @@
           },
           "connector": {
             "type": "string",
-            "description": "Id of an entry in connectors; absent: the default baseUrl/apiKey."
+            "description": "Older flat form: id of an entry in connectors. Prefer listing the model under that connector."
           },
           "tags": {
             "type": "array",
@@ -62,7 +62,8 @@
             "description": "What the model can do."
           },
           "systemPrompt": {
-            "type": "string"
+            "type": "string",
+            "description": "Replaces the top-level systemPrompt for this model."
           },
           "temperature": {
             "type": [
@@ -113,7 +114,7 @@
     "connectors": {
       "type": "array",
       "x-change": "editable (UI writes it back here)",
-      "description": "Named endpoints a catalog entry can use. apiKey is a secret: prefer an env var in committed config.",
+      "description": "Named endpoints, each with the models it serves. apiKey is a secret: prefer an env var in committed config.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -133,6 +134,97 @@
           },
           "apiKey": {
             "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Stable handle: what model, roles and prefs name."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "Provider model id; defaults to id."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "What people see in the picker."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "description": "false: keep the settings, hide and refuse the model."
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "vision",
+                      "reasoning",
+                      "tools"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "description": "What the model can do."
+                },
+                "systemPrompt": {
+                  "type": "string",
+                  "description": "Replaces the top-level systemPrompt for this model."
+                },
+                "temperature": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "maxTokens": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "maxToolRounds": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cacheMode": {
+                  "enum": [
+                    "auto",
+                    "implicit",
+                    "explicit",
+                    "rolling",
+                    "off"
+                  ]
+                },
+                "cacheTtl": {
+                  "enum": [
+                    "5m",
+                    "1h"
+                  ]
+                },
+                "reasoningReplay": {
+                  "enum": [
+                    "auto",
+                    "omit",
+                    "reasoning_content",
+                    "reasoning_details"
+                  ]
+                },
+                "extraBody": {
+                  "type": "object",
+                  "description": "Merged over the global extraBody."
+                }
+              }
+            },
+            "description": "Catalog entries served by this connector."
           }
         }
       }

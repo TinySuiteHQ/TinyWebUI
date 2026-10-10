@@ -16,7 +16,7 @@ export const PANEL = Object.freeze({
   ADMIN: 'admin'
 });
 
-const panels = new Map(); // name -> { onOpen?, onClose?, closeId? }
+const panels = new Map(); // name -> { onOpen?, onClose?, canClose?, onEscape?, closeId? }
 
 const isOpen = (name) => $(name).classList.contains('open');
 
@@ -27,19 +27,28 @@ function show(name, on) {
 
 export async function openPanel(name) {
   if (isOpen(name)) return;
-  for (const other of panels.keys()) if (other !== name) closePanel(other, { swapping: true });
+  for (const other of panels.keys()) if (other !== name && !closePanel(other, { swapping: true })) return;
   show(name, true);
   await panels.get(name).onOpen?.();
 }
 
-/** `swapping`: another panel is taking its place, so focus belongs there. */
-export function closePanel(name, { swapping = false } = {}) {
-  if (!isOpen(name)) return;
+/**
+ * `swapping`: another panel is taking its place, so focus belongs there.
+ * `force` skips the panel's canClose (it is closing after a save). False when
+ * the panel refused, e.g. unsaved edits the person chose to keep.
+ */
+export function closePanel(name, { swapping = false, force = false } = {}) {
+  if (!isOpen(name)) return true;
+  if (!force && panels.get(name).canClose?.() === false) return false;
   show(name, false);
   panels.get(name).onClose?.({ swapping });
+  return true;
 }
 
-/** `defs`: { [PANEL.*]: { onOpen?, onClose?({ swapping }), closeId? } } */
+/**
+ * `defs`: { [PANEL.*]: { onOpen?, onClose?({ swapping }), canClose?() -> bool,
+ * onEscape?() -> bool (true: handled, stay open), closeId? } }
+ */
 export function initPanels(defs) {
   for (const [name, def] of Object.entries(defs)) {
     panels.set(name, def);
@@ -47,6 +56,7 @@ export function initPanels(defs) {
     $(def.closeId || `close-${name}`).onclick = () => closePanel(name);
   }
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') for (const name of panels.keys()) closePanel(name);
+    if (event.key !== 'Escape') return;
+    for (const [name, def] of panels) if (isOpen(name) && !def.onEscape?.()) closePanel(name);
   });
 }

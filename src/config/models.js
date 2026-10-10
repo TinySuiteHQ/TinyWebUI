@@ -28,6 +28,44 @@ export const MODEL_TAGS = ['vision', 'reasoning', 'tools'];
 
 const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', ...MODEL_OVERRIDES]);
 
+/**
+ * The file keeps each model with the endpoint that serves it: top-level
+ * `models` run on the default baseUrl/apiKey, `connectors[i].models` on that
+ * connector, and every entry carries its own prompt, sampling and caching.
+ * At runtime the catalog is one flat list whose entries name their connector,
+ * so nothing past loading knows about the nesting. The older flat file shape
+ * (entries with `connector: <id>`) loads unchanged.
+ */
+export function flattenCatalog(cfg) {
+  if (!Array.isArray(cfg.connectors) || !Array.isArray(cfg.models ?? [])) return {};
+  const nested = [];
+  const connectors = cfg.connectors.map((c) => {
+    if (!c || typeof c !== 'object' || !Array.isArray(c.models)) return c;
+    const { models, ...rest } = c;
+    for (const m of models) nested.push(m && typeof m === 'object' && !Array.isArray(m) ? { ...m, connector: c.id } : m);
+    return rest;
+  });
+  return { connectors, models: [...(cfg.models ?? []), ...nested] };
+}
+
+/** The flat runtime catalog back in the file's nested shape. */
+export function nestCatalog(cfg) {
+  const out = {};
+  const connectors = Array.isArray(cfg.connectors) ? cfg.connectors : [];
+  const models = Array.isArray(cfg.models) ? cfg.models : [];
+  const ids = new Set(connectors.map((c) => c?.id));
+  // An entry naming a connector that is not listed stays flat, so validation
+  // still reports it instead of the entry silently moving endpoints.
+  if (cfg.models !== undefined) out.models = models.filter((m) => !m?.connector || !ids.has(m.connector));
+  if (cfg.connectors !== undefined) {
+    out.connectors = connectors.map((c) => {
+      const mine = models.filter((m) => m?.connector && m.connector === c?.id).map(({ connector, ...m }) => m);
+      return mine.length ? { ...c, models: mine } : c;
+    });
+  }
+  return out;
+}
+
 /** Named endpoints: { id, label?, baseUrl, apiKey? }. The top-level baseUrl/apiKey stay the implicit default. */
 export const connectors = (cfg) => (Array.isArray(cfg.connectors) ? cfg.connectors : []);
 export const findConnector = (cfg, id) => connectors(cfg).find((c) => c.id === id) || null;
@@ -84,7 +122,7 @@ export function effectiveConfig(cfg, key) {
 export function connectorProblems(cfg) {
   const list = cfg.connectors;
   if (list === undefined) return [];
-  if (!Array.isArray(list)) return ['connectors must be a list of { id, baseUrl, apiKey?, label? } entries'];
+  if (!Array.isArray(list)) return ['connectors must be a list of { id, baseUrl, apiKey?, label?, models? } entries'];
   const out = [];
   const ids = new Set();
   list.forEach((c, i) => {
@@ -93,7 +131,9 @@ export function connectorProblems(cfg) {
     if (typeof c.id !== 'string' || !c.id.trim()) { out.push(`${at}.id must be a non-empty string`); return; }
     if (ids.has(c.id)) out.push(`${at}.id "${c.id}" is listed twice`);
     ids.add(c.id);
-    for (const k of Object.keys(c)) if (!['id', 'label', 'baseUrl', 'apiKey'].includes(k)) out.push(`${at}.${k} is not a known setting (known: id, label, baseUrl, apiKey)`);
+    // A nested `models` that is a list was already lifted out by flattenCatalog.
+    if (c.models !== undefined) out.push(`${at}.models must be a list of model entries`);
+    for (const k of Object.keys(c)) if (!['id', 'label', 'baseUrl', 'apiKey', 'models'].includes(k)) out.push(`${at}.${k} is not a known setting (known: id, label, baseUrl, apiKey, models)`);
     for (const k of ['label', 'apiKey']) if (c[k] !== undefined && typeof c[k] !== 'string') out.push(`${at}.${k} must be a string`);
     try {
       if (!/^https?:$/.test(new URL(c.baseUrl).protocol)) throw new Error('scheme');
