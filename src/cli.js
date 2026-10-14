@@ -157,10 +157,10 @@ const commands = {
       fingerprint: fingerprint(cfg, servers),
       files: { config: source.path(), mcp: source.mcpPath() || '(in code)' },
       authMode: cfg.authMode,
-      roles: cfg.authMode === 'trusted-header'
+      roles: ['multiuser', 'trusted-header'].includes(cfg.authMode)
         ? Object.fromEntries(ROLES.map((r) => [r, roleFor(r)]))
         : { you: roleFor(null) },
-      access: cfg.authMode === 'trusted-header'
+      access: ['multiuser', 'trusted-header'].includes(cfg.authMode)
         ? { bootstrapAdmins: access.bootstrapAdmins, newUsers: access.newUsers, users: access.users }
         : undefined,
       mcpServers: { locked: source.mcpLocked, servers: redactServers(servers) },
@@ -404,7 +404,7 @@ export function configSchema() {
       'x-change': FILE_ONLY.has(k) ? 'file-only' : WRITABLE.has(k) ? 'editable (UI writes it back here)' : 'file-only'
     };
   }
-  properties.authMode = { enum: ['none', 'single', 'trusted-header'], 'x-change': 'file-only' };
+  properties.authMode = { enum: ['none', 'single', 'multiuser', 'trusted-header'], 'x-change': 'file-only' };
   properties.toolApproval = { enum: ['writes', 'all', 'off'], 'x-change': 'editable (UI writes it back here)' };
   properties.trustedProxyCidrs = { type: 'array', items: { type: 'string' }, 'x-change': 'file-only' };
   const featureList = { oneOf: [{ const: '*' }, { type: 'array', items: { enum: FEATURES }, uniqueItems: true }] };

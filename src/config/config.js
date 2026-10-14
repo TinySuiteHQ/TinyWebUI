@@ -144,20 +144,22 @@ export const DEFAULTS = {
   // is a per-tool block, not a substitute for disabling the whole server.
   disabledTools: [],
   //   'none'           explicit local-only use without login
-  //   'single'         just you, behind a password (authPassword or
+  //   'single'         legacy one-person login, behind a password (authPassword or
   //                    $TINYWEBUI_PASSWORD; set it with `tinywebui set-password`)
+  //   'multiuser'      local accounts: first signup is admin; later signups
+  //                    require an invitation from an admin
   //   'trusted-header' many users: an upstream gateway (Cloudflare Access,
   //                    oauth2-proxy, Authelia, ...) signs people in with
   //                    Google, Apple, SSO etc. and passes identity headers
-  authMode: 'single',
+  authMode: 'multiuser',
   // Level 'single': an scrypt hash (never plaintext), from `tinywebui
   // set-password`; never writable through /api/config.
   authPassword: '',
   // Signs session cookies. Auto-generated on first run when auth is enabled
   // and this is empty; never sent to the frontend.
   sessionSecret: '',
-  // Reserved for a native OAuth login ('multiuser'), not implemented yet --
-  // use 'trusted-header' behind a gateway for Google/Apple/SSO sign-in.
+  // Reserved for a future native OAuth login; local multi-user accounts use
+  // email and password today.
   googleClientId: '',
   googleClientSecret: '',
   googleRedirectUri: '',
@@ -265,6 +267,10 @@ export function createConfigSource(opts = {}) {
 
     const fromFile = readFile();
     const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
+    // Preserve the established headless/container contract: an explicitly
+    // supplied owner password selects legacy single-user mode unless a file or
+    // code configuration deliberately chose another auth mode.
+    if (process.env.TINYWEBUI_PASSWORD && !Object.hasOwn(fromFile, 'authMode') && !Object.hasOwn(code, 'authMode')) cfg.authMode = 'single';
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
     // Partial retrieval blocks fill in from the defaults rather than replace them.
     // $TINYWEBUI_RETRIEVAL_MODE=lexical is the no-config way to opt out of hybrid.

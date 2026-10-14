@@ -63,8 +63,7 @@ test('five wrong passwords lock the address out', async () => {
   assert.equal((await login('correct horse')).status, 429);
 });
 
-test('refuses to start with a plaintext password, or in multiuser mode', async () => {
+test('single mode refuses to start without a password or with a plaintext one', async () => {
   delete process.env.TINYWEBUI_PASSWORD;
   await assert.rejects(boot({ authMode: 'single', authPassword: 'plaintext' }), /must be a hash/);
-  await assert.rejects(boot({ authMode: 'multiuser' }), /trusted-header/);
 });

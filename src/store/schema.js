@@ -25,6 +25,20 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL
 );
 
+-- Local multi-user enrollment. The browser receives the raw invite once;
+-- only its sha256 digest is stored, just like a session token.
+CREATE TABLE IF NOT EXISTS invitations (
+  id         TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  email      TEXT,
+  created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER,
+  used_by    TEXT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS invitations_active ON invitations(expires_at) WHERE used_at IS NULL;
+
 -- One-time migration flags (e.g. backfilling user_id onto pre-auth rows),
 -- so a backfill never accidentally reruns and clobbers real ownership later.
 CREATE TABLE IF NOT EXISTS meta (
@@ -334,7 +348,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a

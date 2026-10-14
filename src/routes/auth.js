@@ -1,9 +1,8 @@
-import { timingSafeEqual } from 'node:crypto';
 import { json, readJson } from '../http.js';
 import { isClosed, findEntry, labelFor } from '../config/models.js';
-import { modelsFor, fingerprint, resolveAccess } from '../access/policy.js';
+import { modelsFor, fingerprint, resolveAccess, MIN_PASSWORD_LENGTH } from '../access/policy.js';
 import {
-  verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
+  hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.js';
 import { audit } from '../audit.js';
 import { OWNER_ID } from '../access/auth_gate.js';
@@ -12,13 +11,23 @@ import { FEATURE } from '../../public/shared/features.js';
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.
 const LOGIN_MAX = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
+const DUMMY_PASSWORD_HASH = hashPassword('tinywebui timing placeholder');
 
-const sameSecret = (given, expected) => {
-  const a = Buffer.from(String(given ?? '')), b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
+const emailOf = (value) => typeof value === 'string' ? value.trim().toLowerCase() : '';
+const validEmail = (email) => email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-export function authRoutes({ config, modelFor, multiUser, passwordHash, launchToken, source, store, version }) {
+function localAccount(body) {
+  const email = emailOf(body.email);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!validEmail(email)) return { error: 'enter a valid email address' };
+  if (!name || name.length > 200) return { error: 'name must be between 1 and 200 characters' };
+  if (password.length < MIN_PASSWORD_LENGTH) return { error: `use at least ${MIN_PASSWORD_LENGTH} characters` };
+  if (password.length > 1024) return { error: 'password is too long' };
+  return { email, name, password };
+}
+
+export function authRoutes({ config, modelFor, multiUser, passwordHash, source, store, version }) {
   const loginFailures = new Map();
 
   return [
@@ -28,13 +37,12 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, launchTo
       const model = signedIn ? modelFor(auth.user?.id, auth.role) : null;
       return json(res, 200, {
         authMode: cfg.authMode,
-        // How 'single' signs in: a password, or the link printed at startup.
-        login: cfg.authMode === 'single' ? (passwordHash() ? 'password' : 'link') : null,
+        needsSetup: cfg.authMode === 'multiuser' && store.users.localCount() === 0,
         logoutUrl: cfg.logoutUrl || '',
         isAdmin: Boolean(auth.isAdmin),
         // What this person may personalise, and their saved instructions (multi-user only).
-        customize: cfg.authMode === 'trusted-header' && auth.user ? resolveAccess(cfg).customize : [],
-        instructions: cfg.authMode === 'trusted-header' && auth.user ? store.users.getPrefs(auth.user.id).instructions || '' : '',
+        customize: multiUser() && auth.user ? resolveAccess(cfg).customize : [],
+        instructions: multiUser() && auth.user ? store.users.getPrefs(auth.user.id).instructions || '' : '',
         features: [...auth.features],
         models: signedIn ? modelsFor(cfg, auth.role) : [],
         model,
@@ -49,7 +57,7 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, launchTo
 
     { method: 'POST', path: /^\/api\/auth\/login$/, feature: null, handle: async ({ req, res }) => {
       const cfg = config();
-      if (cfg.authMode !== 'single') return json(res, 404, { error: 'not found' });
+      if (!['single', 'multiuser'].includes(cfg.authMode)) return json(res, 404, { error: 'not found' });
       const who = req.socket.remoteAddress || '?';
       const now = Date.now();
       const f = loginFailures.get(who);
@@ -58,27 +66,77 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, launchTo
       if (entry && entry.count >= LOGIN_MAX) {
         return json(res, 429, { error: 'too many attempts, try again later' });
       }
-      const { password, token: given } = await readJson(req);
-      const hash = passwordHash();
-      // The launch link only stands in for a password that doesn't exist.
-      const ok = hash ? verifyPassword(password, hash) : Boolean(launchToken()) && sameSecret(given, launchToken());
-      if (!ok) {
+      const body = await readJson(req);
+      const password = typeof body.password === 'string' ? body.password : '';
+      const user = cfg.authMode === 'multiuser' ? store.users.byEmail(emailOf(body.email)) : store.users.get(OWNER_ID);
+      const stored = cfg.authMode === 'single' ? passwordHash() : user?.password_hash || DUMMY_PASSWORD_HASH;
+      if (!verifyPassword(password, stored) || !user) {
         loginFailures.set(who, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
-        audit('auth.rejected', { reason: hash ? 'bad_password' : 'bad_launch_token' });
-        return json(res, 401, { error: hash ? 'wrong password' : 'open the sign-in link printed in the terminal' });
+        audit('auth.rejected', { reason: 'bad_password' });
+        return json(res, 401, { error: 'wrong email or password' });
       }
+      if (user.status !== 'approved') return json(res, 403, { error: user.status === 'disabled' ? 'account disabled' : 'account pending approval' });
       loginFailures.delete(who);
-      const token = createSession(store, OWNER_ID, cfg.sessionTtlDays);
-      audit('auth.login', { userId: OWNER_ID });
+      if (cfg.authMode === 'multiuser') store.users.sync(user.id, { last_login_at: now });
+      const token = createSession(store, user.id, cfg.sessionTtlDays);
+      audit('auth.login', { userId: user.id });
       res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
       return json(res, 200, { ok: true });
+    } },
+
+    { method: 'POST', path: /^\/api\/auth\/setup$/, feature: null, handle: async ({ req, res }) => {
+      const cfg = config();
+      if (cfg.authMode !== 'multiuser') return json(res, 404, { error: 'not found' });
+      if (store.users.localCount() !== 0) return json(res, 409, { error: 'this installation already has an administrator' });
+      const account = localAccount(await readJson(req));
+      if (account.error) return json(res, 400, { error: account.error });
+      let user;
+      try {
+        user = store.users.createFirstLocal({ ...account, passwordHash: hashPassword(account.password) });
+      } catch (err) {
+        return json(res, 409, { error: 'that email address is already in use' });
+      }
+      if (!user) return json(res, 409, { error: 'this installation already has an administrator' });
+      store.claimUnowned(user.id, { removeUserId: OWNER_ID });
+      const token = createSession(store, user.id, cfg.sessionTtlDays);
+      audit('user.provisioned', { userId: user.id, role: 'admin', status: 'approved', source: 'first-account' });
+      audit('auth.login', { userId: user.id });
+      res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
+      return json(res, 201, { ok: true });
+    } },
+
+    { method: 'POST', path: /^\/api\/auth\/accept-invite$/, feature: null, handle: async ({ req, res }) => {
+      const cfg = config();
+      if (cfg.authMode !== 'multiuser') return json(res, 404, { error: 'not found' });
+      const body = await readJson(req);
+      const account = localAccount(body);
+      if (account.error) return json(res, 400, { error: account.error });
+      const inviteToken = typeof body.token === 'string' ? body.token.trim() : '';
+      if (!/^[0-9a-f]{64}$/i.test(inviteToken)) return json(res, 400, { error: 'invalid or expired invitation' });
+      let result;
+      try {
+        result = store.users.acceptInvite({
+          tokenHash: hashToken(inviteToken), email: account.email, name: account.name,
+          passwordHash: hashPassword(account.password)
+        });
+      } catch (err) {
+        return json(res, 409, { error: 'that email address is already in use' });
+      }
+      if (result.error === 'email_mismatch') return json(res, 400, { error: 'this invitation is for a different email address' });
+      if (result.error === 'email_taken') return json(res, 409, { error: 'that email address is already in use' });
+      if (result.error) return json(res, 400, { error: 'invalid or expired invitation' });
+      const token = createSession(store, result.user.id, cfg.sessionTtlDays);
+      audit('user.provisioned', { userId: result.user.id, role: 'user', status: 'approved', source: 'invitation' });
+      audit('auth.login', { userId: result.user.id });
+      res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
+      return json(res, 201, { ok: true });
     } },
 
     { method: 'POST', path: /^\/api\/auth\/logout$/, feature: null, handle: ({ req, res }) => {
       const cfg = config();
       // The gateway owns the session; the client is sent to its logout page.
       if (cfg.authMode === 'trusted-header') return json(res, 200, { redirect: cfg.logoutUrl || null });
-      if (cfg.authMode !== 'single') return json(res, 404, { error: 'not found' });
+      if (!['single', 'multiuser'].includes(cfg.authMode)) return json(res, 404, { error: 'not found' });
       const token = sessionToken(req, cfg);
       if (token) destroySession(store, token);
       res.setHeader('set-cookie', clearCookie({ secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));

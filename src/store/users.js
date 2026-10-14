@@ -25,6 +25,18 @@ export class UserStore {
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
   }
 
+  count() {
+    return this.db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  }
+
+  localCount() {
+    return this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE password_hash IS NOT NULL').get().n;
+  }
+
+  byEmail(email) {
+    return this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) || null;
+  }
+
   list() {
     return this.db.prepare(`
       SELECT u.id, u.email, u.name, u.role, u.status, u.external_id, u.created_at, u.last_login_at,
@@ -81,6 +93,70 @@ export class UserStore {
     const now = Date.now();
     this.db.prepare(`INSERT INTO users (id, role, status, created_at, approved_at)
       VALUES (?, 'admin', 'approved', ?, ?) ON CONFLICT(id) DO NOTHING`).run(id, now, now);
+  }
+
+  removePasswordless(id) {
+    this.db.prepare('DELETE FROM users WHERE id = ? AND password_hash IS NULL AND external_id IS NULL').run(id);
+  }
+
+  /** Atomically claims a fresh local installation. Exactly one caller wins. */
+  createFirstLocal({ email, name, passwordHash, now = Date.now() }) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (this.localCount() !== 0) { this.db.exec('ROLLBACK'); return null; }
+      const id = randomUUID();
+      this.db.prepare(`INSERT INTO users
+        (id, email, name, password_hash, role, status, created_at, approved_at, last_login_at)
+        VALUES (?, ?, ?, ?, 'admin', 'approved', ?, ?, ?)`)
+        .run(id, email, name, passwordHash, now, now, now);
+      this.db.exec('COMMIT');
+      return this.get(id);
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
+  createInvite({ id, tokenHash, email, createdBy, createdAt = Date.now(), expiresAt }) {
+    this.db.prepare(`INSERT INTO invitations
+      (id, token_hash, email, created_by, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(id, tokenHash, email, createdBy, createdAt, expiresAt);
+    return this.db.prepare('SELECT id, email, created_by, created_at, expires_at FROM invitations WHERE id = ?').get(id);
+  }
+
+  listInvites(now = Date.now()) {
+    return this.db.prepare(`SELECT id, email, created_by, created_at, expires_at
+      FROM invitations WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC`).all(now);
+  }
+
+  revokeInvite(id) {
+    return this.db.prepare('DELETE FROM invitations WHERE id = ? AND used_at IS NULL').run(id).changes > 0;
+  }
+
+  /** Claims a valid invitation and creates its approved local user in one transaction. */
+  acceptInvite({ tokenHash, email, name, passwordHash, now = Date.now() }) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const invite = this.db.prepare('SELECT * FROM invitations WHERE token_hash = ?').get(tokenHash);
+      if (!invite || invite.used_at !== null || invite.expires_at <= now) {
+        this.db.exec('ROLLBACK');
+        return { error: 'invalid_or_expired' };
+      }
+      if (invite.email && invite.email !== email) {
+        this.db.exec('ROLLBACK');
+        return { error: 'email_mismatch' };
+      }
+      if (this.byEmail(email)) {
+        this.db.exec('ROLLBACK');
+        return { error: 'email_taken' };
+      }
+      const id = randomUUID();
+      this.db.prepare(`INSERT INTO users
+        (id, email, name, password_hash, role, status, created_at, approved_at, last_login_at)
+        VALUES (?, ?, ?, ?, 'user', 'approved', ?, ?, ?)`)
+        .run(id, email, name, passwordHash, now, now, now);
+      this.db.prepare('UPDATE invitations SET used_at = ?, used_by = ? WHERE id = ?').run(now, id, invite.id);
+      this.db.exec('COMMIT');
+      return { user: this.get(id) };
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
   addSession(tokenHash, userId, expiresAt) {

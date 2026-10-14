@@ -47,7 +47,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Hybrid local search** (BM25 plus a small on-device embedding model) over documents and past chats.
 - **Long chats that stay affordable.** Cache-friendly prefixes, one-time compaction of large tool results, and per-round token statistics.
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
-- **Private by default.** Local starts sign in with a one-time link from the terminal, network binds need a password, and a team can use an SSO gateway with roles and an admin panel.
+- **Private by default.** The first account becomes the administrator; later local accounts require a single-use invitation. Teams can alternatively put SSO in front.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
 - **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
 
@@ -59,7 +59,7 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-There is no password to set up. The terminal prints a sign-in link (`http://127.0.0.1:7777/#token=…`); open it and the browser stays signed in. Only someone who can read that terminal gets in. Then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
+Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel. Then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
 
 ```json
 {
@@ -69,21 +69,20 @@ There is no password to set up. The terminal prints a sign-in link (`http://127.
 }
 ```
 
-`tinywebui.config.json` holds your API keys (and password hash, if you set one) and is gitignored. Keep it that way. Run `npx tinywebui set-password` to sign in with a password instead of the link; you need one to listen on anything other than loopback.
+`tinywebui.config.json` holds API keys and the session-signing secret and is gitignored. Local account password hashes and hashed invitation tokens live in `tinywebui.db`; keep both files private and backed up.
 
 `npx tinywebui` uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 
-From a clone, run `npm install && npm start`. With Docker, create the owner password in the persistent volume before starting the service:
+From a clone, run `npm install && npm start`. With Docker, start the service and create the administrator in the browser:
 
 ```bash
 docker compose build
-docker compose run --rm -it tinywebui set-password
 docker compose up -d
 ```
 
-The Compose example publishes port 7777 on the host's loopback interface. The Docker image also accepts `TINYWEBUI_PASSWORD` for a headless first start; use a password of at least 15 characters and keep the container's data volume. Without credentials, a headless start exits before opening a port. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
+The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes. For compatibility, setting `TINYWEBUI_PASSWORD` without an explicit `authMode` selects legacy single-owner mode; use at least 10 characters. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
 
-The Compose example now stores config in its named data volume. If you used the previous bind-mounted `tinywebui.config.json`, copy its settings into the volume before starting, then run `set-password` there.
+Existing `single`-mode installations continue unchanged. To move one to local multi-user accounts, set `authMode` to `multiuser`, restart, and create the administrator in the browser. On that first setup, existing unowned chats, files, artifacts, folders and automations move to the new administrator.
 
 ## Documentation
 
@@ -99,7 +98,7 @@ The full reference lives at **[tinysuite.dev/docs/tinywebui](https://tinysuite.d
 | [Automations](https://tinysuite.dev/docs/tinywebui/#automations) | Scheduled prompts |
 | [Long chats](https://tinysuite.dev/docs/tinywebui/#long-chats-caching-and-compaction) | Caching and compaction |
 | [Usage statistics](https://tinysuite.dev/docs/tinywebui/#usage-statistics) | Token use and attribution |
-| [Access](https://tinysuite.dev/docs/tinywebui/#access) | Just you, a password, or a team behind SSO |
+| [Access](https://tinysuite.dev/docs/tinywebui/#access) | Local invited users, legacy single-owner mode, or a team behind SSO |
 | [Deployment as code](https://tinysuite.dev/docs/tinywebui/#deployment-as-code) | JavaScript config, locked settings, roles and features |
 | [CLI](https://tinysuite.dev/docs/tinywebui/#cli) | Every command |
 | [Security and limits](https://tinysuite.dev/docs/tinywebui/#security-and-limits) | Exposure, MCP trust, what isn't included |

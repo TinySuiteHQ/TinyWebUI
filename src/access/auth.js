@@ -4,8 +4,8 @@ import { resolveAccess } from './policy.js';
 import { audit } from '../audit.js';
 
 /**
- * Session/cookie plumbing for authMode 'single' (password login), plus the
- * identity resolution for 'trusted-header' further down.
+ * Session/cookie plumbing for local password login ('single' and 'multiuser'),
+ * plus the identity resolution for 'trusted-header' further down.
  * No framework, no dependency: a signed HTTP-only cookie names a session
  * token, and the token itself is looked up (by its hash, never the raw
  * value) against the `sessions` table. When authMode is 'none' none of this
@@ -17,6 +17,9 @@ const COOKIE_NAME = 'tinywebui_session';
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
+
+/** Digests bearer-style secrets before persistence. */
+export const hashToken = (value) => sha256(String(value));
 
 /** HMAC-signs a value so a client can hold it without being able to forge it. */
 function sign(value, secret) {
@@ -61,7 +64,7 @@ export function clearCookie({ secure = false } = {}) {
   return parts.join('; ');
 }
 
-/* ---------- password (authMode 'single') ---------- */
+/* ---------- local passwords ---------- */
 
 const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 

@@ -79,6 +79,19 @@ export class Store {
     return this.db.prepare('PRAGMA user_version').get().user_version;
   }
 
+  /** Gives pre-account, unowned data to the first local administrator. */
+  claimUnowned(userId, { removeUserId = null } = {}) {
+    this.db.exec('BEGIN');
+    try {
+      this.chats.claimUnowned(userId);
+      this.documents.claimUnowned(userId);
+      this.messages.claimUnownedArtifacts(userId);
+      this.automations.claimUnowned(userId);
+      if (removeUserId) this.users.removePasswordless(removeUserId);
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
   /** Cheap liveness probe of the database, for /readyz. */
   ping() {
     return this.db.prepare('SELECT 1 AS ok').get().ok === 1;

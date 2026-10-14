@@ -251,6 +251,7 @@
       "enum": [
         "none",
         "single",
+        "multiuser",
         "trusted-header"
       ],
       "x-change": "file-only"

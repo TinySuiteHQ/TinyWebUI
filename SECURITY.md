@@ -1,15 +1,12 @@
 # Security
 
-A new install on loopback needs no password: each start prints a sign-in link
-carrying a random token (in the URL fragment, so it never reaches a log or a
-Referer). Opening it trades the token for a session cookie, so only someone who
-can read the terminal gets in. Binding to any other interface requires an
-owner password, from `tinywebui set-password` or `TINYWEBUI_PASSWORD`; once a
-password is set, the link no longer signs anyone in. The bundled Compose file
-binds only to the host's loopback interface. An explicit `authMode: "none"` is
-allowed only on a loopback bind, and then answers only to loopback host names
-(plus `allowedHosts`), which stops DNS-rebinding pages from reaching it. For access from another machine, put the app behind HTTPS and
-use password login or a trusted identity gateway. With password login behind
+A new install opens a browser-based account setup. The first account becomes
+the administrator; later local accounts require a single-use invitation from
+an administrator. The bundled Compose file binds only to the host's loopback
+interface. An explicit `authMode: "none"` is allowed only on a loopback bind,
+and then answers only to loopback host names (plus `allowedHosts`), which stops
+DNS-rebinding pages from reaching it. For access from another machine, put the
+app behind HTTPS and use local accounts or a trusted identity gateway. With local login behind
 a reverse proxy, set `trustedProxyCidrs` to that proxy's address range and
 forward `X-Forwarded-Proto: https` so session cookies receive the `Secure`
 attribute. Do not publish the app's plain HTTP port directly to the network.
