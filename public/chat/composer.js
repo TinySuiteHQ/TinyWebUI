@@ -210,7 +210,7 @@ function renderTools(body, data) {
 async function buildModelMenu(pop) {
   // Tier 3: the pill is a personal choice among your role's models, saved
   // per user; it never changes anyone else's model.
-  const personal = whoami().authMode === 'trusted-header';
+  const personal = ['multiuser', 'trusted-header'].includes(whoami().authMode);
   const current = personal ? whoami().model : config.model();
   if (!personal && config.isLocked('model')) {
     pop.appendChild(Object.assign(el('div', 'pop-note'), {

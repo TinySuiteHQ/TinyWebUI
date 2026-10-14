@@ -20,6 +20,10 @@ export class AutomationStore {
     Object.assign(this, deps);
   }
 
+  claimUnowned(userId) {
+    this.db.prepare('UPDATE automations SET user_id = ? WHERE user_id IS NULL').run(userId);
+  }
+
   list(userId) {
     const s = scope(userId, 'a.user_id');
     return this.db.prepare(`SELECT a.*, c.title AS chat_title FROM automations a JOIN chats c ON c.id=a.chat_id

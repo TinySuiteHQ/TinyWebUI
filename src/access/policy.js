@@ -88,7 +88,7 @@ const expand = (list) => new Set(list === '*' ? FEATURES : list || []);
  * everything that makes sense for one person: no user management.
  */
 export function featuresFor(cfg, role) {
-  if (cfg.authMode !== 'trusted-header') {
+  if (!['multiuser', 'trusted-header'].includes(cfg.authMode)) {
     const all = new Set(FEATURES);
     all.delete('admin'); all.delete('oversight');
     return all;
@@ -98,26 +98,25 @@ export function featuresFor(cfg, role) {
 
 /** '*' or the list of model ids this role may pick. */
 export function modelsFor(cfg, role) {
-  if (cfg.authMode !== 'trusted-header') return '*';
+  if (!['multiuser', 'trusted-header'].includes(cfg.authMode)) return '*';
   const m = resolveAccess(cfg).roles[role]?.models;
   return m === '*' || m === undefined ? '*' : m.map(String);
 }
 
-export const MIN_PASSWORD_LENGTH = 15;
+export const MIN_PASSWORD_LENGTH = 10;
 
 /** Every problem with a config, as readable strings. Empty means valid. */
 export function validateConfig(cfg, { env = process.env } = {}) {
   const errors = [];
   const mode = cfg.authMode;
-  if (mode === 'multiuser') {
-    errors.push("authMode 'multiuser' has no login flow yet; use 'trusted-header' behind a gateway for Google/Apple/SSO sign-in");
-  }
   if (mode === 'trusted-header' && !(Array.isArray(cfg.trustedProxyCidrs) && cfg.trustedProxyCidrs.length)) {
     errors.push("authMode 'trusted-header' requires trustedProxyCidrs: identity headers are only believed from those peers");
   }
   if (mode === 'single') {
     if (cfg.authPassword && !/^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/i.test(String(cfg.authPassword))) {
       errors.push('authPassword must be a hash: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD');
+    } else if (!cfg.authPassword && !env.TINYWEBUI_PASSWORD) {
+      errors.push("authMode 'single' needs a password: use the browser-based multiuser setup, run `tinywebui set-password`, or set $TINYWEBUI_PASSWORD");
     } else if (!cfg.authPassword && env.TINYWEBUI_PASSWORD && env.TINYWEBUI_PASSWORD.length < MIN_PASSWORD_LENGTH) {
       errors.push(`TINYWEBUI_PASSWORD needs at least ${MIN_PASSWORD_LENGTH} characters`);
     }

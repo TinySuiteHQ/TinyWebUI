@@ -263,16 +263,17 @@
 
   <div id="login" hidden>
     <form id="loginForm" class="login-card">
-      <h2>TinyWebUI</h2>
+      <h2 id="loginTitle">TinyWebUI</h2>
+      <div id="loginHelp" class="usage"></div>
+      <label id="loginNameLabel" for="loginName" hidden>Name</label>
+      <input id="loginName" autocomplete="name" hidden>
+      <label id="loginEmailLabel" for="loginEmail" hidden>Email</label>
+      <input id="loginEmail" type="email" autocomplete="email" hidden>
       <label for="loginPassword">Password</label>
       <input id="loginPassword" type="password" autocomplete="current-password" required>
-      <button class="primary" type="submit">Sign in</button>
+      <button id="loginSubmit" class="primary" type="submit">Sign in</button>
       <div id="loginMsg" class="usage" role="alert"></div>
     </form>
-    <div id="loginLink" class="login-card" hidden>
-      <h2>TinyWebUI</h2>
-      <p>Open the sign-in link printed in the terminal where TinyWebUI is running.</p>
-    </div>
   </div>
 
   <section id="admin" aria-label="Admin">
@@ -281,6 +282,12 @@
       <section class="statistics-block">
         <div class="sec-h">users <span id="adminCount" class="usage"></span></div>
         <div id="adminMsg" class="usage"></div>
+        <form id="adminInvite" class="invite-form" hidden>
+          <label for="inviteEmail">Invite by email <span class="usage">optional</span></label>
+          <div><input id="inviteEmail" type="email" autocomplete="off" placeholder="person@example.com"><button class="primary" type="submit">Create invite</button></div>
+          <div id="inviteResult" class="usage"></div>
+          <div id="adminInvites" class="admin-users"></div>
+        </form>
         <div id="adminUsers" class="admin-users"></div>
       </section>
       <section id="adminPolicy" class="statistics-block">

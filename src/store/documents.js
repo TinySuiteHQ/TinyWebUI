@@ -56,6 +56,10 @@ export class DocumentStore {
     Object.assign(this, deps);
   }
 
+  claimUnowned(userId) {
+    this.db.prepare('UPDATE documents SET user_id = ? WHERE user_id IS NULL').run(userId);
+  }
+
   /**
    * `original`: the uploaded bytes, kept (once per distinct file) so the file
    * itself can be opened later. `md5` names them when the caller already has

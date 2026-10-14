@@ -1,5 +1,4 @@
 import { createServer } from 'node:http';
-import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { watch, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -54,7 +53,7 @@ function routeTable(app) {
   const deps = {
     store: app.store, runs: app.runs, scheduler: app.scheduler, retrieval: app.retrieval,
     source: app.source, version: app.version,
-    config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash, launchToken: () => app.launchToken,
+    config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash,
     saveConfig: (patch, by) => app.saveConfig(patch, by), refreshConfig: () => app.refreshConfig(),
     auditMcp: (by, before) => app.auditMcp(by, before), swapHub: (servers) => app.swapHub(servers),
     multiUser: () => app.multiUser(), modelFor: (userId, role) => app.modelFor(userId, role),
@@ -77,7 +76,7 @@ const ADMIN_ONLY_FIELDS = /^(apiKey|keyHint|connectors|authPassword|sessionSecre
 const LOOPBACK_BINDS = ['127.0.0.1', '::1', 'localhost'];
 
 // 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
-// (handy for containers); null means sign-in is by launch link only.
+// (handy for containers).
 const ownerHash = (cfg) => cfg.authPassword || (process.env.TINYWEBUI_PASSWORD ? hashPassword(process.env.TINYWEBUI_PASSWORD) : null);
 
 /**
@@ -90,12 +89,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const initial = source.load();
   const problems = configProblems(initial);
   if (problems.length) throw new Error(problems.join('\n'));
-  const loopback = LOOPBACK_BINDS.includes(host);
-  if (initial.authMode === 'none' && !loopback) {
+  if (initial.authMode === 'none' && !LOOPBACK_BINDS.includes(host)) {
     throw new Error("authMode 'none' is limited to loopback; use password login or a trusted-header gateway for network access");
-  }
-  if (initial.authMode === 'single' && !ownerHash(initial) && !loopback) {
-    throw new Error("authMode 'single' needs a password on a network bind: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD");
   }
 
   const store = new Store(source.dbPath(initial), { migrate: initial.autoMigrate !== false });
@@ -133,11 +128,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     cfg: initial,
     hub: null,
     passwordHash: initial.authMode === 'single' ? ownerHash(initial) : null,
-    // A passwordless loopback install signs in with this instead: printed as a
-    // link at startup, so only someone who can read this terminal gets in.
-    // Made whenever it could be needed, so a reload that drops the password
-    // still leaves a way in.
-    launchToken: initial.authMode === 'single' && loopback ? randomBytes(32).toString('hex') : null,
 
     // Every UI/API change lands in config.json (source.save) and is audited:
     // who, which keys, the new values (none of these keys are secrets), and the
@@ -179,7 +169,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       check: (spec) => missingCommand(spec)?.message ?? null
     },
 
-    multiUser: () => app.cfg.authMode === 'trusted-header',
+    multiUser: () => ['multiuser', 'trusted-header'].includes(app.cfg.authMode),
 
     /**
      * The model a person's turns use. Tiers 1-2: the configured model. Tier 3:
@@ -192,7 +182,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       // default `model` may be) is resolved to its entry.
       const known = (m) => (isClosed(cfg) ? findEntry(cfg, m)?.id : m);
       const fallback = known(cfg.model) || cfg.model;
-      if (cfg.authMode !== 'trusted-header' || !userId) return fallback;
+      if (!app.multiUser() || !userId) return fallback;
       const allowed = modelsFor(cfg, role);
       const ok = (m) => m && (allowed === '*' || allowed.includes(m));
       const pref = known(store.users.getPrefs(userId).model);
@@ -204,7 +194,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
     /** A person's own instructions, added after the system prompt, when an admin lets users set them. */
     instructionsFor(userId) {
-      if (!userId || app.cfg.authMode !== 'trusted-header') return null;
+      if (!userId || !app.multiUser()) return null;
       if (!resolveAccess(app.cfg).customize.includes('instructions')) return null;
       return store.users.getPrefs(userId).instructions || null;
     },
@@ -377,9 +367,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   await new Promise((resolve) => server.listen(port, host, resolve));
   scheduler.arm();
   const origin = `http://${host.includes(':') ? `[${host}]` : host}:${server.address().port}`;
-  // In the fragment, so it never reaches a server log or a Referer header.
-  app.launchUrl = app.launchToken ? `${origin}/#token=${app.launchToken}` : origin;
-  log.info(app.launchToken && !app.passwordHash ? `sign in: ${app.launchUrl}` : origin);
+  log.info(origin);
   // Anything stored before dense retrieval was on (or under another model)
   // is embedded in the background; document queries fill in on demand too.
   retrieval.backfill((msg) => log.info(`retrieval: ${msg}`))
@@ -420,10 +408,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     const mcpChanged = text !== mcpText;
     if (before === after && !mcpChanged) return true; // our own write, or a no-op save
     app.cfg = next;
-    if (next.authMode === 'single') {
-      app.passwordHash = ownerHash(next);
-      if (!app.passwordHash) log.info(`sign in: ${app.launchUrl}`);
-    }
+    if (next.authMode === 'single') app.passwordHash = ownerHash(next);
     if (next.authMode === 'trusted-header') applyAccessPolicy(store, next);
     if (mcpChanged) await app.swapHub(servers);
     scheduler.arm();
@@ -456,7 +441,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const onHup = () => scheduleReload('SIGHUP');
   process.on('SIGHUP', onHup);
   server.reload = reloadFromFiles;
-  server.launchUrl = app.launchUrl;
 
   // Real teardown, reused two ways: on SIGINT/SIGTERM it exits the process, and
   // as `server.shutdown()` it does not -- which is what a test harness needs.

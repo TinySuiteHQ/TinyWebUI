@@ -9,6 +9,10 @@ export class MessageStore {
     Object.assign(this, deps);
   }
 
+  claimUnownedArtifacts(userId) {
+    this.db.prepare('UPDATE artifacts SET user_id = ? WHERE user_id IS NULL').run(userId);
+  }
+
   nextSeq(chatId) {
     const row = this.db.prepare('SELECT MAX(seq) AS m FROM messages WHERE chat_id = ?').get(chatId);
     return (row?.m ?? -1) + 1;

@@ -16,7 +16,7 @@ let adminViewRequest = 0;
 /** Wires Log out for whoever is signed in (nav visibility is core/access.js's). */
 export function initAdmin() {
   me = whoami();
-  if (me.logoutUrl || me.authMode === 'single') {
+  if (me.logoutUrl || ['single', 'multiuser'].includes(me.authMode)) {
     const btn = $('logout');
     btn.hidden = false;
     btn.onclick = async () => {
@@ -25,9 +25,47 @@ export function initAdmin() {
       if (me.logoutUrl) location.href = me.logoutUrl; else location.reload();
     };
   }
+  if (me.authMode === 'multiuser') {
+    const form = $('adminInvite');
+    form.hidden = false;
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const result = $('inviteResult');
+      result.textContent = '';
+      try {
+        const out = await api.post('/api/admin/invites', { email: $('inviteEmail').value.trim() || null });
+        const url = new URL(out.path, location.origin).href;
+        const link = Object.assign(el('a'), { href: url, textContent: url });
+        result.replaceChildren('Share this link once: ', link);
+        $('inviteEmail').value = '';
+        await loadInvites();
+      } catch (err) { result.textContent = err.message; }
+    };
+  }
 }
 
 const fmt = (ts) => (ts ? new Date(ts).toLocaleString() : 'never');
+
+async function loadInvites() {
+  if (me?.authMode !== 'multiuser') return;
+  const box = $('adminInvites');
+  let out;
+  try { out = await api.get('/api/admin/invites'); }
+  catch (err) { box.textContent = err.message; return; }
+  box.replaceChildren(...out.invites.map((invite) => {
+    const line = el('div', 'admin-row');
+    const label = el('div', 'admin-who');
+    label.appendChild(Object.assign(el('strong'), { textContent: invite.email || 'Anyone with the link' }));
+    label.appendChild(Object.assign(el('span', 'usage'), { textContent: `expires ${fmt(invite.expiresAt)}` }));
+    const revoke = Object.assign(el('button'), { type: 'button', textContent: 'revoke' });
+    revoke.onclick = async () => {
+      try { await api.del(`/api/admin/invites/${encodeURIComponent(invite.id)}`); await loadInvites(); }
+      catch (err) { $('inviteResult').textContent = err.message; }
+    };
+    line.append(label, revoke);
+    return line;
+  }));
+}
 
 function select(value, options, label, onChange) {
   const sel = el('select');
@@ -220,6 +258,7 @@ export async function loadAdmin() {
   $('adminUsers').parentElement.hidden = false;
   $('adminPolicy').hidden = false;
   loadPolicy();
+  loadInvites();
   const box = $('adminUsers');
   $('adminMsg').textContent = '';
   let out;

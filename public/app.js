@@ -24,42 +24,42 @@ import { initAutomations, loadAutomations } from './panels/automations.js';
 import { loadUsage } from './panels/usage.js';
 import { initAdmin, loadAdmin } from './panels/admin.js';
 
-/**
- * 'single' mode with no session: trade a launch link's token for a session,
- * or show the sign-in screen and stop there.
- */
+/** Local auth with no session: sign in, claim a fresh install, or accept an invite. */
 async function needsLogin() {
-  const token = new URLSearchParams(location.hash.slice(1)).get('token');
-  // Off the address bar first, so it isn't bookmarked or shared by accident.
-  if (token) history.replaceState(null, '', location.pathname + location.search);
   const me = await loadAccess();
-  if (me.authMode !== 'single' || me.user) return false;
-  if (token && me.login === 'link') {
-    try {
-      await api.post('/api/auth/login', { token });
-      location.reload();
-      return true;
-    } catch { /* stale link: fall through to the sign-in screen */ }
-  }
+  if (!['single', 'multiuser'].includes(me.authMode) || me.user) return false;
+  const invite = new URLSearchParams(location.search).get('invite');
+  if (invite) history.replaceState(null, '', location.pathname);
+  const setup = me.authMode === 'multiuser' && me.needsSetup && !invite;
+  const joining = me.authMode === 'multiuser' && Boolean(invite);
   const box = $('login');
   box.hidden = false;
-  if (me.login === 'link') {
-    $('loginForm').hidden = true;
-    $('loginLink').hidden = false;
-    // The link pasted into this same tab only changes the hash: start over.
-    addEventListener('hashchange', () => location.reload());
-    return true;
-  }
-  $('loginPassword').focus();
+  $('loginTitle').textContent = setup ? 'Create the administrator' : joining ? 'Join TinyWebUI' : 'TinyWebUI';
+  $('loginHelp').textContent = setup ? 'The first account owns this installation and can invite others.'
+    : joining ? 'Create your account using this invitation.' : '';
+  for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = me.authMode === 'single';
+  for (const id of ['loginNameLabel', 'loginName']) $(id).hidden = !(setup || joining);
+  $('loginEmail').required = me.authMode === 'multiuser';
+  $('loginName').required = setup || joining;
+  $('loginPassword').autocomplete = setup || joining ? 'new-password' : 'current-password';
+  $('loginSubmit').textContent = setup ? 'Create administrator' : joining ? 'Create account' : 'Sign in';
+  (setup || joining ? $('loginName') : me.authMode === 'multiuser' ? $('loginEmail') : $('loginPassword')).focus();
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginMsg').textContent = '';
     try {
-      await api.post('/api/auth/login', { password: $('loginPassword').value });
-      return location.reload();
+      const account = {
+        email: $('loginEmail').value, name: $('loginName').value,
+        password: $('loginPassword').value
+      };
+      await api.post(setup ? '/api/auth/setup' : joining ? '/api/auth/accept-invite' : '/api/auth/login',
+        setup || joining ? { ...account, ...(joining ? { token: invite } : {}) }
+          : me.authMode === 'multiuser' ? { email: account.email, password: account.password } : { password: account.password });
+      if (joining) location.href = location.pathname;
+      else location.reload();
     } catch (err) {
       $('loginMsg').textContent = err.message;
-      $('loginPassword').select();
+      if (!setup && !joining) $('loginPassword').select();
     }
   };
   return true;

@@ -78,6 +78,11 @@ export class ChatStore {
     return this.byId(chatId);
   }
 
+  claimUnowned(userId) {
+    this.db.prepare('UPDATE chats SET user_id = ? WHERE user_id IS NULL').run(userId);
+    this.db.prepare('UPDATE folders SET user_id = ? WHERE user_id IS NULL').run(userId);
+  }
+
   /** Scoped lookup for anything reached from a request. See scope(). */
   get(id, userId) {
     const s = scope(userId);

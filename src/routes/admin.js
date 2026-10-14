@@ -1,8 +1,9 @@
+import { randomBytes, randomUUID } from 'node:crypto';
 import { json, readJson } from '../http.js';
 import { ALL_USERS, toView } from '../store/index.js';
 import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.js';
 import { catalog, modelProblems } from '../config/models.js';
-import { destroyUserSessions } from '../access/auth.js';
+import { destroyUserSessions, hashToken } from '../access/auth.js';
 import { audit } from '../audit.js';
 import { FEATURE } from '../../public/shared/features.js';
 
@@ -23,6 +24,38 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
   const multi = (handle) => (ctx) => (multiUser() ? handle(ctx) : json(ctx.res, 403, { error: 'admin_only' }));
 
   return [
+    { method: 'GET', path: /^\/api\/admin\/invites$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
+      return json(res, 200, { invites: store.users.listInvites().map((i) => ({
+        id: i.id, email: i.email, createdAt: i.created_at, expiresAt: i.expires_at
+      })) });
+    }) },
+
+    { method: 'POST', path: /^\/api\/admin\/invites$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
+      if (config().authMode !== 'multiuser') return json(res, 400, { error: 'local invitations are only available in multiuser mode' });
+      const body = await readJson(req);
+      const email = typeof body.email === 'string' && body.email.trim() ? body.email.trim().toLowerCase() : null;
+      if (email && (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(res, 400, { error: 'enter a valid email address' });
+      if (email && store.users.emailTaken(email, '')) return json(res, 409, { error: 'that email address already belongs to a user' });
+      const hours = body.expiresHours === undefined ? 168 : Number(body.expiresHours);
+      if (!(Number.isFinite(hours) && hours >= 1 && hours <= 720)) return json(res, 400, { error: 'expiry must be between 1 and 720 hours' });
+      const token = randomBytes(32).toString('hex');
+      const invite = store.users.createInvite({
+        id: randomUUID(), tokenHash: hashToken(token), email, createdBy: auth.user.id,
+        expiresAt: Date.now() + Math.round(hours * 3600_000)
+      });
+      audit('invite.created', { inviteId: invite.id, email, by: auth.user.id, expiresAt: invite.expires_at });
+      return json(res, 201, {
+        invite: { id: invite.id, email, createdAt: invite.created_at, expiresAt: invite.expires_at },
+        token, path: `/?invite=${token}`
+      });
+    }) },
+
+    { method: 'DELETE', path: /^\/api\/admin\/invites\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(({ res, auth, params: [id] }) => {
+      if (!store.users.revokeInvite(id)) return json(res, 404, { error: 'no active invitation with that id' });
+      audit('invite.revoked', { inviteId: id, by: auth.user.id });
+      return json(res, 200, { ok: true });
+    }) },
+
     { method: 'GET', path: /^\/api\/admin\/users$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
       const pins = resolveAccess(config());
       const code = source.codeAccessUsers();
