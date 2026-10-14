@@ -144,17 +144,15 @@ export const DEFAULTS = {
   // is offered to the model; a server can still be reached by name, so this
   // is a per-tool block, not a substitute for disabling the whole server.
   disabledTools: [],
-  //   'none'           explicit local-only use without login
-  //   'single'         legacy one-person login, behind a password (authPassword or
-  //                    $TINYWEBUI_PASSWORD; set it with `tinywebui set-password`)
+  //   'local'          explicit local-only use without login
   //   'multiuser'      local accounts: first signup is admin; later signups
   //                    require an invitation from an admin
   //   'trusted-header' many users: an upstream gateway (Cloudflare Access,
   //                    oauth2-proxy, Authelia, ...) signs people in with
   //                    Google, Apple, SSO etc. and passes identity headers
   authMode: 'multiuser',
-  // Level 'single': an scrypt hash (never plaintext), from `tinywebui
-  // set-password`; never writable through /api/config.
+  // Kept only so old password configurations can be rejected rather than
+  // silently opened without login after upgrading.
   authPassword: '',
   // Signs session cookies. Auto-generated on first run when auth is enabled
   // and this is empty; never sent to the frontend.
@@ -182,7 +180,7 @@ export const DEFAULTS = {
   // Extra origins allowed to send state-changing requests (e.g. an admin
   // tool on another host). The page's own origin is always allowed.
   allowedOrigins: [],
-  // Extra Host names answered when authMode is 'none' (e.g. a LAN name for a
+  // Extra Host names answered when authMode is 'local' (e.g. a LAN name for a
   // local-only install). Loopback names are always allowed.
   allowedHosts: [],
   // false: refuse to start on a database that needs migrating; run
@@ -268,23 +266,17 @@ export function createConfigSource(opts = {}) {
 
     const fromFile = readFile();
     const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
-    // Preserve the established headless/container contract: an explicitly
-    // supplied owner password selects legacy single-user mode unless a file or
-    // code configuration deliberately chose another auth mode.
-    if (process.env.TINYWEBUI_PASSWORD && !Object.hasOwn(fromFile, 'authMode') && !Object.hasOwn(code, 'authMode')) cfg.authMode = 'single';
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
     // Partial retrieval blocks fill in from the defaults rather than replace them.
     // $TINYWEBUI_RETRIEVAL_MODE=lexical is the no-config way to opt out of hybrid.
     const envRetrieval = process.env.TINYWEBUI_RETRIEVAL_MODE ? { mode: process.env.TINYWEBUI_RETRIEVAL_MODE } : {};
     cfg.retrieval = { ...DEFAULTS.retrieval, ...(fromFile.retrieval || {}), ...envRetrieval, ...(code.retrieval || {}) };
-    // No silent fallbacks: a bad value is reported by configProblems() and
-    // refuses to start, rather than quietly becoming a default (a mistyped
-    // authMode used to become 'none').
+    // A mistyped authMode must fail validation rather than disable login.
     if (typeof cfg.baseUrl === 'string') cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
     Object.assign(cfg, flattenCatalog(cfg));
     // A session secret is required the moment auth is on; generate and persist
     // one rather than signing cookies with an empty key.
-    if (cfg.authMode !== 'none' && !cfg.sessionSecret && persistSecret) {
+    if (['multiuser', 'trusted-header'].includes(cfg.authMode) && !cfg.sessionSecret && persistSecret) {
       cfg.sessionSecret = randomBytes(32).toString('hex');
       try {
         writeFile({ ...readFile(), sessionSecret: cfg.sessionSecret });
@@ -389,7 +381,7 @@ export class LockedError extends Error {}
 // Keys that are not in DEFAULTS but are still settings.
 const EXTRA_KEYS = new Set(['access']);
 const ENUMS = {
-  authMode: ['none', 'single', 'multiuser', 'trusted-header'],
+  authMode: ['local', 'multiuser', 'trusted-header'],
   cacheTtl: ['5m', '1h'],
   cacheMode: ['auto', 'implicit', 'explicit', 'rolling', 'off'],
   reasoningReplay: REASONING_REPLAY,

@@ -10,7 +10,7 @@ import { createConfigSource, LockedError } from '../src/config/config.js';
 const tier3 = (access) => ({ authMode: 'trusted-header', trustedProxyCidrs: ['10.0.0.0/8'], access });
 
 test('valid configs have no errors', () => {
-  assert.deepEqual(validateConfig({ authMode: 'none' }), []);
+  assert.deepEqual(validateConfig({ authMode: 'local' }), []);
   assert.deepEqual(validateConfig(tier3({ roles: { user: { features: ['chat'], models: ['a'] } }, bootstrapAdmins: ['x'] })), []);
 });
 
@@ -26,10 +26,10 @@ test('every mistake is named', () => {
   for (const needle of ['trustedProxyCidrs', 'access.nonsense', 'newUsers', 'bootstrapAdmins', 'teleport', 'models must be', 'colour', 'unknown role', 'role must be', 'status must be']) {
     assert.match(errs, new RegExp(needle), needle);
   }
-  assert.match(validateConfig({ authMode: 'single', authPassword: 'plain' }).join(), /must be a hash/);
-  assert.match(validateConfig({ authMode: 'single' }, { env: {} }).join(), /needs a password/);
-  assert.match(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: '123456789' } }).join(), /at least 10 characters/);
-  assert.deepEqual(validateConfig({ authMode: 'single' }, { env: { TINYWEBUI_PASSWORD: '1234567890' } }), []);
+  assert.match(validateConfig({ authMode: 'single' }, { env: {} }).join(), /no longer supported/);
+  assert.match(validateConfig({ authMode: 'local', authPassword: 'legacy hash' }, { env: {} }).join(), /cannot use authPassword/);
+  assert.match(validateConfig({ authMode: 'local' }, { env: { TINYWEBUI_PASSWORD: 'legacy password' } }).join(), /no longer selects password login/);
+  assert.deepEqual(validateConfig({ authMode: 'local' }, { env: {} }), []);
   assert.deepEqual(validateConfig({ authMode: 'multiuser' }), []);
 });
 
@@ -40,7 +40,7 @@ test('features and models resolve per role, with sensible defaults', () => {
   assert.deepEqual(modelsFor(cfg, 'user'), ['m1']);
   assert.equal(modelsFor(cfg, 'admin'), '*');
   assert.ok(!featuresFor(tier3(), 'user').has('settings'), 'users get no settings by default');
-  const solo = featuresFor({ authMode: 'none' }, null);
+  const solo = featuresFor({ authMode: 'local' }, null);
   assert.ok(solo.has('settings') && solo.has('mcp') && !solo.has('admin'));
 });
 
@@ -65,9 +65,9 @@ test('fingerprints ignore key order and never contain secret values', () => {
 test('file-only keys are refused by save even when nothing locks them', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-policy-'));
   const file = join(dir, 'c.json');
-  writeFileSync(file, '{"authMode":"none"}');
+  writeFileSync(file, '{"authMode":"local"}');
   const source = createConfigSource({ configFile: file, config: { model: 'frozen-model' } });
-  assert.throws(() => source.save({ authMode: 'none' }), LockedError);
+  assert.throws(() => source.save({ authMode: 'local' }), LockedError);
   assert.throws(() => source.save({ access: { roles: {} } }), LockedError);
   assert.throws(() => source.save({ model: 'x' }), LockedError, 'frozen by code');
   source.save({ systemPrompt: 'hello' });

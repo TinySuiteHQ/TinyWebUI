@@ -27,7 +27,7 @@ function localAccount(body) {
   return { email, name, password };
 }
 
-export function authRoutes({ config, modelFor, multiUser, passwordHash, source, store, version }) {
+export function authRoutes({ config, modelFor, multiUser, source, store, version }) {
   const loginFailures = new Map();
 
   return [
@@ -57,7 +57,7 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
 
     { method: 'POST', path: /^\/api\/auth\/login$/, feature: null, handle: async ({ req, res }) => {
       const cfg = config();
-      if (!['single', 'multiuser'].includes(cfg.authMode)) return json(res, 404, { error: 'not found' });
+      if (cfg.authMode !== 'multiuser') return json(res, 404, { error: 'not found' });
       const who = req.socket.remoteAddress || '?';
       const now = Date.now();
       const f = loginFailures.get(who);
@@ -68,8 +68,8 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
       }
       const body = await readJson(req);
       const password = typeof body.password === 'string' ? body.password : '';
-      const user = cfg.authMode === 'multiuser' ? store.users.byEmail(emailOf(body.email)) : store.users.get(OWNER_ID);
-      const stored = cfg.authMode === 'single' ? passwordHash() : user?.password_hash || DUMMY_PASSWORD_HASH;
+      const user = store.users.byEmail(emailOf(body.email));
+      const stored = user?.password_hash || DUMMY_PASSWORD_HASH;
       if (!verifyPassword(password, stored) || !user) {
         loginFailures.set(who, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
         audit('auth.rejected', { reason: 'bad_password' });
@@ -77,7 +77,7 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
       }
       if (user.status !== 'approved') return json(res, 403, { error: user.status === 'disabled' ? 'account disabled' : 'account pending approval' });
       loginFailures.delete(who);
-      if (cfg.authMode === 'multiuser') store.users.sync(user.id, { last_login_at: now });
+      store.users.sync(user.id, { last_login_at: now });
       const token = createSession(store, user.id, cfg.sessionTtlDays);
       audit('auth.login', { userId: user.id });
       res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
@@ -136,7 +136,7 @@ export function authRoutes({ config, modelFor, multiUser, passwordHash, source, 
       const cfg = config();
       // The gateway owns the session; the client is sent to its logout page.
       if (cfg.authMode === 'trusted-header') return json(res, 200, { redirect: cfg.logoutUrl || null });
-      if (!['single', 'multiuser'].includes(cfg.authMode)) return json(res, 404, { error: 'not found' });
+      if (cfg.authMode !== 'multiuser') return json(res, 404, { error: 'not found' });
       const token = sessionToken(req, cfg);
       if (token) destroySession(store, token);
       res.setHeader('set-cookie', clearCookie({ secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));

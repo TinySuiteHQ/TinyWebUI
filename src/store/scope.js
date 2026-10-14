@@ -6,7 +6,7 @@
  * authenticated user fails loudly instead of silently seeing everyone's data.
  *   string     that user's rows
  *   null       rows with no owner (legacy / pre-auth rows)
- *   ALL_USERS  no filter -- authMode 'none', admin views, internal plumbing
+ *   ALL_USERS  no filter -- authMode 'local', admin views, internal plumbing
  */
 export const ALL_USERS = Symbol('all-users');
 

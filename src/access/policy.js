@@ -35,7 +35,7 @@ const DEFAULT_ROLES = {
 /**
  * Keys that can never be written through the UI or API, whatever the lock
  * state: the trust boundary, credentials, and the policy itself. They can
- * still be set in either file (so `set-password` can write config.json).
+ * still be set in either file.
  */
 export const FILE_ONLY = new Set([
   'authMode', 'authPassword', 'sessionSecret', 'sessionTtlDays', 'trustedProxyCidrs', 'trustedUserIdHeader',
@@ -112,15 +112,9 @@ export function validateConfig(cfg, { env = process.env } = {}) {
   if (mode === 'trusted-header' && !(Array.isArray(cfg.trustedProxyCidrs) && cfg.trustedProxyCidrs.length)) {
     errors.push("authMode 'trusted-header' requires trustedProxyCidrs: identity headers are only believed from those peers");
   }
-  if (mode === 'single') {
-    if (cfg.authPassword && !/^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/i.test(String(cfg.authPassword))) {
-      errors.push('authPassword must be a hash: run `tinywebui set-password` or set $TINYWEBUI_PASSWORD');
-    } else if (!cfg.authPassword && !env.TINYWEBUI_PASSWORD) {
-      errors.push("authMode 'single' needs a password: use the browser-based multiuser setup, run `tinywebui set-password`, or set $TINYWEBUI_PASSWORD");
-    } else if (!cfg.authPassword && env.TINYWEBUI_PASSWORD && env.TINYWEBUI_PASSWORD.length < MIN_PASSWORD_LENGTH) {
-      errors.push(`TINYWEBUI_PASSWORD needs at least ${MIN_PASSWORD_LENGTH} characters`);
-    }
-  }
+  if (mode === 'single') errors.push("legacy authMode 'single' is no longer supported; choose multiuser for accounts or explicitly choose local without login");
+  if (mode === 'local' && cfg.authPassword) errors.push("authMode 'local' cannot use authPassword; remove it only if you want access without login");
+  if (env.TINYWEBUI_PASSWORD) errors.push('TINYWEBUI_PASSWORD no longer selects password login; unset it and use multiuser setup');
 
   const a = cfg.access;
   if (a !== undefined) {

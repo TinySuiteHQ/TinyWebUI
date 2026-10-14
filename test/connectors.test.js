@@ -24,7 +24,7 @@ test('an entry runs against its connector; others keep the global endpoint', () 
 });
 
 test('connector problems are named', () => {
-  const bad = (extra) => configProblems({ ...DEFAULTS, authMode: 'none', ...extra });
+  const bad = (extra) => configProblems({ ...DEFAULTS, authMode: 'local', ...extra });
   assert.match(bad({ connectors: [{ id: 'x', baseUrl: 'ftp://nope' }] }).join(), /baseUrl must be an http\(s\) URL/);
   assert.match(bad({ connectors: [{ id: 'x', baseUrl: 'http://h' }, { id: 'x', baseUrl: 'http://h' }] }).join(), /listed twice/);
   assert.match(bad({ models: [{ id: 'm', connector: 'missing' }] }).join(), /"missing" is not in connectors/);
@@ -45,8 +45,8 @@ test('the file nests models under their endpoint; runtime sees one flat list', (
   const b = effectiveConfig(cfg, 'b');
   assert.deepEqual([b.baseUrl, b.model, b.temperature], ['http://localhost:11434/v1', 'llama', 0.2]);
   assert.equal(effectiveConfig(cfg, 'a').systemPrompt, 'Be brief.');
-  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'none', model: 'b', ...file }), []);
-  const bad = configProblems({ ...DEFAULTS, authMode: 'none', connectors: [{ id: 'x', baseUrl: 'http://h', models: { id: 'm' } }] });
+  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'local', model: 'b', ...file }), []);
+  const bad = configProblems({ ...DEFAULTS, authMode: 'local', connectors: [{ id: 'x', baseUrl: 'http://h', models: { id: 'm' } }] });
   assert.match(bad.join(), /connectors\[0\]\.models must be a list/);
 });
 

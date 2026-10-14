@@ -4,7 +4,7 @@ import { getSessionUser, resolveTrustedUser } from './auth.js';
 import { audit } from '../audit.js';
 import { FEATURE } from '../../public/shared/features.js';
 
-/** The one account behind a 'single' password. */
+/** Historical owner row removed when an old installation claims its first account. */
 export const OWNER_ID = 'owner';
 
 // Reachable without a session: the login/OAuth dance itself, plus static
@@ -19,7 +19,7 @@ const TRUSTED_AUTH_PATHS = new Set(['/api/auth/me', '/api/auth/logout']);
 const STATUS_EXEMPT_PATHS = TRUSTED_AUTH_PATHS;
 
 function resolveIdentity(req, pathname, cfg, store) {
-  if (cfg.authMode === 'none') return { userId: ALL_USERS, role: null, user: null, isAdmin: true };
+  if (cfg.authMode === 'local') return { userId: ALL_USERS, role: null, user: null, isAdmin: true };
   let user;
   if (cfg.authMode === 'trusted-header') {
     if (!pathname.startsWith('/api/')) return { userId: undefined, user: null, isAdmin: false };
@@ -41,16 +41,13 @@ function resolveIdentity(req, pathname, cfg, store) {
     if (user.status === 'disabled') return { disabled: true };
     if (user.status !== 'approved') return { pending: true };
   }
-  // 'single': sessions hang off OWNER_ID but data stays unowned (ALL_USERS),
-  // so switching between 'none' and 'single' never hides a chat.
-  if (cfg.authMode === 'single') return { userId: ALL_USERS, role: 'admin', user, isAdmin: true };
   return { userId: user.id, role: user.role, user, isAdmin: user.role === 'admin' && user.status === 'approved' };
 }
 
 /**
  * The one auth gate for the whole handler. Fails closed: with auth on, a
  * request either resolves to a real user or carries `userId: undefined`,
- * which every scoped store method refuses. 'none' is a single-person
+ * which every scoped store method refuses. 'local' is a single-person
  * install and sees everything, exactly as before auth existed. A refusal
  * comes back as one of notFound / unauthorized / disabled / pending.
  */

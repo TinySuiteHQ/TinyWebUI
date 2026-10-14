@@ -16,7 +16,7 @@ let adminViewRequest = 0;
 /** Wires Log out for whoever is signed in (nav visibility is core/access.js's). */
 export function initAdmin() {
   me = whoami();
-  if (me.logoutUrl || ['single', 'multiuser'].includes(me.authMode)) {
+  if (me.logoutUrl || me.authMode === 'multiuser') {
     const btn = $('logout');
     btn.hidden = false;
     btn.onclick = async () => {

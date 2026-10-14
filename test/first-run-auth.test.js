@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULTS } from '../src/config/config.js';
+import { DEFAULTS, createConfigSource, configProblems } from '../src/config/config.js';
 import { start } from '../src/server.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-first-run-'));
@@ -22,7 +22,20 @@ test('a fresh start offers first-account setup without opening the app', async (
   } finally { await srv.shutdown(); }
 });
 
-test('explicit no-login mode cannot bind to a network interface', async () => {
+test('an old password environment variable cannot select local mode', () => {
+  const previous = process.env.TINYWEBUI_PASSWORD;
+  process.env.TINYWEBUI_PASSWORD = 'old password';
+  try {
+    const cfg = createConfigSource({ configFile: false }).load({ persistSecret: false });
+    assert.equal(cfg.authMode, 'multiuser');
+    assert.match(configProblems(cfg).join(), /TINYWEBUI_PASSWORD no longer selects password login/);
+  } finally {
+    if (previous === undefined) delete process.env.TINYWEBUI_PASSWORD;
+    else process.env.TINYWEBUI_PASSWORD = previous;
+  }
+});
+
+test('explicit local mode cannot bind to a network interface', async () => {
   await assert.rejects(start({ port: 0, host: '0.0.0.0', configFile: false, mcpServers: {}, dbPath: ':memory:',
-    config: { authMode: 'none' } }), /limited to loopback/);
+    config: { authMode: 'local' } }), /limited to loopback/);
 });

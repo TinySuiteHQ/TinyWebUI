@@ -341,8 +341,7 @@
     },
     "authMode": {
       "enum": [
-        "none",
-        "single",
+        "local",
         "multiuser",
         "trusted-header"
       ],

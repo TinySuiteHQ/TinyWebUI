@@ -11,7 +11,7 @@ const dir = mkdtempSync(join(tmpdir(), 'tinywebui-host-'));
 const { start } = await import('../src/server.js');
 const srv = await start({
   port: 0, host: '127.0.0.1', configFile: false, mcpServers: {}, dbPath: join(dir, 'chats.db'),
-  config: { baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'm', authMode: 'none', allowedHosts: ['Box.lan'] }
+  config: { baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'm', authMode: 'local', allowedHosts: ['Box.lan'] }
 });
 test.after(() => srv.shutdown());
 const port = srv.address().port;
@@ -34,5 +34,5 @@ test('a rebound name is refused', async () => {
 });
 
 test('logged-in modes are not host-restricted', () => {
-  assert.equal(badHost({ headers: { host: 'chat.example.com' } }, { authMode: 'single' }), false);
+  assert.equal(badHost({ headers: { host: 'chat.example.com' } }, { authMode: 'multiuser' }), false);
 });

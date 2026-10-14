@@ -16,7 +16,7 @@ function adminUserView(u) {
 
 /**
  * User management and oversight. They only mean something when there is more
- * than one person; 'none' and 'single' are just you, and get admin_only.
+ * than one person; 'single' is just you, and gets admin_only.
  */
 export function adminRoutes({ config, multiUser, refreshConfig, runs, source, store }) {
 

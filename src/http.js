@@ -82,7 +82,7 @@ export function crossSite(req, cfg) {
  * Logged-in modes are safe: the attacker's origin has no session cookie.
  */
 export function badHost(req, cfg) {
-  if (cfg.authMode !== 'none') return false;
+  if (cfg.authMode !== 'local') return false;
   let hostname;
   try { hostname = new URL(`http://${req.headers.host}`).hostname.toLowerCase(); } catch { return true; }
   if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '[::1]') return false;

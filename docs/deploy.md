@@ -55,7 +55,6 @@ Secrets come from the environment:
 | --- | --- |
 | `MODEL_API_KEY` | read by the config above (any name works; it is plain JS) |
 | `TINYWEBUI_SESSION_SECRET` | signs session cookies; set it so restarts keep sessions (tier 2) |
-| `TINYWEBUI_PASSWORD` | single-owner mode only: a password of at least 10 characters when not using `set-password` |
 | `TINYWEBUI_API_KEY` | alternative to `apiKey` for JSON-only configs |
 
 **`compose.yaml`**:

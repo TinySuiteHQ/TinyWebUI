@@ -9,14 +9,14 @@ import { configProblems, DEFAULTS } from '../src/config/config.js';
 const { start } = await import('../src/server.js');
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-frozen-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));
-const base = { authMode: 'none', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' };
+const base = { authMode: 'local', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' };
 
 test('unknown keys and bad values are named, not silently defaulted', () => {
   const problems = configProblems({ ...DEFAULTS, sytemPrompt: 'typo', authMode: 'singel', maxToolRounds: 'ten', temperature: 'hot', cacheTtl: '2h', frozen: 'yes' }).join('\n');
   for (const needle of ['unknown setting "sytemPrompt"', 'authMode must be one of', 'maxToolRounds must be a number', 'temperature must be a number or null', 'cacheTtl must be one of', 'frozen must be true or false']) {
     assert.ok(problems.includes(needle), needle);
   }
-  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'none', temperature: 0.2, maxTokens: null }), []);
+  assert.deepEqual(configProblems({ ...DEFAULTS, authMode: 'local', temperature: 0.2, maxTokens: null }), []);
 });
 
 test('startup refuses an invalid config', async () => {
@@ -48,7 +48,7 @@ test('a frozen deployment cannot drift through the UI or API', async () => {
 
     const meta = await (await fetch(`${url}/api/meta`)).json();
     assert.equal(meta.configMode, 'frozen');
-    assert.equal(meta.authMode, 'none');
+    assert.equal(meta.authMode, 'local');
     assert.match(meta.version, /^\d+\.\d+\.\d+/);
     assert.match(meta.fingerprint, /^[0-9a-f]{16}$/);
     assert.equal(typeof meta.schemaVersion, 'number');

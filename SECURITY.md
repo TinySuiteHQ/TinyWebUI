@@ -3,7 +3,7 @@
 A new install opens a browser-based account setup. The first account becomes
 the administrator; later local accounts require a single-use invitation from
 an administrator. The bundled Compose file binds only to the host's loopback
-interface. An explicit `authMode: "none"` is allowed only on a loopback bind,
+interface. An explicit `authMode: "local"` opens without login only on a loopback bind,
 and then answers only to loopback host names (plus `allowedHosts`), which stops
 DNS-rebinding pages from reaching it. For access from another machine, put the
 app behind HTTPS and use local accounts or a trusted identity gateway. With local login behind

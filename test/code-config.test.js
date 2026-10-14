@@ -17,7 +17,7 @@ const srv = await start({
   host: '127.0.0.1',
   configFile: false,
   dbPath: ':memory:',
-  config: { authMode: 'none', apiKey: 'k', model: 'code-model', toolApproval: 'all' },
+  config: { authMode: 'local', apiKey: 'k', model: 'code-model', toolApproval: 'all' },
   mcpServers: {},
 });
 const base = `http://127.0.0.1:${srv.address().port}`;

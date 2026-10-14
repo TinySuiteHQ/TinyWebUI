@@ -1,8 +1,8 @@
 /* The database shape: tables, triggers, the schema version, and the migrations that reach it. */
 
 export const SCHEMA = `
--- Optional auth/RBAC (config authMode 'single'/'multiuser'). Unused and
--- empty when authMode is explicitly 'none' -- these tables cost nothing
+-- Optional auth/RBAC (config authMode 'multiuser'). Unused and
+-- empty when authMode is explicitly 'local' -- these tables cost nothing
 -- to have around.
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,

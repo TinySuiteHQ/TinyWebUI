@@ -8,7 +8,7 @@ import { audit } from '../audit.js';
  * plus the identity resolution for 'trusted-header' further down.
  * No framework, no dependency: a signed HTTP-only cookie names a session
  * token, and the token itself is looked up (by its hash, never the raw
- * value) against the `sessions` table. When authMode is 'none' none of this
+ * value) against the `sessions` table. When authMode is 'local' none of this
  * is ever called -- see auth_gate.js.
  */
 

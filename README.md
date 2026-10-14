@@ -80,9 +80,9 @@ docker compose build
 docker compose up -d
 ```
 
-The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes. For compatibility, setting `TINYWEBUI_PASSWORD` without an explicit `authMode` selects legacy single-owner mode; use at least 10 characters. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
+The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes. `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
 
-Existing `single`-mode installations continue unchanged. To move one to local multi-user accounts, set `authMode` to `multiuser`, restart, and create the administrator in the browser. On that first setup, existing unowned chats, files, artifacts, folders and automations move to the new administrator.
+The former password-only `single` mode now fails startup instead of opening without login. To move such an installation to local accounts, set `authMode` to `multiuser`, restart, and create the administrator in the browser. On that first setup, existing unowned chats, files, artifacts, folders and automations move to the new administrator. Remove any `TINYWEBUI_PASSWORD` environment variable; it no longer selects an auth mode.
 
 ## Documentation
 
@@ -98,7 +98,7 @@ The full reference lives at **[tinysuite.dev/docs/tinywebui](https://tinysuite.d
 | [Automations](https://tinysuite.dev/docs/tinywebui/#automations) | Scheduled prompts |
 | [Long chats](https://tinysuite.dev/docs/tinywebui/#long-chats-caching-and-compaction) | Caching and compaction |
 | [Usage statistics](https://tinysuite.dev/docs/tinywebui/#usage-statistics) | Token use and attribution |
-| [Access](https://tinysuite.dev/docs/tinywebui/#access) | Local invited users, legacy single-owner mode, or a team behind SSO |
+| [Access](https://tinysuite.dev/docs/tinywebui/#access) | Local invited users, explicit local mode, or a team behind SSO |
 | [Deployment as code](https://tinysuite.dev/docs/tinywebui/#deployment-as-code) | JavaScript config, locked settings, roles and features |
 | [CLI](https://tinysuite.dev/docs/tinywebui/#cli) | Every command |
 | [Security and limits](https://tinysuite.dev/docs/tinywebui/#security-and-limits) | Exposure, MCP trust, what isn't included |

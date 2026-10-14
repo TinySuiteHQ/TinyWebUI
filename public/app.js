@@ -27,23 +27,23 @@ import { initAdmin, loadAdmin } from './panels/admin.js';
 /** Local auth with no session: sign in, claim a fresh install, or accept an invite. */
 async function needsLogin() {
   const me = await loadAccess();
-  if (!['single', 'multiuser'].includes(me.authMode) || me.user) return false;
+  if (me.authMode !== 'multiuser' || me.user) return false;
   const invite = new URLSearchParams(location.search).get('invite');
   if (invite) history.replaceState(null, '', location.pathname);
-  const setup = me.authMode === 'multiuser' && me.needsSetup && !invite;
-  const joining = me.authMode === 'multiuser' && Boolean(invite);
+  const setup = me.needsSetup && !invite;
+  const joining = Boolean(invite);
   const box = $('login');
   box.hidden = false;
   $('loginTitle').textContent = setup ? 'Create the administrator' : joining ? 'Join TinyWebUI' : 'TinyWebUI';
   $('loginHelp').textContent = setup ? 'The first account owns this installation and can invite others.'
     : joining ? 'Create your account using this invitation.' : '';
-  for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = me.authMode === 'single';
   for (const id of ['loginNameLabel', 'loginName']) $(id).hidden = !(setup || joining);
-  $('loginEmail').required = me.authMode === 'multiuser';
+  for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = false;
+  $('loginEmail').required = true;
   $('loginName').required = setup || joining;
   $('loginPassword').autocomplete = setup || joining ? 'new-password' : 'current-password';
   $('loginSubmit').textContent = setup ? 'Create administrator' : joining ? 'Create account' : 'Sign in';
-  (setup || joining ? $('loginName') : me.authMode === 'multiuser' ? $('loginEmail') : $('loginPassword')).focus();
+  (setup || joining ? $('loginName') : $('loginEmail')).focus();
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginMsg').textContent = '';
@@ -54,7 +54,7 @@ async function needsLogin() {
       };
       await api.post(setup ? '/api/auth/setup' : joining ? '/api/auth/accept-invite' : '/api/auth/login',
         setup || joining ? { ...account, ...(joining ? { token: invite } : {}) }
-          : me.authMode === 'multiuser' ? { email: account.email, password: account.password } : { password: account.password });
+          : { email: account.email, password: account.password });
       if (joining) location.href = location.pathname;
       else location.reload();
     } catch (err) {

@@ -46,7 +46,7 @@ test('settings changes are written to config.json', async () => {
   const root = as({ id: 'sub-root' });
   assert.equal((await root('/api/config', { method: 'POST', body: { systemPrompt: 'from the UI' } })).status, 200);
   assert.equal(readCfg().systemPrompt, 'from the UI');
-  const refused = await root('/api/config', { method: 'POST', body: { authMode: 'none' } });
+  const refused = await root('/api/config', { method: 'POST', body: { authMode: 'local' } });
   assert.equal(refused.status, 409, 'file-only keys stay file-only, even for admins');
 });
 

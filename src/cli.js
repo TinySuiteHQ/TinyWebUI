@@ -113,7 +113,7 @@ const commands = {
     // code happens to shadow today; flag that too, before it surfaces later.
     const raw = source.readFile();
     const shadowed = raw.access === undefined ? []
-      : validateConfig({ authMode: 'none', access: raw.access }).map((p) => `config.json: ${p}`);
+      : validateConfig({ authMode: 'local', access: raw.access }).map((p) => `config.json: ${p}`);
     const problems = [...configProblems(cfg), ...shadowed, ...(mcpError ? [mcpError] : mcpProblems(servers))];
     if (problems.length) {
       for (const p of problems) process.stderr.write(`error: ${p}\n`);
@@ -404,7 +404,7 @@ export function configSchema() {
       'x-change': FILE_ONLY.has(k) ? 'file-only' : WRITABLE.has(k) ? 'editable (UI writes it back here)' : 'file-only'
     };
   }
-  properties.authMode = { enum: ['none', 'single', 'multiuser', 'trusted-header'], 'x-change': 'file-only' };
+  properties.authMode = { enum: ['local', 'multiuser', 'trusted-header'], 'x-change': 'file-only' };
   properties.toolApproval = { enum: ['writes', 'all', 'off'], 'x-change': 'editable (UI writes it back here)' };
   properties.trustedProxyCidrs = { type: 'array', items: { type: 'string' }, 'x-change': 'file-only' };
   const featureList = { oneOf: [{ const: '*' }, { type: 'array', items: { enum: FEATURES }, uniqueItems: true }] };

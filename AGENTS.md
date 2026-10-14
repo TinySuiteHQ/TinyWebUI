@@ -29,7 +29,7 @@ src/
   config/        config loading/saving (config.js), model catalog, tool-approval rules
   automations/   scheduled runs: automation.js (tool + cron), scheduler.js
   files/         turning uploads into text or wire-safe images
-  mcp.js         MCP client hub; log.js; audit.js; cli.js; set-password.js
+  mcp.js         MCP client hub; log.js; audit.js; cli.js
 public/          the page (plain ES modules, no build); app.js is the entry and the only wiring
   core/        api.js (every JSON call), dom, state, id, md (the only HTML from outside text), access
   chat/        the conversation: chat, stream, transcript, composer, queue,

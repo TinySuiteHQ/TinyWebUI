@@ -16,7 +16,6 @@ if (configArg) process.env.TINYWEBUI_CONFIG = resolve(configArg);
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`tinywebui [start] [--port 7777] [--host 127.0.0.1] [--config path]
-tinywebui set-password     switch to or change the legacy single-owner password
 tinywebui validate [path]  check the config files; prints the fingerprint, exits 1 on problems
 tinywebui migrate [--check]
                            bring the database to the current schema (--check: exit 1 if behind)
@@ -76,11 +75,6 @@ try {
     opts = (typeof exported === 'function' ? await exported() : exported) || {};
     // stderr, so a command's stdout stays pure JSON for scripts.
     console.error(`[tinywebui] options: ${jsPath}`);
-  }
-  if (args[0] === 'set-password') {
-    const { setPassword } = await import('../src/set-password.js');
-    await setPassword(opts);
-    process.exit(0);
   }
   const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config', 'models'];
   if (COMMANDS.includes(args[0])) {

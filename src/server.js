@@ -8,10 +8,10 @@ import { McpHub, missingCommand } from './mcp.js';
 import { isClosed, findEntry } from './config/models.js';
 import { Store, SCHEMA_VERSION } from './store/index.js';
 import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/policy.js';
-import { hashPassword, applyAccessPolicy } from './access/auth.js';
+import { applyAccessPolicy } from './access/auth.js';
 import { audit } from './audit.js';
 import { logger } from './log.js';
-import { resolveAuth, OWNER_ID } from './access/auth_gate.js';
+import { resolveAuth } from './access/auth_gate.js';
 import { json, HttpError, SECURITY_HEADERS, crossSite, badHost, serveStatic } from './http.js';
 import { expandToolDef, callExpand } from './tools/context_tool.js';
 import { documentToolDef, callReadDocument } from './tools/document_tool.js';
@@ -75,10 +75,6 @@ const ADMIN_ONLY_FIELDS = /^(apiKey|keyHint|connectors|authPassword|sessionSecre
 
 const LOOPBACK_BINDS = ['127.0.0.1', '::1', 'localhost'];
 
-// 'single': the stored hash, or one made in memory from $TINYWEBUI_PASSWORD
-// (handy for containers).
-const ownerHash = (cfg) => cfg.authPassword || (process.env.TINYWEBUI_PASSWORD ? hashPassword(process.env.TINYWEBUI_PASSWORD) : null);
-
 /**
  * Starts an instance. Everything but port/host is optional and passed to
  * createConfigSource: `config` (keys set here win and are locked in the UI),
@@ -89,8 +85,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   const initial = source.load();
   const problems = configProblems(initial);
   if (problems.length) throw new Error(problems.join('\n'));
-  if (initial.authMode === 'none' && !LOOPBACK_BINDS.includes(host)) {
-    throw new Error("authMode 'none' is limited to loopback; use password login or a trusted-header gateway for network access");
+  if (initial.authMode === 'local' && !LOOPBACK_BINDS.includes(host)) {
+    throw new Error("authMode 'local' is limited to loopback; use multiuser or a trusted-header gateway for network access");
   }
 
   const store = new Store(source.dbPath(initial), { migrate: initial.autoMigrate !== false });
@@ -113,7 +109,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   if (resolved.fallback) log.warn(`retrieval: lexical only -- ${resolved.fallback}`);
   else if (embedder) log.info(`retrieval: ${resolved.mode} with ${embedder.spec?.repoId || initial.retrieval.model} (${embedder.dim} dims)`);
 
-  if (initial.authMode === 'single') store.users.ensureOwner(OWNER_ID);
 
   /**
    * What every part of the server shares. `cfg` and `hub` are replaced, not
@@ -127,7 +122,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     retrieval: new Retrieval(store, { ...initial.retrieval, mode: resolved.mode }, embedder),
     cfg: initial,
     hub: null,
-    passwordHash: initial.authMode === 'single' ? ownerHash(initial) : null,
 
     // Every UI/API change lands in config.json (source.save) and is audited:
     // who, which keys, the new values (none of these keys are secrets), and the
@@ -408,7 +402,6 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     const mcpChanged = text !== mcpText;
     if (before === after && !mcpChanged) return true; // our own write, or a no-op save
     app.cfg = next;
-    if (next.authMode === 'single') app.passwordHash = ownerHash(next);
     if (next.authMode === 'trusted-header') applyAccessPolicy(store, next);
     if (mcpChanged) await app.swapHub(servers);
     scheduler.arm();
