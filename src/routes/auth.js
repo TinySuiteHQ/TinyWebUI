@@ -6,6 +6,7 @@ import {
 } from '../access/auth.js';
 import { audit } from '../audit.js';
 import { OWNER_ID } from '../access/auth_gate.js';
+import { normalizeEmail, validEmail } from '../access/email.js';
 import { FEATURE } from '../../public/shared/features.js';
 
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.
@@ -13,18 +14,13 @@ const LOGIN_MAX = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const DUMMY_PASSWORD_HASH = hashPassword('tinywebui timing placeholder');
 
-const emailOf = (value) => typeof value === 'string' ? value.trim().toLowerCase() : '';
-const validEmail = (email) => email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
 function localAccount(body) {
-  const email = emailOf(body.email);
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const email = normalizeEmail(body.email);
   const password = typeof body.password === 'string' ? body.password : '';
   if (!validEmail(email)) return { error: 'enter a valid email address' };
-  if (!name || name.length > 200) return { error: 'name must be between 1 and 200 characters' };
   if (password.length < MIN_PASSWORD_LENGTH) return { error: `use at least ${MIN_PASSWORD_LENGTH} characters` };
   if (password.length > 1024) return { error: 'password is too long' };
-  return { email, name, password };
+  return { email, password };
 }
 
 export function authRoutes({ config, modelFor, multiUser, source, store, version }) {
@@ -68,7 +64,7 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
       }
       const body = await readJson(req);
       const password = typeof body.password === 'string' ? body.password : '';
-      const user = store.users.byEmail(emailOf(body.email));
+      const user = store.users.byEmail(normalizeEmail(body.email));
       const stored = user?.password_hash || DUMMY_PASSWORD_HASH;
       if (!verifyPassword(password, stored) || !user) {
         loginFailures.set(who, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
@@ -116,7 +112,7 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
       let result;
       try {
         result = store.users.acceptInvite({
-          tokenHash: hashToken(inviteToken), email: account.email, name: account.name,
+          tokenHash: hashToken(inviteToken), email: account.email,
           passwordHash: hashPassword(account.password)
         });
       } catch (err) {

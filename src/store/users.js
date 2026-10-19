@@ -100,15 +100,15 @@ export class UserStore {
   }
 
   /** Atomically claims a fresh local installation. Exactly one caller wins. */
-  createFirstLocal({ email, name, passwordHash, now = Date.now() }) {
+  createFirstLocal({ email, passwordHash, now = Date.now() }) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.localCount() !== 0) { this.db.exec('ROLLBACK'); return null; }
       const id = randomUUID();
       this.db.prepare(`INSERT INTO users
-        (id, email, name, password_hash, role, status, created_at, approved_at, last_login_at)
-        VALUES (?, ?, ?, ?, 'admin', 'approved', ?, ?, ?)`)
-        .run(id, email, name, passwordHash, now, now, now);
+        (id, email, password_hash, role, status, created_at, approved_at, last_login_at)
+        VALUES (?, ?, ?, 'admin', 'approved', ?, ?, ?)`)
+        .run(id, email, passwordHash, now, now, now);
       this.db.exec('COMMIT');
       return this.get(id);
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
@@ -132,7 +132,7 @@ export class UserStore {
   }
 
   /** Claims a valid invitation and creates its approved local user in one transaction. */
-  acceptInvite({ tokenHash, email, name, passwordHash, now = Date.now() }) {
+  acceptInvite({ tokenHash, email, passwordHash, now = Date.now() }) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const invite = this.db.prepare('SELECT * FROM invitations WHERE token_hash = ?').get(tokenHash);
@@ -150,9 +150,9 @@ export class UserStore {
       }
       const id = randomUUID();
       this.db.prepare(`INSERT INTO users
-        (id, email, name, password_hash, role, status, created_at, approved_at, last_login_at)
-        VALUES (?, ?, ?, ?, 'user', 'approved', ?, ?, ?)`)
-        .run(id, email, name, passwordHash, now, now, now);
+        (id, email, password_hash, role, status, created_at, approved_at, last_login_at)
+        VALUES (?, ?, ?, 'user', 'approved', ?, ?, ?)`)
+        .run(id, email, passwordHash, now, now, now);
       this.db.prepare('UPDATE invitations SET used_at = ?, used_by = ? WHERE id = ?').run(now, id, invite.id);
       this.db.exec('COMMIT');
       return { user: this.get(id) };

@@ -73,7 +73,7 @@ Open <http://127.0.0.1:7777> and create the first account with a password of at 
 
 `npx tinywebui` uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 
-From a clone, run `npm install && npm start`. With Docker, start the service and create the administrator in the browser:
+From a clone, run `npm install && npm start`. With Docker, start the service and create the administrator with an email address and password in the browser. The email is checked for valid format; TinyWebUI does not send mail or require a mail server for local accounts:
 
 ```bash
 docker compose build

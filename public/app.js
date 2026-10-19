@@ -37,19 +37,17 @@ async function needsLogin() {
   $('loginTitle').textContent = setup ? 'Create the administrator' : joining ? 'Join TinyWebUI' : 'TinyWebUI';
   $('loginHelp').textContent = setup ? 'The first account owns this installation and can invite others.'
     : joining ? 'Create your account using this invitation.' : '';
-  for (const id of ['loginNameLabel', 'loginName']) $(id).hidden = !(setup || joining);
   for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = false;
   $('loginEmail').required = true;
-  $('loginName').required = setup || joining;
   $('loginPassword').autocomplete = setup || joining ? 'new-password' : 'current-password';
   $('loginSubmit').textContent = setup ? 'Create administrator' : joining ? 'Create account' : 'Sign in';
-  (setup || joining ? $('loginName') : $('loginEmail')).focus();
+  $('loginEmail').focus();
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginMsg').textContent = '';
     try {
       const account = {
-        email: $('loginEmail').value, name: $('loginName').value,
+        email: $('loginEmail').value,
         password: $('loginPassword').value
       };
       await api.post(setup ? '/api/auth/setup' : joining ? '/api/auth/accept-invite' : '/api/auth/login',

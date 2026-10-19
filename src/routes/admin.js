@@ -4,6 +4,7 @@ import { ALL_USERS, toView } from '../store/index.js';
 import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.js';
 import { catalog, modelProblems } from '../config/models.js';
 import { destroyUserSessions, hashToken } from '../access/auth.js';
+import { normalizeEmail, validEmail } from '../access/email.js';
 import { audit } from '../audit.js';
 import { FEATURE } from '../../public/shared/features.js';
 
@@ -33,8 +34,8 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     { method: 'POST', path: /^\/api\/admin\/invites$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
       if (config().authMode !== 'multiuser') return json(res, 400, { error: 'local invitations are only available in multiuser mode' });
       const body = await readJson(req);
-      const email = typeof body.email === 'string' && body.email.trim() ? body.email.trim().toLowerCase() : null;
-      if (email && (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(res, 400, { error: 'enter a valid email address' });
+      const email = normalizeEmail(body.email) || null;
+      if (email && !validEmail(email)) return json(res, 400, { error: 'enter a valid email address' });
       if (email && store.users.emailTaken(email, '')) return json(res, 409, { error: 'that email address already belongs to a user' });
       const hours = body.expiresHours === undefined ? 168 : Number(body.expiresHours);
       if (!(Number.isFinite(hours) && hours >= 1 && hours <= 720)) return json(res, 400, { error: 'expiry must be between 1 and 720 hours' });
