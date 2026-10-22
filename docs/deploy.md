@@ -55,7 +55,9 @@ Secrets come from the environment:
 | --- | --- |
 | `MODEL_API_KEY` | read by the config above (any name works; it is plain JS) |
 | `TINYWEBUI_SESSION_SECRET` | signs session cookies; set it so restarts keep sessions (tier 2) |
-| `TINYWEBUI_API_KEY` | alternative to `apiKey` for JSON-only configs |
+| `TINYWEBUI_API_KEY` | alternative to `apiKey` for JSON-only configs (or write `"apiKey": "${NAME}"` in the JSON) |
+
+Keys saved from the Settings panel, and a generated session secret, go to `tinywebui.secrets.json` beside the config file -- here `/data/tinywebui.secrets.json`, on the volume -- never into the config file itself. `$TINYWEBUI_SECRETS` moves it.
 
 **`compose.yaml`**:
 

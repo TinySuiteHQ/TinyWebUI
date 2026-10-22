@@ -59,17 +59,17 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel. Then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
+Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel. Then connect a model, in the Settings panel or in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
 
 ```json
 {
   "baseUrl": "https://openrouter.ai/api/v1",
-  "apiKey": "sk-or-...",
+  "apiKey": "${OPENROUTER_API_KEY}",
   "model": "deepseek/deepseek-v4.1-flash"
 }
 ```
 
-`tinywebui.config.json` holds API keys and the session-signing secret and is gitignored. Local account password hashes and hashed invitation tokens live in `tinywebui.db`; keep both files private and backed up.
+`tinywebui.config.json` describes the deployment (endpoints, connectors, models, policy) and holds no secrets. A key is either a `${NAME}` reference, filled in from the environment, or kept in `tinywebui.secrets.json` beside it: what the Settings panel saves, and the generated session-signing secret. A key written straight into the config file moves there the next time the server starts. Accounts, password hashes and conversations live in `tinywebui.db`. TinyWebUI keeps the secrets file and the database readable by their owner only; keep them private and backed up.
 
 `npx tinywebui` uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 

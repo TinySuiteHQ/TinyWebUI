@@ -3,8 +3,9 @@ node_modules/
 .env.*
 !.env.example
 
-# Holds the API key and MCP wiring -- local only.
+# Local deployment config, and the keys kept out of it -- local only.
 tinywebui.config.json
+tinywebui.secrets.json
 tinywebui.config.js
 tinywebui.config.mjs
 

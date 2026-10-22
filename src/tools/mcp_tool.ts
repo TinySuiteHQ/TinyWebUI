@@ -12,7 +12,7 @@
  *    headers and env variables, never their values, and an update to either is
  *    a patch, so a key is never echoed back to change something next to it. A
  *    value written as `${NAME}` is filled in from TinyWebUI's environment at
- *    connect time (see expandRefs in mcp.js), which keeps the key out of the
+ *    connect time (see expandRefs in config/refs.ts), which keeps the key out of the
  *    file and out of the chat altogether.
  *
  * The file is saved at once; the servers reconnect when the reply is finished

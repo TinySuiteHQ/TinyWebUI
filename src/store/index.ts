@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { SCHEMA_VERSION, migrate as migrateSchema } from './schema.ts';
 import { ChatStore } from './chats.ts';
@@ -38,6 +38,20 @@ export { AUX_KIND } from './usage.ts';
  * handed it here, so every dependency between areas is listed in one place.
  */
 
+/**
+ * Conversations, password hashes and session hashes: readable by the owner
+ * only, like the config. A new file is created that way before SQLite opens
+ * it, since SQLite gives its -wal and -shm files the database's own mode; an
+ * existing one is tightened. A file someone else owns keeps the mode they set.
+ */
+function ownerOnly(path: string) {
+  if (!existsSync(path)) closeSync(openSync(path, 'a', 0o600));
+  if (process.platform === 'win32') return;
+  for (const p of [path, `${path}-wal`, `${path}-shm`]) {
+    try { if (existsSync(p)) chmodSync(p, 0o600); } catch { /* not ours to change */ }
+  }
+}
+
 /** Thrown when a database is behind and migrating was not allowed. */
 export class MigrationRequiredError extends Error {}
 
@@ -60,7 +74,10 @@ export class Store {
    * always created at the current version.
    */
   constructor(path: string, { migrate = true } = {}) {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+    if (path !== ':memory:') {
+      mkdirSync(dirname(path), { recursive: true });
+      ownerOnly(path);
+    }
     this.db = new DatabaseSync(path);
     const found = this.db.prepare('PRAGMA user_version').get()!.user_version as number;
     const fresh = !this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='chats'").get();

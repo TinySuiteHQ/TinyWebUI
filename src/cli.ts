@@ -124,6 +124,8 @@ const commands: Record<string, Command> = {
       for (const p of problems) process.stderr.write(`error: ${p}\n`);
       return 1;
     }
+    const inFile = source.secretsInFile();
+    if (inFile.length) process.stderr.write(`note: ${source.path()} holds ${inFile.join(', ')}; the server moves them to ${source.secretsPath()} when it starts\n`);
     out(`ok ${fingerprint(cfg, servers)}`);
     return 0;
   },
@@ -161,7 +163,7 @@ const commands: Record<string, Command> = {
     const access = resolveAccess(cfg);
     out({
       fingerprint: fingerprint(cfg, servers),
-      files: { config: source.path(), mcp: source.mcpPath() || '(in code)' },
+      files: { config: source.path(), secrets: source.secretsPath(), mcp: source.mcpPath() || '(in code)' },
       authMode: cfg.authMode,
       roles: ['multiuser', 'trusted-header'].includes(cfg.authMode)
         ? Object.fromEntries(ROLES.map((r) => [r, roleFor(r)]))

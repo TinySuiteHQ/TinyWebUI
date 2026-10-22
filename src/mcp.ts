@@ -6,6 +6,7 @@ import { statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import type { Stream } from 'node:stream';
 import { logger } from './log.ts';
+import { expandRefs } from './config/refs.ts';
 import type { McpServerSpec, McpServers } from './config/config.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
@@ -23,22 +24,6 @@ const MAX_NAME = 64;
 // Built-in tools registered after connect(). An MCP tool that flattened onto
 // one of these would be shadowed by the local handler without a word.
 const RESERVED = new Set(['expand_context', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats', 'manage_mcp']);
-
-const REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-
-/**
- * Fills `${NAME}` from the environment, so a key can live outside mcp.json (and
- * out of any chat that set the server up). A name that is not set fails the
- * connection with its name, never a silent empty string: an empty bearer token
- * reads as "unauthorised" and sends people looking in the wrong place.
- */
-export function expandRefs<T>(value: T, env: NodeJS.ProcessEnv = process.env): T | string {
-  if (typeof value !== 'string') return value;
-  return value.replace(REF, (_, name: string) => {
-    if (env[name] === undefined) throw new Error(`mcp.json refers to \${${name}}, which is not set in TinyWebUI's environment`);
-    return env[name]!;
-  });
-}
 
 const expandAll = (obj: Record<string, string> | undefined): Record<string, string> | undefined =>
   obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandRefs(v)]));

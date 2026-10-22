@@ -7,7 +7,8 @@ import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { callManageMcp, mcpToolDef, MANAGE_MCP } from '../src/tools/mcp_tool.ts';
-import { McpHub, expandRefs, uniqueName } from '../src/mcp.ts';
+import { McpHub, uniqueName } from '../src/mcp.ts';
+import { expandRefs } from '../src/config/refs.ts';
 import { approvalFor } from '../src/config/approval.ts';
 
 const SECRET = 'sk-live-ABC123XYZ';

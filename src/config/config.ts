@@ -5,6 +5,7 @@ import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } f
 import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
 import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
+import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
 
 export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
 export type ToolApproval = 'writes' | 'all' | 'off';
@@ -102,6 +103,8 @@ export interface ConfigOptions {
   config?: Partial<Config>;
   configFile?: string | false;
   mcpFile?: string;
+  /** Where keys live; default tinywebui.secrets.json beside the config. */
+  secretsFile?: string;
   mcpServers?: McpServers | null;
   dbPath?: string;
 }
@@ -116,6 +119,11 @@ const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
 const MCP_FILE = process.env.TINYWEBUI_MCP
   ? resolve(process.env.TINYWEBUI_MCP)
   : resolve(dirname(CONFIG_FILE), 'mcp.json');
+
+// Keys and the session secret: kept out of the config file (see secrets.ts).
+const SECRETS_FILE = process.env.TINYWEBUI_SECRETS
+  ? resolve(process.env.TINYWEBUI_SECRETS)
+  : resolve(dirname(CONFIG_FILE), 'tinywebui.secrets.json');
 
 export const DEFAULTS: Omit<Config, 'access'> = {
   baseUrl: 'https://openrouter.ai/api/v1',
@@ -337,9 +345,12 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     : opts.configFile ? resolve(opts.configFile) : CONFIG_FILE;
   const mcpFile = opts.mcpFile ? resolve(opts.mcpFile)
     : file && file !== CONFIG_FILE ? resolve(dirname(file), 'mcp.json') : MCP_FILE;
+  const secretsFile = opts.secretsFile ? resolve(opts.secretsFile)
+    : !file ? null : file !== CONFIG_FILE ? resolve(dirname(file), 'tinywebui.secrets.json') : SECRETS_FILE;
   const codeServers = opts.mcpServers || null;
   const locked = new Set(Object.keys(code));
   let memory: Record<string, any> = {}; // stands in for the file when there is none
+  let memorySecrets: Secrets = {};
 
   const readFile = (): Record<string, any> => {
     if (!file) return { ...memory };
@@ -355,6 +366,20 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     if (existsSync(file) && process.platform !== 'win32') chmodSync(file, 0o600);
     writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
   };
+  const readSecrets = (): Secrets => {
+    if (!secretsFile) return structuredClone(memorySecrets);
+    if (!existsSync(secretsFile)) return {};
+    try {
+      return JSON.parse(readFileSync(secretsFile, 'utf8'));
+    } catch (err) {
+      throw new Error(`Bad secrets file at ${secretsFile}: ${err.message}`);
+    }
+  };
+  const writeSecrets = (secrets: Secrets) => {
+    if (!secretsFile) { memorySecrets = secrets; return; }
+    if (existsSync(secretsFile) && process.platform !== 'win32') chmodSync(secretsFile, 0o600);
+    writeFileSync(secretsFile, JSON.stringify(secrets, null, 2) + '\n', { mode: 0o600 });
+  };
 
   // Not validated here: startup, reload and save check the result with configProblems().
   function load({ persistSecret = true } = {}): Config {
@@ -366,8 +391,25 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     // Secrets can come from the environment, so committed config never holds them.
     if (process.env.TINYWEBUI_SESSION_SECRET) env.sessionSecret = process.env.TINYWEBUI_SESSION_SECRET;
 
-    const fromFile = readFile();
-    const cfg: Config = { ...DEFAULTS, ...fromFile, ...env, ...code };
+    let fromFile = readFile();
+    // Keys written into the config file by hand, or by a version before the
+    // secrets file, move there on start. Read-only callers (the CLI) and a
+    // frozen deployment leave the files alone; the keys still apply.
+    const { shape, found, names } = extractSecrets(fromFile);
+    if (names.length && persistSecret) {
+      if (isFrozen()) log.warn(`${file ?? 'the config'} holds ${names.join(', ')}; move them to ${secretsFile} or the environment`);
+      else {
+        try {
+          writeSecrets(mergeSecrets(readSecrets(), found));
+          writeFile(shape);
+          fromFile = shape;
+          log.info(`moved ${names.join(', ')} from ${file} to ${secretsFile}`);
+        } catch (err) {
+          log.error(`could not move secrets out of ${file}: ${err.message}`);
+        }
+      }
+    }
+    const cfg: Config = { ...DEFAULTS, ...applySecrets(fromFile, readSecrets()), ...env, ...code };
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
     // Partial retrieval blocks fill in from the defaults rather than replace them.
     // $TINYWEBUI_RETRIEVAL_MODE=lexical is the no-config way to opt out of hybrid.
@@ -381,7 +423,7 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     if (['multiuser', 'trusted-header'].includes(cfg.authMode) && !cfg.sessionSecret && persistSecret) {
       cfg.sessionSecret = randomBytes(32).toString('hex');
       try {
-        writeFile({ ...readFile(), sessionSecret: cfg.sessionSecret });
+        writeSecrets({ ...readSecrets(), sessionSecret: cfg.sessionSecret });
       } catch (err) {
         log.error(`could not persist generated sessionSecret: ${err.message}`);
       }
@@ -399,12 +441,17 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     // Edits apply to the flat catalog the page sees; the file gets it nested.
     const current = readFile();
     Object.assign(current, flattenCatalog(current));
-    for (const [k, v] of Object.entries(mergeSecrets(patch, current))) {
-      if (WRITABLE.has(k)) current[k] = v;
+    const split = takeSecrets(patch, current, readSecrets());
+    if (split.refused.length) throw new LockedError(`set from the environment, not editable here: ${split.refused.join(', ')}`);
+    for (const [k, v] of Object.entries(split.patch)) {
+      if (!WRITABLE.has(k)) continue;
+      if (v === undefined) delete current[k]; else current[k] = v;
     }
-    // Validate what the file would become before writing it.
-    const problems = configProblems({ ...DEFAULTS, ...current, ...code });
-    if (problems.length) throw new Error(problems.join('; '));
+    // Validate what the files would become before writing them.
+    const problems = configProblems({ ...DEFAULTS, ...applySecrets(current, split.secrets), ...code });
+    if (problems.length) throw new ConfigError(problems.join('; '));
+    // Secrets first: a key is never lost between the two writes.
+    writeSecrets(split.secrets);
     writeFile({ ...current, ...nestCatalog(current) });
     return load();
   }
@@ -441,6 +488,9 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     readFile,
     writeFile,
     path: () => file,
+    secretsPath: () => secretsFile,
+    /** Secret values the config file holds as written, by name (they move out on start). */
+    secretsInFile: () => extractSecrets(readFile()).names,
     mcpPath: () => (codeServers ? null : mcpFile),
     get mcpLocked() { return Boolean(codeServers) || isFrozen(); },
     isFrozen,
@@ -472,7 +522,9 @@ export function createConfigSource(opts: ConfigOptions = {}) {
           throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
         }
       }
-      writeFileSync(mcpFile, text.endsWith('\n') ? text : text + '\n');
+      // Headers and env here can hold tokens: owner-only, like the config.
+      if (existsSync(mcpFile) && process.platform !== 'win32') chmodSync(mcpFile, 0o600);
+      writeFileSync(mcpFile, text.endsWith('\n') ? text : text + '\n', { mode: 0o600 });
       return servers;
     },
   };
@@ -481,6 +533,9 @@ export function createConfigSource(opts: ConfigOptions = {}) {
 export type ConfigSource = ReturnType<typeof createConfigSource>;
 
 export class LockedError extends Error {}
+
+/** A save that would leave the config invalid: the caller's mistake, not the server's. */
+export class ConfigError extends Error {}
 
 // Keys that are not in DEFAULTS but are still settings.
 const EXTRA_KEYS = new Set(['access']);
@@ -558,7 +613,7 @@ export function configProblems(raw: Record<string, any>): string[] {
       : got === want;
     if (!ok) problems.push(`${key} must be ${want === 'null' ? 'a number or null' : `a${want === 'array' || want === 'object' ? 'n' : ''} ${want}`} (got ${got})`);
   }
-  return [...problems, ...connectorProblems(cfg), ...modelProblems(cfg), ...validateConfig(cfg)];
+  return [...problems, ...connectorProblems(cfg), ...modelProblems(cfg), ...validateConfig(cfg), ...refProblems(cfg)];
 }
 
 // Only the knobs the UI is allowed to change. Secrets stay server-side.
@@ -578,25 +633,9 @@ const keyHint = (key: string | undefined) => (key && key.length >= 12 ? key.slic
 
 /**
  * API keys are write-only: the page learns that one is set (and its last four
- * characters), never the value. On save, a connector sent without `apiKey`
- * keeps its stored key; `apiKey: null` clears it.
+ * characters), never the value. Where a save puts them is takeSecrets() in
+ * secrets.ts.
  */
-export function mergeSecrets(patch: Record<string, any>, current: Record<string, any>): Record<string, any> {
-  const out = { ...patch };
-  if ('apiKey' in out && (out.apiKey === undefined || out.apiKey === '')) delete out.apiKey;
-  else if (out.apiKey === null) out.apiKey = '';
-  if (Array.isArray(out.connectors)) {
-    const old = new Map<unknown, any>((Array.isArray(current.connectors) ? current.connectors : []).map((c: any) => [c?.id, c]));
-    out.connectors = out.connectors.map((c: any) => {
-      if (!c || typeof c !== 'object') return c;
-      const { apiKey, ...rest } = c;
-      if (apiKey === null) return { ...rest, apiKey: '' };
-      if (apiKey === undefined || apiKey === '') return old.get(c.id)?.apiKey ? { ...rest, apiKey: old.get(c.id).apiKey } : rest;
-      return c;
-    });
-  }
-  return out;
-}
 
 /** The patch as it may be logged: secret values replaced by whether they were set. */
 export function redactSecrets(patch: Record<string, any>): Record<string, any> {

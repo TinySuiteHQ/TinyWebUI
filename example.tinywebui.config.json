@@ -1,6 +1,6 @@
 {
   "baseUrl": "https://openrouter.ai/api/v1",
-  "apiKey": "sk-or-v1-REPLACE-ME",
+  "apiKey": "${OPENROUTER_API_KEY}",
   "model": "deepseek/deepseek-v4.1-flash",
 
   "temperature": null,

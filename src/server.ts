@@ -4,7 +4,7 @@ import { watch, existsSync, type FSWatcher } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { dirname } from 'node:path';
 
-import { createConfigSource, LockedError, configProblems, redactSecrets, type Config, type ConfigOptions, type ConfigSource, type McpServers } from './config/config.ts';
+import { createConfigSource, LockedError, ConfigError, configProblems, redactSecrets, type Config, type ConfigOptions, type ConfigSource, type McpServers } from './config/config.ts';
 import { McpHub, missingCommand } from './mcp.ts';
 import { isClosed, findEntry } from './config/models.ts';
 import { Store, SCHEMA_VERSION } from './store/index.ts';
@@ -347,6 +347,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
   const serversOf = (text: string): McpServers => { try { const p = JSON.parse(text); return p.mcpServers || p; } catch { return {}; } };
 
   log.info(`config: ${source.path() || '(in code, no file)'}`);
+  log.info(`keys:   ${source.secretsPath() || '(in memory)'}`);
   log.info(`mcp:    ${source.mcpPath() || '(in code)'}`);
   log.info(`db:     ${source.dbPath(app.cfg)}`);
   log.info(`model:  ${app.cfg.model} via ${app.cfg.baseUrl}`);
@@ -401,7 +402,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
       return json(res, 404, { error: 'not found' });
     } catch (err) {
       if (err instanceof HttpError && err.status === 413) req.resume?.();
-      if (!res.headersSent) json(res, err instanceof HttpError ? err.status : err instanceof LockedError ? 409 : 500, { error: err.message });
+      const status = err instanceof HttpError ? err.status : err instanceof LockedError ? 409 : err instanceof ConfigError ? 400 : 500;
+      if (!res.headersSent) json(res, status, { error: err.message });
       else res.end();
     }
   }) as TinyServer;
