@@ -24,6 +24,13 @@
   "engines": {
     "node": ">=22.13"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.18",
+      "onFail": "warn"
+    }
+  },
   "scripts": {
     "prestart": "node bin/tinywebui.ts models ensure",
     "start": "node bin/tinywebui.ts",

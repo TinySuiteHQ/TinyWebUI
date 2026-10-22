@@ -37,7 +37,6 @@ export interface Run {
   question: PendingQuestion | null;
   unattended: boolean;
   emit: Emit;
-  promise: Promise<void>;
 }
 
 export interface RunOptions {
@@ -97,8 +96,7 @@ export function createRuns(app: RunsApp) {
    * and sent as an event, so a live view and a reload each show it once.
    */
   function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null }: RunOptions): Run {
-    // emit and promise are filled in below, before anything else can reach the run.
-    const run = {
+    const run: Run = {
       events: [],
       subs: new Set(),
       ac: new AbortController(),
@@ -111,8 +109,9 @@ export function createRuns(app: RunsApp) {
       approvals: new Map(),
       // The ask_user question waiting on the user: { id, settle }, or null.
       question: null,
-      unattended
-    } as Omit<Run, 'emit' | 'promise'> as Run;
+      unattended,
+      emit
+    };
     runs.set(chat.id, run);
     // A stop settles every open question as "no", so the loop can unwind
     // instead of waiting forever on a prompt nobody will answer now.
@@ -156,14 +155,13 @@ export function createRuns(app: RunsApp) {
       });
     };
 
-    const emit = (event: StreamEvent) => {
+    function emit(event: StreamEvent) {
       run.events.push(event);
       for (const sub of run.subs) {
         try { sub.write(`data: ${JSON.stringify(event)}\n\n`); } catch { run.subs.delete(sub); }
       }
-    };
+    }
 
-    run.emit = emit;
     emit({ type: EVENT.CHAT, id: chat.id, title: chat.title });
     if (lead != null) {
       store.messages.add(chat.id, { role: 'user', content: lead });
@@ -179,7 +177,8 @@ export function createRuns(app: RunsApp) {
       return items.map((i) => i.content);
     };
 
-    run.promise = (async () => {
+    // Not awaited: the run outlives the request that started it.
+    void (async () => {
       try {
         const base = effectiveConfig(app.cfg, model);
         const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}

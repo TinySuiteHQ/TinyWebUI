@@ -30,6 +30,9 @@ export interface Auth {
 /** An Auth past the gate of a route with a feature: someone holds it, so there is a scope. */
 export type SignedIn = Auth & { userId: Scope };
 
+/** Holding any feature implies this (resolveAuth grants none without a user); the check makes it explicit. */
+export const isSignedIn = (auth: Auth): auth is SignedIn => auth.userId !== undefined;
+
 // Reachable without a session: the login/OAuth dance itself, plus static
 // assets so the login page can load before there's anyone to authenticate.
 const PRE_AUTH_PATHS = /^\/api\/auth\//;

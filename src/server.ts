@@ -12,7 +12,7 @@ import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/pol
 import { applyAccessPolicy } from './access/auth.ts';
 import { audit } from './audit.ts';
 import { logger } from './log.ts';
-import { resolveAuth, type Auth } from './access/auth_gate.ts';
+import { resolveAuth, isSignedIn, type Auth } from './access/auth_gate.ts';
 import { json, HttpError, SECURITY_HEADERS, crossSite, badHost, serveStatic } from './http.ts';
 import { expandToolDef, callExpand } from './tools/context_tool.ts';
 import { documentToolDef, callReadDocument } from './tools/document_tool.ts';
@@ -29,7 +29,7 @@ import { createScheduler, type Scheduler } from './automations/scheduler.ts';
 import type { RetrievalMode } from './config/config.ts';
 import type { UserRole } from './store/users.ts';
 import type { ToolDef } from './harness/types.ts';
-import type { Route, RouteContext, RouteDeps } from './routes/types.ts';
+import type { Route, RouteDeps, ToolsView } from './routes/types.ts';
 import { authRoutes } from './routes/auth.ts';
 import { settingsRoutes } from './routes/settings.ts';
 import { mcpRoutes } from './routes/mcp.ts';
@@ -53,7 +53,6 @@ export interface App {
   hub: McpHub;
   runs: Runs;
   scheduler: Scheduler;
-  passwordHash?: string;
   saveConfig(patch: Record<string, unknown>, by?: string): Config;
   refreshConfig(): void;
   auditMcp(by: string | undefined, before: string, change?: { action: string; name: string }): void;
@@ -63,7 +62,7 @@ export interface App {
   instructionsFor(userId: string | null | undefined): string | null;
   toolsFor(features: Set<string>): ToolDef[];
   ownerFeatures(userId: string | null): Set<string>;
-  toolsView(): unknown;
+  toolsView(): ToolsView;
   configFor(auth: Auth): Record<string, unknown>;
   swapHub(servers: McpServers): Promise<void>;
   onRunIdle(chatId: string): void;
@@ -94,12 +93,12 @@ const VERSION = JSON.parse(await readFile(new URL('../package.json', import.meta
  */
 function routeTable(app: App): Route[] {
   // What route groups may ask for. Each group's signature names the part it
-  // uses; config, hub and passwordHash change at runtime, so they are read
-  // through accessors rather than captured.
+  // uses; config and hub change at runtime, so they are read through
+  // accessors rather than captured.
   const deps: RouteDeps = {
     store: app.store, runs: app.runs, scheduler: app.scheduler, retrieval: app.retrieval,
     source: app.source, version: app.version,
-    config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash,
+    config: () => app.cfg, hub: () => app.hub,
     saveConfig: (patch, by) => app.saveConfig(patch, by), refreshConfig: () => app.refreshConfig(),
     auditMcp: (by, before) => app.auditMcp(by, before), swapHub: (servers) => app.swapHub(servers),
     multiUser: () => app.multiUser(), modelFor: (userId, role) => app.modelFor(userId, role),
@@ -394,9 +393,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
         if (route.method !== req.method) continue;
         const match = route.path.exec(pathname);
         if (!match) continue;
-        if (route.feature && !auth.features.has(route.feature)) return json(res, 403, { error: 'feature_disabled', feature: route.feature });
-        // Holding a feature means someone is signed in, so a feature route's `auth` has its scope.
-        return await (route.handle as (ctx: RouteContext) => unknown)({ req, res, auth, url, params: match.slice(1) });
+        const ctx = { req, res, url, params: match.slice(1) };
+        if (!route.feature) return await route.handle({ ...ctx, auth });
+        if (!auth.features.has(route.feature) || !isSignedIn(auth)) return json(res, 403, { error: 'feature_disabled', feature: route.feature });
+        return await route.handle({ ...ctx, auth });
       }
       return json(res, 404, { error: 'not found' });
     } catch (err) {
