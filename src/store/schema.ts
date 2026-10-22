@@ -1,4 +1,5 @@
 /* The database shape: tables, triggers, the schema version, and the migrations that reach it. */
+import type { DatabaseSync } from 'node:sqlite';
 
 export const SCHEMA = `
 -- Optional auth/RBAC (config authMode 'multiuser'). Unused and
@@ -357,7 +358,7 @@ export const SCHEMA_VERSION = 13;
  * same pattern `model`/`created_at`/`images_json` already use below for
  * `messages`. `ALTER TABLE ADD COLUMN` itself has no IF NOT EXISTS form.
  */
-function ensureColumn(db, table, col, decl) {
+function ensureColumn(db: DatabaseSync, table: string, col: string, decl: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
@@ -368,8 +369,8 @@ function ensureColumn(db, table, col, decl) {
  * document_chunks now holds embedded chunks. Must run before SCHEMA, which
  * would otherwise see the old FTS table under the new chunk table's name.
  */
-function renameToPassages(db) {
-  const has = (name) => Boolean(db.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name));
+function renameToPassages(db: DatabaseSync) {
+  const has = (name: string) => Boolean(db.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name));
   if (has('document_chunk_map')) {
     db.exec('BEGIN');
     try {
@@ -386,7 +387,7 @@ function renameToPassages(db) {
 }
 
 /** Schema 7 and earlier kept document vectors in their own table; they move into `embeddings` as-is. */
-function moveDocumentVectors(db) {
+function moveDocumentVectors(db: DatabaseSync) {
   const cols = db.prepare('PRAGMA table_info(document_chunks)').all().map((c) => c.name);
   if (!cols.includes('vec')) return;
   db.exec('BEGIN');
@@ -399,7 +400,7 @@ function moveDocumentVectors(db) {
 }
 
 /** Brings an open database to SCHEMA_VERSION. `fresh`: it has no tables yet. */
-export function migrate(db, { fresh }) {
+export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   if (!fresh) renameToPassages(db);
@@ -480,7 +481,7 @@ export function migrate(db, { fresh }) {
     SELECT
       (SELECT COUNT(*) FROM messages WHERE role IN ('user', 'assistant', 'system')) AS m,
       (SELECT COUNT(*) FROM messages_fts) AS f
-  `).get();
+  `).get() as { m: number; f: number };
   if (m !== f) {
     db.exec(`
       INSERT INTO messages_fts(rowid, body)

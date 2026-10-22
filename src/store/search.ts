@@ -1,12 +1,16 @@
-import { scope, ftsQuery } from './scope.js';
+import type { DatabaseSync } from 'node:sqlite';
+import { scope, ftsQuery, type Scope } from './scope.ts';
+
+export interface ChatHit { chatId: string; chatTitle: string; seq: number; role: string; chatUpdatedAt: number; snippet: string }
 
 // Sidebar search: full-text over what was said, one row per chat.
 // One area of the Store; see index.js.
 
 export class SearchStore {
-  constructor(db, deps = {}) {
+  db: DatabaseSync;
+
+  constructor(db: DatabaseSync) {
     this.db = db;
-    Object.assign(this, deps);
   }
 
   /**
@@ -23,7 +27,7 @@ export class SearchStore {
    * function's own ORDER BY) is what keeps them legal here -- SQLite raises
    * "unable to use function bm25 in the requested context" otherwise.
    */
-  chats(query, limit, userId) {
+  chats(query: string, limit: number, userId: Scope): ChatHit[] {
     const s = scope(userId, 'c.user_id');
     const q = ftsQuery(query);
     if (!q) return [];
@@ -51,6 +55,6 @@ export class SearchStore {
       WHERE rn = 1
       ORDER BY rank
       LIMIT ?
-    `).all(q, ...s.params, limit);
+    `).all(q, ...s.params, limit) as unknown as ChatHit[];
   }
 }

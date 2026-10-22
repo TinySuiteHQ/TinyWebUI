@@ -10,7 +10,9 @@
  */
 export const ALL_USERS = Symbol('all-users');
 
-export function scope(userId, col = 'user_id') {
+export type Scope = string | null | typeof ALL_USERS;
+
+export function scope(userId: Scope, col = 'user_id'): { sql: string; params: string[] } {
   if (userId === ALL_USERS) return { sql: '1=1', params: [] };
   if (userId === null) return { sql: `${col} IS NULL`, params: [] };
   if (typeof userId === 'string' && userId) return { sql: `${col} = ?`, params: [userId] };
@@ -18,7 +20,7 @@ export function scope(userId, col = 'user_id') {
 }
 
 /** The owner to write onto a new row: ALL_USERS (no auth) owns as null. */
-export function ownerOf(userId) {
+export function ownerOf(userId: Scope | undefined): string | null {
   if (userId === ALL_USERS || userId === null || userId === undefined) return null;
   return String(userId);
 }
@@ -33,10 +35,10 @@ export function ownerOf(userId) {
  * query still narrows results while it is being typed rather than only once
  * a whole word is finished.
  */
-export function ftsQuery(raw, { any = false } = {}) {
+export function ftsQuery(raw: unknown, { any = false } = {}): string {
   const tokens = String(raw ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 12);
   if (!tokens.length) return '';
-  const esc = (t) => t.replace(/"/g, '""');
+  const esc = (t: string) => t.replace(/"/g, '""');
   return tokens
     .map((t, i) => (i === tokens.length - 1 ? `"${esc(t)}"*` : `"${esc(t)}"`))
     .join(any ? ' OR ' : ' ');

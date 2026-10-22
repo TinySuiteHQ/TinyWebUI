@@ -1,10 +1,23 @@
 /* Row <-> message shapes: what the model is sent (toWire) and what the UI shows (toView). */
 
-function base(row) {
-  const msg = { role: row.role };
+import type { ChatMessage, ContentPart, ReasoningDetail } from '../harness/types.ts';
+import type { MessageImage, MessageRow } from './messages.ts';
+
+/** A row as the transcript shows it. */
+export interface ViewMessage extends ChatMessage {
+  seq: number;
+  usage?: Record<string, unknown>;
+  compacted?: true;
+  origin?: Record<string, unknown>;
+  images?: MessageImage[];
+}
+
+function base(row: MessageRow): ChatMessage & { images?: MessageImage[] } {
+  // content is set by each caller, after these, so the key order stays as it was.
+  const msg = { role: row.role } as ChatMessage & { images?: MessageImage[] };
   if (row.tool_call_id) msg.tool_call_id = row.tool_call_id;
   if (row.tool_calls_json) msg.tool_calls = JSON.parse(row.tool_calls_json);
-  if (row.reasoning_details_json) msg.reasoning_details = JSON.parse(row.reasoning_details_json);
+  if (row.reasoning_details_json) msg.reasoning_details = JSON.parse(row.reasoning_details_json) as ReasoningDetail[];
   if (row.images_json) msg.images = JSON.parse(row.images_json);
   return msg;
 }
@@ -14,7 +27,7 @@ function base(row) {
  * sends its content verbatim. Reasoning text rides along; `buildMessages` in
  * harness/provider.js decides whether the provider gets it back.
  */
-export function toWire(row) {
+export function toWire(row: MessageRow): ChatMessage {
   const msg = base(row);
   if (row.reasoning) msg.reasoning = row.reasoning;
   msg.content = row.role === 'tool' ? (row.stub_text ?? row.content) : (row.content ?? null);
@@ -30,7 +43,7 @@ export function toWire(row) {
   // every text-only turn keeps sending the plain string it always has, which
   // is what most of the caching machinery in harness/provider.js assumes.
   if (msg.images?.length) {
-    const parts = [];
+    const parts: ContentPart[] = [];
     if (msg.content) parts.push({ type: 'text', text: msg.content });
     for (const img of msg.images) {
       parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } });
@@ -42,8 +55,8 @@ export function toWire(row) {
 }
 
 /** What the transcript shows: always the full text, stub or not. */
-export function toView(row) {
-  const msg = base(row);
+export function toView(row: MessageRow): ViewMessage {
+  const msg = base(row) as ViewMessage;
   // The client needs a handle on each message to be able to rewind to one.
   msg.seq = row.seq;
   msg.content = row.content ?? null;

@@ -3,7 +3,7 @@
 // attached to another chat; documents from before that fall back to the text.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Store, ALL_USERS } from '../src/store/index.js';
+import { Store, ALL_USERS } from '../src/store/index.ts';
 import { servingFor } from '../src/files/documents.js';
 
 const blobs = (store) => store.db.prepare('SELECT COUNT(*) AS n FROM document_blobs').get().n;

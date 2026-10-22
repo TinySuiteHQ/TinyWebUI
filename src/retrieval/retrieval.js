@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CORPUS } from '../store/index.js';
+import { CORPUS } from '../store/index.ts';
 
 /**
  * Search for everything the model can look things up in: lexical (FTS5 BM25,

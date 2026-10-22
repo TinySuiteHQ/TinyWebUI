@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildBody, buildMessages } from '../src/harness/provider.ts';
 import { budgetFooter, harnessBlock } from '../src/harness/prompt.ts';
-import { Store, toWire } from '../src/store/index.js';
+import { Store, toWire } from '../src/store/index.ts';
 
 const CLAUDE = { cache: true, model: 'anthropic/claude-sonnet-5', systemPrompt: 'sys', cacheTtl: '5m' };
 const OPENROUTER_CLAUDE = { ...CLAUDE, baseUrl: 'https://openrouter.ai/api/v1' };

@@ -1,4 +1,4 @@
-import { ALL_USERS } from '../store/index.js';
+import { ALL_USERS } from '../store/index.ts';
 import { featuresFor } from './policy.js';
 import { getSessionUser, resolveTrustedUser } from './auth.js';
 import { audit } from '../audit.ts';

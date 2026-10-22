@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { json, readJson } from '../http.ts';
-import { ALL_USERS, toView } from '../store/index.js';
+import { ALL_USERS, toView } from '../store/index.ts';
 import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.js';
 import { catalog, modelProblems } from '../config/models.js';
 import { destroyUserSessions, hashToken } from '../access/auth.js';

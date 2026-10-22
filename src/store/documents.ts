@@ -1,6 +1,26 @@
-import { scope, ftsQuery } from './scope.js';
+import { scope, ftsQuery, type Scope } from './scope.ts';
 import { createHash, randomBytes } from 'node:crypto';
-import { CORPUS } from './embeddings.js';
+import type { DatabaseSync } from 'node:sqlite';
+import { CORPUS, type EmbeddingStore } from './embeddings.ts';
+
+export interface DocumentRow {
+  id: string;
+  chat_id: string;
+  user_id: string | null;
+  filename: string;
+  mime: string | null;
+  char_len: number;
+  created_at: number;
+  content: string;
+  passage_size: number | null;
+  passage_overlap: number | null;
+  md5: string | null;
+}
+
+/** A document as listed: everything but its text. */
+export type DocumentSummary = Pick<DocumentRow, 'id' | 'filename' | 'mime' | 'char_len' | 'created_at'>;
+export interface PassageSettings { passageSize?: number; passageOverlap?: number }
+export interface Passage { rowid: number; passageIdx: number; charStart: number; body: string }
 
 // Attached documents, split into passages for read_document (BM25 and dense retrieval).
 // One area of the Store; see index.js.
@@ -16,8 +36,8 @@ export const PASSAGE_OVERLAP = 200;
  * nudged onto a paragraph or line boundary when one is nearby, so a
  * passage doesn't open or close mid-sentence more than it has to.
  */
-export function splitPassages(text, size = PASSAGE_SIZE, overlap = PASSAGE_OVERLAP) {
-  const passages = [];
+export function splitPassages(text: string, size = PASSAGE_SIZE, overlap = PASSAGE_OVERLAP): { start: number; text: string }[] {
+  const passages: { start: number; text: string }[] = [];
   let start = 0;
   while (start < text.length) {
     let end = Math.min(start + size, text.length);
@@ -34,9 +54,9 @@ export function splitPassages(text, size = PASSAGE_SIZE, overlap = PASSAGE_OVERL
   return passages;
 }
 
-const md5Of = (bytes) => createHash('md5').update(bytes).digest('hex');
+const md5Of = (bytes: Uint8Array) => createHash('md5').update(bytes).digest('hex');
 
-function insertPassages(db, docId, chatId, content, size, overlap) {
+function insertPassages(db: DatabaseSync, docId: string, chatId: string, content: string, size: number, overlap: number) {
   const passages = splitPassages(content, size, overlap);
   const insertPassage = db.prepare('INSERT INTO document_passages (body) VALUES (?)');
   const insertMap = db.prepare(`
@@ -51,12 +71,15 @@ function insertPassages(db, docId, chatId, content, size, overlap) {
 }
 
 export class DocumentStore {
-  constructor(db, deps = {}) {
+  declare db: DatabaseSync;
+  declare embeddings: EmbeddingStore;
+
+  constructor(db: DatabaseSync, deps: { embeddings: EmbeddingStore }) {
     this.db = db;
     Object.assign(this, deps);
   }
 
-  claimUnowned(userId) {
+  claimUnowned(userId: string): void {
     this.db.prepare('UPDATE documents SET user_id = ? WHERE user_id IS NULL').run(userId);
   }
 
@@ -65,7 +88,9 @@ export class DocumentStore {
    * itself can be opened later. `md5` names them when the caller already has
    * the fingerprint, e.g. copying a document into another chat.
    */
-  add(chatId, { filename, mime, content, original = null, md5 = null }, { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP } = {}) {
+  add(chatId: string, { filename, mime, content, original = null, md5 = null }:
+    { filename: string; mime?: string | null; content: string; original?: Uint8Array | null; md5?: string | null },
+    { passageSize = PASSAGE_SIZE, passageOverlap = PASSAGE_OVERLAP }: PassageSettings = {}): DocumentSummary & { passages: number } {
     const id = randomBytes(12).toString('hex');
     const createdAt = Date.now();
     const hash = original ? md5Of(original) : md5;
@@ -83,20 +108,20 @@ export class DocumentStore {
   }
 
   /** The chat's document with these bytes, if it already has one -- a file is attached to a chat once. */
-  findInChat(chatId, original) {
+  findInChat(chatId: string, original: Uint8Array): DocumentSummary | null {
     return this.#inChat(chatId, md5Of(original));
   }
 
-  #inChat(chatId, md5) {
-    return this.db.prepare('SELECT id, filename, mime, char_len, created_at FROM documents WHERE chat_id = ? AND md5 = ?')
-      .get(chatId, md5) || null;
+  #inChat(chatId: string, md5: string): DocumentSummary | null {
+    return (this.db.prepare('SELECT id, filename, mime, char_len, created_at FROM documents WHERE chat_id = ? AND md5 = ?')
+      .get(chatId, md5) as DocumentSummary | undefined) || null;
   }
 
   /** The uploaded bytes as a Buffer, or null (no such document, not yours, or stored before originals were kept). */
-  original(id, userId) {
+  original(id: string, userId: Scope): Buffer | null {
     const doc = this.get(id, userId);
     if (!doc?.md5) return null;
-    const row = this.db.prepare('SELECT data FROM document_blobs WHERE md5 = ?').get(doc.md5);
+    const row = this.db.prepare('SELECT data FROM document_blobs WHERE md5 = ?').get(doc.md5) as { data: Uint8Array } | undefined;
     return row ? Buffer.from(row.data) : null;
   }
 
@@ -105,7 +130,7 @@ export class DocumentStore {
    * for picking a file again without uploading it. One entry per distinct file:
    * the same bytes in ten chats is one line, and it names the latest chat.
    */
-  library(userId, limit = 200) {
+  library(userId: Scope, limit = 200): (DocumentSummary & { chatTitle: string })[] {
     const s = scope(userId, 'c.user_id');
     const inner = scope(userId, 'c2.user_id'); // the "latest" must be the user's own copy, not someone else's
     return this.db.prepare(`
@@ -119,7 +144,7 @@ export class DocumentStore {
         )
       ORDER BY d.created_at DESC
       LIMIT ?
-    `).all(...s.params, ...inner.params, limit);
+    `).all(...s.params, ...inner.params, limit) as unknown as (DocumentSummary & { chatTitle: string })[];
   }
 
   /**
@@ -129,7 +154,8 @@ export class DocumentStore {
    * passages. Null when the source is not theirs; the chat's existing copy
    * when it already has this file.
    */
-  copyToChat(sourceId, chatId, userId, passageSettings) {
+  copyToChat(sourceId: string, chatId: string, userId: Scope, passageSettings?: PassageSettings):
+    (DocumentSummary & { existing?: true; passages?: number }) | null {
     const src = this.get(sourceId, userId);
     if (!src) return null;
     if (src.md5) {
@@ -140,16 +166,16 @@ export class DocumentStore {
   }
 
   /** Documents split with other passage settings than these (NULL = the original 1800/200). */
-  withOtherPassages(size, overlap) {
+  withOtherPassages(size: number, overlap: number): string[] {
     return this.db.prepare(`
       SELECT id FROM documents
       WHERE COALESCE(passage_size, ${PASSAGE_SIZE}) != ? OR COALESCE(passage_overlap, ${PASSAGE_OVERLAP}) != ?
-    `).all(size, overlap).map((r) => r.id);
+    `).all(size, overlap).map((r) => r.id as string);
   }
 
   /** Re-splits a stored document with new passage settings; its old vectors go with the old passages. */
-  repassage(docId, size, overlap) {
-    const doc = this.db.prepare('SELECT id, chat_id, content FROM documents WHERE id = ?').get(docId);
+  repassage(docId: string, size: number, overlap: number): number {
+    const doc = this.db.prepare('SELECT id, chat_id, content FROM documents WHERE id = ?').get(docId) as Pick<DocumentRow, 'id' | 'chat_id' | 'content'> | undefined;
     if (!doc) return 0;
     this.db.exec('BEGIN');
     try {
@@ -162,22 +188,22 @@ export class DocumentStore {
   }
 
   /** Scoped through the owning chat: a document is its chat's user's. */
-  get(id, userId) {
+  get(id: string, userId: Scope): DocumentRow | null {
     const s = scope(userId, 'c.user_id');
-    return this.db.prepare(
+    return (this.db.prepare(
       `SELECT d.* FROM documents d JOIN chats c ON c.id = d.chat_id WHERE d.id = ? AND ${s.sql}`
-    ).get(id, ...s.params) || null;
+    ).get(id, ...s.params) as DocumentRow | undefined) || null;
   }
 
-  list(chatId) {
+  list(chatId: string): DocumentSummary[] {
     return this.db.prepare(`
       SELECT id, filename, mime, char_len, created_at
       FROM documents WHERE chat_id = ? ORDER BY created_at ASC
-    `).all(chatId);
+    `).all(chatId) as unknown as DocumentSummary[];
   }
 
   /** Drops one document, its passages and their chunk vectors. The rest of the chat is untouched. */
-  delete(id, userId) {
+  delete(id: string, userId: Scope): boolean {
     if (!this.get(id, userId)) return false;
     this.#deletePassages(id);
     const gone = this.db.prepare('DELETE FROM documents WHERE id = ?').run(id).changes > 0;
@@ -186,8 +212,8 @@ export class DocumentStore {
   }
 
   /** Drops every document of a chat, with its passages and vectors (the chat is going). */
-  deleteForChat(chatId) {
-    for (const { id } of this.db.prepare('SELECT id FROM documents WHERE chat_id = ?').all(chatId)) this.#deletePassages(id);
+  deleteForChat(chatId: string): void {
+    for (const { id } of this.db.prepare('SELECT id FROM documents WHERE chat_id = ?').all(chatId) as { id: string }[]) this.#deletePassages(id);
     this.db.prepare('DELETE FROM documents WHERE chat_id = ?').run(chatId);
     this.#dropOrphanBlobs();
   }
@@ -199,7 +225,7 @@ export class DocumentStore {
 
   // FTS5 has no foreign keys of its own, so passage rows are dropped by rowid
   // before the map that names them.
-  #deletePassages(docId) {
+  #deletePassages(docId: string) {
     this.db.prepare(`
       DELETE FROM document_passages WHERE rowid IN (
         SELECT passage_rowid FROM document_passage_map WHERE doc_id = ?
@@ -210,7 +236,7 @@ export class DocumentStore {
   }
 
   /** Ranked passage search within one document, via FTS5 bm25() (lexical mode). */
-  searchPassages(docId, query, limit = 5) {
+  searchPassages(docId: string, query: string, limit = 5): (Omit<Passage, 'rowid'> & { rank: number })[] {
     const q = ftsQuery(query);
     if (!q) return [];
     return this.db.prepare(`
@@ -221,16 +247,16 @@ export class DocumentStore {
       WHERE document_passages MATCH ? AND m.doc_id = ?
       ORDER BY rank
       LIMIT ?
-    `).all(q, docId, limit);
+    `).all(q, docId, limit) as unknown as (Omit<Passage, 'rowid'> & { rank: number })[];
   }
 
   /** Every passage of a document, in order -- the candidate set for dense and hybrid ranking. */
-  passages(docId) {
+  passages(docId: string): Passage[] {
     return this.db.prepare(`
       SELECT m.passage_rowid AS rowid, m.passage_idx AS passageIdx, m.char_start AS charStart, document_passages.body AS body
       FROM document_passage_map m JOIN document_passages ON document_passages.rowid = m.passage_rowid
       WHERE m.doc_id = ? ORDER BY m.passage_idx
-    `).all(docId);
+    `).all(docId) as unknown as Passage[];
   }
 
   /**
@@ -238,23 +264,23 @@ export class DocumentStore {
    * match (the hybrid's lexical side, so partial matches still rank above
    * none -- dense ranking handles the rest); otherwise all of them must.
    */
-  lexicalScores(docId, query, { any = true } = {}) {
+  lexicalScores(docId: string, query: string, { any = true } = {}): Map<number, number> {
     const q = ftsQuery(query, { any });
     if (!q) return new Map();
     const rows = this.db.prepare(`
       SELECT m.passage_rowid AS rowid, bm25(document_passages) AS rank
       FROM document_passages JOIN document_passage_map m ON m.passage_rowid = document_passages.rowid
       WHERE document_passages MATCH ? AND m.doc_id = ?
-    `).all(q, docId);
+    `).all(q, docId) as { rowid: number; rank: number }[];
     return new Map(rows.map((r) => [r.rowid, -r.rank]));
   }
 
   /** Documents with passages not yet embedded under this model (for backfill). */
-  missingVectors(modelKey) {
+  missingVectors(modelKey: string): string[] {
     return this.db.prepare(`
       SELECT DISTINCT m.doc_id AS id FROM document_passage_map m
       LEFT JOIN embeddings e ON e.corpus = ? AND e.unit_id = m.passage_rowid AND e.model_key = ? AND e.chunk = 0
       WHERE e.unit_id IS NULL
-    `).all(CORPUS.DOCUMENTS, modelKey).map((r) => r.id);
+    `).all(CORPUS.DOCUMENTS, modelKey).map((r) => r.id as string);
   }
 }

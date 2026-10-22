@@ -1,4 +1,4 @@
-import { ALL_USERS, CORPUS } from '../store/index.js';
+import { ALL_USERS, CORPUS } from '../store/index.ts';
 
 /**
  * read_document -- lets the model read text the user attached to the chat.

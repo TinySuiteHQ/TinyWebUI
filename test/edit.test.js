@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { Store } from '../src/store/index.js';
+import { Store } from '../src/store/index.ts';
 
 let reply = 'first answer';
 const fake = createServer((req, res) => {

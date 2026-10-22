@@ -1,18 +1,37 @@
-import { scope } from './scope.js';
+import type { DatabaseSync } from 'node:sqlite';
+import { scope, type Scope } from './scope.ts';
+import type { Attribution, Bucket } from '../harness/attribution.ts';
+import type { Usage } from '../harness/types.ts';
 
 /** What an aux_usage row was spent on. */
-export const AUX_KIND = { CHECKPOINT: 'checkpoint' };
+export const AUX_KIND = { CHECKPOINT: 'checkpoint' } as const;
 import { inputTokens, outputTokens, cacheReads, tally } from '../../public/shared/usage.js';
 
 // Token and cost statistics over stored messages.
 // One area of the Store; see index.js.
 
+/** The request fingerprint streamTurn() stores with a round (prefixFingerprint in chat/llm.js). */
+export interface PrefixFingerprint { tools: string; chain: string[]; matched: number; previous: number | null; stubSwap?: true }
+
+/** A round's usage as stored: the provider's object plus what the server adds to it. */
+export interface StoredUsage extends Usage {
+  attribution?: Attribution;
+  prefix?: PrefixFingerprint;
+  provider?: string;
+}
+
+interface AttributionSide { total: number; reported: number; buckets: Bucket[] }
+interface AttributionTotal { requests: number; input: AttributionSide; output: AttributionSide; cached: number }
+
+/** Which rounds a statistics view covers; see matches(). */
+export interface UsageFilter { model?: string; provider?: string | null }
+
 /** Adds one stored attribution snapshot (see harness/attribution.js) into a running total. */
-function mergeAttribution(target, snapshot) {
+function mergeAttribution(target: AttributionTotal | undefined, snapshot: Attribution | undefined): AttributionTotal | undefined {
   if (!snapshot || snapshot.version !== 1) return target;
   target ||= { requests: 0, input: { total: 0, reported: 0, buckets: [] }, output: { total: 0, reported: 0, buckets: [] }, cached: 0 };
   target.requests++;
-  for (const side of ['input', 'output']) {
+  for (const side of ['input', 'output'] as const) {
     const value = snapshot[side];
     if (!value) continue;
     if (value.total !== null) { target[side].total += value.total; target[side].reported++; }
@@ -27,7 +46,11 @@ function mergeAttribution(target, snapshot) {
 }
 
 /** Causes of a cache miss, most actionable first. */
-export const MISS = { PREFIX: 'prefix', SWITCH: 'switch', EXPIRED: 'expired', STUB: 'stub', PROVIDER: 'provider' };
+export const MISS = { PREFIX: 'prefix', SWITCH: 'switch', EXPIRED: 'expired', STUB: 'stub', PROVIDER: 'provider' } as const;
+export type Miss = (typeof MISS)[keyof typeof MISS];
+
+/** The round a later one is judged against. */
+interface PrevRound { input: number; provider: string | null; at: number | null }
 
 // How long an entry outlives its last use on most providers. Longer TTLs exist
 // (Anthropic's 1h, Gemini's explicit caches), so a gap past this is a likely
@@ -41,7 +64,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * found, and providers cache in blocks, so "less than all" is normal.
  * `prefix` is the fingerprint streamTurn() stores (see chat/llm.js).
  */
-export function cacheMiss(round, prev) {
+export function cacheMiss(round: { usage: StoredUsage; at: number | null }, prev: PrevRound | null): Miss | null {
   const { usage, at } = round;
   const prefix = usage.prefix;
   if (!prev || !prefix || prefix.previous == null || !tally([usage]).reported) return null;
@@ -60,7 +83,7 @@ export function cacheMiss(round, prev) {
  * a tiered or changed price would not, and then nothing is claimed.
  * `rounds`: [{ fresh, cached, inputCost }]. Returns null when it can't tell.
  */
-export function derivedCacheRates(rounds) {
+export function derivedCacheRates(rounds: { fresh: number; cached: number; inputCost: number }[]): { full: number; cache: number } | null {
   if (rounds.length < 2) return null;
   let ff = 0, fc = 0, cc = 0, fy = 0, cy = 0;
   for (const { fresh, cached, inputCost: y } of rounds) {
@@ -81,34 +104,49 @@ export function derivedCacheRates(rounds) {
  * Which rounds a statistics view covers: `model` alone is every upstream that
  * served it; `provider` narrows to one ('' is rounds with none on record).
  */
-const matches = (filter, model, provider) =>
+const matches = (filter: UsageFilter, model: string, provider: string | undefined) =>
   (!filter.model || model === filter.model)
   && (filter.provider == null || (provider ?? '') === filter.provider);
 
 /** Every model seen, with the upstreams that served it, for the filter. */
-function addTarget(targets, model, provider) {
+function addTarget(targets: Map<string, Set<string>>, model: string, provider: string | undefined) {
   if (!targets.has(model)) targets.set(model, new Set());
-  if (provider) targets.get(model).add(provider);
+  if (provider) targets.get(model)!.add(provider);
 }
-const listTargets = (targets) => [...targets].map(([model, providers]) => ({ model, providers: [...providers].sort() }))
+const listTargets = (targets: Map<string, Set<string>>) => [...targets].map(([model, providers]) => ({ model, providers: [...providers].sort() }))
   .sort((a, b) => a.model.localeCompare(b.model));
 
+interface Tokens { in: number; out: number; cached: number }
+interface ModelRollup extends Tokens { model: string; attribution?: AttributionTotal; requests?: number; cost?: number; pricedRounds?: number }
+interface DayRollup extends Tokens { day: string; models: Map<string, ModelRollup>; cost?: number; pricedRounds?: number }
+interface StatisticsRow {
+  chat_id: string; seq: number; role: string; content: string | null; tool_calls_json: string | null;
+  model: string | null; usage_json: string | null; created_at: number | null;
+}
+interface ModelStatistics extends Tokens { model: string; rounds: number; pricedRounds: number; cost: number }
+interface AnswerTally { rounds: number; usageRounds: number; pricedRounds: number; cost: number; tokens: number; complete: boolean }
+interface PricedGroup {
+  model: string; provider: string | null; cost: number; discount: number; discounted: number;
+  rounds: { fresh: number; cached: number; inputCost: number; cost: number | null }[];
+}
+
 export class UsageStore {
-  constructor(db, deps = {}) {
+  db: DatabaseSync;
+
+  constructor(db: DatabaseSync) {
     this.db = db;
-    Object.assign(this, deps);
   }
 
   /** Usage of a request made for a chat that is not one of its turns. `kind`: AUX_KIND. */
-  addAuxiliary(chatId, { kind, model, usage }) {
+  addAuxiliary(chatId: string, { kind, model, usage }: { kind: string; model?: string | null; usage?: Usage | null }): void {
     this.db.prepare('INSERT INTO aux_usage (chat_id, kind, model, usage_json, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(chatId, kind, model ?? null, JSON.stringify(usage ?? {}), Date.now());
   }
 
   /** Usage of one chat's auxiliary requests, oldest first. */
-  auxiliaryFor(chatId) {
+  auxiliaryFor(chatId: string): StoredUsage[] {
     return this.db.prepare('SELECT usage_json FROM aux_usage WHERE chat_id = ? ORDER BY id').all(chatId)
-      .map((r) => JSON.parse(r.usage_json));
+      .map((r) => JSON.parse(r.usage_json as string));
   }
 
   /**
@@ -125,7 +163,7 @@ export class UsageStore {
    * still show up here the same way their cost already does in
    * usageStatistics() below.
    */
-  rollup(userId, filter = {}) {
+  rollup(userId: Scope, filter: UsageFilter = {}) {
     const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`
       SELECT CASE WHEN m.created_at IS NOT NULL
@@ -136,9 +174,9 @@ export class UsageStore {
             UNION ALL SELECT chat_id, created_at, model, usage_json FROM aux_usage) m
       JOIN chats c ON c.id=m.chat_id
       WHERE m.usage_json IS NOT NULL AND ${s.sql}
-    `).all(...s.params);
+    `).all(...s.params) as { day: string; model: string | null; usage_json: string }[];
 
-    const byDay = new Map();
+    const byDay = new Map<string, DayRollup>();
     for (const row of rows) {
       let u;
       try { u = JSON.parse(row.usage_json); } catch { continue; }
@@ -150,11 +188,11 @@ export class UsageStore {
 
       const cost = u.cost != null && Number.isFinite(Number(u.cost)) ? Number(u.cost) : null;
       if (!byDay.has(row.day)) byDay.set(row.day, { day: row.day, in: 0, out: 0, cached: 0, models: new Map() });
-      const d = byDay.get(row.day);
+      const d = byDay.get(row.day)!;
       d.in += inTok; d.out += outTok; d.cached += cached;
 
       if (!d.models.has(model)) d.models.set(model, { model, in: 0, out: 0, cached: 0 });
-      const m = d.models.get(model);
+      const m = d.models.get(model)!;
       m.in += inTok; m.out += outTok; m.cached += cached;
       m.attribution = mergeAttribution(m.attribution, u.attribution);
       m.requests = (m.requests || 0) + 1;
@@ -171,24 +209,24 @@ export class UsageStore {
       .sort((a, b) => a.day.localeCompare(b.day));
   }
 
-  statistics(userId, filter = {}) {
+  statistics(userId: Scope, filter: UsageFilter = {}) {
     const s = scope(userId, 'c.user_id');
     const rows = this.db.prepare(`SELECT m.chat_id,m.seq,m.role,m.content,m.tool_calls_json,m.model,m.usage_json,m.created_at
-      FROM messages m JOIN chats c ON c.id=m.chat_id WHERE ${s.sql} ORDER BY m.chat_id,m.seq`).all(...s.params);
-    const models = new Map();
-    const tools = new Map();
-    const summary = { rounds: 0, pricedRounds: 0, reportedCost: 0, completedAnswers: 0,
+      FROM messages m JOIN chats c ON c.id=m.chat_id WHERE ${s.sql} ORDER BY m.chat_id,m.seq`).all(...s.params) as unknown as StatisticsRow[];
+    const models = new Map<string, ModelStatistics>();
+    const tools = new Map<string, number>();
+    const summary: Record<string, number> = { rounds: 0, pricedRounds: 0, reportedCost: 0, completedAnswers: 0,
       pricedAnswers: 0, answerCostTotal: 0, answerTokens: 0, tokenAnswers: 0, toolCalls: 0 };
     // Hit share counts only rounds whose provider reports cache figures: one
     // that reports nothing would otherwise read as a 0% hit and drag it down.
     const cache = { rounds: 0, input: 0, cached: 0, written: 0, saved: 0, savedRounds: 0, savedCost: 0,
-      judged: 0, misses: Object.fromEntries(Object.values(MISS).map((k) => [k, 0])) };
-    let prevRound = null;
+      judged: 0, misses: Object.fromEntries(Object.values(MISS).map((k) => [k, 0])) as Record<Miss, number> };
+    let prevRound: PrevRound | null = null;
     // Per model @ upstream, for derivedCacheRates().
-    const priced = new Map();
-    const targets = new Map();
-    let chatId = null;
-    let answer = null;
+    const priced = new Map<string, PricedGroup>();
+    const targets = new Map<string, Set<string>>();
+    let chatId: string | null = null;
+    let answer: AnswerTally | null = null;
     const finishAnswer = () => {
       if (!answer) return;
       if (answer.complete) {
@@ -205,7 +243,7 @@ export class UsageStore {
       if (row.chat_id !== chatId) { finishAnswer(); chatId = row.chat_id; answer = null; prevRound = null; }
       if (row.role === 'user') { finishAnswer(); answer = { rounds:0, usageRounds:0, pricedRounds:0, cost:0, tokens:0, complete:false }; continue; }
       if (row.role !== 'assistant') continue;
-      let usage = null;
+      let usage: any = null;
       try { if (row.usage_json) usage = JSON.parse(row.usage_json); } catch { /* ignore malformed historic usage */ }
       const model = row.model || usage?.model || 'unknown';
       addTarget(targets, model, usage?.provider);
@@ -218,10 +256,10 @@ export class UsageStore {
       summary.rounds++;
       if (answer) answer.rounds++;
       if (!models.has(model)) models.set(model, { model, in:0, out:0, cached:0, rounds:0, pricedRounds:0, cost:0 });
-      const m = models.get(model);
+      const m = models.get(model)!;
       m.rounds++;
       if (row.tool_calls_json) {
-        let calls = null;
+        let calls: any[] | null = null;
         try { calls = JSON.parse(row.tool_calls_json); } catch { /* ignore malformed historic tool_calls */ }
         for (const call of calls || []) {
           const name = call?.function?.name;
@@ -248,7 +286,7 @@ export class UsageStore {
         const inputCost = Number(usage.cost_details?.upstream_inference_prompt_cost);
         const key = `${model}\u0000${usage.provider ?? ''}`;
         if (!priced.has(key)) priced.set(key, { model, provider: usage.provider ?? null, rounds: [], cost: 0, discount: 0, discounted: 0 });
-        const g = priced.get(key);
+        const g = priced.get(key)!;
         if (t.reported && Number.isFinite(inputCost) && inputCost > 0) g.rounds.push({ fresh: t.in - t.cached, cached: t.cached, inputCost, cost });
         if (usage.cache_discount != null && Number.isFinite(Number(usage.cache_discount))) { g.discounted++; g.discount += Number(usage.cache_discount); g.cost += cost ?? 0; }
         if (cost !== null) { m.cost += cost; m.pricedRounds++; summary.pricedRounds++; summary.reportedCost += cost; }
@@ -264,7 +302,7 @@ export class UsageStore {
     }
     finishAnswer();
     // A provider's own figure wins; otherwise derive it from what it charged.
-    const rates = [];
+    const rates: { model: string; provider: string | null; full: number; cache: number }[] = [];
     for (const g of priced.values()) {
       if (g.discounted) { cache.saved += g.discount; cache.savedCost += g.cost; cache.savedRounds += g.discounted; continue; }
       const r = derivedCacheRates(g.rounds);
@@ -278,8 +316,8 @@ export class UsageStore {
     // Kept out of rounds and answers: these are not turns, but they are spent.
     const aux = { requests: 0, pricedRequests: 0, cost: 0 };
     for (const row of this.db.prepare(`SELECT a.model, a.usage_json FROM aux_usage a
-      JOIN chats c ON c.id=a.chat_id WHERE ${s.sql}`).all(...s.params)) {
-      let usage = null;
+      JOIN chats c ON c.id=a.chat_id WHERE ${s.sql}`).all(...s.params) as { model: string | null; usage_json: string }[]) {
+      let usage: any = null;
       try { usage = JSON.parse(row.usage_json); } catch { continue; }
       const model = row.model || usage.model || 'unknown';
       addTarget(targets, model, usage.provider);

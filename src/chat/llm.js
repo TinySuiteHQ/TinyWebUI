@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal } from '../harness/attribution.ts';
-import { toWire, AUX_KIND } from '../store/index.js';
+import { toWire, AUX_KIND } from '../store/index.ts';
 import { toolExecutor } from './tool_executor.js';
 import { ASK_USER } from '../tools/ask_tool.js';
 import { openTasksNote } from '../tools/task_tool.js';

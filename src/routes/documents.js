@@ -3,7 +3,7 @@ import { extractText, servingFor } from '../files/documents.js';
 import { normalizeImage } from '../files/images.js';
 import { logger } from '../log.ts';
 import { FEATURE } from '../../public/shared/features.js';
-import { CORPUS } from '../store/index.js';
+import { CORPUS } from '../store/index.ts';
 
 const log = logger('retrieval');
 

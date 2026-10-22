@@ -33,7 +33,7 @@ export async function trustedServer(extra = {}) {
   /** A chat owned by `who`, with one user message, written straight to the store. */
   const seedChat = async (who, { id, title = 'Seeded chat', content }) => {
     const userId = (await as(who)('/api/auth/me')).data.user.id;
-    const { Store } = await import('../src/store/index.js');
+    const { Store } = await import('../src/store/index.ts');
     const store = new Store(join(dir, 'chats.db'));
     try {
       store.chats.create({ id, title }, userId);

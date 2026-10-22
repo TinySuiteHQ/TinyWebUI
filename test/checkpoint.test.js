@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { Store, ALL_USERS } from '../src/store/index.js';
+import { Store, ALL_USERS } from '../src/store/index.ts';
 import { runChat } from '../src/chat/llm.js';
 import { CHECKPOINT_PROMPT, checkpointSource } from '../src/harness/checkpoint.ts';
 

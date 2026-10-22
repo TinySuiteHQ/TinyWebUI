@@ -1,6 +1,6 @@
 import { json, readJson, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.js';
-import { toView } from '../store/index.js';
+import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
 import { normalizeUpload } from './documents.js';

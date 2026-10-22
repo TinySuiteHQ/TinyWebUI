@@ -1,23 +1,23 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { SCHEMA_VERSION, migrate as migrateSchema } from './schema.js';
-import { ChatStore } from './chats.js';
-import { MessageStore } from './messages.js';
-import { AutomationStore } from './automations.js';
-import { UsageStore } from './usage.js';
-import { DocumentStore } from './documents.js';
-import { EmbeddingStore } from './embeddings.js';
-import { TurnStore } from './turns.js';
-import { SearchStore } from './search.js';
-import { UserStore } from './users.js';
+import { SCHEMA_VERSION, migrate as migrateSchema } from './schema.ts';
+import { ChatStore } from './chats.ts';
+import { MessageStore } from './messages.ts';
+import { AutomationStore } from './automations.ts';
+import { UsageStore } from './usage.ts';
+import { DocumentStore } from './documents.ts';
+import { EmbeddingStore } from './embeddings.ts';
+import { TurnStore } from './turns.ts';
+import { SearchStore } from './search.ts';
+import { UserStore } from './users.ts';
 
-export { SCHEMA_VERSION } from './schema.js';
-export { ALL_USERS } from './scope.js';
-export { PASSAGE_SIZE, PASSAGE_OVERLAP } from './documents.js';
-export { toWire, toView } from './wire.js';
-export { CORPUS } from './embeddings.js';
-export { AUX_KIND } from './usage.js';
+export { SCHEMA_VERSION } from './schema.ts';
+export { ALL_USERS } from './scope.ts';
+export { PASSAGE_SIZE, PASSAGE_OVERLAP } from './documents.ts';
+export { toWire, toView } from './wire.ts';
+export { CORPUS } from './embeddings.ts';
+export { AUX_KIND } from './usage.ts';
 
 /**
  * Conversation storage.
@@ -42,15 +42,27 @@ export { AUX_KIND } from './usage.js';
 export class MigrationRequiredError extends Error {}
 
 export class Store {
+  db: DatabaseSync;
+  migratedFrom: number | null;
+  embeddings: EmbeddingStore;
+  messages: MessageStore;
+  automations: AutomationStore;
+  documents: DocumentStore;
+  chats: ChatStore;
+  turns: TurnStore;
+  usage: UsageStore;
+  search: SearchStore;
+  users: UserStore;
+
   /**
    * `migrate: false` refuses to touch an existing database that is behind
    * SCHEMA_VERSION instead of upgrading it on open; a brand-new file is
    * always created at the current version.
    */
-  constructor(path, { migrate = true } = {}) {
+  constructor(path: string, { migrate = true } = {}) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
-    const found = this.db.prepare('PRAGMA user_version').get().user_version;
+    const found = this.db.prepare('PRAGMA user_version').get()!.user_version as number;
     const fresh = !this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='chats'").get();
     if (!fresh && found > SCHEMA_VERSION) {
       this.db.close();
@@ -75,12 +87,12 @@ export class Store {
     this.users = new UserStore(db);
   }
 
-  schemaVersion() {
-    return this.db.prepare('PRAGMA user_version').get().user_version;
+  schemaVersion(): number {
+    return this.db.prepare('PRAGMA user_version').get()!.user_version as number;
   }
 
   /** Gives pre-account, unowned data to the first local administrator. */
-  claimUnowned(userId, { removeUserId = null } = {}) {
+  claimUnowned(userId: string, { removeUserId = null }: { removeUserId?: string | null } = {}): void {
     this.db.exec('BEGIN');
     try {
       this.chats.claimUnowned(userId);
@@ -93,11 +105,11 @@ export class Store {
   }
 
   /** Cheap liveness probe of the database, for /readyz. */
-  ping() {
-    return this.db.prepare('SELECT 1 AS ok').get().ok === 1;
+  ping(): boolean {
+    return this.db.prepare('SELECT 1 AS ok').get()!.ok === 1;
   }
 
-  close() {
+  close(): void {
     try { this.db.close(); } catch { /* already gone */ }
   }
 }

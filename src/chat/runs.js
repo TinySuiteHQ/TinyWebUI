@@ -3,7 +3,7 @@ import { runChat } from './llm.js';
 import { effectiveConfig } from '../config/models.js';
 import { logger } from '../log.ts';
 import { EVENT } from '../../public/shared/events.js';
-import { CORPUS } from '../store/index.js';
+import { CORPUS } from '../store/index.ts';
 
 const log = logger('retrieval');
 

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Store, ALL_USERS } from '../src/store/index.js';
+import { Store, ALL_USERS } from '../src/store/index.ts';
 
 test('cache hit share ignores providers that report no cache figures; saving is only what was reported', () => {
   const store = new Store(':memory:');

@@ -9,7 +9,7 @@ import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
 } from './access/policy.js';
-import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.js';
+import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
 
 /**
  * The scriptable side of TinyWebUI: everything an agent (or a person) needs

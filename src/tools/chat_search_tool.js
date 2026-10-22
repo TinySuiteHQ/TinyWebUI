@@ -1,4 +1,4 @@
-import { CORPUS } from '../store/index.js';
+import { CORPUS } from '../store/index.ts';
 
 /**
  * search_chats -- lets the model look up the user's earlier conversations:
