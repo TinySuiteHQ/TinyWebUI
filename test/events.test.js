@@ -12,7 +12,7 @@ test('the page handles every stream event', () => {
 });
 
 test('the server emits events only by name', () => {
-  const walk = (d) => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : p.endsWith('.js') ? [p] : []; });
+  const walk = (d) => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : /\.[jt]s$/.test(p) ? [p] : []; });
   for (const file of walk(new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))) {
     const src = readFileSync(file, 'utf8');
     assert.doesNotMatch(src, /emit\??\.?\(\{\s*type:\s*'/, `${file} emits an event as a bare string`);

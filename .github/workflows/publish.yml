@@ -25,6 +25,20 @@ jobs:
           node -e "const p=require('./package.json'); if (process.env.GITHUB_REF_NAME !== 'v' + p.version) { console.error('Tag must match package version: v' + p.version); process.exit(1) }"
       - run: npm ci
       - run: npm test
+      # The package ships JS emitted from the .ts sources (prepack runs `npm run build`);
+      # install the packed tarball and run it from node_modules, where Node won't strip types.
+      - name: Check the packed package runs
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          npm init -y > /dev/null
+          npm install --omit=optional --ignore-scripts ./tinywebui-*.tgz
+          npx tinywebui schema > /dev/null
+          TINYWEBUI_CONFIG="$RUNNER_TEMP/smoke.config.json" TINYWEBUI_DB="$RUNNER_TEMP/smoke.db" \
+            TINYWEBUI_RETRIEVAL_MODE=lexical npx tinywebui --port 7799 &
+          for i in $(seq 30); do curl -fs http://127.0.0.1:7799/readyz && break; sleep 1; done
+          curl -fs http://127.0.0.1:7799/readyz
+          kill %1
       - run: npm publish --access public
 
   record-deployment:

@@ -1,0 +1,17 @@
+{
+  // `npm run build`: the npm package only. Node will not strip types under
+  // node_modules, so the tarball ships JS, emitted beside each .ts so every
+  // relative path (../public, ../package.json) still holds. Checking is
+  // `npm run typecheck`'s job; noCheck also lets the public/shared imports
+  // emit without declaration files.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noCheck": true,
+    "allowJs": false,
+    "rootDir": ".",
+    "outDir": "."
+  },
+  "include": ["src/**/*.ts", "bin/**/*.ts"],
+  "exclude": ["node_modules"]
+}

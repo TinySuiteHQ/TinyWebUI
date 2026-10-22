@@ -27,3 +27,8 @@ models/
 
 # Local agent notes.
 CLAUDE.md
+
+# Emitted beside the .ts sources by `npm run build`, for the npm package only
+# (`npm run clean` removes them).
+src/**/*.js
+bin/*.js

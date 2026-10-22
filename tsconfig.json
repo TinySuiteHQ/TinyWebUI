@@ -1,0 +1,22 @@
+{
+  // Type checking only (`npm run typecheck`, part of `npm test`). Node runs the
+  // .ts sources directly, so every option here must keep them strippable.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "rewriteRelativeImportExtensions": true,
+    // public/shared stays JS (the page loads it as is); its types are inferred.
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "bin"]
+}
