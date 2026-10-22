@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULTS, createConfigSource, configProblems } from '../src/config/config.js';
+import { DEFAULTS, createConfigSource, configProblems } from '../src/config/config.ts';
 import { start } from '../src/server.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-first-run-'));

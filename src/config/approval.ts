@@ -22,8 +22,18 @@
  */
 export const APPROVAL_MODES = ['writes', 'all', 'off'];
 
+/** The part of the config approvals read. */
+export interface ApprovalConfig { toolApproval?: string; confirmTools?: string[]; autoApproveTools?: string[] }
+
+/** What approvals ask the tool hub (mcp.js) about a tool. */
+export interface ToolFacts {
+  isLocal?(name: string): boolean;
+  isGated?(name: string, args: unknown): boolean;
+  isReadOnly?(name: string, args: unknown): boolean;
+}
+
 /** 'ask' or 'auto' for one concrete call. */
-export function approvalFor(cfg, hub, name, args) {
+export function approvalFor(cfg: ApprovalConfig, hub: ToolFacts | null | undefined, name: string, args?: unknown): 'ask' | 'auto' {
   // The harness's own tools are part of the harness, not third-party code:
   // they never ask, whatever the mode or overrides say. Approval is for MCP.
   if (hub?.isLocal?.(name)) {
@@ -43,14 +53,14 @@ export function approvalFor(cfg, hub, name, args) {
 }
 
 /** The per-tool override the settings panel shows: 'ask', 'auto' or 'default'. */
-export function overrideFor(cfg, name) {
+export function overrideFor(cfg: ApprovalConfig, name: string): 'ask' | 'auto' | 'default' {
   if ((cfg.confirmTools || []).includes(name)) return 'ask';
   if ((cfg.autoApproveTools || []).includes(name)) return 'auto';
   return 'default';
 }
 
 /** The config patch that sets one tool's override. */
-export function setOverride(cfg, name, policy) {
+export function setOverride(cfg: ApprovalConfig, name: string, policy: string): { confirmTools: string[]; autoApproveTools: string[] } {
   const confirm = new Set(cfg.confirmTools || []);
   const auto = new Set(cfg.autoApproveTools || []);
   confirm.delete(name);

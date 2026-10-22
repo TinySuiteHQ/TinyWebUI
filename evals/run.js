@@ -23,7 +23,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from '../src/config/config.js';
+import { loadConfig } from '../src/config/config.ts';
 import { Store } from '../src/store/index.ts';
 import { runChat } from '../src/chat/llm.js';
 import { check } from './checks.js';

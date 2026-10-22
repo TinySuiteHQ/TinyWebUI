@@ -1,7 +1,12 @@
 import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
-import { resolveAccess } from './policy.js';
+import type { IncomingMessage } from 'node:http';
+import type { TLSSocket } from 'node:tls';
+import { resolveAccess, type PolicyConfig, type UserPin } from './policy.ts';
 import { audit } from '../audit.ts';
+import type { Store } from '../store/index.ts';
+import type { UserRole, UserRow, UserSync } from '../store/users.ts';
+import type { Config } from '../config/config.ts';
 
 /**
  * Session/cookie plumbing for local password login ('single' and 'multiuser'),
@@ -14,41 +19,41 @@ import { audit } from '../audit.ts';
 
 const COOKIE_NAME = 'tinywebui_session';
 
-function sha256(value) {
+function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
 }
 
 /** Digests bearer-style secrets before persistence. */
-export const hashToken = (value) => sha256(String(value));
+export const hashToken = (value: unknown) => sha256(String(value));
 
 /** HMAC-signs a value so a client can hold it without being able to forge it. */
-function sign(value, secret) {
+function sign(value: string, secret: string) {
   return createHmac('sha256', secret).update(value).digest('hex');
 }
 
-function verify(value, sig, secret) {
+function verify(value: string, sig: string, secret: string) {
   const expected = sign(value, secret);
   const a = Buffer.from(sig, 'hex');
   const b = Buffer.from(expected, 'hex');
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function createSession(store, userId, ttlDays = 30) {
+export function createSession(store: Store, userId: string, ttlDays = 30): string {
   const token = randomBytes(32).toString('hex');
   store.users.addSession(sha256(token), userId, Date.now() + ttlDays * 86400_000);
   return token;
 }
 
-export function destroySession(store, token) {
+export function destroySession(store: Store, token: string): void {
   store.users.deleteSession(sha256(token));
 }
 
-export function destroyUserSessions(store, userId) {
+export function destroyUserSessions(store: Store, userId: string): void {
   store.users.deleteUserSessions(userId);
 }
 
 /** Builds the Set-Cookie header value for a freshly created session token. */
-export function sessionCookie(token, secret, { secure = false } = {}) {
+export function sessionCookie(token: string, secret: string, { secure = false } = {}): string {
   const signature = sign(token, secret);
   const parts = [
     `${COOKIE_NAME}=${token}.${signature}`,
@@ -58,7 +63,7 @@ export function sessionCookie(token, secret, { secure = false } = {}) {
   return parts.join('; ');
 }
 
-export function clearCookie({ secure = false } = {}) {
+export function clearCookie({ secure = false } = {}): string {
   const parts = [`${COOKIE_NAME}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
   if (secure) parts.push('Secure');
   return parts.join('; ');
@@ -69,13 +74,13 @@ export function clearCookie({ secure = false } = {}) {
 const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
 /** `scrypt$<salt hex>$<hash hex>` -- what authPassword holds. Never plaintext. */
-export function hashPassword(password) {
+export function hashPassword(password: unknown): string {
   const salt = randomBytes(16);
   const hash = scryptSync(String(password), salt, 32, SCRYPT);
   return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 
-export function verifyPassword(password, stored) {
+export function verifyPassword(password: unknown, stored: string | null | undefined): boolean {
   const [kind, saltHex, hashHex] = String(stored || '').split('$');
   if (kind !== 'scrypt' || !saltHex || !hashHex) return false;
   const expected = Buffer.from(hashHex, 'hex');
@@ -84,7 +89,7 @@ export function verifyPassword(password, stored) {
 }
 
 /** The raw session token from a validly signed cookie, or null. */
-export function sessionToken(req, cfg) {
+export function sessionToken(req: IncomingMessage, cfg: Pick<Config, 'sessionSecret'>): string | null {
   const raw = readCookie(req);
   if (!raw) return null;
   const dot = raw.lastIndexOf('.');
@@ -93,7 +98,7 @@ export function sessionToken(req, cfg) {
   return cfg.sessionSecret && verify(token, raw.slice(dot + 1), cfg.sessionSecret) ? token : null;
 }
 
-function readCookie(req) {
+function readCookie(req: IncomingMessage) {
   const header = req.headers.cookie;
   if (!header) return null;
   for (const part of header.split(';')) {
@@ -106,8 +111,8 @@ function readCookie(req) {
 }
 
 /** Whether the connection looks TLS-terminated, for the cookie's Secure flag. */
-export function isSecureRequest(req, trustedProxyCidrs = []) {
-  if (req.socket?.encrypted === true) return true;
+export function isSecureRequest(req: IncomingMessage, trustedProxyCidrs: string[] = []): boolean {
+  if ((req.socket as TLSSocket | undefined)?.encrypted === true) return true;
   // X-Forwarded-Proto is a claim only a known proxy may make.
   return req.headers['x-forwarded-proto'] === 'https' && ipInCidrs(req.socket?.remoteAddress, trustedProxyCidrs);
 }
@@ -117,7 +122,7 @@ export function isSecureRequest(req, trustedProxyCidrs = []) {
  * signature first (cheap, rejects tampering/forgery), then looks up the
  * token's hash in `sessions` and checks expiry.
  */
-export function getSessionUser(req, store, cfg) {
+export function getSessionUser(req: IncomingMessage, store: Store, cfg: Pick<Config, 'sessionSecret'>): UserRow | null {
   const token = sessionToken(req, cfg);
   if (!token) return null;
 
@@ -130,8 +135,8 @@ export function getSessionUser(req, store, cfg) {
 /* ---------- trusted-header mode ---------- */
 
 /** Parsed once per cidr list; `::ffff:1.2.3.4` peers are checked as IPv4. */
-const blockLists = new WeakMap();
-export function ipInCidrs(ip, cidrs) {
+const blockLists = new WeakMap<string[], BlockList>();
+export function ipInCidrs(ip: string | undefined, cidrs: unknown): boolean {
   if (!ip || !Array.isArray(cidrs) || !cidrs.length) return false;
   let list = blockLists.get(cidrs);
   if (!list) {
@@ -152,7 +157,7 @@ export function ipInCidrs(ip, cidrs) {
 const HEADER_ROLES = new Set(['admin', 'user']);
 const LOGIN_TOUCH_MS = 60_000;
 
-function header(req, name) {
+function header(req: IncomingMessage, name: string) {
   const v = req.headers[String(name).toLowerCase()];
   const s = Array.isArray(v) ? v[0] : v;
   return typeof s === 'string' ? s.trim() : '';
@@ -168,29 +173,32 @@ function header(req, name) {
  * the gateway. Role follows the gateway when it sends one; status is only
  * ever set here on creation and otherwise belongs to TinyWebUI admins.
  */
-export function resolveTrustedUser(req, store, cfg) {
+export function resolveTrustedUser(req: IncomingMessage, store: Store, cfg: Config): { user: UserRow; reject?: undefined } | { reject: 'untrusted_peer' | 'missing_identity'; user?: undefined } {
   if (!ipInCidrs(req.socket?.remoteAddress, cfg.trustedProxyCidrs)) return { reject: 'untrusted_peer' };
   const externalId = header(req, cfg.trustedUserIdHeader).slice(0, 256);
   if (!externalId) return { reject: 'missing_identity' };
   const email = header(req, cfg.trustedEmailHeader).slice(0, 320).toLowerCase() || null;
   const name = header(req, cfg.trustedNameHeader).slice(0, 200) || null;
   const rawRole = header(req, cfg.trustedRoleHeader).toLowerCase();
-  const role = HEADER_ROLES.has(rawRole) ? rawRole : null;
+  const role = HEADER_ROLES.has(rawRole) ? rawRole as UserRole : null;
 
   const now = Date.now();
   // Precedence: the files (bootstrapAdmins, access.users) > gateway role
   // header > defaults. What an admin decided is in access.users, so the file
   // outranks a gateway that still says otherwise.
   const policy = resolveAccess(cfg);
-  const pinned = policy.bootstrapAdmins.includes(externalId)
+  const pinned: UserPin = policy.bootstrapAdmins.includes(externalId)
     ? { role: 'admin', status: 'approved' }
     : policy.users[externalId] || {};
   const wantRole = pinned.role || role;
   const status = pinned.status || policy.newUsers;
-  let { user, created } = store.users.provision({ externalId, role: wantRole || 'user', status, now });
+  // provision() reads back the row it just made sure exists.
+  const provisioned = store.users.provision({ externalId, role: wantRole || 'user', status, now });
+  let user = provisioned.user!;
+  const { created } = provisioned;
   if (created) audit('user.provisioned', { userId: user.id, role: user.role, status: user.status });
 
-  const changes = {};
+  const changes: UserSync = {};
   if (email !== user.email) {
     // Emails are unique; one held by another account is dropped, never merged.
     const next = email && store.users.emailTaken(email, user.id) ? null : email;
@@ -206,7 +214,7 @@ export function resolveTrustedUser(req, store, cfg) {
     audit('user.status_changed', { userId: user.id, from: user.status, to: pinned.status, by: 'policy' });
   }
   if (!user.last_login_at || now - user.last_login_at > LOGIN_TOUCH_MS) changes.last_login_at = now;
-  if (Object.keys(changes).length) user = store.users.sync(user.id, changes);
+  if (Object.keys(changes).length) user = store.users.sync(user.id, changes)!;
   return { user };
 }
 
@@ -215,9 +223,9 @@ export function resolveTrustedUser(req, store, cfg) {
  * bootstrapAdmins, so a status decided in a file (a ban, say) holds even for
  * someone who has not made a request since -- their automations included.
  */
-export function applyAccessPolicy(store, cfg) {
+export function applyAccessPolicy(store: Store, cfg: PolicyConfig): void {
   const policy = resolveAccess(cfg);
-  const pins = { ...policy.users };
+  const pins: Record<string, UserPin> = { ...policy.users };
   for (const id of policy.bootstrapAdmins) pins[id] = { role: 'admin', status: 'approved' };
   for (const [externalId, pin] of Object.entries(pins)) {
     const user = store.users.byExternalId(externalId);

@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createConfigSource } from '../src/config/config.js';
+import { createConfigSource } from '../src/config/config.ts';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'twui-default-mcp-'));
 

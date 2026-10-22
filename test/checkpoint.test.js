@@ -128,6 +128,6 @@ test('the summary source cuts long tool results and keeps their artifact id', ()
 });
 
 test('llmCompaction is on by default', async () => {
-  const { DEFAULTS } = await import('../src/config/config.js');
+  const { DEFAULTS } = await import('../src/config/config.ts');
   assert.equal(DEFAULTS.llmCompaction, true);
 });

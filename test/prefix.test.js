@@ -43,7 +43,7 @@ test('a stub first sent whole last turn marks this turn cold', async () => {
 });
 
 test('a model entry keeps the global provider data policy', async () => {
-  const { effectiveConfig } = await import('../src/config/models.js');
+  const { effectiveConfig } = await import('../src/config/models.ts');
   const cfg = {
     model: 'flash',
     extraBody: { provider: { zdr: true, data_collection: 'deny' } },

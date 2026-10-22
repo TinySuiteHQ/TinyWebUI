@@ -1,9 +1,9 @@
 import { json, readJson } from '../http.ts';
-import { isClosed, enabledEntries, publicEntry, findConnector } from '../config/models.js';
-import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.js';
+import { isClosed, enabledEntries, publicEntry, findConnector } from '../config/models.ts';
+import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.ts';
 import { audit } from '../audit.ts';
-import { setOverride } from '../config/approval.js';
-import { actor } from '../access/auth_gate.js';
+import { setOverride } from '../config/approval.ts';
+import { actor } from '../access/auth_gate.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 export const toolList = (hub) => hub.tools.map((t) => ({

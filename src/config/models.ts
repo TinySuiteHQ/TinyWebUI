@@ -16,15 +16,42 @@
  * its settings but cannot be picked or run until switched back on. Pure, like
  * policy.js.
  */
+import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
+
+export type ModelTag = 'vision' | 'reasoning' | 'tools';
+
+export interface ModelEntry {
+  id: string;
+  model?: string;
+  label?: string;
+  description?: string;
+  enabled?: boolean;
+  connector?: string;
+  tags?: ModelTag[];
+  systemPrompt?: string;
+  temperature?: number | null;
+  maxTokens?: number | null;
+  maxToolRounds?: number;
+  cacheMode?: CacheMode;
+  cacheTtl?: '5m' | '1h';
+  extraBody?: ExtraBody;
+  reasoningReplay?: ReasoningReplay;
+}
+
+/** A named endpoint; `models` only in the file's nested shape (see flattenCatalog). */
+export interface Connector { id: string; label?: string; baseUrl: string; apiKey?: string; models?: ModelEntry[] }
+
+/** The part of the config the catalog lives in. */
+export interface CatalogConfig { model: string; models: ModelEntry[]; connectors: Connector[] }
 
 /** Per-model settings that replace the global value for that model's turns. */
-export const MODEL_OVERRIDES = ['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheMode', 'cacheTtl', 'extraBody', 'reasoningReplay'];
+export const MODEL_OVERRIDES: (keyof ModelEntry & string)[] = ['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheMode', 'cacheTtl', 'extraBody', 'reasoningReplay'];
 
 /** Values of `reasoningReplay`; see reasoningReplay in harness/provider.js. */
-export const REASONING_REPLAY = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
+export const REASONING_REPLAY: ReasoningReplay[] = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
 
 /** What a model can do; the page uses these (e.g. `vision` gates image upload). */
-export const MODEL_TAGS = ['vision', 'reasoning', 'tools'];
+export const MODEL_TAGS: ModelTag[] = ['vision', 'reasoning', 'tools'];
 
 const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', ...MODEL_OVERRIDES]);
 
@@ -36,9 +63,10 @@ const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'c
  * so nothing past loading knows about the nesting. The older flat file shape
  * (entries with `connector: <id>`) loads unchanged.
  */
-export function flattenCatalog(cfg) {
+// Raw input: the file's contents, before validation.
+export function flattenCatalog(cfg: Record<string, any>): { connectors?: Connector[]; models?: ModelEntry[] } {
   if (!Array.isArray(cfg.connectors) || !Array.isArray(cfg.models ?? [])) return {};
-  const nested = [];
+  const nested: ModelEntry[] = [];
   const connectors = cfg.connectors.map((c) => {
     if (!c || typeof c !== 'object' || !Array.isArray(c.models)) return c;
     const { models, ...rest } = c;
@@ -49,10 +77,10 @@ export function flattenCatalog(cfg) {
 }
 
 /** The flat runtime catalog back in the file's nested shape. */
-export function nestCatalog(cfg) {
-  const out = {};
-  const connectors = Array.isArray(cfg.connectors) ? cfg.connectors : [];
-  const models = Array.isArray(cfg.models) ? cfg.models : [];
+export function nestCatalog(cfg: Record<string, any>): { connectors?: Connector[]; models?: ModelEntry[] } {
+  const out: { connectors?: Connector[]; models?: ModelEntry[] } = {};
+  const connectors: Connector[] = Array.isArray(cfg.connectors) ? cfg.connectors : [];
+  const models: ModelEntry[] = Array.isArray(cfg.models) ? cfg.models : [];
   const ids = new Set(connectors.map((c) => c?.id));
   // An entry naming a connector that is not listed stays flat, so validation
   // still reports it instead of the entry silently moving endpoints.
@@ -67,40 +95,40 @@ export function nestCatalog(cfg) {
 }
 
 /** Named endpoints: { id, label?, baseUrl, apiKey? }. The top-level baseUrl/apiKey stay the implicit default. */
-export const connectors = (cfg) => (Array.isArray(cfg.connectors) ? cfg.connectors : []);
-export const findConnector = (cfg, id) => connectors(cfg).find((c) => c.id === id) || null;
+export const connectors = (cfg: Partial<CatalogConfig>): Connector[] => (Array.isArray(cfg.connectors) ? cfg.connectors : []);
+export const findConnector = (cfg: Partial<CatalogConfig>, id: string) => connectors(cfg).find((c) => c.id === id) || null;
 
-export const catalog = (cfg) => (Array.isArray(cfg.models) ? cfg.models : []);
+export const catalog = (cfg: Partial<CatalogConfig>): ModelEntry[] => (Array.isArray(cfg.models) ? cfg.models : []);
 // Closed whenever entries are listed, even if all are disabled: parking every
 // model must not reopen the picker to the provider's whole list.
-export const isClosed = (cfg) => catalog(cfg).length > 0;
-export const enabledEntries = (cfg) => catalog(cfg).filter((e) => e.enabled !== false);
+export const isClosed = (cfg: Partial<CatalogConfig>) => catalog(cfg).length > 0;
+export const enabledEntries = (cfg: Partial<CatalogConfig>) => catalog(cfg).filter((e) => e.enabled !== false);
 
 /** The enabled entry `key` names: by id, or by its provider model id (the default `model` may be either). */
-export function findEntry(cfg, key) {
+export function findEntry(cfg: Partial<CatalogConfig>, key: string | null | undefined): ModelEntry | null {
   const list = enabledEntries(cfg);
   return list.find((e) => e.id === key) || list.find((e) => (e.model || e.id) === key) || null;
 }
 
 /** What people call a model: its label in the catalog, else the id itself. */
-export function labelFor(cfg, key) {
+export function labelFor(cfg: Partial<CatalogConfig>, key: string): string {
   const e = findEntry(cfg, key);
   return e ? e.label || e.id : key;
 }
 
 /** What the picker lists for one entry. Prompts and knobs stay server-side. */
-export const publicEntry = (e) => ({ id: e.id, name: e.label || e.id, description: e.description || null, tags: e.tags || [] });
+export const publicEntry = (e: ModelEntry) => ({ id: e.id, name: e.label || e.id, description: e.description || null, tags: e.tags || [] });
 
 /**
  * The config one turn runs with: the entry's overrides over the global
  * settings and its provider id as `model`. extraBody merges, so an entry can
  * add a reasoning knob without restating the gateway's routing.
  */
-export function effectiveConfig(cfg, key) {
+export function effectiveConfig<C extends CatalogConfig & { baseUrl: string; apiKey: string; extraBody: ExtraBody }>(cfg: C, key?: string | null): C {
   const e = findEntry(cfg, key ?? cfg.model);
   if (!e) return key && key !== cfg.model ? { ...cfg, model: key } : cfg;
   const out = { ...cfg };
-  for (const k of MODEL_OVERRIDES) if (e[k] !== undefined) out[k] = e[k];
+  for (const k of MODEL_OVERRIDES) if (e[k] !== undefined) (out as Record<string, unknown>)[k] = e[k];
   out.extraBody = { ...(cfg.extraBody || {}), ...(e.extraBody || {}) };
   // `provider` merges one level deeper: a global data policy (zdr,
   // data_collection) must survive an entry that only pins its routing.
@@ -119,13 +147,13 @@ export function effectiveConfig(cfg, key) {
 }
 
 /** Every problem with the connector list. */
-export function connectorProblems(cfg) {
+export function connectorProblems(cfg: Record<string, any>): string[] {
   const list = cfg.connectors;
   if (list === undefined) return [];
   if (!Array.isArray(list)) return ['connectors must be a list of { id, baseUrl, apiKey?, label?, models? } entries'];
-  const out = [];
+  const out: string[] = [];
   const ids = new Set();
-  list.forEach((c, i) => {
+  list.forEach((c: any, i: number) => {
     const at = `connectors[${i}]`;
     if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${at} must be an object`); return; }
     if (typeof c.id !== 'string' || !c.id.trim()) { out.push(`${at}.id must be a non-empty string`); return; }
@@ -145,16 +173,16 @@ export function connectorProblems(cfg) {
   return out;
 }
 
-const NUMERIC = { temperature: 'a number or null', maxTokens: 'a number or null' };
+const NUMERIC: Record<string, string> = { temperature: 'a number or null', maxTokens: 'a number or null' };
 
 /** Every problem with the catalog and what refers into it. */
-export function modelProblems(cfg) {
+export function modelProblems(cfg: Record<string, any>): string[] {
   const list = cfg.models;
   if (list === undefined) return [];
   if (!Array.isArray(list)) return ['models must be a list of { id, model?, label?, ... } entries'];
-  const out = [];
+  const out: string[] = [];
   const ids = new Set();
-  list.forEach((e, i) => {
+  list.forEach((e: any, i: number) => {
     const at = `models[${i}]`;
     if (!e || typeof e !== 'object' || Array.isArray(e)) { out.push(`${at} must be an object`); return; }
     if (typeof e.id !== 'string' || !e.id.trim()) { out.push(`${at}.id must be a non-empty string`); return; }
@@ -173,7 +201,7 @@ export function modelProblems(cfg) {
     if (e.cacheTtl !== undefined && !['5m', '1h'].includes(e.cacheTtl)) out.push(`${at}.cacheTtl must be 5m or 1h`);
     if (e.enabled !== undefined && typeof e.enabled !== 'boolean') out.push(`${at}.enabled must be true or false`);
     if (e.connector !== undefined && typeof e.connector !== 'string') out.push(`${at}.connector must be a connector id`);
-    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t) => MODEL_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${MODEL_TAGS.join(', ')}`);
+    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t: ModelTag) => MODEL_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${MODEL_TAGS.join(', ')}`);
     if (e.extraBody !== undefined && !(e.extraBody && typeof e.extraBody === 'object' && !Array.isArray(e.extraBody))) out.push(`${at}.extraBody must be an object`);
   });
   if (!list.length || out.length) return out;
@@ -182,10 +210,10 @@ export function modelProblems(cfg) {
   const on = enabledEntries(cfg).map((e) => e.id);
   if (!on.length) out.push('every entry in models is disabled: enable at least one');
   else if (!findEntry(cfg, cfg.model)) {
-    const off = list.some((e) => e.id === cfg.model || e.model === cfg.model);
+    const off = list.some((e: any) => e.id === cfg.model || e.model === cfg.model);
     out.push(`model "${cfg.model}" ${off ? 'is disabled' : 'is not in the models catalog'}; enabled ids: ${on.join(', ')}`);
   }
-  for (const [role, spec] of Object.entries(cfg.access?.roles || {})) {
+  for (const [role, spec] of Object.entries<any>(cfg.access?.roles || {})) {
     if (!Array.isArray(spec?.models)) continue;
     for (const m of spec.models) if (!ids.has(m)) out.push(`access.roles.${role}.models: "${m}" is not a models catalog id`);
   }

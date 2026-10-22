@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.js';
-import { effectiveConfig } from '../config/models.js';
+import { effectiveConfig } from '../config/models.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../public/shared/events.js';
 import { CORPUS } from '../store/index.ts';

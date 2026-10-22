@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { json, readJson } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.ts';
-import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.js';
-import { catalog, modelProblems } from '../config/models.js';
-import { destroyUserSessions, hashToken } from '../access/auth.js';
-import { normalizeEmail, validEmail } from '../access/email.js';
+import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.ts';
+import { catalog, modelProblems } from '../config/models.ts';
+import { destroyUserSessions, hashToken } from '../access/auth.ts';
+import { normalizeEmail, validEmail } from '../access/email.ts';
 import { audit } from '../audit.ts';
 import { FEATURE } from '../../public/shared/features.js';
 

@@ -1,5 +1,5 @@
 import { toWire } from '../store/index.ts';
-import { approvalFor } from '../config/approval.js';
+import { approvalFor } from '../config/approval.ts';
 import { runHooks } from '../harness/agent.ts';
 import { digest } from './compact.js';
 import { EVENT } from '../../public/shared/events.js';

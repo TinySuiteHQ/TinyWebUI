@@ -1,9 +1,108 @@
 import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
-import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, REASONING_REPLAY } from './models.js';
+import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } from '../access/policy.ts';
+import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
 import { logger } from '../log.ts';
+import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
+
+export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
+export type ToolApproval = 'writes' | 'all' | 'off';
+export type RetrievalMode = 'auto' | 'lexical' | 'dense' | 'hybrid';
+
+export interface RetrievalConfig {
+  mode: RetrievalMode;
+  model: string;
+  modelDir: string;
+  modelSha256: string;
+  denseWeight: number;
+  rrfK: number;
+  queryPrefix: string;
+  documentPrefix: string;
+  passageSize: number;
+  passageOverlap: number;
+  chunkOverlap: number;
+}
+
+/**
+ * A loaded configuration. Every key but `access` has a default in DEFAULTS
+ * below, which is typed against this, and `tinywebui schema` builds
+ * docs/config.schema.json from DEFAULTS -- so this, the defaults and the
+ * schema name the same keys. What each one does is commented at its default.
+ */
+export interface Config {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  models: ModelEntry[];
+  connectors: Connector[];
+  systemPrompt: string;
+  temperature: number | null;
+  maxTokens: number | null;
+  maxToolRounds: number;
+  askUserTimeoutSeconds: number;
+  extraBody: ExtraBody;
+  cache: boolean;
+  cacheMode: CacheMode;
+  cacheTtl: '5m' | '1h';
+  reasoningReplay: ReasoningReplay;
+  dbPath: string;
+  compactThreshold: number;
+  keepTurns: number;
+  compactMinSaved: number;
+  maxInlineChars: number;
+  maxTurnChars: number;
+  maxHistoryTokens: number;
+  llmCompaction: boolean;
+  compactionMaxTokens: number;
+  timezone: string;
+  toolApproval: ToolApproval;
+  confirmTools: string[];
+  autoApproveTools: string[];
+  expandCharBudget: number;
+  disabledTools: string[];
+  authMode: AuthMode;
+  authPassword: string;
+  sessionSecret: string;
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRedirectUri: string;
+  adminEmails: string[];
+  sessionTtlDays: number;
+  trustedProxyCidrs: string[];
+  trustedUserIdHeader: string;
+  trustedEmailHeader: string;
+  trustedNameHeader: string;
+  trustedRoleHeader: string;
+  logoutUrl: string;
+  allowedOrigins: string[];
+  allowedHosts: string[];
+  autoMigrate: boolean;
+  frozen: boolean;
+  retrieval: RetrievalConfig;
+  access?: AccessConfig;
+}
+
+/** An MCP server as mcp.json declares it: a command to spawn (stdio) or a URL (http). */
+export interface McpServerSpec {
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  [key: string]: unknown;
+}
+export type McpServers = Record<string, McpServerSpec>;
+
+/** What start() and createConfigSource() take; see tinywebui.config.js in --help. */
+export interface ConfigOptions {
+  config?: Partial<Config>;
+  configFile?: string | false;
+  mcpFile?: string;
+  mcpServers?: McpServers | null;
+  dbPath?: string;
+}
 
 const log = logger('config');
 
@@ -16,7 +115,7 @@ const MCP_FILE = process.env.TINYWEBUI_MCP
   ? resolve(process.env.TINYWEBUI_MCP)
   : resolve(dirname(CONFIG_FILE), 'mcp.json');
 
-export const DEFAULTS = {
+export const DEFAULTS: Omit<Config, 'access'> = {
   baseUrl: 'https://openrouter.ai/api/v1',
   apiKey: '',
   // A cheap, fast, tool-capable default that caches well on a stable prefix and
@@ -216,7 +315,7 @@ export const DEFAULTS = {
 // What an install with no mcp.json starts with: the TinySuite servers, which
 // uv fetches and launches on first use. Any mcp.json, even an empty one,
 // replaces them, so removing them is one save in the MCP panel.
-export const DEFAULT_MCP_SERVERS = Object.freeze({
+export const DEFAULT_MCP_SERVERS: Readonly<McpServers> = Object.freeze({
   tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]', 'tinysearch'] },
   tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]', 'tinycontext'] },
 });
@@ -230,17 +329,17 @@ export const DEFAULT_MCP_SERVERS = Object.freeze({
  * file is read or written; UI changes then live in memory for this process.
  * `mcpServers` in code likewise replaces mcp.json and locks the MCP editor.
  */
-export function createConfigSource(opts = {}) {
-  const code = opts.config || {};
+export function createConfigSource(opts: ConfigOptions = {}) {
+  const code: Partial<Config> = opts.config || {};
   const file = opts.configFile === false ? null
     : opts.configFile ? resolve(opts.configFile) : CONFIG_FILE;
   const mcpFile = opts.mcpFile ? resolve(opts.mcpFile)
     : file && file !== CONFIG_FILE ? resolve(dirname(file), 'mcp.json') : MCP_FILE;
   const codeServers = opts.mcpServers || null;
   const locked = new Set(Object.keys(code));
-  let memory = {}; // stands in for the file when there is none
+  let memory: Record<string, any> = {}; // stands in for the file when there is none
 
-  const readFile = () => {
+  const readFile = (): Record<string, any> => {
     if (!file) return { ...memory };
     if (!existsSync(file)) return {};
     try {
@@ -249,14 +348,15 @@ export function createConfigSource(opts = {}) {
       throw new Error(`Bad config at ${file}: ${err.message}`);
     }
   };
-  const writeFile = (obj) => {
+  const writeFile = (obj: Record<string, any>) => {
     if (!file) { memory = obj; return; }
     if (existsSync(file) && process.platform !== 'win32') chmodSync(file, 0o600);
     writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
   };
 
-  function load({ persistSecret = true } = {}) {
-    const env = {};
+  // Not validated here: startup, reload and save check the result with configProblems().
+  function load({ persistSecret = true } = {}): Config {
+    const env: Partial<Config> = {};
     if (process.env.TINYWEBUI_BASE_URL) env.baseUrl = process.env.TINYWEBUI_BASE_URL;
     if (process.env.TINYWEBUI_API_KEY) env.apiKey = process.env.TINYWEBUI_API_KEY;
     if (process.env.OPENROUTER_API_KEY) env.apiKey = process.env.OPENROUTER_API_KEY;
@@ -265,11 +365,11 @@ export function createConfigSource(opts = {}) {
     if (process.env.TINYWEBUI_SESSION_SECRET) env.sessionSecret = process.env.TINYWEBUI_SESSION_SECRET;
 
     const fromFile = readFile();
-    const cfg = { ...DEFAULTS, ...fromFile, ...env, ...code };
+    const cfg: Config = { ...DEFAULTS, ...fromFile, ...env, ...code };
     if (fromFile.access !== undefined || code.access !== undefined) cfg.access = mergeAccess(fromFile.access, code.access);
     // Partial retrieval blocks fill in from the defaults rather than replace them.
     // $TINYWEBUI_RETRIEVAL_MODE=lexical is the no-config way to opt out of hybrid.
-    const envRetrieval = process.env.TINYWEBUI_RETRIEVAL_MODE ? { mode: process.env.TINYWEBUI_RETRIEVAL_MODE } : {};
+    const envRetrieval = process.env.TINYWEBUI_RETRIEVAL_MODE ? { mode: process.env.TINYWEBUI_RETRIEVAL_MODE as RetrievalMode } : {};
     cfg.retrieval = { ...DEFAULTS.retrieval, ...(fromFile.retrieval || {}), ...envRetrieval, ...(code.retrieval || {}) };
     // A mistyped authMode must fail validation rather than disable login.
     if (typeof cfg.baseUrl === 'string') cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
@@ -288,7 +388,7 @@ export function createConfigSource(opts = {}) {
   }
 
   /** Applies the writable, unlocked part of `patch`; locked keys are an error. */
-  function save(patch) {
+  function save(patch: Record<string, unknown>): Config {
     if (isFrozen()) throw new LockedError('this deployment is frozen: change its files instead');
     const fileOnly = Object.keys(patch).filter((k) => FILE_ONLY.has(k));
     if (fileOnly.length) throw new LockedError(`set in files only, not editable here: ${fileOnly.join(', ')}`);
@@ -323,18 +423,18 @@ export function createConfigSource(opts = {}) {
   return {
     load,
     save,
-    public: (cfg) => ({
+    public: (cfg: Config) => ({
       ...publicConfig(cfg), lockedKeys: [...lockedNow()], mcpLocked: Boolean(codeServers) || isFrozen(),
       keyClasses: Object.fromEntries([...WRITABLE, ...FILE_ONLY].map((k) => [k, keyClass(k, lockedNow())]))
     }),
     lockedKeys: () => new Set(lockedNow()),
     /** The raw mcp.json (or code) server map, throwing on bad JSON -- for tooling that must not guess. */
-    strictMcpServers() {
+    strictMcpServers(): McpServers {
       const parsed = JSON.parse(readMcp());
       return parsed.mcpServers || parsed;
     },
     /** Users pinned in code's access.users: admins cannot overrule these. */
-    codeAccessUsers: () => ({ ...(code.access?.users || {}) }),
+    codeAccessUsers: (): NonNullable<AccessConfig['users']> => ({ ...(code.access?.users || {}) }),
     /** Low-level access for the policy write-back: read and replace the JSON file. */
     readFile,
     writeFile,
@@ -342,14 +442,14 @@ export function createConfigSource(opts = {}) {
     mcpPath: () => (codeServers ? null : mcpFile),
     get mcpLocked() { return Boolean(codeServers) || isFrozen(); },
     isFrozen,
-    dbPath: (cfg) => {
+    dbPath: (cfg?: Pick<Config, 'dbPath'>): string => {
       const set = opts.dbPath || process.env.TINYWEBUI_DB || cfg?.dbPath;
       if (set === ':memory:') return set;
       return set ? resolve(set) : resolve(dirname(file || CONFIG_FILE), 'tinywebui.db');
     },
     /** Raw text of mcp.json, so the editor round-trips comments-free but verbatim. */
     readMcpFile: readMcp,
-    loadMcpServers() {
+    loadMcpServers(): McpServers {
       try {
         const parsed = JSON.parse(readMcp());
         // Accept both {"mcpServers": {...}} and a bare {...} map.
@@ -360,11 +460,11 @@ export function createConfigSource(opts = {}) {
       }
     },
     /** Validates before writing, so a typo cannot leave an unparseable file behind. */
-    saveMcpFile(text) {
+    saveMcpFile(text: string): McpServers {
       if (codeServers) throw new LockedError('MCP servers are set in code, not editable here');
       if (isFrozen()) throw new LockedError('this deployment is frozen: change mcp.json instead');
       const parsed = JSON.parse(text);
-      const servers = parsed.mcpServers || parsed;
+      const servers: McpServers = parsed.mcpServers || parsed;
       for (const [name, spec] of Object.entries(servers)) {
         if (!spec || (!spec.command && !spec.url)) {
           throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
@@ -376,18 +476,20 @@ export function createConfigSource(opts = {}) {
   };
 }
 
+export type ConfigSource = ReturnType<typeof createConfigSource>;
+
 export class LockedError extends Error {}
 
 // Keys that are not in DEFAULTS but are still settings.
 const EXTRA_KEYS = new Set(['access']);
-const ENUMS = {
+const ENUMS: Record<string, readonly unknown[]> = {
   authMode: ['local', 'multiuser', 'trusted-header'],
   cacheTtl: ['5m', '1h'],
   cacheMode: ['auto', 'implicit', 'explicit', 'rolling', 'off'],
   reasoningReplay: REASONING_REPLAY,
   toolApproval: ['writes', 'all', 'off'],
 };
-const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+const kind = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
 
 /**
  * Every problem with a loaded config: unknown keys (usually typos), values of
@@ -395,9 +497,9 @@ const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v
  * validateConfig(). Startup, reload, save and `tinywebui validate` all refuse
  * a config with any.
  */
-function retrievalProblems(r) {
+function retrievalProblems(r: any): string[] {
   if (!r || typeof r !== 'object' || Array.isArray(r)) return ['retrieval must be an object'];
-  const out = [];
+  const out: string[] = [];
   for (const k of Object.keys(r)) if (!(k in DEFAULTS.retrieval)) out.push(`unknown setting "retrieval.${k}"`);
   if (r.mode !== undefined && !['auto', 'lexical', 'dense', 'hybrid'].includes(r.mode)) out.push('retrieval.mode must be one of auto, lexical, dense, hybrid');
   for (const k of ['model', 'modelDir', 'modelSha256', 'queryPrefix', 'documentPrefix']) {
@@ -419,9 +521,9 @@ function retrievalProblems(r) {
   return out;
 }
 
-export function configProblems(cfg) {
-  cfg = { ...cfg, ...flattenCatalog(cfg) };
-  const problems = [];
+export function configProblems(raw: Record<string, any>): string[] {
+  const cfg: Record<string, any> = { ...raw, ...flattenCatalog(raw) };
+  const problems: string[] = [];
   for (const [key, value] of Object.entries(cfg)) {
     if (!(key in DEFAULTS) && !EXTRA_KEYS.has(key)) { problems.push(`unknown setting "${key}"`); continue; }
     if (ENUMS[key]) {
@@ -446,7 +548,7 @@ export function configProblems(cfg) {
       if (!(Number.isInteger(value) && value >= 0)) problems.push('askUserTimeoutSeconds must be a whole number of seconds >= 0 (0: no timeout)');
       continue;
     }
-    const want = kind(DEFAULTS[key]);
+    const want = kind(DEFAULTS[key as keyof typeof DEFAULTS]);
     const got = kind(value);
     // A null default is an optional number (temperature, maxTokens).
     const ok = want === 'null' ? got === 'null' || (got === 'number' && Number.isFinite(value))
@@ -470,20 +572,20 @@ export const WRITABLE = new Set([
 ]);
 
 // A short tail is enough to tell two keys apart in a list; short keys show none.
-const keyHint = (key) => (key && key.length >= 12 ? key.slice(-4) : null);
+const keyHint = (key: string | undefined) => (key && key.length >= 12 ? key.slice(-4) : null);
 
 /**
  * API keys are write-only: the page learns that one is set (and its last four
  * characters), never the value. On save, a connector sent without `apiKey`
  * keeps its stored key; `apiKey: null` clears it.
  */
-export function mergeSecrets(patch, current) {
+export function mergeSecrets(patch: Record<string, any>, current: Record<string, any>): Record<string, any> {
   const out = { ...patch };
   if ('apiKey' in out && (out.apiKey === undefined || out.apiKey === '')) delete out.apiKey;
   else if (out.apiKey === null) out.apiKey = '';
   if (Array.isArray(out.connectors)) {
-    const old = new Map((Array.isArray(current.connectors) ? current.connectors : []).map((c) => [c?.id, c]));
-    out.connectors = out.connectors.map((c) => {
+    const old = new Map<unknown, any>((Array.isArray(current.connectors) ? current.connectors : []).map((c: any) => [c?.id, c]));
+    out.connectors = out.connectors.map((c: any) => {
       if (!c || typeof c !== 'object') return c;
       const { apiKey, ...rest } = c;
       if (apiKey === null) return { ...rest, apiKey: '' };
@@ -495,16 +597,16 @@ export function mergeSecrets(patch, current) {
 }
 
 /** The patch as it may be logged: secret values replaced by whether they were set. */
-export function redactSecrets(patch) {
+export function redactSecrets(patch: Record<string, any>): Record<string, any> {
   const out = { ...patch };
   if ('apiKey' in out) out.apiKey = Boolean(out.apiKey);
   if (Array.isArray(out.connectors)) {
-    out.connectors = out.connectors.map((c) => (c && typeof c === 'object' && 'apiKey' in c ? { ...c, apiKey: Boolean(c.apiKey) } : c));
+    out.connectors = out.connectors.map((c: any) => (c && typeof c === 'object' && 'apiKey' in c ? { ...c, apiKey: Boolean(c.apiKey) } : c));
   }
   return out;
 }
 
-export function publicConfig(cfg) {
+export function publicConfig(cfg: Config) {
   const { apiKey, authPassword, sessionSecret, googleClientSecret, connectors, ...rest } = cfg;
   return {
     ...rest,
@@ -520,9 +622,9 @@ export function publicConfig(cfg) {
 const fileSource = createConfigSource();
 export const configPath = () => fileSource.path();
 export const mcpPath = () => fileSource.mcpPath();
-export const dbPath = (cfg) => fileSource.dbPath(cfg);
+export const dbPath = (cfg?: Pick<Config, 'dbPath'>) => fileSource.dbPath(cfg);
 export const readMcpFile = () => fileSource.readMcpFile();
 export const loadMcpServers = () => fileSource.loadMcpServers();
-export const saveMcpFile = (text) => fileSource.saveMcpFile(text);
+export const saveMcpFile = (text: string) => fileSource.saveMcpFile(text);
 export const loadConfig = () => fileSource.load();
-export const saveConfig = (patch) => fileSource.save(patch);
+export const saveConfig = (patch: Record<string, unknown>) => fileSource.save(patch);

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { callManageMcp, mcpToolDef, MANAGE_MCP } from '../src/tools/mcp_tool.js';
 import { McpHub, expandRefs, uniqueName } from '../src/mcp.js';
-import { approvalFor } from '../src/config/approval.js';
+import { approvalFor } from '../src/config/approval.ts';
 
 const SECRET = 'sk-live-ABC123XYZ';
 

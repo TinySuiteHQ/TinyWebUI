@@ -3,12 +3,12 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.js';
-import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.js';
-import { REASONING_REPLAY, MODEL_TAGS } from './config/models.js';
+import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.ts';
+import { REASONING_REPLAY, MODEL_TAGS } from './config/models.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
-} from './access/policy.js';
+} from './access/policy.ts';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
 
 /**

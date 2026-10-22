@@ -1,12 +1,12 @@
 import { json, readJson } from '../http.ts';
-import { isClosed, findEntry, labelFor } from '../config/models.js';
-import { modelsFor, fingerprint, resolveAccess, MIN_PASSWORD_LENGTH } from '../access/policy.js';
+import { isClosed, findEntry, labelFor } from '../config/models.ts';
+import { modelsFor, fingerprint, resolveAccess, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
 import {
   hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
-} from '../access/auth.js';
+} from '../access/auth.ts';
 import { audit } from '../audit.ts';
-import { OWNER_ID } from '../access/auth_gate.js';
-import { normalizeEmail, validEmail } from '../access/email.js';
+import { OWNER_ID } from '../access/auth_gate.ts';
+import { normalizeEmail, validEmail } from '../access/email.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.

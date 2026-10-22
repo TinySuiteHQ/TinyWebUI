@@ -1,6 +1,6 @@
-export const normalizeEmail = (value) => typeof value === 'string' ? value.trim().toLowerCase() : '';
+export const normalizeEmail = (value: unknown): string => typeof value === 'string' ? value.trim().toLowerCase() : '';
 
-export function validEmail(email) {
+export function validEmail(email: unknown): email is string {
   if (typeof email !== 'string' || email.length > 320) return false;
   const parts = email.split('@');
   if (parts.length !== 2) return false;

@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateConfig, featuresFor, modelsFor, fingerprint, keyClass, mergeAccess } from '../src/access/policy.js';
-import { createConfigSource, LockedError } from '../src/config/config.js';
+import { validateConfig, featuresFor, modelsFor, fingerprint, keyClass, mergeAccess } from '../src/access/policy.ts';
+import { createConfigSource, LockedError } from '../src/config/config.ts';
 
 const tier3 = (access) => ({ authMode: 'trusted-header', trustedProxyCidrs: ['10.0.0.0/8'], access });
 

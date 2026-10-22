@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configProblems, DEFAULTS } from '../src/config/config.js';
-import { effectiveConfig, flattenCatalog, nestCatalog } from '../src/config/models.js';
-import { fingerprint } from '../src/access/policy.js';
+import { configProblems, DEFAULTS } from '../src/config/config.ts';
+import { effectiveConfig, flattenCatalog, nestCatalog } from '../src/config/models.ts';
+import { fingerprint } from '../src/access/policy.ts';
 
 const SECRET = 'sk-test-abcdef123456';
 
