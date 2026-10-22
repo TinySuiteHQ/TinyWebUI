@@ -1,11 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { json, readJson } from '../http.js';
+import { json, readJson } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.js';
 import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.js';
 import { catalog, modelProblems } from '../config/models.js';
 import { destroyUserSessions, hashToken } from '../access/auth.js';
 import { normalizeEmail, validEmail } from '../access/email.js';
-import { audit } from '../audit.js';
+import { audit } from '../audit.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 function adminUserView(u) {

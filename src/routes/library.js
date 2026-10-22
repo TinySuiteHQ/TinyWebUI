@@ -1,4 +1,4 @@
-import { json, readJson } from '../http.js';
+import { json, readJson } from '../http.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 /** The sidebar's search, usage statistics, and folders. */

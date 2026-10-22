@@ -1,7 +1,7 @@
 import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
 import { resolveAccess } from './policy.js';
-import { audit } from '../audit.js';
+import { audit } from '../audit.ts';
 
 /**
  * Session/cookie plumbing for local password login ('single' and 'multiuser'),

@@ -5,7 +5,7 @@ import http from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { badHost } from '../src/http.js';
+import { badHost } from '../src/http.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-host-'));
 const { start } = await import('../src/server.js');

@@ -6,12 +6,14 @@
  * Audit events are not logging: they go through audit.js and are never
  * filtered by level.
  */
-const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: Infinity };
+const LEVELS: Record<string, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: Infinity };
 
 const threshold = () => LEVELS[String(process.env.TINYWEBUI_LOG_LEVEL || '').toLowerCase()] ?? LEVELS.info;
 
-export function logger(area) {
-  const line = (level, write) => (message) => {
+export type Logger = Record<'debug' | 'info' | 'warn' | 'error', (message: string) => void>;
+
+export function logger(area: string): Logger {
+  const line = (level: string, write: (line: string) => void) => (message: string) => {
     if (LEVELS[level] < threshold()) return;
     write(`[tinywebui:${area}] ${level === 'info' ? '' : `${level}: `}${message}`);
   };

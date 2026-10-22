@@ -1,6 +1,6 @@
 import { toWire } from '../store/index.js';
 import { approvalFor } from '../config/approval.js';
-import { runHooks } from '../harness/agent.js';
+import { runHooks } from '../harness/agent.ts';
 import { digest } from './compact.js';
 import { EVENT } from '../../public/shared/events.js';
 

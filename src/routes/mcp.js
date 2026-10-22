@@ -1,9 +1,9 @@
-import { json, readJson, UPLOAD_LIMIT } from '../http.js';
+import { json, readJson, UPLOAD_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.js';
 import { fingerprint } from '../access/policy.js';
 import { actor } from '../access/auth_gate.js';
 import { toolList } from './settings.js';
-import { logger } from '../log.js';
+import { logger } from '../log.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 const log = logger('mcp');

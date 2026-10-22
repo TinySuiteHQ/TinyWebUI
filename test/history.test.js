@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { repairToolHistory, UNKNOWN_OUTCOME } from '../src/harness/history.js';
+import { repairToolHistory, UNKNOWN_OUTCOME } from '../src/harness/history.ts';
 
 const call = (id) => ({ id, type: 'function', function: { name: 'x', arguments: '{}' } });
 

@@ -1,7 +1,7 @@
-import { json, readJson } from '../http.js';
+import { json, readJson } from '../http.ts';
 import { isClosed, enabledEntries, publicEntry, findConnector } from '../config/models.js';
 import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.js';
-import { audit } from '../audit.js';
+import { audit } from '../audit.ts';
 import { setOverride } from '../config/approval.js';
 import { actor } from '../access/auth_gate.js';
 import { FEATURE } from '../../public/shared/features.js';

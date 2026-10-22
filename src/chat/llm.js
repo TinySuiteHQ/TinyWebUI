@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto';
-import { attributeRequest, completeAttribution, markFinal } from '../harness/attribution.js';
+import { attributeRequest, completeAttribution, markFinal } from '../harness/attribution.ts';
 import { toWire, AUX_KIND } from '../store/index.js';
 import { toolExecutor } from './tool_executor.js';
 import { ASK_USER } from '../tools/ask_tool.js';
 import { openTasksNote } from '../tools/task_tool.js';
-import { runAgentLoop, runHooks } from '../harness/agent.js';
-import { repairToolHistory } from '../harness/history.js';
-import { checkpointSource, checkpointSection, summarize } from '../harness/checkpoint.js';
-import { harnessBlock, budgetFooter } from '../harness/prompt.js';
-import { isOpenRouter, post, streamChunks, retryDelay, sleep, STREAM_RETRIES, StreamError } from '../harness/provider.js';
+import { runAgentLoop, runHooks } from '../harness/agent.ts';
+import { repairToolHistory } from '../harness/history.ts';
+import { checkpointSource, checkpointSection, summarize } from '../harness/checkpoint.ts';
+import { harnessBlock, budgetFooter } from '../harness/prompt.ts';
+import { isOpenRouter, post, streamChunks, retryDelay, sleep, STREAM_RETRIES, StreamError } from '../harness/provider.ts';
 import { EVENT } from '../../public/shared/events.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens

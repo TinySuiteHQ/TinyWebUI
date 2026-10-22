@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
-import { logger } from './log.js';
+import { logger } from './log.ts';
 
 const log = logger('mcp');
 

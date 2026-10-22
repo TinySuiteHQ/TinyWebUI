@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize } from 'node:path';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 
-export function json(res, code, payload) {
+export function json(res: ServerResponse, code: number, payload: unknown): void {
   const body = JSON.stringify(payload);
   res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
   res.end(body);
@@ -13,7 +14,8 @@ export function json(res, code, payload) {
 
 /** An error that carries its own HTTP status to the handler's catch. */
 export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
 }
 
 // Body caps. Most requests are a few KB; uploads and turns with images carry
@@ -23,10 +25,10 @@ export const UPLOAD_LIMIT = 8 * 1024 * 1024;       // one 5 MB file, base64
 export const TURN_LIMIT = 60 * 1024 * 1024;        // up to 8 images of 5 MB, base64
 
 /** Reads a JSON body, refusing more than `limit` bytes (413) or bad JSON (400). */
-export async function readJson(req, limit = BODY_LIMIT) {
+export async function readJson<T = any>(req: IncomingMessage, limit = BODY_LIMIT): Promise<T> {
   const declared = Number(req.headers['content-length']);
   if (declared > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
-  const chunks = [];
+  const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
     size += c.length;
@@ -62,7 +64,7 @@ export const SECURITY_HEADERS = {
  * so a page elsewhere cannot drive this one with the user's cookies, the
  * gateway's included -- or poke a tier-1 instance on localhost.
  */
-export function crossSite(req, cfg) {
+export function crossSite(req: IncomingMessage, cfg: { allowedOrigins?: string[] }): boolean {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return false;
   const origin = req.headers.origin;
   if (origin && origin !== 'null') {
@@ -81,7 +83,7 @@ export function crossSite(req, cfg) {
  * so a no-login install only answers to loopback names and allowedHosts.
  * Logged-in modes are safe: the attacker's origin has no session cookie.
  */
-export function badHost(req, cfg) {
+export function badHost(req: IncomingMessage, cfg: { authMode?: string; allowedHosts?: string[] }): boolean {
   if (cfg.authMode !== 'local') return false;
   let hostname;
   try { hostname = new URL(`http://${req.headers.host}`).hostname.toLowerCase(); } catch { return true; }
@@ -89,11 +91,11 @@ export function badHost(req, cfg) {
   return !(cfg.allowedHosts || []).some((h) => h.toLowerCase() === hostname);
 }
 
-export async function serveStatic(req, res) {
+export async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // Resolve the index BEFORE normalising: on Windows normalize('/') returns a
   // lone backslash, so a check for '/' after it never matches and the root
   // request lands on the directory itself.
-  const pathname = req.url.split('?')[0];
+  const pathname = (req.url ?? '/').split('?')[0];
   const rel = normalize(pathname === '/' ? 'index.html' : pathname)
     .replace(/^(\.\.[/\\])+/, '');
   const file = join(PUBLIC_DIR, rel);

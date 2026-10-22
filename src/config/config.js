@@ -3,7 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig } from '../access/policy.js';
 import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, REASONING_REPLAY } from './models.js';
-import { logger } from '../log.js';
+import { logger } from '../log.ts';
 
 const log = logger('config');
 

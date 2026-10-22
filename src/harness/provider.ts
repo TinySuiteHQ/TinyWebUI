@@ -1,5 +1,8 @@
 /* The provider side of a turn: request shape, prompt caching, retries and the SSE stream. */
 import { EVENT } from '../../public/shared/events.js';
+import type {
+  CacheDirective, CacheMode, ChatMessage, Chunk, Emit, ProviderConfig, ReasoningReplay, RequestBody, RequestPlan, WireMessage
+} from './types.ts';
 
 /**
  * Caching has two layers, and only the first one is universal.
@@ -28,12 +31,12 @@ import { EVENT } from '../../public/shared/events.js';
  *   'rolling'  OpenRouter top-level automatic cache_control
  *   'off'      no cache shaping at all
  */
-export function isOpenRouter(cfg) {
+export function isOpenRouter(cfg: Pick<ProviderConfig, 'baseUrl'>): boolean {
   return /^https?:\/\/(?:[^/]+\.)?openrouter\.ai(?::\d+)?(?:\/|$)/i.test(cfg.baseUrl || '');
 }
 
 /** Loopback and LAN endpoints: a local runtime, whatever model it is serving. */
-function isLocal(cfg) {
+function isLocal(cfg: ProviderConfig) {
   let host = '';
   try { host = new URL(cfg.baseUrl || '').hostname.toLowerCase(); } catch { return false; }
   return host === 'localhost' || host === '::1' || host === 'host.docker.internal'
@@ -41,7 +44,7 @@ function isLocal(cfg) {
     || /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(host);
 }
 
-function isClaude(model) {
+function isClaude(model: string | undefined) {
   return /claude|anthropic/i.test(model || '');
 }
 
@@ -63,7 +66,7 @@ function isClaude(model) {
 const NATIVE_ANTHROPIC = /claude|anthropic|amazon\.nova|nova-(?:lite|micro|pro|premier)/i;
 
 /** Resolves config + endpoint + model to exactly one of the modes above. */
-export function cacheMode(cfg) {
+export function cacheMode(cfg: ProviderConfig): Exclude<CacheMode, 'auto'> {
   const asked = cfg.cacheMode || 'auto';
   if (cfg.cache === false) return 'off';
   if (asked !== 'auto') return asked;
@@ -87,13 +90,13 @@ export function cacheMode(cfg) {
   return NATIVE_ANTHROPIC.test(cfg.model || '') ? 'explicit' : 'implicit';
 }
 
-function cacheDirective(cfg) {
-  const directive = { type: 'ephemeral' };
+function cacheDirective(cfg: ProviderConfig): CacheDirective {
+  const directive: CacheDirective = { type: 'ephemeral' };
   if (isClaude(cfg.model) && cfg.cacheTtl === '1h') directive.ttl = '1h';
   return directive;
 }
 
-const REPLAY = { OMIT: 'omit', CONTENT: 'reasoning_content', DETAILS: 'reasoning_details' };
+const REPLAY = { OMIT: 'omit', CONTENT: 'reasoning_content', DETAILS: 'reasoning_details' } as const;
 
 /**
  * Which reasoning a past assistant turn sends back. Structured reasoning goes
@@ -106,7 +109,7 @@ const REPLAY = { OMIT: 'omit', CONTENT: 'reasoning_content', DETAILS: 'reasoning
  * ignores, so it gets none. `reasoningReplay` overrides this for a gateway the
  * table does not know.
  */
-export function reasoningReplay(cfg) {
+export function reasoningReplay(cfg: ProviderConfig): Exclude<ReasoningReplay, 'auto'> {
   if (cfg.reasoningReplay && cfg.reasoningReplay !== 'auto') return cfg.reasoningReplay;
   if (isOpenRouter(cfg) || cacheMode(cfg) === 'explicit') return REPLAY.DETAILS;
   let host = '';
@@ -129,8 +132,8 @@ export function reasoningReplay(cfg) {
  * identical content and the whole prefix misses. Which reasoning goes back
  * is the provider's contract, see reasoningReplay.
  */
-function canonical(m, replay) {
-  const out = { role: m.role };
+function canonical(m: ChatMessage, replay: ReasoningReplay): WireMessage {
+  const out = { role: m.role } as WireMessage;
   // A tool-only assistant turn stores content as null, but some gateways (seen
   // on DeepInfra via OpenRouter) reject a null text part outright and want an
   // empty string instead. Only assistant+tool_calls hits this; every other
@@ -153,7 +156,7 @@ function canonical(m, replay) {
  * tool_calls has null content, and tool results are left alone because not
  * every OpenAI-compatible gateway accepts array content there.
  */
-function markBreakpoint(messages, from, directive) {
+function markBreakpoint(messages: WireMessage[], from: number, directive: CacheDirective) {
   for (let i = Math.min(from, messages.length - 1); i > 0; i--) {
     const m = messages[i];
     if (typeof m.content !== 'string' || !m.content) continue;
@@ -167,13 +170,13 @@ function markBreakpoint(messages, from, directive) {
   return -1;
 }
 
-export function buildMessages(cfg, history, epochIndex = -1) {
+export function buildMessages(cfg: ProviderConfig, history: ChatMessage[], epochIndex = -1): WireMessage[] {
   // Only 'explicit' shapes message content. 'rolling' is the strategy by
   // itself and must not be stacked with markers; 'implicit' and 'off' send
   // plain strings, which is what every strict OpenAI-compatible server wants.
   const bp = cacheMode(cfg) === 'explicit';
   const directive = cacheDirective(cfg);
-  const system = {
+  const system: WireMessage = {
     role: 'system',
     content: bp
       ? [{ type: 'text', text: cfg.systemPrompt, cache_control: { ...directive } }]
@@ -215,8 +218,9 @@ const OPTIONAL = [
 ];
 
 /** Builds one request body, leaving out whatever this endpoint has refused. */
-export function buildBody(cfg, { turn, tools, lastCall, epochIndex, chatId, relax }, disabled) {
-  const body = {
+export function buildBody(cfg: ProviderConfig, { turn, tools, lastCall, epochIndex, chatId, relax }: RequestPlan,
+  disabled: Set<string>): RequestBody {
+  const body: RequestBody = {
     // Gateway-specific routing/knobs first, so nothing below can be clobbered.
     ...(cfg.extraBody || {}),
     model: cfg.model,
@@ -281,7 +285,7 @@ export class StreamError extends Error {}
 const RELEASE_PIN_AFTER = 2;
 
 /** How long to wait: what the provider asked for, else backing off with jitter. */
-export function retryDelay(res, attempt) {
+export function retryDelay(res: Response | null, attempt: number): number {
   const header = res?.headers?.get?.('retry-after');
   if (header) {
     const secs = Number(header);
@@ -294,7 +298,7 @@ export function retryDelay(res, attempt) {
 }
 
 /** A sleep that a stop actually interrupts, rather than one you wait out. */
-export function sleep(ms, signal) {
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('Stopped.'));
     const timer = setTimeout(resolve, ms);
@@ -316,13 +320,14 @@ export function sleep(ms, signal) {
  * a pinned route is released for one final attempt: a cold cache somewhere else
  * still beats losing the turn and everything already spent on it.
  */
-export async function post(cfg, plan, signal, disabled, emit) {
+export async function post(cfg: ProviderConfig, plan: RequestPlan, signal: AbortSignal | undefined,
+  disabled: Set<string>, emit: Emit): Promise<Response> {
   let retries = 0;
   let relaxed = false;
 
   const pinned = cfg.extraBody?.provider?.allow_fallbacks === false;
 
-  const backOff = async (res, why) => {
+  const backOff = async (res: Response | null, why: string) => {
     // A pin exists to keep the prompt cache on one upstream. Once that upstream
     // has refused us twice, the cache is not the binding constraint any more --
     // finishing the turn is. Retry elsewhere immediately rather than waiting.
@@ -409,8 +414,8 @@ export async function post(cfg, plan, signal, disabled, emit) {
   }
 }
 
-export async function* streamChunks(res) {
-  const reader = res.body.getReader();
+export async function* streamChunks(res: Response): AsyncGenerator<Chunk> {
+  const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buf = '';
   while (true) {

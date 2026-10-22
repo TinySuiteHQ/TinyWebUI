@@ -1,4 +1,4 @@
-import { json, readJson } from '../http.js';
+import { json, readJson } from '../http.ts';
 import { validateSchedule } from '../automations/automation.js';
 import { FEATURE } from '../../public/shared/features.js';
 

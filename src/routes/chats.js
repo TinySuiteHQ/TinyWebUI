@@ -1,4 +1,4 @@
-import { json, readJson, TURN_LIMIT } from '../http.js';
+import { json, readJson, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.js';
 import { toView } from '../store/index.js';
 import { setOverride } from '../config/approval.js';

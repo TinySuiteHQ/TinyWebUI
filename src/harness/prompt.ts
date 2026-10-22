@@ -3,7 +3,7 @@
 const WARN_ROUNDS = 2;
 const CHECKPOINT_EVERY = 4;
 
-const rounds = (n) => `${n} round${n === 1 ? '' : 's'}`;
+const rounds = (n: number) => `${n} round${n === 1 ? '' : 's'}`;
 
 /**
  * The harness's own standing instructions, appended to the operator's prompt.
@@ -18,7 +18,8 @@ const rounds = (n) => `${n} round${n === 1 ? '' : 's'}`;
  * prompt saved to the config file replaces the default wholesale; the harness
  * rules have to survive that.
  */
-export function harnessBlock({ maxRounds, hasTools, canAsk = false, now = new Date(), timeZone }) {
+export function harnessBlock({ maxRounds, hasTools, canAsk = false, now = new Date(), timeZone }:
+  { maxRounds: number; hasTools: boolean; canAsk?: boolean; now?: Date; timeZone?: string }): string {
   const tz = timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   let date;
   try {
@@ -70,7 +71,7 @@ export function harnessBlock({ maxRounds, hasTools, canAsk = false, now = new Da
  * (Anthropic, Gemini) hoist into the system prompt, changing the whole prefix
  * every round.
  */
-export function budgetFooter(round, maxRounds) {
+export function budgetFooter(round: number, maxRounds: number): string {
   const left = maxRounds - (round + 1);
   if (left <= 0) {
     return `\n\n[Tool budget spent (${rounds(maxRounds)} used). Tools are disabled for your next`

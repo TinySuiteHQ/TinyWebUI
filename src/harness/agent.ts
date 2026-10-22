@@ -1,4 +1,20 @@
 import { EVENT } from '../../public/shared/events.js';
+import type { ChatMessage, Emit, ToolCall } from './types.ts';
+
+export interface RoundContext { messages: ChatMessage[]; round: number; lastCall: boolean; signal?: AbortSignal }
+/** `wire` goes back to the model; `message` is what the caller is handed. */
+export interface Delivered<M = ChatMessage> { wire: ChatMessage; message: M }
+
+export interface AgentRuntime<A extends ChatMessage = ChatMessage, M = ChatMessage> {
+  streamTurn(ctx: RoundContext): Promise<A>;
+  executeToolBatch(calls: ToolCall[], ctx: RoundContext): Promise<Delivered<M>[]>;
+  onEvent?: Emit;
+  shouldContinue?(ctx: { round: number; assistant: A; results: Delivered<M>[] }): Promise<boolean> | boolean;
+  pendingInput?(ctx: { round: number }): Promise<Delivered<M>[]>;
+}
+
+/** A lifecycle hook (see runHooks): returns nothing to pass, or an outcome. */
+export type Hook<C, O> = (ctx: C) => O | undefined | void | Promise<O | undefined | void>;
 /**
  * The generic agent loop: stream a model turn, run the tool calls it made,
  * feed the results back, repeat until the model answers or the budget is spent.
@@ -26,9 +42,11 @@ import { EVENT } from '../../public/shared/events.js';
  *
  * Returns the messages appended during the run, in transcript order.
  */
-export async function runAgentLoop({ messages, maxRounds, runtime, signal }) {
-  const working = [...messages];
-  const appended = [];
+export async function runAgentLoop<A extends ChatMessage, M>({ messages, maxRounds, runtime, signal }: {
+  messages: ChatMessage[]; maxRounds: number; runtime: AgentRuntime<A, M>; signal?: AbortSignal;
+}): Promise<(A | M)[]> {
+  const working: ChatMessage[] = [...messages];
+  const appended: (A | M)[] = [];
   const emit = runtime.onEvent || (() => {});
 
   // One extra pass past the budget: tools are mechanically refused there, so the
@@ -104,7 +122,8 @@ export async function runAgentLoop({ messages, maxRounds, runtime, signal }) {
  * non-empty output and returns true to stop the chain. A throw is never
  * swallowed here; the caller turns it into a visible outcome.
  */
-export async function runHooks(list, ctx, each = () => false) {
+export async function runHooks<C extends { signal?: AbortSignal }, O>(list: Hook<C, O>[] | undefined, ctx: C,
+  each: (out: O) => boolean = () => false): Promise<boolean> {
   for (const hook of list || []) {
     if (ctx.signal?.aborted) throw new Error('Stopped.');
     const out = await hook(ctx);

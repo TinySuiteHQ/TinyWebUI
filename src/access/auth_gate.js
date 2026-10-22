@@ -1,7 +1,7 @@
 import { ALL_USERS } from '../store/index.js';
 import { featuresFor } from './policy.js';
 import { getSessionUser, resolveTrustedUser } from './auth.js';
-import { audit } from '../audit.js';
+import { audit } from '../audit.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 /** Historical owner row removed when an old installation claims its first account. */

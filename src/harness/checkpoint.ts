@@ -4,7 +4,11 @@
  * conversation, so the message sequence the model sees keeps the shape it was
  * trained on -- no synthetic turns, nothing between a tool result and a reply.
  */
-import { post, streamChunks } from './provider.js';
+import { post, streamChunks } from './provider.ts';
+import type { Emit, ProviderConfig, Role, ToolCall, Usage } from './types.ts';
+
+/** A row being summarised: the stored text, not the wire form. */
+export interface SourceRow { role: Role; content?: string | null; artifact_id?: string | null; tool_calls?: ToolCall[] }
 
 const HEADINGS = ['Objective', 'User constraints', 'Decisions', 'Verified findings',
   'Assumptions and uncertainty', 'Unfinished work'];
@@ -29,8 +33,8 @@ const TOOL_CHARS = 1500;
  * as a plain transcript. Tool results are cut short with their artifact id,
  * which expand_context can still open later.
  */
-export function checkpointSource({ previous, rows }) {
-  const lines = [];
+export function checkpointSource({ previous, rows }: { previous?: string | null; rows: SourceRow[] }): string {
+  const lines: string[] = [];
   if (previous) lines.push('# Previous checkpoint', previous, '');
   lines.push('# Conversation');
   for (const r of rows) {
@@ -47,13 +51,13 @@ export function checkpointSource({ previous, rows }) {
   return lines.join('\n');
 }
 
-export function validCheckpoint(text) {
+export function validCheckpoint(text: unknown): text is string {
   return typeof text === 'string' && text.trim().length >= 40
     && HEADINGS.every((h) => text.includes(`## ${h}`));
 }
 
 /** The system prompt section a stored checkpoint becomes. */
-export function checkpointSection(summary) {
+export function checkpointSection(summary: string): string {
   return '# Earlier conversation (summary)\n'
     + 'The oldest part of this conversation is no longer included; a model wrote the summary'
     + ' below from it. It may be incomplete. Where it disagrees with the messages that follow,'
@@ -67,7 +71,9 @@ export function checkpointSection(summary) {
  * never stores half a summary. `usage` is reported through onUsage even when
  * the request fails partway, since it was still billed.
  */
-export async function summarize({ cfg, source, signal, emit, onUsage }) {
+export async function summarize({ cfg, source, signal, emit, onUsage }: {
+  cfg: ProviderConfig; source: string; signal?: AbortSignal; emit: Emit; onUsage?: (usage: Usage | null) => void;
+}): Promise<{ text: string; usage: Usage | null }> {
   const extraBody = { ...(cfg.extraBody || {}) };
   // Operator extras meant for the chat (forced tools, a response format) must
   // not leak into a request that may only return prose.
@@ -77,8 +83,8 @@ export async function summarize({ cfg, source, signal, emit, onUsage }) {
   const res = await post(summaryCfg, { turn: [{ role: 'user', content: source }], tools: [], lastCall: true, epochIndex: -1 },
     signal, new Set(), emit);
   let text = '';
-  let usage = null;
-  let finish = null;
+  let usage: Usage | null = null;
+  let finish: string | null = null;
   try {
     for await (const chunk of streamChunks(res)) {
       if (chunk.usage) usage = chunk.usage;

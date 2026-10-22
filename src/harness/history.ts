@@ -1,3 +1,5 @@
+import type { ChatMessage } from './types.ts';
+
 /** Result sent for a call the transcript has no answer to. */
 export const UNKNOWN_OUTCOME = 'Error: no result was recorded for this call (the run ended while it was'
   + ' pending). Whether it ran is unknown; check the current state before repeating anything that writes.';
@@ -14,10 +16,10 @@ export const UNKNOWN_OUTCOME = 'Error: no result was recorded for this call (the
  * Returns the input array itself when nothing needed changing, so callers can
  * tell a repair happened and the common path allocates nothing.
  */
-export function repairToolHistory(messages) {
-  let out = null;
-  let pending = [];
-  const close = (i) => {
+export function repairToolHistory<M extends ChatMessage>(messages: M[]): (M | ChatMessage)[] {
+  let out: (M | ChatMessage)[] | null = null;
+  let pending: (string | undefined)[] = [];
+  const close = (i: number) => {
     if (!pending.length) return;
     out ??= messages.slice(0, i);
     for (const id of pending) out.push({ role: 'tool', tool_call_id: id, content: UNKNOWN_OUTCOME });

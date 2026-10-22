@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 
 import { Store, ALL_USERS } from '../src/store/index.js';
 import { runChat } from '../src/chat/llm.js';
-import { CHECKPOINT_PROMPT, checkpointSource } from '../src/harness/checkpoint.js';
+import { CHECKPOINT_PROMPT, checkpointSource } from '../src/harness/checkpoint.ts';
 
 const GOOD = ['Objective', 'User constraints', 'Decisions', 'Verified findings',
   'Assumptions and uncertainty', 'Unfinished work'].map((h) => `## ${h}\nNone`).join('\n')

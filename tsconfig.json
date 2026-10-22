@@ -8,6 +8,8 @@
     "moduleResolution": "nodenext",
     "types": ["node"],
     "strict": true,
+    // Catch blocks here read err.message; every throw in this codebase is an Error.
+    "useUnknownInCatchVariables": false,
     "noEmit": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,

@@ -1,10 +1,10 @@
-import { json, readJson } from '../http.js';
+import { json, readJson } from '../http.ts';
 import { isClosed, findEntry, labelFor } from '../config/models.js';
 import { modelsFor, fingerprint, resolveAccess, MIN_PASSWORD_LENGTH } from '../access/policy.js';
 import {
   hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.js';
-import { audit } from '../audit.js';
+import { audit } from '../audit.ts';
 import { OWNER_ID } from '../access/auth_gate.js';
 import { normalizeEmail, validEmail } from '../access/email.js';
 import { FEATURE } from '../../public/shared/features.js';

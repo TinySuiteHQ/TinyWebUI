@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runAgentLoop } from '../src/harness/agent.js';
+import { runAgentLoop } from '../src/harness/agent.ts';
 
 const call = (id, name) => ({ id, type: 'function', function: { name, arguments: '{}' } });
 
