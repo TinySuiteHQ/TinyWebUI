@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Reading a provider's usage object. Shared by both sides so the transcript's
  * per-turn line and the Statistics panel count the same tokens.
@@ -11,15 +12,24 @@
  *   DeepSeek                     : prompt_cache_hit_tokens / prompt_cache_miss_tokens
  */
 
+/**
+ * A usage object as some provider sent it: any shape, every field optional.
+ * @typedef {{ [field: string]: any }} RawUsage
+ */
+
+/** @param {unknown} v @returns {number | null} */
 const num = (v) => {
   if (v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
+/** @param {RawUsage | null | undefined} u */
 export const inputTokens = (u) => num(u?.prompt_tokens ?? u?.input_tokens);
+/** @param {RawUsage | null | undefined} u */
 export const outputTokens = (u) => num(u?.completion_tokens ?? u?.output_tokens);
 
+/** @param {RawUsage | null | undefined} u */
 export const cacheReads = (u) => num(
   u?.prompt_tokens_details?.cached_tokens
   ?? u?.input_tokens_details?.cached_tokens
@@ -28,6 +38,7 @@ export const cacheReads = (u) => num(
   ?? u?.cached_tokens
 );
 
+/** @param {RawUsage | null | undefined} u */
 export const cacheWrites = (u) => num(
   u?.cache_creation_input_tokens
   ?? u?.cache_write_tokens
@@ -36,8 +47,12 @@ export const cacheWrites = (u) => num(
   ?? u?.input_tokens_details?.cache_write_tokens
 );
 
-/** Folds one or more raw usage objects into the numbers a turn displays. */
+/**
+ * Folds one or more raw usage objects into the numbers a turn displays.
+ * @param {RawUsage[]} raws
+ */
 export function tally(raws) {
+  /** @type {{ in: number, out: number, cached: number, written: number, discount: number, reported: boolean, raw: RawUsage[], provider: string | null, providers: string[] }} */
   const t = { in: 0, out: 0, cached: 0, written: 0, discount: 0, reported: false, raw: raws, provider: null, providers: [] };
   for (const u of raws) {
     if (u.provider) {

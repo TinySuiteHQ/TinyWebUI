@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Every feature a role can be granted (access.roles.*.features). Shared by
  * both sides: the server checks them on each API route (src/routes/*,
