@@ -1,10 +1,12 @@
 import { json, readJson } from '../http.ts';
 import { validateSchedule } from '../automations/automation.ts';
 import { FEATURE } from '../../public/shared/features.js';
+import type { Route, RouteDeps } from './types.ts';
+import type { AutomationPatch } from '../store/automations.ts';
 
 /** `newChatTitle` on an automation request: undefined when absent, false when
  * present but unusable, otherwise the trimmed title. */
-function newChatTitleOf(body) {
+function newChatTitleOf(body: Record<string, any>): string | false | undefined {
   if (body.newChatTitle === undefined || body.newChatTitle === null) return undefined;
   const title = String(body.newChatTitle).trim();
   return title && title.length <= 120 ? title : false;
@@ -12,7 +14,7 @@ function newChatTitleOf(body) {
 
 const BAD_TITLE = { error: 'the new chat needs a name (at most 120 characters)' };
 
-export function automationRoutes({ scheduler, store }) {
+export function automationRoutes({ scheduler, store }: Pick<RouteDeps, 'scheduler' | 'store'>): Route[] {
   const F = FEATURE.AUTOMATIONS;
   return [
     { method: 'GET', path: /^\/api\/automations$/, feature: F, handle: ({ res, auth }) =>
@@ -32,7 +34,7 @@ export function automationRoutes({ scheduler, store }) {
       try { schedule = validateSchedule(body.cron, body.timezone); }
       catch (err) { return json(res, 400, { error: err.message }); }
       if (newChatTitle) chat = store.chats.create({ title: newChatTitle }, auth.userId);
-      const automation = store.automations.create({ ...schedule, chatId: chat.id, name, prompt, enabled: body.enabled !== false, source: 'user' }, auth.userId);
+      const automation = store.automations.create({ ...schedule, chatId: chat!.id, name, prompt, enabled: body.enabled !== false, source: 'user' }, auth.userId);
       scheduler.arm();
       return json(res, 201, { automation });
     } },
@@ -53,7 +55,8 @@ export function automationRoutes({ scheduler, store }) {
       const existing = store.automations.get(id, auth.userId);
       if (!existing) return json(res, 404, { error: 'no such automation' });
       const body = await readJson(req);
-      const patch = {};
+      // Raw from the body until each field is checked below.
+      const patch: Record<string, any> = {};
       for (const key of ['name', 'prompt', 'cron', 'timezone', 'enabled', 'chatId']) if (body[key] !== undefined) patch[key] = body[key];
       const newChatTitle = newChatTitleOf(body);
       if (newChatTitle === false) return json(res, 400, BAD_TITLE);
@@ -77,8 +80,8 @@ export function automationRoutes({ scheduler, store }) {
         catch (err) { return json(res, 400, { error: err.message }); }
         Object.assign(patch, schedule);
       }
-      if (newChatTitle) patch.chatId = store.chats.create({ title: newChatTitle }, auth.userId).id;
-      const automation = store.automations.update(id, patch, auth.userId);
+      if (newChatTitle) patch.chatId = store.chats.create({ title: newChatTitle }, auth.userId)!.id;
+      const automation = store.automations.update(id, patch as AutomationPatch, auth.userId);
       scheduler.arm();
       return json(res, 200, { automation });
     } },

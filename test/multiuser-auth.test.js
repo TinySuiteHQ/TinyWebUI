@@ -5,7 +5,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { start } from '../src/server.js';
+import { start } from '../src/server.ts';
 import { Store, ALL_USERS } from '../src/store/index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-multiuser-'));

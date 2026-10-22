@@ -12,7 +12,7 @@ writeFileSync(configFile, '{}\n');
 writeFileSync(join(dir, 'mcp.json'), '{ "mcpServers": {} }\n');
 const readCfg = () => JSON.parse(readFileSync(configFile, 'utf8'));
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const code = {
   authMode: 'trusted-header', trustedProxyCidrs: ['127.0.0.1/32'],
   baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k',

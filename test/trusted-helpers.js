@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 export async function trustedServer(extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-trusted-'));
-  const { start } = await import('../src/server.js');
+  const { start } = await import('../src/server.ts');
   const srv = await start({
     port: 0, host: '127.0.0.1', configFile: false, mcpServers: {},
     dbPath: join(dir, 'chats.db'),

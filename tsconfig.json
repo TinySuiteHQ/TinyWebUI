@@ -2,8 +2,8 @@
   // Type checking only (`npm run typecheck`, part of `npm test`). Node runs the
   // .ts sources directly, so every option here must keep them strippable.
   "compilerOptions": {
-    "target": "es2023",
-    "lib": ["es2023"],
+    "target": "es2024",
+    "lib": ["es2024"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "types": ["node"],

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { trustedServer } from './trusted-helpers.js';
-import { API_ROUTES } from '../src/server.js';
+import { API_ROUTES } from '../src/server.ts';
 
 const { srv, as } = await trustedServer({
   access: { roles: { user: { features: ['chat'] } }, bootstrapAdmins: [] }

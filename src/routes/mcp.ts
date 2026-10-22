@@ -2,16 +2,19 @@ import { json, readJson, UPLOAD_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
 import { fingerprint } from '../access/policy.ts';
 import { actor } from '../access/auth_gate.ts';
-import { toolList } from './settings.js';
+import { toolList } from './settings.ts';
 import { logger } from '../log.ts';
+import type { ServerResponse } from 'node:http';
+import type { Auth } from '../access/auth_gate.ts';
 import { FEATURE } from '../../public/shared/features.js';
+import type { Route, RouteDeps } from './types.ts';
 
 const log = logger('mcp');
 
-export function mcpRoutes({ auditMcp, config, hub, source, swapHub }) {
+export function mcpRoutes({ auditMcp, config, hub, source, swapHub }: Pick<RouteDeps, 'auditMcp' | 'config' | 'hub' | 'source' | 'swapHub'>): Route[] {
 
   /** Writes mcp.json (audited), then reconnects. A locked or invalid file is the caller's error. */
-  const saveAndReconnect = async (res, text, auth) => {
+  const saveAndReconnect = async (res: ServerResponse, text: string, auth: Auth) => {
     let servers;
     try {
       const before = fingerprint(config(), source.loadMcpServers());

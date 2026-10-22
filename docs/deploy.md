@@ -147,7 +147,7 @@ The fingerprint matches step 2. It covers every setting and MCP server; secret v
 ## 6. Operate
 
 - **Change the deployment:** edit `tinywebui.config.js`, run `validate`, then `docker compose up -d` (a restart). Edits to `/data/tinywebui.config.json` or `mcp.json` reload live, or on `docker compose kill -s HUP tinywebui`.
-- **Users from scripts:** `docker compose exec tinywebui node bin/tinywebui.js users set 'google-oauth2|42' --status approved` records the decision in `/data/tinywebui.config.json`, and the running server applies it.
+- **Users from scripts:** `docker compose exec tinywebui node bin/tinywebui.ts users set 'google-oauth2|42' --status approved` records the decision in `/data/tinywebui.config.json`, and the running server applies it.
 - **See what a role gets:** `docker compose run --rm tinywebui config show --role user`.
 - **Audit:** every change and admin action is a `[tinywebui:audit]` JSON line in `docker compose logs tinywebui`.
 - **Stop:** `SIGTERM` (what `docker compose stop` sends) closes MCP connections and the database cleanly.

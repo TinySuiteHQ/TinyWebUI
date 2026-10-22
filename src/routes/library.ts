@@ -1,8 +1,9 @@
 import { json, readJson } from '../http.ts';
 import { FEATURE } from '../../public/shared/features.js';
+import type { Route, RouteDeps } from './types.ts';
 
 /** The sidebar's search, usage statistics, and folders. */
-export function libraryRoutes({ runs, store }) {
+export function libraryRoutes({ runs, store }: Pick<RouteDeps, 'runs' | 'store'>): Route[] {
   return [
     // Full-text search across every stored message, for the sidebar's search
     // box. GET with a query string, so it is bookmarkable and cacheable like
@@ -45,7 +46,7 @@ export function libraryRoutes({ runs, store }) {
       if (!found) return json(res, 404, { error: 'no such chat' });
       if (folder) store.chats.createFolder(folder, auth.userId);
       const updated = store.chats.organize(chatId, { folder, tags }, auth.userId);
-      return json(res, 200, { folder: updated.folder });
+      return json(res, 200, { folder: updated!.folder });
     } }
   ];
 }

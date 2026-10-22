@@ -2,11 +2,12 @@
 import { existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { StartOptions } from '../src/server.ts';
 
 const args = process.argv.slice(2);
-const flag = (name, fallback) => {
+const flag = <T = undefined>(name: string, fallback?: T): string | T => {
   const i = args.indexOf(`--${name}`);
-  return i === -1 ? fallback : args[i + 1];
+  return i === -1 ? fallback as T : args[i + 1];
 };
 
 // `--config <path>` (or `validate <path>`) points every command at a config
@@ -55,7 +56,7 @@ panel. See README for the rest.
 // its JSON path at load time from $TINYWEBUI_CONFIG, so a .js path there has
 // to be swapped for the JSON file beside it first.
 const envPath = process.env.TINYWEBUI_CONFIG && resolve(process.env.TINYWEBUI_CONFIG);
-let jsPath = null;
+let jsPath: string | null = null;
 if (envPath && /\.[cm]?js$/.test(envPath)) {
   jsPath = envPath;
   process.env.TINYWEBUI_CONFIG = resolve(dirname(envPath), 'tinywebui.config.json');
@@ -67,7 +68,7 @@ if (envPath && /\.[cm]?js$/.test(envPath)) {
 }
 
 try {
-  let opts = {};
+  let opts: StartOptions = {};
   if (jsPath && !existsSync(jsPath)) throw new Error(`config file not found: ${jsPath}`);
   if (jsPath) {
     const mod = await import(pathToFileURL(jsPath).href);
@@ -78,14 +79,14 @@ try {
   }
   const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config', 'models'];
   if (COMMANDS.includes(args[0])) {
-    const { runCli } = await import('../src/cli.js');
+    const { runCli } = await import('../src/cli.ts');
     process.exit(await runCli(args[0], args.slice(1), opts));
   }
   if (args[0] && !args[0].startsWith('--') && args[0] !== 'start') {
     console.error(`[tinywebui] unknown command "${args[0]}" (see --help)`);
     process.exit(1);
   }
-  const { start } = await import('../src/server.js');
+  const { start } = await import('../src/server.ts');
   // Command-line flags beat the file; the file beats the built-in defaults.
   await start({
     ...opts,

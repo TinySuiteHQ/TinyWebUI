@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - run: npm test
       # Check the default install path and the model the server loads.
-      - run: node bin/tinywebui.js models ensure
-      - run: node bin/tinywebui.js models verify | tee verify.json
+      - run: node bin/tinywebui.ts models ensure
+      - run: node bin/tinywebui.ts models verify | tee verify.json
       - run: |
           grep -q '"mode": "hybrid"' verify.json

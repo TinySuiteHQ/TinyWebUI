@@ -25,11 +25,11 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "prestart": "node bin/tinywebui.js models ensure",
-    "start": "node bin/tinywebui.js",
-    "predev": "node bin/tinywebui.js models ensure",
-    "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.js",
-    "stop": "pkill -f 'bin/tinywebui.js' || true",
+    "prestart": "node bin/tinywebui.ts models ensure",
+    "start": "node bin/tinywebui.ts",
+    "predev": "node bin/tinywebui.ts models ensure",
+    "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.ts",
+    "stop": "pkill -f 'bin/tinywebui' || true",
     "typecheck": "tsc -p .",
     "test": "tsc -p . && node --test --test-timeout=30000",
     "build": "tsc -p tsconfig.build.json",

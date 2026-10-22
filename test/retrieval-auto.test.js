@@ -65,7 +65,7 @@ test('$TINYWEBUI_RETRIEVAL_MODE opts out without a config file, and a typo is a 
 });
 
 // `models ensure` as a subprocess, with fetch replaced so any download attempt fails loudly.
-const BIN = fileURLToPath(new URL('../bin/tinywebui.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/tinywebui.ts', import.meta.url));
 const NO_NET = join(dir, 'no-net.mjs');
 writeFileSync(NO_NET, 'globalThis.fetch = async (url) => { throw new Error(`network used: ${url}`); };\n');
 const ensure = (config, extraEnv = {}) => {

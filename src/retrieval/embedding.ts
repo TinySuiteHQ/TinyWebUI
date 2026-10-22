@@ -116,7 +116,7 @@ export function resolveModel(retrieval: ModelSettings, modelsDir: string): Model
   };
 }
 
-export function findOnnxFile(spec: ModelSpec): string | null {
+export function findOnnxFile(spec: Pick<ModelSpec, 'onnxPaths' | 'dir'>): string | null {
   for (const rel of spec.onnxPaths) {
     const p = join(spec.dir, rel);
     if (existsSync(p) && statSync(p).isFile()) return p;

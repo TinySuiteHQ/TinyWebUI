@@ -74,7 +74,7 @@ const readCfg = () => JSON.parse(readFileSync(configFile, 'utf8'));
 const logged = [];
 const origLog = console.log;
 console.log = (...args) => { logged.push(args.join(' ')); };
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({
   port: 0, host: '127.0.0.1', configFile, dbPath: join(dir, 'c.db'),
   config: {

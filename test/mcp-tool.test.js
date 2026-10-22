@@ -241,7 +241,7 @@ process.env.TINYWEBUI_DB = join(dir, 'chats.db');
 writeFileSync(process.env.TINYWEBUI_CONFIG, JSON.stringify({ toolApproval: 'off' }));
 writeFileSync(process.env.TINYWEBUI_MCP, JSON.stringify({ mcpServers: {} }));
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'local' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 test.after(async () => { await srv.shutdown(); fake.close(); });

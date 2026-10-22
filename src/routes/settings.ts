@@ -5,35 +5,40 @@ import { audit } from '../audit.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
 import { FEATURE } from '../../public/shared/features.js';
+import type { Route, RouteDeps } from './types.ts';
+import type { McpHub } from '../mcp.ts';
 
-export const toolList = (hub) => hub.tools.map((t) => ({
+interface ProviderModel { id: string; name: string | null }
+interface ModelList { supported: boolean; models: ProviderModel[]; error?: string }
+
+export const toolList = (hub: McpHub) => hub.tools.map((t) => ({
   name: t.function.name,
   description: t.function.description,
   parameters: t.function.parameters
 }));
 
-export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }) {
+export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }: Pick<RouteDeps, 'config' | 'configFor' | 'hub' | 'saveConfig' | 'toolsView'>): Route[] {
   // The provider's model list, cached per endpoint for a few minutes:
   // OpenRouter's list is large and the picker is opened far more often than
   // the catalogue changes.
-  let modelCache = null;
-  const listModels = async () => {
+  let modelCache: { key: string; at: number; value: ModelList } | null = null;
+  const listModels = async (): Promise<ModelList> => {
     const cfg = config();
     const key = `${cfg.baseUrl}|${Boolean(cfg.apiKey)}`;
     if (modelCache?.key === key && Date.now() - modelCache.at < 5 * 60_000) return modelCache.value;
-    let value;
+    let value: ModelList;
     try {
       const r = await fetch(`${cfg.baseUrl}/models`, {
         headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
         signal: AbortSignal.timeout(8000)
       });
       if (!r.ok) throw new Error(`${r.status} from ${cfg.baseUrl}/models`);
-      const body = await r.json();
+      const body: any = await r.json();
       const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
       const models = rows
-        .map((m) => ({ id: m.id || m.name, name: m.name && m.name !== m.id ? m.name : null }))
-        .filter((m) => typeof m.id === 'string' && m.id)
-        .sort((a, b) => a.id.localeCompare(b.id));
+        .map((m: any): ProviderModel => ({ id: m.id || m.name, name: m.name && m.name !== m.id ? m.name : null }))
+        .filter((m: ProviderModel) => typeof m.id === 'string' && m.id)
+        .sort((a: ProviderModel, b: ProviderModel) => a.id.localeCompare(b.id));
       value = { supported: models.length > 0, models };
     } catch (err) {
       value = { supported: false, models: [], error: err.message };
@@ -97,7 +102,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
         });
         if (r.status === 401 || r.status === 403) return json(res, 200, { ok: false, error: `${r.status}: the endpoint rejected the key` });
         // Not every OpenAI-compatible server lists models; reachable is the point.
-        const list = r.ok ? await r.json().catch(() => null) : null;
+        const list: any = r.ok ? await r.json().catch(() => null) : null;
         const rows = Array.isArray(list?.data) ? list.data : Array.isArray(list?.models) ? list.models : null;
         return json(res, 200, { ok: r.status < 500, status: r.status, models: rows ? rows.length : null });
       } catch (err) {

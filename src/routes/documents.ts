@@ -4,13 +4,15 @@ import { normalizeImage } from '../files/images.ts';
 import { logger } from '../log.ts';
 import { FEATURE } from '../../public/shared/features.js';
 import { CORPUS } from '../store/index.ts';
+import type { Route, RouteDeps } from './types.ts';
+import type { SignedIn } from '../access/auth_gate.ts';
 
 const log = logger('retrieval');
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 /** Decodes and normalizes one uploaded image; null on anything unusable. */
-export async function normalizeUpload(mimeRaw, dataBase64) {
+export async function normalizeUpload(mimeRaw: unknown, dataBase64: unknown): Promise<{ mime: string; data: string } | null> {
   const mime = String(mimeRaw || '');
   if (!mime.startsWith('image/') && mime !== '') return null;
   let buf;
@@ -24,18 +26,18 @@ export async function normalizeUpload(mimeRaw, dataBase64) {
   }
 }
 
-export function documentRoutes({ retrieval, store }) {
+export function documentRoutes({ retrieval, store }: Pick<RouteDeps, 'retrieval' | 'store'>): Route[] {
   // Uploads and attaches land before the first message exists, so the chat is
   // created lazily, the same way /api/chat does for a brand-new conversation.
   // Null when the id is someone else's: "no such chat", never a key clash.
-  const chatFor = (chatId, auth, title) => {
+  const chatFor = (chatId: string, auth: SignedIn, title: unknown) => {
     const own = store.chats.get(chatId, auth.userId);
     if (own) return own;
     if (store.chats.byId(chatId)) return null;
     return store.chats.create({ id: chatId, title: String(title).slice(0, 60) }, auth.userId);
   };
   // Embedded once, in the background; a question that arrives first waits for it.
-  const ingest = (doc) => retrieval.ingest(CORPUS.DOCUMENTS, doc.id)
+  const ingest = (doc: { id: string }) => retrieval.ingest(CORPUS.DOCUMENTS, doc.id)
     .catch((err) => log.error(`embedding ${doc.id} failed: ${err.message}`));
 
   return [
@@ -90,7 +92,7 @@ export function documentRoutes({ retrieval, store }) {
       const chat = chatFor(chatId, auth, source.filename);
       if (!chat) return json(res, 404, { error: 'no such chat' });
       const doc = store.documents.copyToChat(documentId, chat.id, auth.userId, retrieval.passageSettings());
-      if (!doc.existing) ingest(doc);
+      if (!doc!.existing) ingest(doc!);
       return json(res, 200, { chatId: chat.id, document: doc });
     } },
 

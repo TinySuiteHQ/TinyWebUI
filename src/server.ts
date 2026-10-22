@@ -1,9 +1,10 @@
-import { createServer } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { watch, existsSync } from 'node:fs';
+import { watch, existsSync, type FSWatcher } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { dirname } from 'node:path';
 
-import { createConfigSource, LockedError, configProblems, redactSecrets } from './config/config.ts';
+import { createConfigSource, LockedError, configProblems, redactSecrets, type Config, type ConfigOptions, type ConfigSource, type McpServers } from './config/config.ts';
 import { McpHub, missingCommand } from './mcp.ts';
 import { isClosed, findEntry } from './config/models.ts';
 import { Store, SCHEMA_VERSION } from './store/index.ts';
@@ -11,32 +12,77 @@ import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/pol
 import { applyAccessPolicy } from './access/auth.ts';
 import { audit } from './audit.ts';
 import { logger } from './log.ts';
-import { resolveAuth } from './access/auth_gate.ts';
+import { resolveAuth, type Auth } from './access/auth_gate.ts';
 import { json, HttpError, SECURITY_HEADERS, crossSite, badHost, serveStatic } from './http.ts';
 import { expandToolDef, callExpand } from './tools/context_tool.ts';
 import { documentToolDef, callReadDocument } from './tools/document_tool.ts';
 import { askToolDef, callAskUser } from './tools/ask_tool.ts';
 import { chatSearchToolDef, callSearchChats } from './tools/chat_search_tool.ts';
 import { taskToolDef, callManageTasks } from './tools/task_tool.ts';
-import { mcpToolDef, callManageMcp, MANAGE_MCP } from './tools/mcp_tool.ts';
+import { mcpToolDef, callManageMcp, MANAGE_MCP, type McpEditor } from './tools/mcp_tool.ts';
 import { automationToolDef, manageAutomation } from './automations/automation.ts';
 import { overrideFor } from './config/approval.ts';
 import { Retrieval } from './retrieval/retrieval.ts';
-import { loadEmbedder, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
-import { createRuns } from './chat/runs.ts';
-import { createScheduler } from './automations/scheduler.ts';
-import { authRoutes } from './routes/auth.js';
-import { settingsRoutes } from './routes/settings.js';
-import { mcpRoutes } from './routes/mcp.js';
-import { libraryRoutes } from './routes/library.js';
-import { automationRoutes } from './routes/automations.js';
-import { documentRoutes } from './routes/documents.js';
-import { chatRoutes } from './routes/chats.js';
-import { adminRoutes } from './routes/admin.js';
+import { loadEmbedder, resolveRetrieval, defaultModelsDir, type Embedder } from './retrieval/embedding.ts';
+import { createRuns, type Runs } from './chat/runs.ts';
+import { createScheduler, type Scheduler } from './automations/scheduler.ts';
+import type { RetrievalMode } from './config/config.ts';
+import type { UserRole } from './store/users.ts';
+import type { ToolDef } from './harness/types.ts';
+import type { Route, RouteContext, RouteDeps } from './routes/types.ts';
+import { authRoutes } from './routes/auth.ts';
+import { settingsRoutes } from './routes/settings.ts';
+import { mcpRoutes } from './routes/mcp.ts';
+import { libraryRoutes } from './routes/library.ts';
+import { automationRoutes } from './routes/automations.ts';
+import { documentRoutes } from './routes/documents.ts';
+import { chatRoutes } from './routes/chats.ts';
+import { adminRoutes } from './routes/admin.ts';
 import { EVENT } from '../public/shared/events.js';
 import { FEATURE } from '../public/shared/features.js';
 
 const log = logger('server');
+
+/** What every part of the server shares; see `app` in start(). */
+export interface App {
+  version: string;
+  source: ConfigSource;
+  store: Store;
+  retrieval: Retrieval;
+  cfg: Config;
+  hub: McpHub;
+  runs: Runs;
+  scheduler: Scheduler;
+  passwordHash?: string;
+  saveConfig(patch: Record<string, unknown>, by?: string): Config;
+  refreshConfig(): void;
+  auditMcp(by: string | undefined, before: string, change?: { action: string; name: string }): void;
+  mcpEdit: McpEditor;
+  multiUser(): boolean;
+  modelFor(userId: string | null | undefined, role: UserRole | null | undefined): string;
+  instructionsFor(userId: string | null | undefined): string | null;
+  toolsFor(features: Set<string>): ToolDef[];
+  ownerFeatures(userId: string | null): Set<string>;
+  toolsView(): unknown;
+  configFor(auth: Auth): Record<string, unknown>;
+  swapHub(servers: McpServers): Promise<void>;
+  onRunIdle(chatId: string): void;
+}
+
+export interface StartOptions extends ConfigOptions {
+  port?: number;
+  host?: string;
+  /** Stands in for the embedding model (tests). */
+  embedder?: Embedder;
+  /** false: do not watch the config files for edits. */
+  watch?: boolean;
+}
+
+/** The HTTP server start() returns, with its reload and teardown. */
+export interface TinyServer extends Server {
+  reload(reason: string): Promise<boolean>;
+  shutdown(): Promise<void>;
+}
 
 const VERSION = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -46,11 +92,11 @@ const VERSION = JSON.parse(await readFile(new URL('../package.json', import.meta
  * permission are the same table, so a route cannot ship without a decision
  * about who may use it. First match wins.
  */
-function routeTable(app) {
+function routeTable(app: App): Route[] {
   // What route groups may ask for. Each group's signature names the part it
   // uses; config, hub and passwordHash change at runtime, so they are read
   // through accessors rather than captured.
-  const deps = {
+  const deps: RouteDeps = {
     store: app.store, runs: app.runs, scheduler: app.scheduler, retrieval: app.retrieval,
     source: app.source, version: app.version,
     config: () => app.cfg, hub: () => app.hub, passwordHash: () => app.passwordHash,
@@ -67,7 +113,7 @@ function routeTable(app) {
 }
 
 // Handlers only read their dependencies when called, so a stub lists the table.
-export const API_ROUTES = routeTable({}).map((r) => [r.method, r.path, r.feature]);
+export const API_ROUTES = routeTable({} as App).map((r) => [r.method, r.path, r.feature]);
 
 // Fields a non-admin never sees: credentials, and where the deployment's
 // trust boundary sits.
@@ -80,7 +126,7 @@ const LOOPBACK_BINDS = ['127.0.0.1', '::1', 'localhost'];
  * createConfigSource: `config` (keys set here win and are locked in the UI),
  * `configFile` (a path, or false for none), `mcpServers`, `mcpFile`, `dbPath`.
  */
-export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } = {}) {
+export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: StartOptions = {}): Promise<TinyServer> {
   const source = createConfigSource(sourceOpts);
   const initial = source.load();
   const problems = configProblems(initial);
@@ -102,7 +148,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   // 'auto', where a model that simply isn't installed means lexical.
   let resolved;
   try {
-    const load = sourceOpts.embedder ? async () => sourceOpts.embedder : loadEmbedder;
+    const load = sourceOpts.embedder ? async () => sourceOpts.embedder! : loadEmbedder;
     resolved = await resolveRetrieval(initial.retrieval, defaultModelsDir(source.path()), load);
   } catch (err) { store.close(); throw err; }
   const { embedder } = resolved;
@@ -119,9 +165,10 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     version: VERSION,
     source,
     store,
-    retrieval: new Retrieval(store, { ...initial.retrieval, mode: resolved.mode }, embedder),
+    retrieval: new Retrieval(store, { ...initial.retrieval, mode: resolved.mode as RetrievalMode }, embedder),
     cfg: initial,
-    hub: null,
+    // Set by connectHub below, before the server listens.
+    hub: null as unknown as McpHub,
 
     // Every UI/API change lands in config.json (source.save) and is audited:
     // who, which keys, the new values (none of these keys are secrets), and the
@@ -174,16 +221,16 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       const { cfg } = app;
       // With a catalog, everything is an entry id; a provider id (as the
       // default `model` may be) is resolved to its entry.
-      const known = (m) => (isClosed(cfg) ? findEntry(cfg, m)?.id : m);
+      const known = (m: string | null | undefined) => (isClosed(cfg) ? findEntry(cfg, m)?.id : m);
       const fallback = known(cfg.model) || cfg.model;
       if (!app.multiUser() || !userId) return fallback;
       const allowed = modelsFor(cfg, role);
-      const ok = (m) => m && (allowed === '*' || allowed.includes(m));
+      const ok = (m: string | null | undefined): m is string => Boolean(m && (allowed === '*' || allowed.includes(m)));
       const pref = known(store.users.getPrefs(userId).model);
       if (ok(pref)) return pref;
       if (ok(fallback)) return fallback;
       // First of the role's models still enabled (a parked one never runs).
-      return allowed.map(known).find(Boolean) || fallback;
+      return (allowed as string[]).map(known).find(Boolean) || fallback;
     },
 
     /** A person's own instructions, added after the system prompt, when an admin lets users set them. */
@@ -206,7 +253,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
     toolsView() {
       const { cfg, hub } = app;
       const inv = hub.inventory(cfg.disabledTools);
-      const mark = (t) => ({ ...t, approval: overrideFor(cfg, t.name) });
+      const mark = <T extends { name: string }>(t: T) => ({ ...t, approval: overrideFor(cfg, t.name) });
       return {
         // Built-ins never ask, so they carry no approval state to show.
         internal: inv.internal,
@@ -221,11 +268,11 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       if (auth.features.has(FEATURE.SETTINGS) && auth.isAdmin) return pub;
       if (auth.features.has(FEATURE.SETTINGS)) {
         // Allowed to edit settings, but not to see where the deployment's keys point.
-        const out = {};
+        const out: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
         return out;
       }
-      const out = {};
+      const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
       return { ...out, readOnly: true };
     },
@@ -249,7 +296,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       return run;
     },
 
-    onRunIdle: (chatId) => {
+    onRunIdle: (chatId: string) => {
       app.scheduler.drain(chatId);
       // manage_mcp saved mcp.json during that run. Re-read the file rather than
       // reuse what it saved: someone may have edited it since.
@@ -258,14 +305,14 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         app.swapHub(source.loadMcpServers()).catch((err) => log.error(`mcp reconnect failed: ${err.message}`));
       }
     }
-  };
+  } satisfies Partial<App> as App;
   app.runs = createRuns(app);
   app.scheduler = createScheduler(app);
   const { retrieval, runs, scheduler } = app;
 
   // The built-in tools are ours, not an MCP server's, but the model should not
   // be able to tell: they are registered onto the same hub and called the same way.
-  const connectHub = async (servers) =>
+  const connectHub = async (servers: McpServers) =>
     (await new McpHub(servers).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
       .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
@@ -298,7 +345,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
   // The hub swap in progress, if any, and whether shutdown has begun.
   let swapping = Promise.resolve();
   let stopping = false;
-  const serversOf = (text) => { try { const p = JSON.parse(text); return p.mcpServers || p; } catch { return {}; } };
+  const serversOf = (text: string): McpServers => { try { const p = JSON.parse(text); return p.mcpServers || p; } catch { return {}; } };
 
   log.info(`config: ${source.path() || '(in code, no file)'}`);
   log.info(`mcp:    ${source.mcpPath() || '(in code)'}`);
@@ -348,7 +395,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
         const match = route.path.exec(pathname);
         if (!match) continue;
         if (route.feature && !auth.features.has(route.feature)) return json(res, 403, { error: 'feature_disabled', feature: route.feature });
-        return await route.handle({ req, res, auth, url, params: match.slice(1) });
+        // Holding a feature means someone is signed in, so a feature route's `auth` has its scope.
+        return await (route.handle as (ctx: RouteContext) => unknown)({ req, res, auth, url, params: match.slice(1) });
       }
       return json(res, 404, { error: 'not found' });
     } catch (err) {
@@ -356,11 +404,11 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
       if (!res.headersSent) json(res, err instanceof HttpError ? err.status : err instanceof LockedError ? 409 : 500, { error: err.message });
       else res.end();
     }
-  });
+  }) as TinyServer;
 
-  await new Promise((resolve) => server.listen(port, host, resolve));
+  await new Promise<void>((resolve) => server.listen(port, host, resolve));
   scheduler.arm();
-  const origin = `http://${host.includes(':') ? `[${host}]` : host}:${server.address().port}`;
+  const origin = `http://${host.includes(':') ? `[${host}]` : host}:${(server.address() as AddressInfo).port}`;
   log.info(origin);
   // Anything stored before dense retrieval was on (or under another model)
   // is embedded in the background; document queries fill in on demand too.
@@ -374,8 +422,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
    * is only read at startup, as is authMode (switching it live would strand
    * sessions and half the auth state).
    */
-  async function reloadFromFiles(reason) {
-    let next, servers, text;
+  async function reloadFromFiles(reason: string) {
+    let next: Config, servers: McpServers, text: string;
     try {
       next = source.load();
       text = source.readMcpFile();
@@ -412,15 +460,15 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts } =
 
   // Editors often replace a file rather than write into it, which a watch on
   // the file itself would lose; watching the folder catches both.
-  const watchers = [];
-  let reloadTimer = null;
-  const scheduleReload = (reason) => {
+  const watchers: FSWatcher[] = [];
+  let reloadTimer: NodeJS.Timeout | undefined;
+  const scheduleReload = (reason: string) => {
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(() => { reloadFromFiles(reason).catch((err) => log.error(`reload failed: ${err.message}`)); }, 300);
     reloadTimer.unref?.();
   };
   if (sourceOpts.watch !== false) {
-    const targets = [source.path(), source.mcpPath()].filter(Boolean);
+    const targets = [source.path(), source.mcpPath()].filter((t): t is string => Boolean(t));
     for (const folder of new Set(targets.map((t) => dirname(t)))) {
       if (!existsSync(folder)) continue;
       const names = new Set(targets.filter((t) => dirname(t) === folder).map((t) => t.slice(folder.length + 1)));

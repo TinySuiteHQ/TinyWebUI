@@ -3,22 +3,25 @@ import { LockedError } from '../config/config.ts';
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
-import { normalizeUpload } from './documents.js';
+import { normalizeUpload } from './documents.ts';
 import { attachmentNote } from '../../public/shared/attachment_note.js';
 import { FEATURE } from '../../public/shared/features.js';
+import type { Route, RouteDeps } from './types.ts';
+import type { ServerResponse } from 'node:http';
+import type { Auth } from '../access/auth_gate.ts';
 
 const MAX_IMAGES = 8;
 const F = FEATURE.CHAT;
 
 /** Images and documents on a turn need their own features, whatever the route. */
-function refusedFeature(auth, { images, documentIds }) {
+function refusedFeature(auth: Auth, { images, documentIds }: { images?: unknown; documentIds?: unknown }) {
   if (Array.isArray(images) && images.length && !auth.features.has(FEATURE.IMAGES)) return FEATURE.IMAGES;
   if (Array.isArray(documentIds) && documentIds.length && !auth.features.has(FEATURE.ATTACHMENTS)) return FEATURE.ATTACHMENTS;
   return null;
 }
 
-export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig, store, toolsFor }) {
-  const noChat = (res) => json(res, 404, { error: 'no such chat' });
+export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig, store, toolsFor }: Pick<RouteDeps, 'config' | 'instructionsFor' | 'modelFor' | 'runs' | 'saveConfig' | 'store' | 'toolsFor'>): Route[] {
+  const noChat = (res: ServerResponse) => json(res, 404, { error: 'no such chat' });
 
   return [
     // `running` is what puts the dot in the sidebar: a turn belongs to the
@@ -119,7 +122,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const run = runs.get(chatId);
       const pending = run?.approvals.get(id);
       if (!pending) return json(res, 409, { error: 'that call is no longer waiting' });
-      run.approvals.delete(id);
+      run!.approvals.delete(id);
       // "Always" rewrites tool policy, which is the tools feature's to do;
       // without it, the answer counts as allowing this one call.
       if (decision === 'always' && auth.features.has(FEATURE.TOOLS)) {

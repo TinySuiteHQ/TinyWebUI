@@ -3,13 +3,18 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
-import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.ts';
+import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
 import { REASONING_REPLAY, MODEL_TAGS } from './config/models.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
 } from './access/policy.ts';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
+import type { UserRole, UserStatus } from './store/users.ts';
+import type { ReadableStream } from 'node:stream/web';
+
+/** One `tinywebui <command>`: its arguments after the name, and the exit code. */
+type Command = (args: string[], opts: ConfigOptions) => number | Promise<number>;
 
 /**
  * The scriptable side of TinyWebUI: everything an agent (or a person) needs
@@ -18,26 +23,26 @@ import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts'
  * generated sessionSecret as a side effect.
  */
 
-const out = (v) => process.stdout.write(typeof v === 'string' ? `${v}\n` : `${JSON.stringify(v, null, 2)}\n`);
-const flag = (args, name) => { const i = args.indexOf(`--${name}`); return i === -1 ? undefined : args[i + 1]; };
+const out = (v: unknown) => process.stdout.write(typeof v === 'string' ? `${v}\n` : `${JSON.stringify(v, null, 2)}\n`);
+const flag = (args: string[], name: string) => { const i = args.indexOf(`--${name}`); return i === -1 ? undefined : args[i + 1]; };
 
-function loadAll(opts) {
+function loadAll(opts: ConfigOptions) {
   const source = createConfigSource(opts);
   const cfg = source.load({ persistSecret: false });
-  let servers = null;
-  let mcpError = null;
+  let servers: McpServers | null = null;
+  let mcpError: string | null = null;
   try { servers = source.strictMcpServers(); } catch (err) { mcpError = `mcp.json: ${err.message}`; }
   return { source, cfg, servers: servers || {}, mcpError };
 }
 
-const mb = (n) => (n < 1048576 ? `${Math.ceil(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+const mb = (n: number) => (n < 1048576 ? `${Math.ceil(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
 /**
  * Streams a response body to disk. On a terminal it redraws one progress
  * line (the model file is ~90 MB and otherwise looks like a hang); piped
  * output gets just the finished line so logs stay clean.
  */
-async function download(res, target, label) {
+async function download(res: Response, target: string, label: string) {
   const total = Number(res.headers.get('content-length')) || 0;
   const tty = process.stderr.isTTY;
   let done = 0;
@@ -51,7 +56,7 @@ async function download(res, target, label) {
       cb(null, chunk);
     }
   });
-  await pipeline(Readable.fromWeb(res.body), counter, createWriteStream(target));
+  await pipeline(Readable.fromWeb(res.body as ReadableStream), counter, createWriteStream(target));
   process.stderr.write(tty ? `\r${line()}\x1b[K\n` : `${line()}\n`);
 }
 
@@ -59,7 +64,7 @@ async function download(res, target, label) {
  * Downloads a preset bundle into `dest`, via a .partial folder so an
  * interrupted fetch never leaves a half bundle that looks complete.
  */
-async function pullPreset(name, dest) {
+async function pullPreset(name: string, dest: string) {
   const preset = PRESETS[name];
   const tmp = `${dest}.partial`;
   rmSync(tmp, { recursive: true, force: true });
@@ -82,11 +87,11 @@ async function pullPreset(name, dest) {
   mkdirSync(dirname(dest), { recursive: true });
   renameSync(tmp, dest);
   const onnx = findOnnxFile({ ...preset, dir: dest });
-  return { model: name, dir: dest, onnx, sha256: await sha256File(onnx) };
+  return { model: name, dir: dest, onnx, sha256: await sha256File(onnx!) };
 }
 
-function mcpProblems(servers) {
-  const problems = [];
+function mcpProblems(servers: McpServers) {
+  const problems: string[] = [];
   for (const [name, spec] of Object.entries(servers)) {
     if (!spec || (!spec.command && !spec.url)) problems.push(`mcp server "${name}" needs either "command" or "url"`);
   }
@@ -94,8 +99,8 @@ function mcpProblems(servers) {
 }
 
 /** Server specs with credentials blanked: env values and header values. */
-function redactServers(servers) {
-  const clean = {};
+function redactServers(servers: McpServers): McpServers {
+  const clean: McpServers = {};
   for (const [name, spec] of Object.entries(servers)) {
     const s = { ...spec };
     if (s.env) s.env = Object.fromEntries(Object.keys(s.env).map((k) => [k, '<redacted>']));
@@ -105,7 +110,7 @@ function redactServers(servers) {
   return clean;
 }
 
-const commands = {
+const commands: Record<string, Command> = {
   /** Exit 0 with the fingerprint when the files are valid; exit 1 listing every problem. */
   validate(args, opts) {
     const { source, cfg, servers, mcpError } = loadAll(opts);
@@ -136,20 +141,21 @@ const commands = {
   effective(args, opts) {
     const { source, cfg, servers } = loadAll(opts);
     const locked = source.lockedKeys();
-    const roleFor = (role) => ({
+    const roleFor = (role: UserRole | null) => ({
       features: [...featuresFor(cfg, role)],
       models: modelsFor(cfg, role)
     });
     const role = flag(args, 'role');
     if (role) {
-      if (!ROLES.includes(role)) { process.stderr.write(`error: unknown role "${role}" (known: ${ROLES.join(', ')})\n`); return 1; }
-      out({ role, authMode: cfg.authMode, ...roleFor(role) });
+      if (!ROLES.includes(role as UserRole)) { process.stderr.write(`error: unknown role "${role}" (known: ${ROLES.join(', ')})\n`); return 1; }
+      out({ role, authMode: cfg.authMode, ...roleFor(role as UserRole) });
       return 0;
     }
-    const settings = {};
+    const settings: Record<string, unknown> = {};
+    const values = cfg as unknown as Record<string, unknown>;
     for (const key of Object.keys(cfg).sort()) {
       if (key === 'access') continue;
-      const value = SECRET_KEYS.has(key) ? (cfg[key] ? '<set>' : '<unset>') : cfg[key];
+      const value = SECRET_KEYS.has(key) ? (values[key] ? '<set>' : '<unset>') : values[key];
       settings[key] = { value, change: WRITABLE.has(key) || FILE_ONLY.has(key) ? keyClass(key, locked) : 'file-only' };
     }
     const access = resolveAccess(cfg);
@@ -186,12 +192,12 @@ const commands = {
         try { return store.users.list(); } finally { store.close(); }
       })() : [];
       const seen = new Set();
-      const users = rows.map((u) => {
+      const users: Record<string, unknown>[] = rows.map((u) => {
         seen.add(u.external_id);
         return {
           externalId: u.external_id, email: u.email, name: u.name, role: u.role, status: u.status,
           chats: u.chat_count, lastLoginAt: u.last_login_at ? new Date(u.last_login_at).toISOString() : null,
-          pinned: access.bootstrapAdmins.includes(u.external_id) ? 'bootstrapAdmins' : access.users[u.external_id] || null
+          pinned: access.bootstrapAdmins.includes(u.external_id as string) ? 'bootstrapAdmins' : access.users[u.external_id as string] || null
         };
       });
       // Decisions for people who have not signed in yet still belong in the list.
@@ -211,8 +217,8 @@ const commands = {
       const status = flag(args, 'status');
       const clear = args.includes('--clear');
       if (!clear && role === undefined && status === undefined) { process.stderr.write('error: nothing to set (use --role, --status or --clear)\n'); return 1; }
-      if (role !== undefined && !ROLES.includes(role)) { process.stderr.write(`error: role must be one of ${ROLES.join(', ')}\n`); return 1; }
-      if (status !== undefined && !STATUSES.includes(status)) { process.stderr.write(`error: status must be one of ${STATUSES.join(', ')}\n`); return 1; }
+      if (role !== undefined && !ROLES.includes(role as UserRole)) { process.stderr.write(`error: role must be one of ${ROLES.join(', ')}\n`); return 1; }
+      if (status !== undefined && !STATUSES.includes(status as UserStatus)) { process.stderr.write(`error: status must be one of ${STATUSES.join(', ')}\n`); return 1; }
       const file = source.readFile();
       const fileAccess = file.access && typeof file.access === 'object' ? file.access : {};
       const users = { ...(fileAccess.users || {}) };
@@ -253,7 +259,7 @@ const commands = {
     if (sub === 'pull') {
       const preset = PRESETS[name];
       if (!preset) { process.stderr.write(`usage: tinywebui models pull <${Object.keys(PRESETS).join('|')}> [--dir path]\n`); return 1; }
-      const dest = flag(args, 'dir') ? join(flag(args, 'dir')) : join(modelsDir, preset.localDir);
+      const dest = flag(args, 'dir') ? join(flag(args, 'dir')!) : join(modelsDir, preset.localDir);
       try { out(await pullPreset(name, dest)); return 0; } catch (err) { process.stderr.write(`error: ${err.message}\n`); return 1; }
     }
     if (sub === 'ensure') {
@@ -275,7 +281,7 @@ const commands = {
       const r = await resolveRetrieval(cfg.retrieval, modelsDir);
       if (!r.embedder) { out(r.fallback ? `retrieval.mode is auto: lexical, because ${r.fallback}` : 'retrieval.mode is lexical: no embedding model needed'); return 0; }
       const e = r.embedder;
-      out({ mode: r.mode, model: e.spec.name, dir: e.spec.dir, sha256: e.sha256, pinned: Boolean(cfg.retrieval.modelSha256), dims: e.dim, key: e.key });
+      out({ mode: r.mode, model: e.spec!.name, dir: e.spec!.dir, sha256: e.sha256, pinned: Boolean(cfg.retrieval.modelSha256), dims: e.dim, key: e.key });
       e.close?.();
       return 0;
     }
@@ -324,12 +330,12 @@ const commands = {
    * endpoint, and each enabled MCP server (connected, then closed).
    */
   async doctor(args, opts) {
-    const checks = [];
-    const check = async (name, fn) => {
+    const checks: { check: string; ok: boolean; detail?: unknown }[] = [];
+    const check = async (name: string, fn: () => unknown) => {
       try { const detail = await fn(); checks.push({ check: name, ok: true, ...(detail ? { detail } : {}) }); }
       catch (err) { checks.push({ check: name, ok: false, detail: err.message }); }
     };
-    let loaded;
+    let loaded: ReturnType<typeof loadAll> | undefined;
     await check('node', () => {
       // node:sqlite is available without a flag from 22.13.
       const [major, minor] = process.versions.node.split('.').map(Number);
@@ -348,7 +354,7 @@ const commands = {
         const file = source.dbPath(cfg);
         if (file === ':memory:') return 'in memory';
         if (!existsSync(file)) return `${file} will be created`;
-        let store;
+        let store: Store;
         try { store = new Store(file, { migrate: false }); } catch (err) {
           // Behind is fine when startup is allowed to migrate; it is only a
           // failure for deployments that migrate as a separate step.
@@ -375,7 +381,7 @@ const commands = {
         if (!r.embedder) return 'lexical (SQLite FTS5)';
         const e = r.embedder;
         e.close?.();
-        return `${r.mode} with ${e.spec.repoId}, ${e.dim} dims${cfg.retrieval.modelSha256 ? ', checksum pinned' : ', checksum NOT pinned (set retrieval.modelSha256)'}`;
+        return `${r.mode} with ${e.spec!.repoId}, ${e.dim} dims${cfg.retrieval.modelSha256 ? ', checksum pinned' : ', checksum NOT pinned (set retrieval.modelSha256)'}`;
       });
       const { McpHub } = await import('./mcp.ts');
       for (const [name, spec] of Object.entries(servers)) {
@@ -396,8 +402,8 @@ const commands = {
 
 /** A JSON Schema for config.json (and the `config` block of tinywebui.config.js). */
 export function configSchema() {
-  const typeOf = (v) => (v === null ? ['number', 'null'] : Array.isArray(v) ? 'array' : typeof v);
-  const properties = {};
+  const typeOf = (v: unknown) => (v === null ? ['number', 'null'] : Array.isArray(v) ? 'array' : typeof v);
+  const properties: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(DEFAULTS)) {
     properties[k] = {
       type: typeOf(v),
@@ -426,7 +432,7 @@ export function configSchema() {
     }
   };
   const num = { type: ['number', 'null'] };
-  const modelEntry = (nested) => ({
+  const modelEntry = (nested: boolean) => ({
     type: 'object', additionalProperties: false, required: ['id'],
     properties: {
       id: { type: 'string', description: 'Stable handle: what model, roles and prefs name.' },
@@ -486,7 +492,7 @@ export function configSchema() {
   };
 }
 
-export async function runCli(command, args, opts) {
+export async function runCli(command: string, args: string[], opts: ConfigOptions): Promise<number | null> {
   const fn = commands[command];
   if (!fn) return null;
   return fn(args, opts);

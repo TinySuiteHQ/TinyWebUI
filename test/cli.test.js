@@ -7,9 +7,9 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configSchema } from '../src/cli.js';
+import { configSchema } from '../src/cli.ts';
 
-const BIN = fileURLToPath(new URL('../bin/tinywebui.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/tinywebui.ts', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-cli-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -74,7 +74,7 @@ test('validate never writes a generated secret', () => {
 
 test('the checked-in schema matches the code', () => {
   const onDisk = JSON.parse(readFileSync(new URL('../docs/config.schema.json', import.meta.url), 'utf8'));
-  assert.deepEqual(onDisk, configSchema(), 'run: node bin/tinywebui.js schema > docs/config.schema.json');
+  assert.deepEqual(onDisk, configSchema(), 'run: node bin/tinywebui.ts schema > docs/config.schema.json');
 });
 
 test('migrate creates, then reports up to date; --check flags an old database', async () => {
@@ -89,7 +89,7 @@ test('migrate creates, then reports up to date; --check flags an old database', 
   const check = go('migrate', '--check');
   assert.equal(check.status, 1);
   assert.match(check.stderr, /run `tinywebui migrate`/);
-  const { start } = await import('../src/server.js');
+  const { start } = await import('../src/server.ts');
   await assert.rejects(start({ port: 0, configFile: join(d, 'tinywebui.config.json'), mcpServers: {} }), /tinywebui migrate/);
   assert.match(go('migrate').stdout, /migrated .* from schema 0/);
   assert.equal(go('migrate', '--check').status, 0);

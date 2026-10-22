@@ -37,7 +37,7 @@ EXPOSE 7777
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:7777/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
-ENTRYPOINT ["node", "bin/tinywebui.js"]
+ENTRYPOINT ["node", "bin/tinywebui.ts"]
 # retrieval.mode 'auto' would fall back to lexical here anyway; saying so
 # up front skips the "model not installed" warning on every start.
 ENV TINYWEBUI_RETRIEVAL_MODE=lexical

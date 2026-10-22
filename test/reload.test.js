@@ -11,7 +11,7 @@ const configFile = join(dir, 'tinywebui.config.json');
 writeFileSync(configFile, JSON.stringify({ authMode: 'local', systemPrompt: 'v1' }));
 writeFileSync(join(dir, 'mcp.json'), '{ "mcpServers": {} }\n');
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({
   port: 0, host: '127.0.0.1', configFile, dbPath: join(dir, 'db'),
   config: { baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'frozen' }
