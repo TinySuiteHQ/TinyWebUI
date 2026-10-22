@@ -1,19 +1,43 @@
-import { toWire } from '../store/index.ts';
+import { toWire, type Store } from '../store/index.ts';
+import type { NewMessage } from '../store/messages.ts';
 import { approvalFor } from '../config/approval.ts';
-import { runHooks } from '../harness/agent.ts';
-import { digest } from './compact.js';
+import type { Config } from '../config/config.ts';
+import { runHooks, type Delivered, type Hook } from '../harness/agent.ts';
+import type { ChatMessage, Emit, ToolCall } from '../harness/types.ts';
+import type { McpHub } from '../mcp.ts';
+import type { AskOutcome, AskRequest, ToolArgs } from '../tools/types.ts';
+import { digest } from './compact.ts';
 import { EVENT } from '../../public/shared/events.js';
+
+/** What a tool hook is handed (see the lifecycle hooks in harness/agent.js). */
+export interface CallContext { name: string; args: ToolArgs; call: ToolCall; round: number; signal?: AbortSignal }
+export interface TurnContext { round: number; assistant: ChatMessage; results: Delivered<StoredToolMessage>[]; signal?: AbortSignal }
+
+export interface Hooks {
+  beforeToolCall?: Hook<CallContext, { block?: unknown }>[];
+  afterToolCall?: Hook<CallContext & { result: unknown }, { result?: unknown; stop?: boolean }>[];
+  afterTurn?: Hook<TurnContext, { stop?: boolean }>[];
+}
+
+export type ApprovalDecision = 'allow' | 'always' | 'deny';
+export type Approve = (call: { id: string; name: string; args: ToolArgs }) => Promise<ApprovalDecision>;
+
+/** A tool result as stored and handed back: `compacted` when only its stub goes to the model. */
+export type StoredToolMessage = NewMessage & { compacted?: true };
+
+/** A call that will not run (`result`), or one that will (`run`). */
+interface Prepared { args: ToolArgs; result?: unknown; run?: CallContext }
 
 /**
  * Key for spotting a repeated call. Keys are sorted at every depth: a flat
  * replacer list would also act as a whitelist on nested objects and collapse
  * {q:{text:"a"}} and {q:{text:"b"}} into the same key.
  */
-function stableKey(value) {
+function stableKey(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableKey).join(',')}]`;
   if (value && typeof value === 'object') {
     return `{${Object.keys(value).sort()
-      .map((k) => `${JSON.stringify(k)}:${stableKey(value[k])}`).join(',')}}`;
+      .map((k) => `${JSON.stringify(k)}:${stableKey((value as Record<string, unknown>)[k])}`).join(',')}}`;
   }
   return JSON.stringify(value) ?? 'undefined';
 }
@@ -24,23 +48,27 @@ function stableKey(value) {
  * stubbing. State that spans the turn (seen calls, "always allow") lives in
  * the closure, so one executor serves exactly one turn.
  */
-export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: roundFooter, hooks, signal }) {
+export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: roundFooter, hooks, signal }: {
+  cfg: Config; chatId: string; store: Store; hub: McpHub; emit: Emit; unattended: boolean;
+  approve: Approve | null; askUser: ((request: AskRequest) => Promise<AskOutcome>) | null;
+  footer: (round: number) => string; hooks: Hooks; signal?: AbortSignal;
+}) {
   const toolCtx = { store, chatId, budget: cfg.expandCharBudget || 8000, unattended, askUser: unattended ? null : askUser };
   // Same tool name + same args, seen earlier in this turn, on a tool that has
   // declared its result depends only on its arguments: re-running it only burns
   // a round. Tracked by round so the model can be told exactly when it already
   // did this. Anything else -- a browser snapshot after a click, a list after a
   // create -- is run again, because its answer may well have changed.
-  const seenCalls = new Map();
+  const seenCalls = new Map<string, number>();
   // "Always allow" is saved by the server, but this turn's cfg is a snapshot
   // taken before it; remembered here so the next call in the turn doesn't ask.
-  const allowedNow = new Set();
+  const allowedNow = new Set<string>();
 
   // Set by an afterToolCall hook; honoured once the batch is complete.
   let stop = false;
 
   /** Resolves one call against the approval policy: 'allow', 'deny' or 'unattended'. */
-  const gate = async (name, args, id) => {
+  const gate = async (name: string, args: ToolArgs, id: string) => {
     if (allowedNow.has(name) || approvalFor(cfg, hub, name, args) === 'auto') return 'allow';
     if (unattended) return 'unattended';
     if (!approve) return 'deny';
@@ -54,7 +82,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
   const STOPPED = 'Error: the run was stopped before this call finished.';
 
   /** Approval, as the first beforeToolCall hook. */
-  const approval = async ({ name, args, call }) => {
+  const approval = async ({ name, args, call }: CallContext) => {
     const decision = await gate(name, args, call.id);
     if (decision === 'unattended') {
       return {
@@ -74,7 +102,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
   const before = [approval, ...(hooks.beforeToolCall || [])];
 
   /** Runs the afterToolCall chain; a failing hook leaves the result as it stood. */
-  const after = async (ctx) => {
+  const after = async (ctx: CallContext & { result: unknown }) => {
     try {
       await runHooks(hooks.afterToolCall, ctx, (o) => {
         if (o.result !== undefined) ctx.result = o.result;
@@ -94,10 +122,10 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
    * Returns `{ args, result }` for a call that will not run, `{ args, run }`
    * for one that will.
    */
-  const prepare = async (call, round) => {
+  const prepare = async (call: ToolCall, round: number): Promise<Prepared> => {
     const name = call.function.name;
-    let args = {};
-    let badArgs = null;
+    let args: ToolArgs = {};
+    let badArgs: string | null = null;
     try { args = call.function.arguments ? JSON.parse(call.function.arguments) : {}; }
     catch (err) { badArgs = err.message; }
     if (!badArgs && (args === null || typeof args !== 'object' || Array.isArray(args))) {
@@ -125,8 +153,8 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
           + ' result for the same arguments. Reuse what you got back then.'
       };
     }
-    const ctx = { name, args, call, round, signal };
-    let blocked = null;
+    const ctx: CallContext = { name, args, call, round, signal };
+    let blocked: string | null = null;
     try {
       await runHooks(before, ctx, (o) => {
         if (o.block === undefined) return false;
@@ -150,10 +178,10 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
    * rather than waiting on a tool that may never answer; the call still gets
    * a result, so the transcript stays valid.
    */
-  const run = async (ctx) => {
+  const run = async (ctx: CallContext) => {
     if (signal?.aborted) return STOPPED;
-    let onAbort;
-    const stopped = new Promise((r) => {
+    let onAbort: (() => void) | undefined;
+    const stopped = new Promise<typeof STOPPED>((r) => {
       onAbort = () => r(STOPPED);
       signal?.addEventListener('abort', onAbort, { once: true });
     });
@@ -165,14 +193,14 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
       if (signal?.aborted) return STOPPED;
       throw err;
     } finally {
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener('abort', onAbort!);
     }
   };
 
-  const execute = async (calls, { round }) => {
+  const execute = async (calls: ToolCall[], { round }: { round: number }): Promise<Delivered<StoredToolMessage>[]> => {
     // Every call is checked and approved before any of them runs, so no
     // write can start while a later call in the batch still waits on the user.
-    const prepared = [];
+    const prepared: Prepared[] = [];
     // The assistant turn holding these calls is already stored, so a Stop that
     // lands while one waits for approval must still answer all of them.
     for (const call of calls) {
@@ -187,7 +215,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     // One sequential call makes the whole batch sequential: deterministic, and
     // no guessing at which calls could safely overlap it.
     const parallel = prepared.every((p) => !p.run || hub.executionMode?.(p.run.name) === 'parallel');
-    const finish = async (p, call) => {
+    const finish = async (p: Prepared, call: ToolCall) => {
       if (p.run) p.result = await run(p.run);
       emit({ type: EVENT.TOOL_RESULT, id: call.id, name: call.function.name, result: p.result });
     };
@@ -195,7 +223,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
     else for (const [i, p] of prepared.entries()) await finish(p, calls[i]);
 
     // Persisted in the order the model made the calls, whatever order they finished in.
-    const out = [];
+    const out: Delivered<StoredToolMessage>[] = [];
     for (const [i, call] of calls.entries()) {
       const name = call.function.name;
       const { args, result } = prepared[i];
@@ -207,7 +235,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
       // artifact keeps the raw output; the budget footer is harness chatter.
       const artifactId = store.messages.addArtifact(chatId, { toolName: name, args, content: text });
       const footer = i === calls.length - 1 ? roundFooter(round) : '';
-      const msg = { role: 'tool', tool_call_id: call.id, content: text + footer, artifact_id: artifactId };
+      const msg: NewMessage & { content: string } = { role: 'tool', tool_call_id: call.id, content: text + footer, artifact_id: artifactId };
 
       // Two caps. Past `maxInlineChars` a result is stubbed for every LATER
       // turn: the round that asked for it still reads it whole, since a head and
@@ -229,7 +257,7 @@ export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approv
       store.messages.add(chatId, msg);
       out.push({
         wire: toWire(overTurn ? msg : { ...msg, stub_text: null }),
-        message: msg.stub_text ? { ...msg, compacted: true } : msg
+        message: msg.stub_text ? { ...msg, compacted: true as const } : msg
       });
     }
     return out;

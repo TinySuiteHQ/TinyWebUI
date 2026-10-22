@@ -10,7 +10,7 @@ export interface AgentRuntime<A extends ChatMessage = ChatMessage, M = ChatMessa
   executeToolBatch(calls: ToolCall[], ctx: RoundContext): Promise<Delivered<M>[]>;
   onEvent?: Emit;
   shouldContinue?(ctx: { round: number; assistant: A; results: Delivered<M>[] }): Promise<boolean> | boolean;
-  pendingInput?(ctx: { round: number }): Promise<Delivered<M>[]>;
+  pendingInput?: ((ctx: { round: number }) => Promise<Delivered<M>[]>) | null;
 }
 
 /** A lifecycle hook (see runHooks): returns nothing to pass, or an outcome. */

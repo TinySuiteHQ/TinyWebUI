@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
 import { Store, ALL_USERS } from '../src/store/index.ts';
-import { runChat } from '../src/chat/llm.js';
+import { runChat } from '../src/chat/llm.ts';
 import { CHECKPOINT_PROMPT, checkpointSource } from '../src/harness/checkpoint.ts';
 
 const GOOD = ['Objective', 'User constraints', 'Decisions', 'Verified findings',

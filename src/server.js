@@ -23,7 +23,7 @@ import { automationToolDef, manageAutomation } from './automations/automation.ts
 import { overrideFor } from './config/approval.ts';
 import { Retrieval } from './retrieval/retrieval.ts';
 import { loadEmbedder, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
-import { createRuns } from './chat/runs.js';
+import { createRuns } from './chat/runs.ts';
 import { createScheduler } from './automations/scheduler.ts';
 import { authRoutes } from './routes/auth.js';
 import { settingsRoutes } from './routes/settings.js';

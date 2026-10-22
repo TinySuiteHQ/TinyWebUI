@@ -1,4 +1,8 @@
 import { textMap, EXPAND_CONTEXT } from '../tools/context_tool.ts';
+import type { Store } from '../store/index.ts';
+import type { ChatRow } from '../store/chats.ts';
+import type { MessageRow } from '../store/messages.ts';
+import type { ChatMessage, Content, ToolCall, ToolDef } from '../harness/types.ts';
 
 /**
  * Context compaction.
@@ -34,7 +38,7 @@ export const DIGEST_TAIL = 200;
  * enough to judge whether re-reading is worth an expand_context call, without
  * the stub pretending to summarise content it has not understood.
  */
-function outline(text) {
+function outline(text: string) {
   const trimmed = text.trim();
 
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -52,7 +56,7 @@ function outline(text) {
   // XML-ish covers a lot of MCP output without committing to a parser.
   const tags = trimmed.match(/<([a-zA-Z][\w:.-]*)(?=[\s/>])/g);
   if (tags && tags.length >= 2) {
-    const counts = new Map();
+    const counts = new Map<string, number>();
     for (const t of tags) {
       const name = t.slice(1);
       counts.set(name, (counts.get(name) || 0) + 1);
@@ -74,7 +78,8 @@ function outline(text) {
  * kept verbatim because the ends of a tool result are where the useful framing
  * usually is, and because a verbatim excerpt cannot hallucinate.
  */
-export function digest(artifact, { head = DIGEST_HEAD, tail = DIGEST_TAIL } = {}) {
+export function digest(artifact: { id: string; tool_name?: string | null; content?: string | null },
+  { head = DIGEST_HEAD, tail = DIGEST_TAIL } = {}): string {
   const text = artifact.content ?? '';
   const len = text.length;
   const id = artifact.id;
@@ -104,18 +109,18 @@ export function digest(artifact, { head = DIGEST_HEAD, tail = DIGEST_TAIL } = {}
 export const IMAGE_CHARS = 6000;
 
 /** Rough size of a tool block, so a large MCP toolset isn't mistaken for history. */
-export function estimateToolTokens(tools = []) {
+export function estimateToolTokens(tools: ToolDef[] = []): number {
   return tools.length ? Math.ceil(JSON.stringify(tools).length / 4) : 0;
 }
 
 /** Rough size of the wire payload, for when a provider reports no usage at all. */
-export function estimateTokens(wireMessages) {
+export function estimateTokens(wireMessages: { content?: Content; tool_calls?: ToolCall[] }[]): number {
   let chars = 0;
   for (const m of wireMessages) {
     if (typeof m.content === 'string') chars += m.content.length;
     else if (Array.isArray(m.content)) {
       for (const p of m.content) {
-        if (p.type === 'text') chars += p.text.length;
+        if (p.type === 'text') chars += p.text!.length;
         // Base64 length says nothing about what an image costs; providers bill
         // a tile-based figure in the low thousands of tokens.
         else if (p.type === 'image_url') chars += IMAGE_CHARS;
@@ -133,7 +138,10 @@ export function estimateTokens(wireMessages) {
  * case that keeps the prefix cached. Called once at the start of a turn, never
  * mid-turn, so within a turn the prefix only ever grows.
  */
-export function planEpoch(rows, { threshold, keepTurns, promptTokens }) {
+export interface EpochPlan { boundarySeq: number; targets: MessageRow[] }
+
+export function planEpoch(rows: MessageRow[], { threshold, keepTurns, promptTokens }:
+  { threshold: number; keepTurns: number; promptTokens: number }): EpochPlan | null {
   if (!(promptTokens > threshold)) return null;
 
   // Everything from the Nth-from-last user message onward stays verbatim: the
@@ -159,20 +167,21 @@ export function planEpoch(rows, { threshold, keepTurns, promptTokens }) {
  * boundary. After this returns, the prefix up to `boundarySeq` is frozen --
  * stubs are persisted, so every later rebuild produces identical bytes.
  */
-export function applyEpoch(store, chat, plan, { minSaved = 0 } = {}) {
+export function applyEpoch(store: Store, chat: ChatRow, plan: EpochPlan, { minSaved = 0 } = {}):
+  { epoch: number; boundarySeq: number; saved: number } | null {
   // Stubs are worked out before anything is written: an epoch costs a full
   // cache miss, so one that would only shave a few hundred characters is not
   // worth opening, and the check has to happen before the store is touched.
-  const stubs = [];
+  const stubs: [number, string][] = [];
   let saved = 0;
-  const drops = [];
+  const drops: number[] = [];
   for (const row of plan.targets) {
     if (row.role !== 'tool') {
       drops.push(row.id);
-      saved += JSON.parse(row.images_json).length * IMAGE_CHARS;
+      saved += JSON.parse(row.images_json!).length * IMAGE_CHARS;
       continue;
     }
-    const artifact = store.messages.getArtifact(row.artifact_id, chat.id);
+    const artifact = store.messages.getArtifact(row.artifact_id!, chat.id);
     if (!artifact) continue;
     const stub = digest(artifact);
     if (stub.length >= (row.content?.length ?? 0)) continue;
@@ -202,7 +211,8 @@ export function applyEpoch(store, chat, plan, { minSaved = 0 } = {}) {
  * Returns the new first visible seq, or null to leave the window where it is.
  * `rows` must already be what the model would see (window applied, stubs in).
  */
-export function planWindow(rows, { maxTokens, targetTokens, keepTurns, toWire }) {
+export function planWindow(rows: MessageRow[], { maxTokens, targetTokens, keepTurns, toWire }:
+  { maxTokens: number; targetTokens: number; keepTurns: number; toWire: (row: MessageRow) => ChatMessage }): number | null {
   if (!(maxTokens > 0)) return null;
   const sizes = rows.map((r) => estimateTokens([toWire(r)]));
   let total = sizes.reduce((a, b) => a + b, 0);
@@ -228,7 +238,7 @@ export function planWindow(rows, { maxTokens, targetTokens, keepTurns, toWire })
  * first remaining message so the model knows the conversation did not start
  * there. Pure and deterministic, so every rebuild sends the same bytes.
  */
-export function windowRows(rows, windowSeq, { summarized = false } = {}) {
+export function windowRows(rows: MessageRow[], windowSeq: number, { summarized = false } = {}): MessageRow[] {
   if (!(windowSeq >= 0)) return rows;
   const kept = rows.filter((r) => r.seq >= windowSeq);
   const dropped = rows.length - kept.length;

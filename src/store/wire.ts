@@ -3,6 +3,9 @@
 import type { ChatMessage, ContentPart, ReasoningDetail } from '../harness/types.ts';
 import type { MessageImage, MessageRow } from './messages.ts';
 
+/** A stored row, or a message about to be stored as one (the tool executor's). */
+export type WireRow = Pick<MessageRow, 'role' | 'content'> & Partial<Omit<MessageRow, 'role' | 'content'>>;
+
 /** A row as the transcript shows it. */
 export interface ViewMessage extends ChatMessage {
   seq: number;
@@ -12,7 +15,7 @@ export interface ViewMessage extends ChatMessage {
   images?: MessageImage[];
 }
 
-function base(row: MessageRow): ChatMessage & { images?: MessageImage[] } {
+function base(row: WireRow): ChatMessage & { images?: MessageImage[] } {
   // content is set by each caller, after these, so the key order stays as it was.
   const msg = { role: row.role } as ChatMessage & { images?: MessageImage[] };
   if (row.tool_call_id) msg.tool_call_id = row.tool_call_id;
@@ -27,7 +30,7 @@ function base(row: MessageRow): ChatMessage & { images?: MessageImage[] } {
  * sends its content verbatim. Reasoning text rides along; `buildMessages` in
  * harness/provider.js decides whether the provider gets it back.
  */
-export function toWire(row: MessageRow): ChatMessage {
+export function toWire(row: WireRow): ChatMessage {
   const msg = base(row);
   if (row.reasoning) msg.reasoning = row.reasoning;
   msg.content = row.role === 'tool' ? (row.stub_text ?? row.content) : (row.content ?? null);
@@ -44,7 +47,8 @@ export function toWire(row: MessageRow): ChatMessage {
   // is what most of the caching machinery in harness/provider.js assumes.
   if (msg.images?.length) {
     const parts: ContentPart[] = [];
-    if (msg.content) parts.push({ type: 'text', text: msg.content });
+    // Still the row's own text here: parts are only built below.
+    if (msg.content) parts.push({ type: 'text', text: msg.content as string });
     for (const img of msg.images) {
       parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } });
     }

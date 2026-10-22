@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
-import { attributeRequest, completeAttribution, markFinal } from '../harness/attribution.ts';
-import { toWire, AUX_KIND } from '../store/index.ts';
-import { toolExecutor } from './tool_executor.js';
+import { attributeRequest, completeAttribution, markFinal, type InputEstimate, type SystemPart } from '../harness/attribution.ts';
+import { toWire, AUX_KIND, type Store } from '../store/index.ts';
+import type { MessageRow, NewMessage } from '../store/messages.ts';
+import type { PrefixFingerprint, StoredUsage } from '../store/usage.ts';
+import type { Config } from '../config/config.ts';
+import type { McpHub } from '../mcp.ts';
+import type { AskOutcome, AskRequest } from '../tools/types.ts';
+import type { ChatMessage, Emit, ReasoningDetail, RequestBody, ToolCall, ToolDef, Usage } from '../harness/types.ts';
+import { toolExecutor, type Approve, type Hooks } from './tool_executor.ts';
 import { ASK_USER } from '../tools/ask_tool.ts';
 import { openTasksNote } from '../tools/task_tool.ts';
 import { runAgentLoop, runHooks } from '../harness/agent.ts';
@@ -12,7 +18,7 @@ import { isOpenRouter, post, streamChunks, retryDelay, sleep, STREAM_RETRIES, St
 import { EVENT } from '../../public/shared/events.js';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
-} from './compact.js';
+} from './compact.ts';
 
 /**
  * How much of the next prompt is conversation history -- the only part
@@ -26,9 +32,12 @@ import {
  * results that were stubbed on arrival at full size, because the turn that
  * fetched them sent them whole -- the next request sends the stub instead.
  */
-function historyTokens(rows, cfg, tools) {
+/** An assistant round as stored: what the model sent, what it cost, and which model served it. */
+export interface AssistantMessage extends ChatMessage { content: string | null; usage: StoredUsage; model: string }
+
+function historyTokens(rows: MessageRow[], cfg: Config, tools: ToolDef[]) {
   const last = rows.findLastIndex((r) => r.usage_json);
-  const reported = last >= 0 ? JSON.parse(rows[last].usage_json).prompt_tokens : 0;
+  const reported = last >= 0 ? JSON.parse(rows[last].usage_json!).prompt_tokens : 0;
   // Providers disagree about reporting usage and some report none at all, so
   // fall back to a size estimate rather than never compacting.
   if (!reported) return estimateTokens(rows.map(toWire));
@@ -49,7 +58,7 @@ function historyTokens(rows, cfg, tools) {
  * out as its stub from now on (the `maxInlineChars` case). Results past
  * `maxTurnChars` were already sent as stubs, so they change nothing.
  */
-export function swapsStubThisTurn(rows, cfg) {
+export function swapsStubThisTurn(rows: MessageRow[], cfg: Pick<Config, 'maxTurnChars'>): boolean {
   const users = rows.map((r, i) => (r.role === 'user' ? i : -1)).filter((i) => i >= 0);
   if (users.length < 2) return false;
   const turnCap = cfg.maxTurnChars || 0;
@@ -76,7 +85,11 @@ export async function runChat({
   // ({ question, choices, allowFreeText }) => Promise<{ answered, answer? , reason? }>:
   // puts an ask_user question to the user. Absent on unattended runs.
   askUser = null
-}) {
+}: {
+  cfg: Config; chatId: string; store: Store; tools: ToolDef[]; hub: McpHub; emit: Emit; signal?: AbortSignal;
+  historyFromSeq?: number | null; unattended?: boolean; approve?: Approve | null; hooks?: Hooks;
+  takeInput?: (() => string[] | Promise<string[]>) | null; askUser?: ((request: AskRequest) => Promise<AskOutcome>) | null;
+}): Promise<(AssistantMessage | NewMessage)[]> {
   const maxRounds = Math.max(1, cfg.maxToolRounds || 12);
   const operatorPrompt = cfg.systemPrompt;
 
@@ -88,10 +101,10 @@ export async function runChat({
     maxRounds, hasTools: tools.length > 0, timeZone: cfg.timezone,
     canAsk: tools.some((t) => t.function?.name === ASK_USER)
   });
-  const owner = (name) => hub?.routes?.get(name)?.server || 'built-ins';
+  const owner = (name: string | undefined) => hub?.routes?.get(name!)?.server || 'built-ins';
 
   // Optional request fields this endpoint has already refused, learned once.
-  const disabled = new Set();
+  const disabled = new Set<string>();
 
   // Automation executions remain ordinary, visible chat turns, but do not
   // inherit the conversation that happened before the automation was created.
@@ -108,13 +121,13 @@ export async function runChat({
   // in the same chat, or the chat itself) summarises messages this run must
   // not see, so it only counts when the boundary matches.
   const checkpoint = () => {
-    const raw = store.chats.byId(chatId).checkpoint_json;
+    const raw = store.chats.byId(chatId)!.checkpoint_json;
     const cp = raw ? JSON.parse(raw) : null;
     return cp && cp.scopeStart === scopeStart ? cp : null;
   };
-  const load = () => windowRows(scoped(), store.chats.byId(chatId).window_seq, { summarized: Boolean(checkpoint()) });
+  const load = () => windowRows(scoped(), store.chats.byId(chatId)!.window_seq, { summarized: Boolean(checkpoint()) });
   let rows = load();
-  const chat = store.chats.byId(chatId);
+  const chat = store.chats.byId(chatId)!;
   const keepTurns = Math.max(1, cfg.keepTurns || 2);
 
   // Compaction is decided once, here, before the first request of the turn --
@@ -172,7 +185,7 @@ export async function runChat({
   // a cold request anyway. Kept apart so Statistics can say which part of the
   // system prompt costs what.
   const cp = checkpoint();
-  const systemParts = [
+  const systemParts: SystemPart[] = [
     { category: 'operator', text: operatorPrompt },
     { category: 'harness', text: harness },
     { category: 'mcp_instructions', text: instructions },
@@ -182,11 +195,11 @@ export async function runChat({
 
   // Index of the last message inside the frozen prefix, for the pinned
   // breakpoint. -1 before the first epoch, when there is nothing frozen yet.
-  const boundarySeq = store.chats.byId(chatId).boundary_seq;
+  const boundarySeq = store.chats.byId(chatId)!.boundary_seq;
   // Reasoning behind the frozen boundary goes too. Providers only need it
   // echoed within the turn that made it, and the boundary moves only at an
   // epoch, which is a cold request anyway -- so dropping it never costs cache.
-  const seqOf = new Map();
+  const seqOf = new Map<ChatMessage, number>();
   const working = repairToolHistory(rows.map((r) => {
     const w = toWire(r);
     if (boundarySeq >= 0 && r.seq < boundarySeq) { delete w.reasoning_details; delete w.reasoning; }
@@ -195,12 +208,12 @@ export async function runChat({
   }));
   // Found by seq, not row index: a repair can add or drop messages before it.
   const epochIndex = boundarySeq >= 0
-    ? working.findIndex((w) => seqOf.get(w) >= boundarySeq) - 1
+    ? working.findIndex((w) => seqOf.get(w)! >= boundarySeq) - 1
     : -1;
 
   const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
-  const saved = [];
-  const appended = await runAgentLoop({
+  const saved: { assistant: AssistantMessage; seq: number }[] = [];
+  const appended = await runAgentLoop<AssistantMessage, NewMessage>({
     messages: working,
     maxRounds,
     signal,
@@ -213,7 +226,7 @@ export async function runChat({
       }),
       executeToolBatch: tools_.execute,
       pendingInput: takeInput && (async () => (await takeInput()).map((content) => {
-        const msg = { role: 'user', content };
+        const msg = { role: 'user' as const, content };
         store.messages.add(chatId, msg);
         emit({ type: EVENT.USER, content });
         return { wire: msg, message: msg };
@@ -221,7 +234,7 @@ export async function runChat({
       shouldContinue: async ({ round, assistant, results }) => {
         if (tools_.stopRequested()) return false;
         try {
-          return !(await runHooks(hooks.afterTurn, { round, assistant, results, signal }, (o) => o.stop));
+          return !(await runHooks(hooks.afterTurn, { round, assistant, results, signal }, (o) => Boolean(o.stop)));
         } catch (err) {
           if (signal?.aborted) throw err;
           // Stopping is the one outcome that cannot leave the transcript
@@ -237,7 +250,7 @@ export async function runChat({
   // The last reply is only known to be the answer once the run has ended.
   const final = saved.at(-1);
   if (final && !final.assistant.tool_calls?.length && !signal?.aborted) {
-    final.assistant.usage.attribution = markFinal(final.assistant.usage.attribution);
+    final.assistant.usage.attribution = markFinal(final.assistant.usage.attribution!);
     store.messages.updateUsage(chatId, final.seq, final.assistant.usage);
   }
   emit({ type: EVENT.DONE, messages: appended });
@@ -256,17 +269,17 @@ export async function runChat({
  * shares byte-for-byte with the previous one in the same chat: a miss where
  * `matched` covers the whole previous request is the provider's, not ours.
  */
-const lastChains = new Map();
+const lastChains = new Map<string, string[]>();
 // Only the chats a server is actively serving matter; the oldest go first.
 const MAX_CHAINS = 200;
 
-function rememberChain(chatId, chain) {
+function rememberChain(chatId: string, chain: string[]) {
   lastChains.delete(chatId);
   lastChains.set(chatId, chain);
-  if (lastChains.size > MAX_CHAINS) lastChains.delete(lastChains.keys().next().value);
+  if (lastChains.size > MAX_CHAINS) lastChains.delete(lastChains.keys().next().value!);
 }
 
-export function prefixFingerprint(body, previous) {
+export function prefixFingerprint(body: Pick<RequestBody, 'tools' | 'messages'>, previous: string[] | undefined): PrefixFingerprint {
   const h = createHash('sha256');
   h.update(JSON.stringify(body.tools || []));
   const tools = h.copy().digest('hex').slice(0, 8);
@@ -279,9 +292,13 @@ export function prefixFingerprint(body, previous) {
   return { tools, chain, matched, previous: previous ? previous.length : null };
 }
 
-async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall, stubSwap, attributionContext, onSaved }) {
-  let input;
-  let prefix;
+async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, epochIndex, messages, lastCall, stubSwap, attributionContext, onSaved }: {
+  cfg: Config; chatId: string; store: Store; emit: Emit; signal?: AbortSignal; disabled: Set<string>; tools: ToolDef[];
+  epochIndex: number; messages: ChatMessage[]; lastCall: boolean; stubSwap: boolean;
+  attributionContext: Parameters<typeof attributeRequest>[1]; onSaved?: (assistant: AssistantMessage, seq: number) => void;
+}): Promise<AssistantMessage> {
+  let input: InputEstimate | undefined;
+  let prefix: PrefixFingerprint | undefined;
   const request = () => post(cfg, { turn: messages, tools, lastCall, epochIndex, chatId,
     onRequest: (body) => {
       input = attributeRequest(body, attributionContext);
@@ -293,17 +310,17 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
     }
   }, signal, disabled, emit);
 
-  let content;
-  let reasoning;
-  let reasoningDetails;
-  let toolCalls;
-  let usage;
+  let content: string;
+  let reasoning: string;
+  let reasoningDetails: ReasoningDetail[];
+  let toolCalls: ToolCall[];
+  let usage: Usage | null;
   // Which upstream actually served this round. A gateway that routes one
   // model across several providers gives each its own cache, so a round that
   // lands somewhere new misses in full however stable the prefix was --
   // indistinguishable from a prefix bug unless the provider is on the record.
-  let provider;
-  let finishReason;
+  let provider: string | null;
+  let finishReason: string | null;
 
   // post() retries until the first byte. This covers what happens after it:
   // a stream that breaks or reports an upstream error part-way. The round is
@@ -372,7 +389,8 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
 
   // Dropped before anything is stored: nothing will produce their results.
   // Attribute generated output before dropping refused calls or inserting UI notices.
-  const attribution = completeAttribution(input, usage, { content, reasoning,
+  // onRequest has run: a stream only exists once its request was built.
+  const attribution = completeAttribution(input!, usage, { content, reasoning,
     toolCalls: toolCalls.filter(Boolean), details: reasoningDetails.filter(Boolean) });
   if (lastCall) toolCalls.length = 0;
 
@@ -389,7 +407,7 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
     emit({ type: EVENT.TEXT, delta: content });
   }
 
-  const assistant = { role: 'assistant', content: content || null };
+  const assistant = { role: 'assistant', content: content || null } as AssistantMessage;
   // Keep both: `reasoning_details` is what the provider needs echoed back,
   // `reasoning` is the plain text the transcript replays from. Storing only
   // the former loses every thinking block when a saved chat is reopened.
@@ -427,7 +445,10 @@ async function streamTurn({ cfg, chatId, store, emit, signal, disabled, tools, e
  * could not be made: the window then moves as it always has, dropping them
  * unsummarised, rather than failing the user's turn.
  */
-async function summarizeDropped({ cfg, store, chatId, emit, signal, previous, dropped }) {
+async function summarizeDropped({ cfg, store, chatId, emit, signal, previous, dropped }: {
+  cfg: Config; store: Store; chatId: string; emit: Emit; signal?: AbortSignal;
+  previous: { summary: string } | null; dropped: MessageRow[];
+}): Promise<string | null> {
   try {
     const { text } = await summarize({
       cfg, signal, emit,

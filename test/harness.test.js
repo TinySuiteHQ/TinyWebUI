@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
 import { Store } from '../src/store/index.ts';
-import { runChat } from '../src/chat/llm.js';
+import { runChat } from '../src/chat/llm.ts';
 import { manageAutomation, runMessage } from '../src/automations/automation.ts';
 
 /** A provider that plays back one scripted reply per request and records every body. */
@@ -229,7 +229,7 @@ test('the run message says nobody is there to answer', () => {
 
 /* ---------- old images and the hard window ---------- */
 
-import { planEpoch, applyEpoch, planWindow, windowRows } from '../src/chat/compact.js';
+import { planEpoch, applyEpoch, planWindow, windowRows } from '../src/chat/compact.ts';
 import { toWire, toView } from '../src/store/index.ts';
 
 const IMG = { mime: 'image/png', data: 'iVBORw0KGgo=' };

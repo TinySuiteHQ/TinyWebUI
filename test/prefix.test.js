@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prefixFingerprint } from '../src/chat/llm.js';
+import { prefixFingerprint } from '../src/chat/llm.ts';
 
 const sys = { role: 'system', content: 'sys' };
 const u = { role: 'user', content: 'hi' };
@@ -29,7 +29,7 @@ test('a changed tool block breaks the match from the start', () => {
 });
 
 test('a stub first sent whole last turn marks this turn cold', async () => {
-  const { swapsStubThisTurn } = await import('../src/chat/llm.js');
+  const { swapsStubThisTurn } = await import('../src/chat/llm.ts');
   const big = 'x'.repeat(40000);
   const rows = [
     { role: 'user' },
