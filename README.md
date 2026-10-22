@@ -108,9 +108,11 @@ In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container dep
 ## Development
 
 ```bash
-npm test        # the whole suite, about 10 seconds
+npm test        # type check, then the whole suite, about 10 seconds
 npm run dev     # restart on changes in src/ and bin/
 ```
+
+The server is TypeScript that Node runs directly, with no build step, so working from a clone needs Node.js 22.18 or later. The npm package ships JavaScript compiled from it (`npm run build`, which `npm pack` runs) and works from 22.13.
 
 [AGENTS.md](AGENTS.md) maps the codebase and says where new code goes. `npm run eval` runs model-behaviour evals from `evals/tasks/` and makes real API calls, so it costs money.
 
