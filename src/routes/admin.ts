@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { json, readJson } from '../http.ts';
+import { json, readJson, oneOf } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.ts';
-import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE } from '../access/policy.ts';
+import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE, ROLES, STATUSES } from '../access/policy.ts';
 import { catalog, modelProblems } from '../config/models.ts';
 import { destroyUserSessions, hashToken } from '../access/auth.ts';
 import { normalizeEmail, validEmail } from '../access/email.ts';
@@ -79,8 +79,8 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
       const { role, status } = await readJson(req);
-      if (role !== undefined && !['admin', 'user'].includes(role)) return json(res, 400, { error: 'role must be admin or user' });
-      if (status !== undefined && !['pending', 'approved', 'disabled'].includes(status)) {
+      if (role !== undefined && !oneOf(role, ROLES)) return json(res, 400, { error: 'role must be admin or user' });
+      if (status !== undefined && !oneOf(status, STATUSES)) {
         return json(res, 400, { error: 'status must be pending, approved or disabled' });
       }
       if (target.id === auth.userId && ((role && role !== 'admin') || (status && status !== 'approved'))) {

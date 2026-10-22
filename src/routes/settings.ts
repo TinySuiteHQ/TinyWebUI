@@ -1,4 +1,4 @@
-import { json, readJson } from '../http.ts';
+import { json, readJson, oneOf } from '../http.ts';
 import { isClosed, enabledEntries, publicEntry, findConnector } from '../config/models.ts';
 import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.ts';
 import { audit } from '../audit.ts';
@@ -91,9 +91,10 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
       if (!auth.isAdmin) return json(res, 403, { error: 'only an admin can test connectors' });
       const body = await readJson(req);
       const cfg = config();
-      const stored = body.id && body.id !== 'default' ? findConnector(cfg, body.id) : { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
-      const baseUrl = String(body.baseUrl || stored?.baseUrl || '').replace(/\/+$/, '');
-      const apiKey = body.apiKey || stored?.apiKey || '';
+      const text = (v: unknown) => (typeof v === 'string' ? v : '');
+      const stored = text(body.id) && body.id !== 'default' ? findConnector(cfg, text(body.id)) : { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
+      const baseUrl = String(text(body.baseUrl) || stored?.baseUrl || '').replace(/\/+$/, '');
+      const apiKey = text(body.apiKey) || stored?.apiKey || '';
       if (!/^https?:\/\//.test(baseUrl)) return json(res, 400, { error: 'baseUrl must be an http(s) URL' });
       try {
         const r = await fetch(`${baseUrl}/models`, {
@@ -118,7 +119,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
     // 'default' to fall back to the global toolApproval mode.
     { method: 'POST', path: /^\/api\/tools\/approval$/, feature: FEATURE.TOOLS, handle: async ({ req, res, auth }) => {
       const { name, policy } = await readJson(req);
-      if (!name || !['ask', 'auto', 'default'].includes(policy)) {
+      if (typeof name !== 'string' || !name || !oneOf(policy, ['ask', 'auto', 'default'] as const)) {
         return json(res, 400, { error: 'name and policy (ask | auto | default) are required' });
       }
       saveConfig(setOverride(config(), name, policy), actor(auth));
@@ -127,7 +128,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
 
     { method: 'POST', path: /^\/api\/tools\/toggle$/, feature: FEATURE.TOOLS, handle: async ({ req, res, auth }) => {
       const { name, disabled } = await readJson(req);
-      if (!name) return json(res, 400, { error: 'name is required' });
+      if (typeof name !== 'string' || !name) return json(res, 400, { error: 'name is required' });
       const set = new Set(config().disabledTools || []);
       if (disabled) set.add(name); else set.delete(name);
       saveConfig({ disabledTools: [...set] }, actor(auth));

@@ -36,6 +36,18 @@ test('oversized and malformed bodies are refused', async () => {
   assert.equal(bad.status, 400);
 });
 
+test('a body that is not a JSON object, or fields of the wrong type, are refused', async () => {
+  const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  for (const body of ['[]', '5', '"x"', 'null']) assert.equal((await post('/api/folders', body)).status, 400, body);
+  // Would otherwise be saved into the config file as an object.
+  assert.equal((await post('/api/tools/toggle', '{"name":{"x":1},"disabled":true}')).status, 400);
+  assert.equal((await post('/api/tools/approval', '{"name":["a"],"policy":"ask"}')).status, 400);
+  // Would otherwise reach SQLite as an object and come back a 500.
+  assert.equal((await post('/api/chat', '{"chatId":{"x":1},"message":"hi"}')).status, 400);
+  assert.equal((await post('/api/chat', '{"chatId":"../x","message":"hi"}')).status, 400);
+  assert.equal((await post('/api/mcp', '{"text":{}}')).status, 400);
+});
+
 test('server-made ids are long random values', async () => {
   const { Store, ALL_USERS } = await import('../src/store/index.ts');
   const store = new Store(':memory:');

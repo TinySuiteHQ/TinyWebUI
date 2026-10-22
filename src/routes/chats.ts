@@ -1,4 +1,4 @@
-import { json, readJson, TURN_LIMIT } from '../http.ts';
+import { json, readJson, oneOf, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
@@ -116,13 +116,13 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
     { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/approve$/, feature: F, handle: async ({ req, res, auth, params: [chatId] }) => {
       if (!store.chats.get(chatId, auth.userId)) return noChat(res);
       const { id, decision } = await readJson(req);
-      if (!['allow', 'always', 'deny'].includes(decision)) {
+      if (!oneOf(decision, ['allow', 'always', 'deny'] as const)) {
         return json(res, 400, { error: 'decision must be allow, always or deny' });
       }
       const run = runs.get(chatId);
-      const pending = run?.approvals.get(id);
+      const pending = typeof id === 'string' ? run?.approvals.get(id) : undefined;
       if (!pending) return json(res, 409, { error: 'that call is no longer waiting' });
-      run!.approvals.delete(id);
+      run!.approvals.delete(id as string);
       // "Always" rewrites tool policy, which is the tools feature's to do;
       // without it, the answer counts as allowing this one call.
       if (decision === 'always' && auth.features.has(FEATURE.TOOLS)) {
@@ -159,7 +159,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const { id, kind, message } = await readJson(req, TURN_LIMIT);
       const text = String(message ?? '').trim();
       if (!text) return json(res, 400, { error: 'message is required' });
-      if (!['steer', 'followup'].includes(kind)) return json(res, 400, { error: 'kind must be steer or followup' });
+      if (!oneOf(kind, ['steer', 'followup'] as const)) return json(res, 400, { error: 'kind must be steer or followup' });
       if (typeof id !== 'string' || !/^[\w.-]{1,64}$/.test(id)) return json(res, 400, { error: 'id is required' });
       const run = runs.get(chatId);
       if (!run || run.done) return json(res, 409, { error: 'nothing is running; send it as a message' });
@@ -189,14 +189,16 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       if (refused) return json(res, 403, { error: 'feature_disabled', feature: refused });
       if (!config().apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
       if (!message) return json(res, 400, { error: 'message is required' });
+      // Ids go into SQL and into URLs the page builds, so they must look like one.
+      if (chatId != null && (typeof chatId !== 'string' || !/^[\w.-]{1,128}$/.test(chatId))) return json(res, 400, { error: 'chatId must be an id' });
 
       // The client no longer ships the transcript: it sends the new turn and
       // the server replays what it already holds. That is what stops a
       // page-sized tool result from crossing the wire on every message.
-      const owned = chatId && store.chats.get(chatId, auth.userId);
+      const owned = chatId ? store.chats.get(chatId, auth.userId) : null;
       // Someone else's id is "no such chat", never a primary-key clash.
       if (chatId && !owned && store.chats.byId(chatId)) return noChat(res);
-      const chat = owned || store.chats.create({ id: chatId, title: String(message).slice(0, 60) }, auth.userId);
+      const chat = owned || store.chats.create({ id: chatId ?? undefined, title: String(message).slice(0, 60) }, auth.userId)!;
 
       // Attachments are surfaced as plain text inline notes rather than a
       // system-prompt change, the same idiom compact.js uses for a compacted
@@ -204,6 +206,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       // it's already reading and knows to call read_document on the id.
       let content = String(message);
       for (const id of Array.isArray(documentIds) ? documentIds : []) {
+        if (typeof id !== 'string') continue;
         const doc = store.documents.get(id, auth.userId);
         if (!doc || doc.chat_id !== chat.id) continue;
         content += attachmentNote(doc);

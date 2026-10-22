@@ -70,7 +70,7 @@ export function documentRoutes({ retrieval, store }: Pick<RouteDeps, 'retrieval'
       // The same file dropped in twice is one document in the chat.
       const already = store.documents.findInChat(chat.id, buf);
       if (already) return json(res, 200, { chatId: chat.id, document: already });
-      const doc = store.documents.add(chat.id, { filename: String(filename), mime: mime || null, content: text, original: buf }, retrieval.passageSettings());
+      const doc = store.documents.add(chat.id, { filename: String(filename), mime: typeof mime === 'string' && mime ? mime : null, content: text, original: buf }, retrieval.passageSettings());
       ingest(doc);
       return json(res, 200, { chatId: chat.id, document: doc });
     } },

@@ -36,6 +36,7 @@ export function mcpRoutes({ auditMcp, config, hub, source, swapHub }: Pick<Route
 
     { method: 'POST', path: /^\/api\/mcp$/, feature: FEATURE.MCP, handle: async ({ req, res, auth }) => {
       const { text } = await readJson(req, UPLOAD_LIMIT);
+      if (typeof text !== 'string') return json(res, 400, { error: 'text must be the contents of mcp.json' });
       if (!await saveAndReconnect(res, text, auth)) return undefined;
       return json(res, 200, { tools: toolList(hub()), mcpErrors: hub().errors });
     } },

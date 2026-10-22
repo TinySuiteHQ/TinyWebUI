@@ -24,8 +24,15 @@ export const BODY_LIMIT = 1024 * 1024;
 export const UPLOAD_LIMIT = 8 * 1024 * 1024;       // one 5 MB file, base64
 export const TURN_LIMIT = 60 * 1024 * 1024;        // up to 8 images of 5 MB, base64
 
-/** Reads a JSON body, refusing more than `limit` bytes (413) or bad JSON (400). */
-export async function readJson<T = any>(req: IncomingMessage, limit = BODY_LIMIT): Promise<T> {
+/** A request body: a JSON object whose fields are whatever the client sent, until a route checks them. */
+export type Body = Record<string, unknown>;
+
+/** True when a body field is one of the allowed values, which also tells TypeScript which. */
+export const oneOf = <T extends string>(value: unknown, allowed: readonly T[]): value is T =>
+  typeof value === 'string' && (allowed as readonly string[]).includes(value);
+
+/** Reads a JSON object body, refusing more than `limit` bytes (413), bad JSON or anything but an object (400). */
+export async function readJson(req: IncomingMessage, limit = BODY_LIMIT): Promise<Body> {
   const declared = Number(req.headers['content-length']);
   if (declared > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
   const chunks: Buffer[] = [];
@@ -35,11 +42,14 @@ export async function readJson<T = any>(req: IncomingMessage, limit = BODY_LIMIT
     if (size > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
     chunks.push(c);
   }
+  let body: unknown;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
   } catch {
     throw new HttpError(400, 'request body is not valid JSON');
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'request body must be a JSON object');
+  return body as Body;
 }
 
 // Sent on every response. The page loads only its own scripts; the one
