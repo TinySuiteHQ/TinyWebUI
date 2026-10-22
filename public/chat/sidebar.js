@@ -299,8 +299,9 @@ export function clearSearch() {
  * thing that reads as broken on a phone even when it technically isn't.
  */
 /**
- * Desktop hides the sidebar outright instead of opening it as a drawer; the
- * same #menu button brings it back, so it means "show sidebar" at any width.
+ * Desktop hides the sidebar outright instead of opening it as a drawer. The
+ * same #menu button does both, and it is on screen at every width -- over the
+ * panels too -- so getting back to the chats is always one press away.
  */
 const COLLAPSE_KEY = 'tinywebui.side.collapsed';
 const narrow = () => matchMedia('(max-width: 720px)').matches;
@@ -321,7 +322,7 @@ function setSideDrawer(open) {
   side.inert = mobile && !open;
   main.inert = mobile && open;
   side.toggleAttribute('aria-hidden', mobile && !open);
-  menu.setAttribute('aria-expanded', String(mobile && open));
+  menu.setAttribute('aria-expanded', String(mobile ? open : !document.body.classList.contains('side-collapsed')));
 
   if (mobile && open) requestAnimationFrame(() => $('new').focus());
   if (mobile && !open && side.contains(document.activeElement)) menu.focus();
@@ -330,6 +331,7 @@ export const closeSideDrawer = () => setSideDrawer(false);
 
 function setCollapsed(on) {
   document.body.classList.toggle('side-collapsed', on);
+  $('menu').setAttribute('aria-expanded', String(!on));
   try { on ? localStorage.setItem(COLLAPSE_KEY, '1') : localStorage.removeItem(COLLAPSE_KEY); } catch { /* per-viewer nicety only */ }
 }
 
@@ -421,8 +423,9 @@ export function initSidebar(deps) {
   });
 
   try { if (localStorage.getItem(COLLAPSE_KEY)) document.body.classList.add('side-collapsed'); } catch { /* as above */ }
-  $('sideCollapse').onclick = () => (narrow() ? closeSideDrawer() : setCollapsed(true));
-  $('menu').onclick = () => (narrow() ? setSideDrawer(!$('side').classList.contains('open')) : setCollapsed(false));
+  $('menu').onclick = () => (narrow()
+    ? setSideDrawer(!$('side').classList.contains('open'))
+    : setCollapsed(!document.body.classList.contains('side-collapsed')));
   $('side-backdrop').onclick = closeSideDrawer;
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('side').classList.contains('open')) closeSideDrawer();

@@ -11,11 +11,11 @@ import { FEATURE } from './shared/features.js';
 import { initChat, newChat, openChat, sendHeld } from './chat/chat.js';
 import { initTranscript } from './chat/transcript.js';
 import { initQueue } from './chat/queue.js';
-import { initSidebar, loadChats } from './chat/sidebar.js';
+import { initSidebar, loadChats, closeSideDrawer } from './chat/sidebar.js';
 import { initAttachments } from './chat/attachments.js';
 import { initLibrary } from './chat/library.js';
 import { initComposer } from './chat/composer.js';
-import { PANEL, initPanels, openPanel } from './panels/panels.js';
+import { PANEL, initPanels, openPanel, closeAllPanels } from './panels/panels.js';
 import {
   initSettings, onSettingsOpen, onSettingsClose, settingsBack, settingsCanClose,
   loadConfig, loadMcp, loadTools, isLocked, isReadOnly, configuredModel
@@ -66,7 +66,12 @@ async function needsLogin() {
 function wire() {
   initTranscript({ openChat });
   initQueue({ sendHeld });
-  initSidebar({ openChat, newChat });
+  // Picking a chat or New from the sidebar is a way out of any open panel,
+  // unless it holds unsaved edits the person chose to keep.
+  initSidebar({
+    openChat: (id) => closeAllPanels() && openChat(id),
+    newChat: () => closeAllPanels() && newChat()
+  });
   initAttachments();
   initLibrary();
   initChat();
@@ -84,7 +89,7 @@ function wire() {
     [PANEL.AUTOMATIONS]: { onOpen: loadAutomations },
     [PANEL.STATISTICS]: { onOpen: loadUsage },
     [PANEL.ADMIN]: { onOpen: loadAdmin }
-  });
+  }, { onAnyOpen: closeSideDrawer });
 }
 
 if (!(await needsLogin())) {
