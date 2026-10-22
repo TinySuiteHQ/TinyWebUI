@@ -6,8 +6,8 @@ import { createServer } from 'node:http';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { callManageMcp, mcpToolDef, MANAGE_MCP } from '../src/tools/mcp_tool.js';
-import { McpHub, expandRefs, uniqueName } from '../src/mcp.js';
+import { callManageMcp, mcpToolDef, MANAGE_MCP } from '../src/tools/mcp_tool.ts';
+import { McpHub, expandRefs, uniqueName } from '../src/mcp.ts';
 import { approvalFor } from '../src/config/approval.ts';
 
 const SECRET = 'sk-live-ABC123XYZ';

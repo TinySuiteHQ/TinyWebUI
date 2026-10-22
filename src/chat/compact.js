@@ -1,4 +1,4 @@
-import { textMap, EXPAND_CONTEXT } from '../tools/context_tool.js';
+import { textMap, EXPAND_CONTEXT } from '../tools/context_tool.ts';
 
 /**
  * Context compaction.

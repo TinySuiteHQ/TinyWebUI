@@ -4,14 +4,18 @@ import heicConvert from 'heic-convert';
 import decodeAvif, { init as initAvif } from '@jsquash/avif/decode.js';
 import jpeg from 'jpeg-js';
 
+// Node has WebAssembly, but its types live in the DOM lib, which a server must not load.
+declare const WebAssembly: { compile(bytes: Uint8Array): Promise<unknown> };
+
 // @jsquash/avif is built for the browser and fetches its own .wasm by URL on
 // init; Node's fetch can't load a file: URL, so the module is compiled and
 // handed to it directly instead. Compiled once, lazily, and reused.
-let avifReady;
+let avifReady: Promise<unknown> | undefined;
 function ensureAvif() {
   if (!avifReady) {
     const wasmPath = fileURLToPath(import.meta.resolve('@jsquash/avif/codec/dec/avif_dec.wasm'));
-    avifReady = WebAssembly.compile(readFileSync(wasmPath)).then((mod) => initAvif(mod));
+    // The typings describe browser init options; handing it the compiled module works the same.
+    avifReady = WebAssembly.compile(readFileSync(wasmPath)).then((mod) => initAvif(mod as Parameters<typeof initAvif>[0]));
   }
   return avifReady;
 }
@@ -24,7 +28,7 @@ const WIRE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'
  * an empty string for HEIC, and some pickers report generic octet-stream for
  * both. Sniffing the ISO-BMFF ftyp brand is what actually tells them apart.
  */
-function sniff(buf) {
+function sniff(buf: Buffer) {
   if (buf.length < 12 || buf.toString('ascii', 4, 8) !== 'ftyp') return null;
   const brand = buf.toString('ascii', 8, 12);
   if (['avif', 'avis'].includes(brand)) return 'avif';
@@ -32,14 +36,14 @@ function sniff(buf) {
   return null;
 }
 
-async function fromHeic(buf) {
+async function fromHeic(buf: Buffer) {
   const out = await heicConvert({ buffer: buf, format: 'JPEG', quality: 0.9 });
   return Buffer.from(out);
 }
 
-async function fromAvif(buf) {
+async function fromAvif(buf: Buffer) {
   await ensureAvif();
-  const image = await decodeAvif(buf);
+  const image = await decodeAvif(buf as unknown as ArrayBuffer);
   const out = jpeg.encode(image, 90);
   return Buffer.from(out.data);
 }
@@ -49,7 +53,7 @@ async function fromAvif(buf) {
  * JPEG in place. Returns null for anything else unrecognized rather than
  * forwarding a format the provider can't decode.
  */
-export async function normalizeImage(buf, reportedMime) {
+export async function normalizeImage(buf: Buffer, reportedMime: unknown): Promise<{ mime: string; data: Buffer } | null> {
   const declared = String(reportedMime || '').toLowerCase();
   if (WIRE_MIMES.has(declared)) return { mime: declared, data: buf };
 

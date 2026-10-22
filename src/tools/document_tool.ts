@@ -1,4 +1,7 @@
-import { ALL_USERS, CORPUS } from '../store/index.ts';
+import { ALL_USERS, CORPUS, type Store } from '../store/index.ts';
+import type { DocumentRow } from '../store/documents.ts';
+import type { Retrieval } from '../retrieval/retrieval.ts';
+import type { ToolArgs, ToolContext, ToolDef } from './types.ts';
 
 /**
  * read_document -- lets the model read text the user attached to the chat.
@@ -13,7 +16,7 @@ import { ALL_USERS, CORPUS } from '../store/index.ts';
 
 export const READ_DOCUMENT = 'read_document';
 
-export function documentToolDef() {
+export function documentToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -52,11 +55,11 @@ export function documentToolDef() {
   };
 }
 
-function header(doc, note) {
+function header(doc: DocumentRow, note: string) {
   return `[document ${doc.id} · ${doc.filename} · ${doc.char_len.toLocaleString('en-US')} chars · ${note}]`;
 }
 
-async function queryView(store, retrieval, doc, query, budget) {
+async function queryView(store: Store, retrieval: Retrieval | null, doc: DocumentRow, query: string, budget: number) {
   const hits = retrieval ? await retrieval.search(CORPUS.DOCUMENTS, { docId: doc.id }, query, 5) : store.documents.searchPassages(doc.id, query, 5);
   if (!hits.length) {
     return `${header(doc, `no match for "${query}"`)}\nTry a broader query, or read from the start with offset/limit.`;
@@ -75,7 +78,7 @@ async function queryView(store, retrieval, doc, query, budget) {
   return out.join('\n\n');
 }
 
-function windowView(doc, offset, limit, budget) {
+function windowView(doc: DocumentRow, offset: number, limit: number, budget: number) {
   const text = doc.content;
   const start = Math.max(0, Math.min(offset, text.length));
   const size = Math.min(limit > 0 ? limit : budget, budget);
@@ -89,7 +92,8 @@ function windowView(doc, offset, limit, budget) {
 }
 
 /** Runs one read. Returns a string, like every other tool result. */
-export async function callReadDocument(args, { store, retrieval = null, chatId, budget = 8000 }) {
+export async function callReadDocument(args: ToolArgs, { store, retrieval = null, chatId, budget = 8000 }:
+  Pick<ToolContext, 'store' | 'chatId'> & { retrieval?: Retrieval | null; budget?: number }): Promise<string> {
   const id = String(args?.document_id || '').trim();
   if (!id) return 'Error: document_id is required.';
 

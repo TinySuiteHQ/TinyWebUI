@@ -91,6 +91,8 @@ export interface McpServerSpec {
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
+  transport?: 'http' | 'sse';
+  disabled?: boolean;
   [key: string]: unknown;
 }
 export type McpServers = Record<string, McpServerSpec>;

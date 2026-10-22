@@ -12,7 +12,7 @@ const TEXT_EXTS = new Set([
   '.css', '.html', '.xml', '.yaml', '.yml', '.sh', '.sql'
 ]);
 
-function extOf(filename) {
+function extOf(filename: string) {
   const i = filename.lastIndexOf('.');
   return i === -1 ? '' : filename.slice(i).toLowerCase();
 }
@@ -22,26 +22,22 @@ function extOf(filename) {
  * never the client-supplied type: this is served from the app's own origin, so
  * anything a browser would run (html, svg) goes out as inert text or a download.
  */
-export function servingFor(filename) {
+export function servingFor(filename: string): { type: string; inline: boolean } {
   const ext = extOf(filename);
   if (ext === '.pdf') return { type: 'application/pdf', inline: true };
   if (TEXT_EXTS.has(ext) || ext === '') return { type: 'text/plain; charset=utf-8', inline: true };
   return { type: 'application/octet-stream', inline: false };
 }
 
-/**
- * @param {Buffer} buf raw file bytes
- * @param {string} filename original filename, used only to pick a parser
- * @returns {Promise<string>} extracted plain text
- */
-export async function extractText(buf, filename) {
+/** Extracted plain text. `filename` is used only to pick a parser. */
+export async function extractText(buf: Buffer, filename: string): Promise<string> {
   const ext = extOf(filename);
 
   if (ext === '.pdf') {
     // unpdf ships its own serverless PDF.js build and needs no native canvas
     // binary for plain text extraction, unlike pdf-parse v2 (which pulls in
     // @napi-rs/canvas even when nothing here ever renders a page).
-    let text;
+    let text: string;
     try {
       const { extractText, getDocumentProxy } = await import('unpdf');
       const pdf = await getDocumentProxy(new Uint8Array(buf));
@@ -69,7 +65,7 @@ export async function extractText(buf, filename) {
   }
 
   if (ext === '.docx') {
-    let value;
+    let value: string;
     try {
       const { extractRawText } = await import('mammoth');
       ({ value } = await extractRawText({ buffer: buf }));

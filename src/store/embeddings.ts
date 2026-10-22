@@ -5,7 +5,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 /** The retrieval corpora whose vectors live here (see retrieval/retrieval.js). */
 export const CORPUS = Object.freeze({ DOCUMENTS: 'documents', CHATS: 'chats' });
-export type Corpus = (typeof CORPUS)[keyof typeof CORPUS];
+export type CorpusName = (typeof CORPUS)[keyof typeof CORPUS];
 
 /** One unit's vectors: its chunks, in order. */
 export interface UnitVectors { unitId: number; digest: string; vecs: Float32Array[] }
@@ -18,7 +18,7 @@ export class EmbeddingStore {
   }
 
   /** Chunk vectors of the given units under one model: Map(unit id -> Float32Array[], one per chunk). */
-  vectors(corpus: Corpus, modelKey: string, unitIds: number[]): Map<number, Float32Array[]> {
+  vectors(corpus: CorpusName, modelKey: string, unitIds: number[]): Map<number, Float32Array[]> {
     const out = new Map<number, Float32Array[]>();
     if (!unitIds.length) return out;
     const rows = this.db.prepare(`
@@ -35,14 +35,14 @@ export class EmbeddingStore {
   }
 
   /** What each of an owner's units was embedded from: Map(unit id -> digest). */
-  digests(corpus: Corpus, ownerId: string, modelKey: string): Map<number, string> {
+  digests(corpus: CorpusName, ownerId: string, modelKey: string): Map<number, string> {
     const rows = this.db.prepare('SELECT unit_id, digest FROM embeddings WHERE corpus = ? AND owner_id = ? AND model_key = ? AND chunk = 0')
       .all(corpus, ownerId, modelKey) as { unit_id: number; digest: string }[];
     return new Map(rows.map((r) => [r.unit_id, r.digest]));
   }
 
   /** rows: [{ unitId, digest, vecs: Float32Array[] (its chunks, in order) }], replacing what those units had. */
-  put(corpus: Corpus, ownerId: string, modelKey: string, rows: UnitVectors[]): void {
+  put(corpus: CorpusName, ownerId: string, modelKey: string, rows: UnitVectors[]): void {
     const clear = this.db.prepare('DELETE FROM embeddings WHERE corpus = ? AND unit_id = ? AND model_key = ?');
     const put = this.db.prepare('INSERT INTO embeddings (corpus, unit_id, owner_id, model_key, digest, chunk, vec) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.db.exec('BEGIN');
@@ -56,7 +56,7 @@ export class EmbeddingStore {
   }
 
   /** Drops an owner's vectors for units it no longer has. */
-  dropStale(corpus: Corpus, ownerId: string, keepUnitIds: number[]): number {
+  dropStale(corpus: CorpusName, ownerId: string, keepUnitIds: number[]): number {
     return this.db.prepare(`
       DELETE FROM embeddings WHERE corpus = ? AND owner_id = ? AND unit_id NOT IN (SELECT value FROM json_each(?))
     `).run(corpus, ownerId, JSON.stringify(keepUnitIds)).changes as number;
@@ -68,7 +68,7 @@ export class EmbeddingStore {
   }
 
   /** Drops every vector an owner (a document, a chat) has in a corpus. */
-  deleteOwner(corpus: Corpus, ownerId: string): void {
+  deleteOwner(corpus: CorpusName, ownerId: string): void {
     this.db.prepare('DELETE FROM embeddings WHERE corpus = ? AND owner_id = ?').run(corpus, ownerId);
   }
 }

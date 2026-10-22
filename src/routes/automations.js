@@ -1,5 +1,5 @@
 import { json, readJson } from '../http.ts';
-import { validateSchedule } from '../automations/automation.js';
+import { validateSchedule } from '../automations/automation.ts';
 import { FEATURE } from '../../public/shared/features.js';
 
 /** `newChatTitle` on an automation request: undefined when absent, false when

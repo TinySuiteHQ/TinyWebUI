@@ -8,13 +8,15 @@
  * with nobody to ask (an automation) never waits; it gets the fallback at once.
  */
 
+import type { AskOutcome, ToolArgs, ToolContext, ToolDef } from './types.ts';
+
 export const ASK_USER = 'ask_user';
 
 const MAX_QUESTION = 2000;
 const MAX_CHOICES = 10;
 const MAX_CHOICE = 200;
 
-export function askToolDef() {
+export function askToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -55,13 +57,13 @@ export function askToolDef() {
 }
 
 /** The result text for each way a question can end. JSON, so it parses and reads. */
-export function askResult(outcome) {
+export function askResult(outcome: AskOutcome): string {
   if (outcome.answered) return JSON.stringify({ answered: true, answer: outcome.answer });
-  const message = {
+  const message = ({
     timeout: 'The user did not respond within the configured timeout.',
     skipped: 'The user chose to let you continue without answering.',
     unattended: 'No interactive user is available for this run.'
-  }[outcome.reason] || 'The question could not be put to the user.';
+  } as Record<string, string>)[outcome.reason] || 'The question could not be put to the user.';
   return JSON.stringify({
     answered: false,
     reason: outcome.reason,
@@ -75,14 +77,14 @@ export function askResult(outcome) {
  * resolves to `{ answered: true, answer }` or `{ answered: false, reason }`;
  * without one (an unattended run) the fallback comes back at once.
  */
-export async function callAskUser(args, ctx) {
+export async function callAskUser(args: ToolArgs, ctx: Pick<ToolContext, 'unattended' | 'askUser'>): Promise<string> {
   const question = typeof args.question === 'string' ? args.question.trim() : '';
   if (!question) return 'Error: "question" is required and must be a non-empty string.';
   if (question.length > MAX_QUESTION) return `Error: "question" is over ${MAX_QUESTION} characters; ask something shorter.`;
-  if (args.choices !== undefined && !(Array.isArray(args.choices) && args.choices.every((c) => typeof c === 'string'))) {
+  if (args.choices !== undefined && !(Array.isArray(args.choices) && args.choices.every((c: unknown) => typeof c === 'string'))) {
     return 'Error: "choices" must be a list of strings.';
   }
-  const choices = [...new Set((args.choices || []).map((c) => c.trim()).filter(Boolean))];
+  const choices: string[] = [...new Set<string>((args.choices || []).map((c: string) => c.trim()).filter(Boolean))];
   if (choices.length > MAX_CHOICES) return `Error: at most ${MAX_CHOICES} choices.`;
   if (choices.some((c) => c.length > MAX_CHOICE)) return `Error: each choice must be under ${MAX_CHOICE} characters.`;
   // Nothing to pick and nothing to type would be a question nobody can answer.

@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { CORPUS } from '../store/index.ts';
+import { CORPUS, type Store } from '../store/index.ts';
+import type { CorpusName } from '../store/embeddings.ts';
+import type { Scope } from '../store/scope.ts';
+import type { Turn } from '../store/turns.ts';
+import type { RetrievalConfig } from '../config/config.ts';
+import type { Embedder } from './embedding.ts';
 
 /**
  * Search for everything the model can look things up in: lexical (FTS5 BM25,
@@ -37,13 +42,35 @@ import { CORPUS } from '../store/index.ts';
 
 export const RETRIEVAL_MODES = ['lexical', 'dense', 'hybrid'];
 
-const cosine = (a, b) => {
+export interface Unit { id: number; text: string }
+/** A ranked unit, with the scores that ranked it (null: that side did not score). */
+export interface ScoredHit { id: number; rank: number; dense: number | null; bm25: number | null }
+type Scores = Pick<ScoredHit, 'rank' | 'dense' | 'bm25'>;
+
+/** The adapter described above. `S` is what a search is scoped by, `R` a hydrated result. */
+export interface Corpus<S = any, R = unknown> {
+  units(owner: string): Unit[];
+  ownersMissing(modelKey: string): string[];
+  candidates(scope: S): number[];
+  lexical(scope: S, query: string, opts: { any: boolean }): Map<number, number>;
+  hydrate(hits: ScoredHit[], scope: S): R[];
+  ownersOf?(scope: S): string[];
+  mutable?: boolean;
+  maintain?(engine: Retrieval, log: (line: string) => void): void;
+}
+
+export interface DocumentScope { docId: string }
+export interface PassageHit extends Scores { passageIdx: number; charStart: number; body: string }
+export interface ChatScope { userId: Scope; excludeChatId: string | null }
+export interface TurnHit extends Turn, Scores { chatTitle: string }
+
+const cosine = (a: Float32Array, b: Float32Array) => {
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
   return na && nb ? dot / Math.sqrt(na * nb) : 0;
 };
 
-const digestOf = (text) => createHash('sha256').update(text).digest('hex').slice(0, 32);
+const digestOf = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 32);
 
 /**
  * 1-based competition ranks by descending score: equal scores share a rank
@@ -52,9 +79,9 @@ const digestOf = (text) => createHash('sha256').update(text).digest('hex').slice
  * at all still hands the first candidate a lexical lead. Shared ranks make a
  * side that cannot tell candidates apart stay neutral.
  */
-function ranksOf(scores) {
+function ranksOf(scores: number[]) {
   const order = scores.map((s, i) => i).sort((a, b) => scores[b] - scores[a]);
-  const ranks = new Array(scores.length);
+  const ranks: number[] = new Array(scores.length);
   order.forEach((idx, r) => {
     const prev = order[r - 1];
     ranks[idx] = r > 0 && scores[prev] === scores[idx] ? ranks[prev] : r + 1;
@@ -66,7 +93,7 @@ function ranksOf(scores) {
  * Weighted RRF over parallel score lists. Returns candidate indices, best
  * first, with the scores that decided them.
  */
-export function fuse(bm25Scores, denseScores, { denseWeight = 0.5, k = 60 } = {}) {
+export function fuse(bm25Scores: number[], denseScores: number[], { denseWeight = 0.5, k = 60 } = {}) {
   const sparseWeight = 1 - denseWeight;
   const bm25Ranks = ranksOf(bm25Scores);
   const denseRanks = ranksOf(denseScores);
@@ -81,7 +108,7 @@ export function fuse(bm25Scores, denseScores, { denseWeight = 0.5, k = 60 } = {}
 }
 
 /** Attached documents: one unit per passage. Scope: { docId }. */
-export function documentsCorpus(store) {
+export function documentsCorpus(store: Store): Corpus<DocumentScope, PassageHit> {
   return {
     units: (docId) => store.documents.passages(docId).map((p) => ({ id: p.rowid, text: p.body })),
     ownersMissing: (key) => store.documents.missingVectors(key),
@@ -91,7 +118,7 @@ export function documentsCorpus(store) {
     hydrate(hits, { docId }) {
       const byId = new Map(store.documents.passages(docId).map((p) => [p.rowid, p]));
       return hits.map((h) => {
-        const p = byId.get(h.id);
+        const p = byId.get(h.id)!;
         return { passageIdx: p.passageIdx, charStart: p.charStart, body: p.body, rank: h.rank, dense: h.dense, bm25: h.bm25 };
       });
     },
@@ -113,8 +140,8 @@ const TURN_ANSWER_CHARS = 6000;
  * finally got. Scope: { userId, excludeChatId }. A turn's answer can still
  * change (the run was going when it was last embedded), so it is mutable.
  */
-export function chatsCorpus(store) {
-  const turnText = (t) => `${t.question.slice(0, TURN_QUESTION_CHARS)}\n\n${t.answer.slice(0, TURN_ANSWER_CHARS)}`.trim();
+export function chatsCorpus(store: Store): Corpus<ChatScope, TurnHit> {
+  const turnText = (t: Turn) => `${t.question.slice(0, TURN_QUESTION_CHARS)}\n\n${t.answer.slice(0, TURN_ANSWER_CHARS)}`.trim();
   return {
     mutable: true,
     units: (chatId) => store.turns.forChat(chatId).map((t) => ({ id: t.id, text: turnText(t) })).filter((u) => u.text),
@@ -123,7 +150,7 @@ export function chatsCorpus(store) {
     lexical: ({ userId, excludeChatId }, query, { any }) => store.turns.lexicalScores(userId, query, { excludeChatId, any }),
     hydrate(hits) {
       const turns = store.turns.byIds(hits.map((h) => h.id));
-      return hits.filter((h) => turns.has(h.id)).map((h) => ({ ...turns.get(h.id), rank: h.rank, dense: h.dense, bm25: h.bm25 }));
+      return hits.filter((h) => turns.has(h.id)).map((h) => ({ ...turns.get(h.id)!, rank: h.rank, dense: h.dense, bm25: h.bm25 }));
     }
   };
 }
@@ -135,7 +162,14 @@ export function chatsCorpus(store) {
  * Documents and chats are registered; `register` adds more.
  */
 export class Retrieval {
-  constructor(store, retrieval, embedder = null) {
+  store: Store;
+  cfg: Partial<RetrievalConfig>;
+  mode: string;
+  embedder: Embedder | null;
+  corpora: Map<CorpusName, Corpus>;
+  pending: Map<string, Promise<number>>;
+
+  constructor(store: Store, retrieval: Partial<RetrievalConfig>, embedder: Embedder | null = null) {
     this.store = store;
     this.cfg = retrieval;
     // 'auto' means whatever the embedder allows (resolveRetrieval decides at startup).
@@ -149,12 +183,12 @@ export class Retrieval {
     this.register(CORPUS.CHATS, chatsCorpus(store));
   }
 
-  register(name, corpus) {
+  register(name: CorpusName, corpus: Corpus): this {
     this.corpora.set(name, corpus);
     return this;
   }
 
-  #corpus(name) {
+  #corpus(name: CorpusName): Corpus {
     const c = this.corpora.get(name);
     if (!c) throw new Error(`retrieval: no corpus "${name}"`);
     return c;
@@ -166,13 +200,14 @@ export class Retrieval {
    * drops vectors of units the owner no longer has. Idempotent: an owner that
    * is up to date costs nothing to ingest again.
    */
-  ingest(name, ownerId) {
-    if (!this.embedder) return Promise.resolve(0);
+  ingest(name: CorpusName, ownerId: string): Promise<number> {
+    const { embedder } = this;
+    if (!embedder) return Promise.resolve(0);
     const corpus = this.#corpus(name);
     const tag = `${name}:${ownerId}`;
-    if (this.pending.has(tag)) return this.pending.get(tag);
+    if (this.pending.has(tag)) return this.pending.get(tag)!;
     const job = (async () => {
-      const key = this.embedder.key;
+      const key = embedder.key;
       const units = corpus.units(ownerId).map((u) => ({ ...u, digest: corpus.mutable ? digestOf(u.text) : '' }));
       const have = this.store.embeddings.digests(name, ownerId, key);
       if ([...have.keys()].some((id) => !units.some((u) => u.id === id))) this.store.embeddings.dropStale(name, ownerId, units.map((u) => u.id));
@@ -180,9 +215,9 @@ export class Retrieval {
       if (!missing.length) return 0;
       const prefix = this.cfg.documentPrefix || '';
       const texts = missing.map((u) => prefix + u.text);
-      const vecs = this.embedder.embedPassages
-        ? await this.embedder.embedPassages(texts)
-        : (await this.embedder.embed(texts)).map((v) => [v]);
+      const vecs = embedder.embedPassages
+        ? await embedder.embedPassages(texts)
+        : (await embedder.embed(texts)).map((v) => [v]);
       // The owner may have been deleted while it was being embedded.
       const still = new Set(corpus.units(ownerId).map((u) => u.id));
       const rows = missing.map((u, i) => ({ unitId: u.id, digest: u.digest, vecs: vecs[i] })).filter((r) => still.has(r.unitId));
@@ -198,7 +233,7 @@ export class Retrieval {
    * (every mode), then embeds whatever the current model has no vectors for,
    * dropping vectors from old models.
    */
-  async backfill(log = () => {}) {
+  async backfill(log: (line: string) => void = () => {}): Promise<number> {
     for (const corpus of this.corpora.values()) corpus.maintain?.(this, log);
     if (!this.embedder) return 0;
     const pruned = this.store.embeddings.prune(this.embedder.key);
@@ -214,7 +249,7 @@ export class Retrieval {
   }
 
   /** The passage split new documents get. */
-  passageSettings() {
+  passageSettings(): { passageSize: number; passageOverlap: number } {
     return { passageSize: this.cfg.passageSize ?? 1800, passageOverlap: this.cfg.passageOverlap ?? 200 };
   }
 
@@ -222,7 +257,10 @@ export class Retrieval {
    * The best units of a corpus for a query, as that corpus hydrates them,
    * each with the scores that ranked it. Same call in every mode.
    */
-  async search(name, scope, query, limit = 5) {
+  search(name: typeof CORPUS.DOCUMENTS, scope: DocumentScope, query: string, limit?: number): Promise<PassageHit[]>;
+  search(name: typeof CORPUS.CHATS, scope: ChatScope, query: string, limit?: number): Promise<TurnHit[]>;
+  search(name: CorpusName, scope: unknown, query: string, limit?: number): Promise<unknown[]>;
+  async search(name: CorpusName, scope: unknown, query: string, limit = 5): Promise<unknown[]> {
     const corpus = this.#corpus(name);
     if (!String(query ?? '').trim()) return [];
     if (this.mode === 'lexical') {
@@ -236,9 +274,10 @@ export class Retrieval {
     for (const owner of corpus.ownersOf?.(scope) || []) await this.ingest(name, owner);
     const ids = corpus.candidates(scope);
     if (!ids.length) return [];
-    const vectors = this.store.embeddings.vectors(name, this.embedder.key, ids);
-    const [q] = await this.embedder.embed([(this.cfg.queryPrefix || '') + query]);
-    const dense = ids.map((id) => (vectors.has(id) ? Math.max(...vectors.get(id).map((v) => cosine(q, v))) : -1));
+    const embedder = this.embedder!;
+    const vectors = this.store.embeddings.vectors(name, embedder.key, ids);
+    const [q] = await embedder.embed([(this.cfg.queryPrefix || '') + query]);
+    const dense = ids.map((id) => (vectors.has(id) ? Math.max(...vectors.get(id)!.map((v) => cosine(q, v))) : -1));
     const lexical = corpus.lexical(scope, query, { any: true });
     const bm25 = ids.map((id) => lexical.get(id) ?? 0);
     const denseWeight = this.mode === 'dense' ? 1 : (this.cfg.denseWeight ?? 0.5);

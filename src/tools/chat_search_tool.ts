@@ -1,4 +1,6 @@
 import { CORPUS } from '../store/index.ts';
+import type { Retrieval } from '../retrieval/retrieval.ts';
+import type { ToolArgs, ToolContext, ToolDef } from './types.ts';
 
 /**
  * search_chats -- lets the model look up the user's earlier conversations:
@@ -13,7 +15,7 @@ export const SEARCH_CHATS = 'search_chats';
 
 const MAX_RESULTS = 10;
 
-export function chatSearchToolDef() {
+export function chatSearchToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -36,15 +38,16 @@ export function chatSearchToolDef() {
   };
 }
 
-const day = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : 'undated');
+const day = (ms: number | null | undefined) => (ms ? new Date(ms).toISOString().slice(0, 10) : 'undated');
 
-function clip(text, max) {
+function clip(text: unknown, max: number) {
   const t = String(text || '').trim();
   return t.length > max ? `${t.slice(0, max)}… [${(t.length - max).toLocaleString('en-US')} more chars]` : t;
 }
 
 /** Runs one search. Returns a string, like every other tool result. */
-export async function callSearchChats(args, { store, retrieval, chatId, budget = 8000 }) {
+export async function callSearchChats(args: ToolArgs, { store, retrieval, chatId, budget = 8000 }:
+  Pick<ToolContext, 'store' | 'chatId'> & { retrieval: Retrieval; budget?: number }): Promise<string> {
   const query = String(args?.query || '').trim();
   if (!query) return 'Error: query is required.';
   const limit = Math.min(MAX_RESULTS, Math.max(1, Number.parseInt(args?.limit, 10) || 5));

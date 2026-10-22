@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import type { RetrievalConfig } from '../config/config.ts';
 
 /**
  * Local ONNX sentence embeddings for document retrieval, done the way
@@ -22,7 +23,35 @@ import { join, resolve } from 'node:path';
 
 // fast/balanced/quality mirror TinySearch's _PRESET_MODELS
 // (services/embedding_service.py); all three are English-only.
-export const PRESETS = {
+interface Preset {
+  repoId: string;
+  localDir: string;
+  onnxPaths: string[];
+  pooling: 'auto' | 'cls';
+  normalize: boolean;
+  maxLength: number;
+  files: string[];
+}
+
+/** A model resolved to its bundle on disk. */
+export interface ModelSpec extends Omit<Preset, 'localDir'> { name: string; dir: string; localDir: string | null }
+
+/** What retrieval needs from an embedder; tests stand in for it with the same shape. */
+export interface Embedder {
+  key: string;
+  embed(texts: string[]): Promise<Float32Array[]>;
+  /** Each passage as its chunks' vectors. Without it, a passage is one vector. */
+  embedPassages?(texts: string[]): Promise<Float32Array[][]>;
+  chunkTokens?: number;
+  dim?: number;
+  spec?: ModelSpec;
+  sha256?: string;
+  close?(): void;
+}
+
+type ModelSettings = Partial<Pick<RetrievalConfig, 'mode' | 'model' | 'modelDir' | 'modelSha256' | 'documentPrefix' | 'chunkOverlap'>>;
+
+export const PRESETS: Record<string, Preset> = {
   fast: {
     repoId: 'onnx-models/all-MiniLM-L6-v2-onnx',
     localDir: 'all-minilm-l6-v2-onnx',
@@ -66,7 +95,7 @@ export const PRESETS = {
 };
 
 /** Where bundles live unless retrieval.modelDir says otherwise. */
-export function defaultModelsDir(configPath) {
+export function defaultModelsDir(configPath: string | null | undefined): string {
   if (process.env.TINYWEBUI_MODELS_DIR) return resolve(process.env.TINYWEBUI_MODELS_DIR);
   return resolve(configPath ? join(configPath, '..') : process.cwd(), 'models');
 }
@@ -76,7 +105,7 @@ export function defaultModelsDir(configPath) {
  * directory, or a custom bundle given by modelDir (pooling 'auto', no
  * normalisation, 512 tokens -- TinySearch's defaults for custom models).
  */
-export function resolveModel(retrieval, modelsDir) {
+export function resolveModel(retrieval: ModelSettings, modelsDir: string): ModelSpec {
   const name = retrieval.model || 'fast';
   const preset = PRESETS[name];
   if (preset) return { name, ...preset, dir: retrieval.modelDir ? resolve(retrieval.modelDir) : join(modelsDir, preset.localDir) };
@@ -87,7 +116,7 @@ export function resolveModel(retrieval, modelsDir) {
   };
 }
 
-export function findOnnxFile(spec) {
+export function findOnnxFile(spec: ModelSpec): string | null {
   for (const rel of spec.onnxPaths) {
     const p = join(spec.dir, rel);
     if (existsSync(p) && statSync(p).isFile()) return p;
@@ -95,7 +124,7 @@ export function findOnnxFile(spec) {
   return null;
 }
 
-export async function sha256File(path) {
+export async function sha256File(path: string): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest('hex');
@@ -107,7 +136,7 @@ export async function sha256File(path) {
  * and here the file checksum too, so a swapped model file never reuses old
  * vectors.
  */
-export function modelKey(spec, onnxSha256, documentPrefix = '', chunkOverlap = 32) {
+export function modelKey(spec: Pick<ModelSpec, 'repoId' | 'maxLength'>, onnxSha256: string, documentPrefix = '', chunkOverlap = 32): string {
   const prefix = createHash('sha256').update(documentPrefix).digest('hex').slice(0, 12);
   // Chunking is part of what a stored vector means: a different overlap
   // cuts different chunks, so it re-embeds rather than mixing.
@@ -117,9 +146,9 @@ export function modelKey(spec, onnxSha256, documentPrefix = '', chunkOverlap = 3
 // Marks "not installed here" (packages or bundle), as opposed to a broken or
 // mismatched install: only the former lets mode 'auto' fall back to lexical.
 const UNAVAILABLE = 'EMBEDDING_UNAVAILABLE';
-const unavailable = (message) => Object.assign(new Error(message), { code: UNAVAILABLE });
+const unavailable = (message: string) => Object.assign(new Error(message), { code: UNAVAILABLE });
 
-async function importPeer(name) {
+async function importPeer(name: string): Promise<any> {
   try { return await import(name); } catch (err) {
     if (err?.code === 'ERR_MODULE_NOT_FOUND' || /Cannot find (package|module)/.test(err?.message || '')) {
       throw unavailable(`dense/hybrid retrieval needs the optional packages onnxruntime-node and @huggingface/tokenizers (missing ${name}; npm install without --omit=optional)`);
@@ -136,9 +165,11 @@ async function importPeer(name) {
  * wrong with an installed model (a checksum mismatch, a broken file) fails
  * in every mode rather than being papered over.
  */
-export async function resolveRetrieval(retrieval, modelsDir, load = loadEmbedder) {
+export async function resolveRetrieval(retrieval: ModelSettings, modelsDir: string,
+  load: (retrieval: ModelSettings, modelsDir: string) => Promise<Embedder> = loadEmbedder):
+  Promise<{ mode: string; embedder: Embedder | null; fallback: string | null }> {
   if (retrieval.mode === 'lexical') return { mode: 'lexical', embedder: null, fallback: null };
-  const mode = retrieval.mode === 'auto' ? 'hybrid' : retrieval.mode;
+  const mode = retrieval.mode === 'auto' ? 'hybrid' : retrieval.mode!;
   try {
     return { mode, embedder: await load(retrieval, modelsDir), fallback: null };
   } catch (err) {
@@ -147,7 +178,7 @@ export async function resolveRetrieval(retrieval, modelsDir, load = loadEmbedder
   }
 }
 
-const l2normalize = (v) => {
+const l2normalize = (v: Float32Array) => {
   let n = 0;
   for (const x of v) n += x * x;
   n = Math.sqrt(n) || 1e-12;
@@ -160,7 +191,7 @@ const l2normalize = (v) => {
  * Fails clearly -- missing packages, missing bundle, checksum mismatch --
  * and never reaches the network.
  */
-export async function loadEmbedder(retrieval, modelsDir) {
+export async function loadEmbedder(retrieval: ModelSettings, modelsDir: string): Promise<Embedder> {
   const spec = resolveModel(retrieval, modelsDir);
   const onnxPath = findOnnxFile(spec);
   const tokenizerPath = join(spec.dir, 'tokenizer.json');
@@ -184,10 +215,10 @@ export async function loadEmbedder(retrieval, modelsDir) {
     existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {}
   );
   const session = await ort.InferenceSession.create(onnxPath, { executionProviders: ['cpu'] });
-  const inputNames = new Set(session.inputNames);
+  const inputNames = new Set<string>(session.inputNames);
   const pooledOutput = session.outputNames.includes('sentence_embedding') ? 'sentence_embedding' : null;
 
-  const encode = (text) => {
+  const encode = (text: string): number[] => {
     let { ids } = tokenizer.encode(text);
     // Truncate like TinySearch's enable_truncation: keep the closing special token.
     if (ids.length > spec.maxLength) ids = [...ids.slice(0, spec.maxLength - 1), ids[ids.length - 1]];
@@ -195,7 +226,7 @@ export async function loadEmbedder(retrieval, modelsDir) {
   };
 
   // The model's own wrapper tokens ([CLS] … [SEP] for the BERT-family presets).
-  const wrapper = tokenizer.encode('').ids;
+  const wrapper: number[] = tokenizer.encode('').ids;
   const open = wrapper.length >= 1 ? wrapper.slice(0, 1) : [];
   const close = wrapper.length >= 2 ? wrapper.slice(-1) : [];
   const chunkOverlap = retrieval.chunkOverlap ?? 32;
@@ -206,11 +237,11 @@ export async function loadEmbedder(retrieval, modelsDir) {
    * is embedded somewhere; neighbouring chunks overlap by chunkOverlap
    * tokens so a sentence cut at a boundary still lands whole in one of them.
    */
-  const chunksOf = (text) => {
-    const body = tokenizer.encode(text, { add_special_tokens: false }).ids;
+  const chunksOf = (text: string): number[][] => {
+    const body: number[] = tokenizer.encode(text, { add_special_tokens: false }).ids;
     const room = spec.maxLength - open.length - close.length;
     if (body.length <= room) return [[...open, ...body, ...close]];
-    const out = [];
+    const out: number[][] = [];
     for (let start = 0; start < body.length; start += room - chunkOverlap) {
       out.push([...open, ...body.slice(start, start + room), ...close]);
       if (start + room >= body.length) break;
@@ -220,25 +251,25 @@ export async function loadEmbedder(retrieval, modelsDir) {
 
   // One run at a time, like TinySearch's _EMBED_LOCK: ORT sessions are not
   // meant for overlapping runs, and CPU inference gains nothing from it.
-  let queue = Promise.resolve();
-  const runLocked = (fn) => { const next = queue.then(fn, fn); queue = next.catch(() => {}); return next; };
+  let queue: Promise<unknown> = Promise.resolve();
+  const runLocked = <T>(fn: () => Promise<T>): Promise<T> => { const next = queue.then(fn, fn); queue = next.catch(() => {}); return next; };
 
-  async function embedBatch(encoded) {
+  async function embedBatch(encoded: number[][]): Promise<Float32Array[]> {
     const texts = encoded;
     const maxLen = Math.max(1, ...encoded.map((ids) => ids.length));
     const n = texts.length;
     const ids = new BigInt64Array(n * maxLen);
     const mask = new BigInt64Array(n * maxLen);
     encoded.forEach((row, r) => row.forEach((id, c) => { ids[r * maxLen + c] = BigInt(id); mask[r * maxLen + c] = 1n; }));
-    const feeds = {};
+    const feeds: Record<string, unknown> = {};
     const dims = [n, maxLen];
     if (inputNames.has('input_ids')) feeds.input_ids = new ort.Tensor('int64', ids, dims);
     if (inputNames.has('attention_mask')) feeds.attention_mask = new ort.Tensor('int64', mask, dims);
     if (inputNames.has('token_type_ids')) feeds.token_type_ids = new ort.Tensor('int64', new BigInt64Array(n * maxLen), dims);
 
     const results = await session.run(feeds);
-    let rows;
-    const pick = (rank) => Object.values(results).find((t) => t.dims.length === rank);
+    let rows: Float32Array[];
+    const pick = (rank: number): any => Object.values(results).find((t: any) => t.dims.length === rank);
     const pooled = pooledOutput ? results[pooledOutput] : spec.pooling === 'cls' ? null : pick(2);
     if (pooled) {
       const dim = pooled.dims[1];
@@ -253,17 +284,17 @@ export async function loadEmbedder(retrieval, modelsDir) {
     return spec.normalize ? rows.map(l2normalize) : rows;
   }
 
-  async function embedIds(idLists) {
-    const out = [];
+  async function embedIds(idLists: number[][]): Promise<Float32Array[]> {
+    const out: Float32Array[] = [];
     for (let i = 0; i < idLists.length; i += 32) out.push(...await runLocked(() => embedBatch(idLists.slice(i, i + 32))));
     return out;
   }
 
   /** One vector per text, truncated to the model's length (queries). */
-  const embed = (texts) => embedIds(texts.map(encode));
+  const embed = (texts: string[]) => embedIds(texts.map(encode));
 
   /** Each passage as its chunks' vectors: Float32Array[][] (passage -> chunks). */
-  async function embedPassages(texts) {
+  async function embedPassages(texts: string[]): Promise<Float32Array[][]> {
     const chunks = texts.map(chunksOf);
     const flat = await embedIds(chunks.flat());
     let i = 0;
@@ -284,9 +315,9 @@ export async function loadEmbedder(retrieval, modelsDir) {
 }
 
 /** Files a preset bundle consists of, for `tinywebui models pull`. */
-export function bundleListing(dir) {
-  const out = [];
-  const walk = (d, rel = '') => {
+export function bundleListing(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string, rel = '') => {
     for (const name of readdirSync(d)) {
       const p = join(d, name);
       if (statSync(p).isDirectory()) walk(p, `${rel}${name}/`);

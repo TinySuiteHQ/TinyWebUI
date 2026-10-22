@@ -1,6 +1,6 @@
 import { json, readJson, UPLOAD_LIMIT } from '../http.ts';
-import { extractText, servingFor } from '../files/documents.js';
-import { normalizeImage } from '../files/images.js';
+import { extractText, servingFor } from '../files/documents.ts';
+import { normalizeImage } from '../files/images.ts';
 import { logger } from '../log.ts';
 import { FEATURE } from '../../public/shared/features.js';
 import { CORPUS } from '../store/index.ts';

@@ -27,7 +27,7 @@ import { loadConfig } from '../src/config/config.ts';
 import { Store } from '../src/store/index.ts';
 import { runChat } from '../src/chat/llm.js';
 import { check } from './checks.js';
-import { askToolDef, callAskUser, ASK_USER } from '../src/tools/ask_tool.js';
+import { askToolDef, callAskUser, ASK_USER } from '../src/tools/ask_tool.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TASKS = join(HERE, 'tasks');

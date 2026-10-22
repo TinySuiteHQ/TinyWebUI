@@ -1,7 +1,10 @@
 /** A small, chat-scoped checklist that the model can maintain during a task. */
+import type { Task, TaskStatus } from '../store/chats.ts';
+import type { ToolArgs, ToolContext, ToolDef } from './types.ts';
+
 export const MANAGE_TASKS = 'manage_tasks';
 
-export function taskToolDef() {
+export function taskToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -22,7 +25,8 @@ export function taskToolDef() {
   };
 }
 
-export function callManageTasks(args, { store, chatId, onChange } = {}) {
+export function callManageTasks(args: ToolArgs, { store, chatId, onChange }:
+  Partial<Pick<ToolContext, 'store' | 'chatId'>> & { onChange?: (tasks: Task[]) => void } = {}): string {
   if (!store || !chatId) return 'Error: this tool requires a chat.';
   const { action } = args || {};
   if (action === 'list') return JSON.stringify({ tasks: store.chats.listTasks(chatId) });
@@ -36,12 +40,12 @@ export function callManageTasks(args, { store, chatId, onChange } = {}) {
   }
   if (action === 'update') {
     const ids = Array.isArray(args.ids) ? args.ids : [args.id];
-    if (!ids.length || ids.some((id) => typeof id !== 'string' || !id)
+    if (!ids.length || ids.some((id: unknown) => typeof id !== 'string' || !id)
       || !['pending', 'in_progress', 'completed'].includes(args.status)) {
       return 'Error: update requires a valid task id (or ids) and status.';
     }
-    const tasks = ids.map((id) => store.chats.updateTask(chatId, id, args.status));
-    const missing = ids.filter((_, i) => !tasks[i]);
+    const tasks = ids.map((id: string) => store.chats.updateTask(chatId, id, args.status as TaskStatus));
+    const missing = ids.filter((_: string, i: number) => !tasks[i]);
     if (missing.length === ids.length) return 'Error: task not found in this chat.';
     onChange?.(store.chats.listTasks(chatId));
     if (!Array.isArray(args.ids)) return JSON.stringify({ task: tasks[0] });
@@ -55,7 +59,7 @@ export function callManageTasks(args, { store, chatId, onChange } = {}) {
  * only in the tool results that created them, which scroll out of attention
  * within a turn and are gone from view entirely on the next one.
  */
-export function openTasksNote(tasks) {
+export function openTasksNote(tasks: Task[] | null | undefined): string {
   const open = (tasks || []).filter((t) => t.status !== 'completed');
   if (!open.length) return '';
   const lines = open.map((t) => `- ${t.id} [${t.status}] ${t.title}`);

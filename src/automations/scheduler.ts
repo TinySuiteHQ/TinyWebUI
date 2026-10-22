@@ -1,5 +1,28 @@
-import { nextSchedule, runMessage } from './automation.js';
+import { nextSchedule, runMessage } from './automation.ts';
 import { ORIGIN } from '../../public/shared/origins.js';
+import type { Store } from '../store/index.ts';
+import type { Automation } from '../store/automations.ts';
+import type { ChatRow } from '../store/chats.ts';
+import type { Scope } from '../store/scope.ts';
+import type { UserRole } from '../store/users.ts';
+import type { ToolDef } from '../harness/types.ts';
+
+/** The part of the app the scheduler drives runs through (built in server.js). */
+export interface SchedulerApp {
+  store: Store;
+  runs: {
+    isRunning(chatId: string): boolean;
+    start(opts: {
+      chat: ChatRow; model: string; tools: ToolDef[]; historyFromSeq: number; unattended: boolean;
+      onFinish: (outcome: { ok: boolean; error?: unknown; result?: unknown }) => void;
+    }): unknown;
+  };
+  modelFor(userId: string | null, role: UserRole | null | undefined): string;
+  toolsFor(features: Set<string>): ToolDef[];
+  ownerFeatures(userId: string | null): Set<string>;
+}
+
+export type Scheduler = ReturnType<typeof createScheduler>;
 
 /**
  * Runs automations: on their cron schedule, or on demand. A run needs its
@@ -10,13 +33,13 @@ import { ORIGIN } from '../../public/shared/origins.js';
  *
  * `app` supplies the store, runs, and modelFor/toolsFor/ownerFeatures.
  */
-export function createScheduler(app) {
+export function createScheduler(app: SchedulerApp) {
   const { store, runs } = app;
-  const pendingManual = new Map();
-  let timer = null;
+  const pendingManual = new Map<string, { automationId: string; userId: Scope; runId: string }[]>();
+  let timer: NodeJS.Timeout | null = null;
   let stopped = false;
 
-  function launch(automation, runId, trigger = 'schedule') {
+  function launch(automation: Automation, runId: string, trigger = 'schedule') {
     // Nobody is at the keyboard to be turned away, so a disabled or pending
     // owner is checked here: their schedules stop the moment their access does.
     if (automation.userId && (store.users.get(automation.userId)?.status !== 'approved' || !app.ownerFeatures(automation.userId).has('automations'))) {
@@ -55,7 +78,7 @@ export function createScheduler(app) {
     return true;
   }
 
-  async function trigger(automation, userId) {
+  async function trigger(automation: Pick<Automation, 'id'>, userId: Scope) {
     const owned = store.automations.get(automation.id, userId);
     if (!owned) throw new Error('no such automation');
     const runId = store.automations.addRun(owned.id, Date.now(), 'queued', 'manual');
@@ -69,11 +92,11 @@ export function createScheduler(app) {
     return { runId, status: 'running', chatId: owned.chatId };
   }
 
-  function drain(chatId) {
+  function drain(chatId: string) {
     if (runs.isRunning(chatId)) return;
     const queue = pendingManual.get(chatId);
     if (!queue?.length) return;
-    const next = queue.shift();
+    const next = queue.shift()!;
     if (!queue.length) pendingManual.delete(chatId);
     const automation = store.automations.get(next.automationId, next.userId);
     if (!automation) {
@@ -107,7 +130,7 @@ export function createScheduler(app) {
     if (stopped) return;
     const now = Date.now();
     for (const automation of store.automations.due(now)) {
-      const scheduledAt = automation.nextRunAt;
+      const scheduledAt = automation.nextRunAt!; // due() only returns automations with one
       const runId = store.automations.addRun(automation.id, scheduledAt, 'queued');
       let nextRunAt;
       try { nextRunAt = nextSchedule(automation.cron, automation.timezone, scheduledAt); }

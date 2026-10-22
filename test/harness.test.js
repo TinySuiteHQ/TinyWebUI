@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 
 import { Store } from '../src/store/index.ts';
 import { runChat } from '../src/chat/llm.js';
-import { manageAutomation, runMessage } from '../src/automations/automation.js';
+import { manageAutomation, runMessage } from '../src/automations/automation.ts';
 
 /** A provider that plays back one scripted reply per request and records every body. */
 async function scripted(replies) {
@@ -318,7 +318,7 @@ test('a long plain-text chat is windowed once and then stays put', async () => {
 
 /* ---------- empty answers and tool names ---------- */
 
-import { uniqueName } from '../src/mcp.js';
+import { uniqueName } from '../src/mcp.ts';
 
 test('a final pass that comes back empty says so instead of storing a blank answer', async () => {
   const { rows } = await drive([

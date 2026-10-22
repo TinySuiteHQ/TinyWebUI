@@ -52,6 +52,7 @@
     "onnxruntime-node": "^1.30.0"
   },
   "devDependencies": {
+    "@types/heic-convert": "^2.1.1",
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2"
   }

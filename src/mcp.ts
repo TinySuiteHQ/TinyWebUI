@@ -4,7 +4,16 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import type { Stream } from 'node:stream';
 import { logger } from './log.ts';
+import type { McpServerSpec, McpServers } from './config/config.ts';
+import type { ToolDef } from './harness/types.ts';
+import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
+
+/** true, false, or decided per call from the arguments. */
+type Flag = boolean | ((args: ToolArgs) => unknown);
+export type ExecutionMode = 'parallel' | 'sequential';
+interface Install { name: string; url: string }
 
 const log = logger('mcp');
 
@@ -23,15 +32,16 @@ const REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
  * connection with its name, never a silent empty string: an empty bearer token
  * reads as "unauthorised" and sends people looking in the wrong place.
  */
-export function expandRefs(value, env = process.env) {
+export function expandRefs<T>(value: T, env: NodeJS.ProcessEnv = process.env): T | string {
   if (typeof value !== 'string') return value;
-  return value.replace(REF, (_, name) => {
+  return value.replace(REF, (_, name: string) => {
     if (env[name] === undefined) throw new Error(`mcp.json refers to \${${name}}, which is not set in TinyWebUI's environment`);
-    return env[name];
+    return env[name]!;
   });
 }
 
-const expandAll = (obj) => obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandRefs(v)]));
+const expandAll = (obj: Record<string, string> | undefined): Record<string, string> | undefined =>
+  obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandRefs(v)]));
 
 /**
  * The flat name the model sees for a server's tool. Sanitising and the
@@ -41,9 +51,9 @@ const expandAll = (obj) => obj && Object.fromEntries(Object.entries(obj).map(([k
  * instead. Servers and tools are visited in sorted order, so the same config
  * always produces the same names and the tool block stays cache-stable.
  */
-export function uniqueName(raw, taken, reserved = RESERVED) {
+export function uniqueName(raw: string, taken: { has(name: string): boolean }, reserved: Set<string> = RESERVED): string {
   const base = raw.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const free = (n) => !taken.has(n) && !reserved.has(n);
+  const free = (n: string) => !taken.has(n) && !reserved.has(n);
   let name = base.slice(0, MAX_NAME);
   for (let i = 2; !free(name); i++) {
     const suffix = `_${i}`;
@@ -53,7 +63,7 @@ export function uniqueName(raw, taken, reserved = RESERVED) {
 }
 
 /** One row of the inventory: what the settings UI needs to draw and toggle a tool. */
-function toRow(t, disabled, readOnly) {
+function toRow(t: ToolDef, disabled: Set<string>, readOnly: boolean | 'partly') {
   return {
     name: t.function.name,
     // true, false, or 'partly' for a tool that only reads for some arguments.
@@ -65,11 +75,12 @@ function toRow(t, disabled, readOnly) {
 }
 
 class MissingCommand extends Error {
-  constructor(message, install) { super(message); this.install = install; }
+  install: Install | null;
+  constructor(message: string, install: Install | null) { super(message); this.install = install; }
 }
 
 // Launchers whose absence has one known fix, so the UI can link straight to it.
-const INSTALL = {
+const INSTALL: Record<string, Install> = {
   uv: { name: 'uv', url: 'https://docs.astral.sh/uv/' },
   uvx: { name: 'uv', url: 'https://docs.astral.sh/uv/' },
 };
@@ -80,13 +91,13 @@ const INSTALL = {
  * otherwise surfaces as the SDK's "Connection closed", which says nothing
  * about what to install.
  */
-export function missingCommand(spec) {
-  const cmd = spec.command;
+export function missingCommand(spec: McpServerSpec): { message: string; install: Install | null } | null {
+  const cmd = spec.command!;
   const path = spec.env?.PATH ?? spec.env?.Path ?? process.env.PATH ?? '';
   const exts = process.platform === 'win32'
     ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)]
     : [''];
-  const found = (base) => exts.some((ext) => {
+  const found = (base: string) => exts.some((ext) => {
     try { return statSync(base + ext).isFile(); } catch { return false; }
   });
   if (isAbsolute(cmd) || cmd.includes('/') || cmd.includes('\\')) {
@@ -101,12 +112,12 @@ export function missingCommand(spec) {
   return { message: `"${cmd}" was not found on PATH`, install: null };
 }
 
-function transportFor(name, spec) {
+function transportFor(name: string, spec: McpServerSpec) {
   if (spec.command) {
     return new StdioClientTransport({
       command: spec.command,
       args: (spec.args || []).map((a) => expandRefs(a)),
-      env: { ...process.env, ...(expandAll(spec.env) || {}) },
+      env: { ...process.env, ...(expandAll(spec.env) || {}) } as Record<string, string>,
       cwd: spec.cwd,
       // Piped rather than inherited so we can label it and, more importantly,
       // drop the shutdown noise -- a stdio server killed by Ctrl-C prints a full
@@ -129,7 +140,22 @@ function transportFor(name, spec) {
  * stably ordered list of OpenAI-style function tools.
  */
 export class McpHub {
-  constructor(servers = {}) {
+  servers: McpServers;
+  closing: boolean;
+  clients: Map<string, Client>;
+  tools: ToolDef[];
+  routes: Map<string, { server: string; tool: string }>;
+  locals: Map<string, ToolHandler>;
+  idempotent: Set<string>;
+  readOnly: Map<string, Flag>;
+  gated: Map<string, Flag>;
+  modes: Map<string, ExecutionMode>;
+  errors: string[];
+  install: Map<string, Install>;
+  dead: Set<string>;
+  reconnecting: Map<string, Promise<Client>>;
+
+  constructor(servers: McpServers = {}) {
     this.servers = servers;
     this.closing = false;
     this.clients = new Map();
@@ -163,7 +189,8 @@ export class McpHub {
    * Registered after connect() so locals always land at the end of the block,
    * keeping the tool list byte-identical between runs.
    */
-  registerLocal(def, handler, { readOnly = false, idempotent = readOnly === true, executionMode = null, gated = false } = {}) {
+  registerLocal(def: ToolDef, handler: ToolHandler, { readOnly = false, idempotent = readOnly === true, executionMode = null, gated = false }:
+    { readOnly?: Flag; idempotent?: boolean; executionMode?: ExecutionMode | null; gated?: Flag } = {}): this {
     this.locals.set(def.function.name, handler);
     if (gated) this.gated.set(def.function.name, gated);
     if (executionMode) this.modes.set(def.function.name, executionMode);
@@ -173,7 +200,7 @@ export class McpHub {
     return this;
   }
 
-  async connect() {
+  async connect(): Promise<this> {
     // Sorted so the tool block handed to the model is byte-identical run to run.
     for (const name of Object.keys(this.servers).sort()) {
       const spec = this.servers[name];
@@ -193,7 +220,7 @@ export class McpHub {
             function: {
               name: flat,
               description: t.description || '',
-              parameters: t.inputSchema || { type: 'object', properties: {} }
+              parameters: (t.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} }
             }
           });
         }
@@ -216,7 +243,7 @@ export class McpHub {
    * crash or be killed long after startup; without the watch every later call
    * fails until someone reloads MCP by hand.
    */
-  async open(name, spec) {
+  async open(name: string, spec: McpServerSpec): Promise<Client> {
     const missing = spec.command ? missingCommand(spec) : null;
     if (missing) throw new MissingCommand(missing.message, missing.install);
     const client = new Client({ name: 'tinywebui', version: '0.1.0' }, { capabilities: {} });
@@ -224,7 +251,7 @@ export class McpHub {
     // Read before connecting: a child that dies on startup (uv unable to
     // download, a bad import) says why only on stderr, while the SDK reports
     // just "Connection closed".
-    this.pipeStderr(name, transport.stderr);
+    this.pipeStderr(name, (transport as StdioClientTransport).stderr);
     await client.connect(transport);
     client.onclose = () => { if (!this.closing && this.clients.get(name) === client) this.dead.add(name); };
     this.clients.set(name, client);
@@ -237,7 +264,7 @@ export class McpHub {
    * The tool list is not re-read: routes and the tool block stay exactly as
    * they were, so the prompt cache survives the restart.
    */
-  reconnect(name) {
+  reconnect(name: string): Promise<Client> {
     let pending = this.reconnecting.get(name);
     if (!pending) {
       const old = this.clients.get(name);
@@ -251,14 +278,14 @@ export class McpHub {
   }
 
   /** Labels a child's stderr, and goes quiet once we are tearing it down. */
-  pipeStderr(name, stream) {
+  pipeStderr(name: string, stream: Stream | null | undefined): void {
     if (!stream) return;
     let buf = '';
-    stream.on('data', (chunk) => {
+    stream.on('data', (chunk: Buffer) => {
       if (this.closing) return;
       buf += chunk.toString();
       const lines = buf.split('\n');
-      buf = lines.pop();
+      buf = lines.pop()!;
       for (const line of lines) {
         if (line.trim() && !this.closing) log.info(`${name}: ${line}`);
       }
@@ -273,7 +300,7 @@ export class McpHub {
    * rebuilding or reordering it -- turning a tool back on or off is the one
    * thing that is allowed to cost a cache miss, and only that turn's.
    */
-  activeTools(disabledNames = []) {
+  activeTools(disabledNames: string[] = []): ToolDef[] {
     if (!disabledNames?.length) return this.tools;
     const disabled = new Set(disabledNames);
     return this.tools.filter((t) => !disabled.has(t.function.name));
@@ -285,7 +312,7 @@ export class McpHub {
    * failed to connect and why. Disabling here is advisory only, a flag drawn
    * from `disabledNames`; `activeTools` is what actually enforces it.
    */
-  inventory(disabledNames = []) {
+  inventory(disabledNames: string[] = []) {
     const disabled = new Set(disabledNames);
     const internal = this.tools
       .filter((t) => this.locals.has(t.function.name))
@@ -299,7 +326,7 @@ export class McpHub {
       const instructions = this.clients.get(name)?.getInstructions() || null;
       // What to install when the server's launcher is missing: { name, url }.
       const install = status === 'error' ? this.install.get(name) || null : null;
-      return { name, status, error, install, instructions, tools: [] };
+      return { name, status, error, install, instructions, tools: [] as ReturnType<typeof toRow>[] };
     });
     const byName = new Map(servers.map((row) => [row.name, row]));
     for (const t of this.tools) {
@@ -319,8 +346,8 @@ export class McpHub {
    * iterated in the same sorted order used everywhere else so the block, and
    * the prompt prefix built on it, stay stable run to run.
    */
-  instructionsBlock() {
-    const parts = [];
+  instructionsBlock(): string {
+    const parts: string[] = [];
     for (const name of Object.keys(this.servers).sort()) {
       const text = this.clients.get(name)?.getInstructions();
       if (text) parts.push(`## ${name}\n${text}`);
@@ -338,7 +365,7 @@ export class McpHub {
   }
 
   /** True when a repeat of this call with the same arguments must return the same result. */
-  isIdempotent(flatName) {
+  isIdempotent(flatName: string): boolean {
     return this.idempotent.has(flatName);
   }
 
@@ -348,42 +375,42 @@ export class McpHub {
    * both readOnly and idempotent hints -- since that is the only claim that it
    * neither changes anything nor observes something another call might change.
    */
-  executionMode(flatName) {
+  executionMode(flatName: string): ExecutionMode {
     return this.modes.get(flatName) || (this.idempotent.has(flatName) ? 'parallel' : 'sequential');
   }
 
   /** True for a tool this process implements rather than an MCP server. */
-  isLocal(flatName) {
+  isLocal(flatName: string): boolean {
     return this.locals.has(flatName);
   }
 
   /** True when this call is to a local tool that must ask, whatever the approval mode. */
-  isGated(flatName, args) {
+  isGated(flatName: string, args?: ToolArgs): boolean {
     const v = this.gated.get(flatName);
     return typeof v === 'function' ? Boolean(v(args || {})) : Boolean(v);
   }
 
   /** True when this call is declared to change nothing. */
-  isReadOnly(flatName, args) {
+  isReadOnly(flatName: string, args?: ToolArgs): boolean {
     const v = this.readOnly.get(flatName);
     return typeof v === 'function' ? Boolean(v(args || {})) : Boolean(v);
   }
 
-  readOnlyLabel(flatName) {
+  readOnlyLabel(flatName: string): boolean | 'partly' {
     const v = this.readOnly.get(flatName);
     return typeof v === 'function' ? 'partly' : Boolean(v);
   }
 
   /** Returns a string, because that is all a tool result message can carry. */
-  async call(flatName, args, ctx) {
+  async call(flatName: string, args: ToolArgs | undefined, ctx: ToolContext): Promise<string> {
     const local = this.locals.get(flatName);
     if (local) {
-      try { return String(await local(args || {}, ctx || {})); }
+      try { return String(await local(args || {}, ctx || {} as ToolContext)); }
       catch (err) { return `Error calling ${flatName}: ${err.message}`; }
     }
     const route = this.routes.get(flatName);
     if (!route) return `Error: unknown tool "${flatName}"`;
-    let client = this.clients.get(route.server);
+    let client = this.clients.get(route.server)!;
     // Known dead before the call: reconnecting first is always safe, since
     // nothing has been sent yet.
     if (this.dead.has(route.server)) {
@@ -410,9 +437,9 @@ export class McpHub {
   }
 
   /** One call, with the result flattened to the text a tool message can carry. */
-  async callOnce(client, route, flatName, args) {
+  async callOnce(client: Client, route: { server: string; tool: string }, flatName: string, args: ToolArgs | undefined): Promise<string> {
     const res = await client.callTool({ name: route.tool, arguments: args || {} });
-    const text = (res.content || [])
+    const text = ((res.content || []) as any[])
       .map((c) => {
         if (c.type === 'text') return c.text;
         if (c.type === 'resource') return c.resource?.text ?? JSON.stringify(c.resource);
@@ -424,7 +451,7 @@ export class McpHub {
     return res.isError ? `Error: ${text}` : text || '(no output)';
   }
 
-  async close() {
+  async close(): Promise<void> {
     this.closing = true;
     for (const client of this.clients.values()) {
       try { await client.close(); } catch { /* shutting down anyway */ }

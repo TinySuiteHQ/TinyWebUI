@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../src/store/index.ts';
-import { callAskUser } from '../src/tools/ask_tool.js';
+import { callAskUser } from '../src/tools/ask_tool.ts';
 
 // Each request plays the next scripted reply: an ask_user call, or text.
 let script = [];

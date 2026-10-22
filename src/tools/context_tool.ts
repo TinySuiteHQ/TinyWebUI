@@ -13,6 +13,9 @@
  * so they never disturb the cached prefix.
  */
 
+import type { ArtifactRow } from '../store/messages.ts';
+import type { ToolArgs, ToolContext, ToolDef } from './types.ts';
+
 export const EXPAND_CONTEXT = 'expand_context';
 
 /**
@@ -32,8 +35,8 @@ export const EXPAND_CONTEXT = 'expand_context';
 export const MAP_MIN_LINE = 200;
 export const MAP_MAX_ENTRIES = 12;
 
-export function textMap(text) {
-  const rows = [];
+export function textMap(text: unknown): string {
+  const rows: { pos: number; len: number }[] = [];
   let pos = 0;
   for (const line of String(text ?? '').split('\n')) {
     const len = line.trim().length;
@@ -52,7 +55,7 @@ export function textMap(text) {
     + (omitted > 0 ? `, +${omitted} more` : '');
 }
 
-export function expandToolDef() {
+export function expandToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -97,11 +100,11 @@ export function expandToolDef() {
   };
 }
 
-function header(artifact, note) {
+function header(artifact: ArtifactRow, note: string) {
   return `[artifact ${artifact.id} · ${artifact.tool_name} · ${artifact.char_len.toLocaleString('en-US')} chars · ${note}]`;
 }
 
-function grepView(text, pattern, contextLines, budget, artifact) {
+function grepView(text: string, pattern: string, contextLines: number, budget: number, artifact: ArtifactRow) {
   let re;
   try {
     re = new RegExp(pattern, 'i');
@@ -110,7 +113,7 @@ function grepView(text, pattern, contextLines, budget, artifact) {
   }
 
   const lines = text.split('\n');
-  const hits = [];
+  const hits: number[] = [];
   for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) hits.push(i);
   if (!hits.length) {
     // A bare "no match" costs a full round and returns nothing to act on, so the
@@ -125,7 +128,7 @@ function grepView(text, pattern, contextLines, budget, artifact) {
   }
 
   // Merge overlapping context windows so a dense run of matches prints once.
-  const ranges = [];
+  const ranges: { from: number; to: number }[] = [];
   for (const i of hits) {
     const from = Math.max(0, i - contextLines);
     const to = Math.min(lines.length - 1, i + contextLines);
@@ -153,7 +156,7 @@ function grepView(text, pattern, contextLines, budget, artifact) {
   return out.join('\n\n');
 }
 
-function windowView(text, offset, limit, budget, artifact) {
+function windowView(text: string, offset: number, limit: number, budget: number, artifact: ArtifactRow) {
   const start = Math.max(0, Math.min(offset, text.length));
   const size = Math.min(limit > 0 ? limit : budget, budget);
   const slice = text.slice(start, start + size);
@@ -166,7 +169,7 @@ function windowView(text, offset, limit, budget, artifact) {
 }
 
 /** Runs one expansion. Returns a string, like every other tool result. */
-export function callExpand(args, { store, chatId, budget = 8000 }) {
+export function callExpand(args: ToolArgs, { store, chatId, budget = 8000 }: Pick<ToolContext, 'store' | 'chatId'> & { budget?: number }): string {
   const id = String(args?.artifact_id || '').trim();
   if (!id) return 'Error: artifact_id is required.';
 

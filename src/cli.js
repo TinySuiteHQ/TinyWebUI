@@ -2,7 +2,7 @@ import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFile
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
-import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.js';
+import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems } from './config/config.ts';
 import { REASONING_REPLAY, MODEL_TAGS } from './config/models.ts';
 import {
@@ -377,7 +377,7 @@ const commands = {
         e.close?.();
         return `${r.mode} with ${e.spec.repoId}, ${e.dim} dims${cfg.retrieval.modelSha256 ? ', checksum pinned' : ', checksum NOT pinned (set retrieval.modelSha256)'}`;
       });
-      const { McpHub } = await import('./mcp.js');
+      const { McpHub } = await import('./mcp.ts');
       for (const [name, spec] of Object.entries(servers)) {
         if (spec?.disabled) { checks.push({ check: `mcp ${name}`, ok: true, detail: 'disabled' }); continue; }
         await check(`mcp ${name}`, async () => {

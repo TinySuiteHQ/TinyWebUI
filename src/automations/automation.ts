@@ -1,6 +1,12 @@
 import { CronExpressionParser } from 'cron-parser';
+import type { Automation, AutomationPatch } from '../store/automations.ts';
+import type { Scope } from '../store/scope.ts';
+import type { ToolArgs, ToolContext, ToolDef } from '../tools/types.ts';
 
-export function validateSchedule(cron, timezone, now = Date.now()) {
+/** Starts a run now, or queues it behind the chat's current one (scheduler.trigger). */
+export type TriggerAutomation = (automation: Automation, userId: Scope) => Promise<{ runId: string; status: string; chatId: string }>;
+
+export function validateSchedule(cron: unknown, timezone: unknown, now = Date.now()): { cron: string; timezone: string; nextRunAt: number } {
   const tz = String(timezone || '').trim();
   if (!tz) throw new Error('timezone is required');
   try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); }
@@ -16,9 +22,9 @@ export function validateSchedule(cron, timezone, now = Date.now()) {
   return { cron: String(cron).trim(), timezone: tz, nextRunAt };
 }
 
-function cleanFields(input, { requireAll = false } = {}) {
-  const fields = {};
-  for (const key of ['name', 'prompt']) {
+function cleanFields(input: ToolArgs, { requireAll = false } = {}) {
+  const fields: AutomationPatch & { name?: string; prompt?: string } = {};
+  for (const key of ['name', 'prompt'] as const) {
     if (input[key] === undefined && !requireAll) continue;
     const val = String(input[key] ?? '').trim();
     if (!val) throw new Error(`${key} is required`);
@@ -34,7 +40,7 @@ function cleanFields(input, { requireAll = false } = {}) {
   return fields;
 }
 
-export function automationToolDef() {
+export function automationToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -76,7 +82,8 @@ export function automationToolDef() {
   };
 }
 
-export async function manageAutomation(args, { store, chatId, triggerAutomation, unattended = false } = {}) {
+export async function manageAutomation(args: ToolArgs, { store, chatId, triggerAutomation, unattended = false }:
+  Pick<ToolContext, 'store' | 'chatId'> & { triggerAutomation?: TriggerAutomation; unattended?: boolean }): Promise<string> {
   const action = String(args?.action || '');
   // A scheduled run has nobody watching it. Letting it start more runs is how
   // one trigger becomes an endless self-requeueing loop, and how text injected
@@ -91,7 +98,8 @@ export async function manageAutomation(args, { store, chatId, triggerAutomation,
   if (action === 'create') {
     if (!chat) throw new Error('automation creation requires a current chat');
     const fields = cleanFields(args, { requireAll: true });
-    const row = store.automations.create({ ...fields, chatId, source: 'model' }, userId);
+    // requireAll: cleanFields has filled every field create needs, or thrown.
+    const row = store.automations.create({ ...fields as Required<Pick<typeof fields, 'name' | 'prompt' | 'cron' | 'timezone' | 'nextRunAt'>>, chatId, source: 'model' }, userId);
     return JSON.stringify(row);
   }
   if (!args?.id) throw new Error('id is required');
@@ -116,11 +124,11 @@ export async function manageAutomation(args, { store, chatId, triggerAutomation,
   throw new Error('action must be list, create, update, delete, or trigger');
 }
 
-export function nextSchedule(cron, timezone, now = Date.now()) {
+export function nextSchedule(cron: unknown, timezone: unknown, now = Date.now()): number {
   return validateSchedule(cron, timezone, now).nextRunAt;
 }
 
-export function runMessage(automation) {
+export function runMessage(automation: Pick<Automation, 'name' | 'cron' | 'timezone' | 'prompt' | 'lastResult'>): string {
   const previous = automation.lastResult
     ? `\n\nPrevious run result (truncated):\n${automation.lastResult.slice(0, 2000)}` : '';
   return [

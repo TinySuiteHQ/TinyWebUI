@@ -19,7 +19,24 @@
  * (server.js), so a turn never loses the tools it is in the middle of using.
  */
 
+import type { McpServerSpec, McpServers } from '../config/config.ts';
+import type { ToolArgs, ToolContext, ToolDef } from './types.ts';
+
 export const MANAGE_MCP = 'manage_mcp';
+
+/** A server's health, as the hub's inventory reports it. */
+export interface ServerStatus { status: string; error: string | null; tools: number }
+
+/** How this tool reads and writes mcp.json (app.mcpEdit in server.js). */
+export interface McpEditor {
+  /** Throws when mcp.json is not valid JSON. */
+  servers(): McpServers;
+  save(servers: McpServers, change: { by: string; change: { action: string; name: string } }): void;
+  locked(): boolean;
+  status(): Record<string, ServerStatus>;
+  /** Why a local server's command cannot start, or null. */
+  check?(spec: McpServerSpec): string | null;
+}
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -35,7 +52,7 @@ const MAX_ENTRIES = 20;
 const MAX_ARGS = 50;
 const MAX_VALUE = 4000;
 
-export function mcpToolDef() {
+export function mcpToolDef(): ToolDef {
   return {
     type: 'function',
     function: {
@@ -90,11 +107,11 @@ export function mcpToolDef() {
 
 /* ---------- what the model is allowed to see ---------- */
 
-const shown = (v) => (REF_ONLY.test(String(v)) ? String(v) : HIDDEN);
-const maskMap = (obj) => obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, shown(v)]));
+const shown = (v: unknown) => (REF_ONLY.test(String(v)) ? String(v) : HIDDEN);
+const maskMap = (obj: Record<string, unknown> | undefined) => obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, shown(v)]));
 
 /** Arguments, with the value of anything that looks like a credential flag hidden. */
-function maskArgs(args = []) {
+function maskArgs(args: string[] = []) {
   let afterSecretFlag = false;
   return args.map((a) => {
     const s = String(a);
@@ -108,29 +125,29 @@ function maskArgs(args = []) {
 }
 
 /** A URL without credentials: userinfo, query values and token-length path segments are hidden. */
-function maskUrl(raw) {
+function maskUrl(raw: unknown) {
   let u;
-  try { u = new URL(raw); } catch { return HIDDEN; }
+  try { u = new URL(raw as string); } catch { return HIDDEN; }
   const path = u.pathname.split('/').map((seg) => (seg.length >= 20 && !REF_ONLY.test(decodeURIComponent(seg)) ? HIDDEN : seg)).join('/');
   const query = [...u.searchParams].map(([k, v]) => `${k}=${REF_ONLY.test(v) ? v : HIDDEN}`).join('&');
   return `${u.protocol}//${u.host}${path}${query ? `?${query}` : ''}`;
 }
 
 /** Every literal secret value in a spec, so an error message that quotes one can be cleaned. */
-function literalSecrets(spec) {
+function literalSecrets(spec: McpServerSpec) {
   const values = [...Object.values(spec.headers || {}), ...Object.values(spec.env || {})].map(String);
   try {
-    const u = new URL(spec.url);
+    const u = new URL(spec.url as string);
     if (u.password) values.push(u.password);
     values.push(...[...u.searchParams.values()], ...u.pathname.split('/').filter((s) => s.length >= 20));
   } catch { /* a local server, or a URL that does not parse */ }
   return values.filter((v) => v.length >= 6 && !REF_ONLY.test(v));
 }
 
-const scrub = (text, spec) => literalSecrets(spec).reduce((t, secret) => t.split(secret).join(HIDDEN), String(text));
+const scrub = (text: unknown, spec: McpServerSpec) => literalSecrets(spec).reduce((t, secret) => t.split(secret).join(HIDDEN), String(text));
 
-function describe(name, spec, live) {
-  const out = { name, type: spec.command ? 'local' : 'remote', enabled: !spec.disabled };
+function describe(name: string, spec: McpServerSpec, live?: ServerStatus) {
+  const out: Record<string, unknown> = { name, type: spec.command ? 'local' : 'remote', enabled: !spec.disabled };
   if (spec.command) {
     out.command = spec.command;
     if (spec.args?.length) out.args = maskArgs(spec.args);
@@ -151,7 +168,7 @@ function describe(name, spec, live) {
 
 /* ---------- checking what the model wrote ---------- */
 
-function plainMap(value, what, nameRule) {
+function plainMap(value: unknown, what: string, nameRule: RegExp): Record<string, string | null> | undefined {
   if (value === undefined) return undefined;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`"${what}" must be an object of name: value`);
   const entries = Object.entries(value);
@@ -161,20 +178,20 @@ function plainMap(value, what, nameRule) {
     if (v === null) continue;
     if (typeof v !== 'string' || v.length > MAX_VALUE || /[\r\n]/.test(v)) throw new Error(`"${what}.${k}" must be a single-line string, or null to remove it`);
   }
-  return value;
+  return value as Record<string, string | null>;
 }
 
 /** Applies a name -> value | null patch to the current map; an empty result is dropped. */
-function patched(current, patch) {
+function patched(current: Record<string, string> | undefined, patch: Record<string, string | null> | undefined) {
   if (patch === undefined) return current;
-  const out = { ...(current || {}) };
+  const out: Record<string, string> = { ...(current || {}) };
   for (const [k, v] of Object.entries(patch)) {
     if (v === null) delete out[k]; else out[k] = v;
   }
   return Object.keys(out).length ? out : undefined;
 }
 
-function checkUrl(raw) {
+function checkUrl(raw: unknown) {
   if (typeof raw !== 'string' || !raw) throw new Error('"url" must be a string');
   let u;
   try { u = new URL(raw); } catch { throw new Error('"url" is not a valid URL'); }
@@ -185,18 +202,18 @@ function checkUrl(raw) {
 const LOCAL_ONLY = ['command', 'args', 'cwd', 'env'];
 const REMOTE_ONLY = ['url', 'transport', 'headers'];
 
-function rejectOther(args, fields, kind) {
+function rejectOther(args: ToolArgs, fields: string[], kind: string) {
   const given = fields.filter((f) => args[f] !== undefined);
   if (given.length) throw new Error(`${given.map((f) => `"${f}"`).join(', ')} cannot be used with a ${kind} server`);
 }
 
 /** Folds the call's fields into a server entry, validating as it goes. `base` is the current entry for an update. */
-function build(args, base) {
+function build(args: ToolArgs, base: McpServerSpec | null): McpServerSpec {
   const local = base ? Boolean(base.command) : Boolean(args.command);
   if (!base && Boolean(args.command) === Boolean(args.url)) {
     throw new Error('give either "command" (a local program) or "url" (a remote server), not both and not neither');
   }
-  const spec = { ...(base || {}) };
+  const spec: McpServerSpec = { ...(base || {}) };
   if (local) {
     rejectOther(args, REMOTE_ONLY, 'local');
     if (args.command !== undefined) {
@@ -204,7 +221,7 @@ function build(args, base) {
       spec.command = args.command.trim();
     }
     if (args.args !== undefined) {
-      if (!Array.isArray(args.args) || args.args.length > MAX_ARGS || args.args.some((a) => typeof a !== 'string' || a.length > MAX_VALUE)) {
+      if (!Array.isArray(args.args) || args.args.length > MAX_ARGS || args.args.some((a: unknown) => typeof a !== 'string' || a.length > MAX_VALUE)) {
         throw new Error(`"args" must be a list of at most ${MAX_ARGS} strings`);
       }
       spec.args = args.args;
@@ -229,8 +246,8 @@ function build(args, base) {
 }
 
 /** Notes worth telling the model about a spec it just wrote. */
-function notes(spec, wrote) {
-  const out = {};
+function notes(spec: McpServerSpec, wrote: string[]) {
+  const out: { hint?: string; warning?: string } = {};
   const plain = Object.entries({ ...(spec.headers || {}), ...(spec.env || {}) })
     .filter(([k, v]) => wrote.includes(k) && SECRETISH.test(k) && !REF_ONLY.test(String(v)) && !String(v).includes('${'))
     .map(([k]) => k);
@@ -249,7 +266,7 @@ function notes(spec, wrote) {
  * `servers()` throws when mcp.json is not valid JSON, so a broken file is
  * never overwritten with one new entry.
  */
-export function callManageMcp(args, { mcp, chatId } = {}) {
+export function callManageMcp(args: ToolArgs, { mcp, chatId }: { mcp?: McpEditor } & Partial<Pick<ToolContext, 'chatId'>> = {}): string {
   if (!mcp) return 'Error: this tool is not available here.';
   const { action } = args || {};
   const known = ['list', 'add', 'update', 'remove', 'enable', 'disable'];
@@ -274,7 +291,7 @@ export function callManageMcp(args, { mcp, chatId } = {}) {
   const exists = Object.hasOwn(servers, name);
 
   try {
-    let wrote = [];
+    let wrote: string[] = [];
     if (action === 'add') {
       if (exists) return `Error: a server named "${name}" already exists. Use update to change it.`;
       if (Object.keys(servers).length >= MAX_SERVERS) return `Error: at most ${MAX_SERVERS} servers can be configured.`;
@@ -296,7 +313,7 @@ export function callManageMcp(args, { mcp, chatId } = {}) {
 
     mcp.save(servers, { by: `assistant (chat ${chatId ?? '?'})`, change: { action, name } });
 
-    const result = { saved: true, action, name, takes_effect: 'when this reply is finished; new tools are available from the next message' };
+    const result: Record<string, unknown> = { saved: true, action, name, takes_effect: 'when this reply is finished; new tools are available from the next message' };
     if (action !== 'remove') {
       result.server = describe(name, servers[name]);
       Object.assign(result, notes(servers[name], wrote));

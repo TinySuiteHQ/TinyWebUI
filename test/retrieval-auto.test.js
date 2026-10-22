@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolveRetrieval, PRESETS } from '../src/retrieval/embedding.js';
+import { resolveRetrieval, PRESETS } from '../src/retrieval/embedding.ts';
 import { DEFAULTS, configProblems, createConfigSource } from '../src/config/config.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-auto-'));
