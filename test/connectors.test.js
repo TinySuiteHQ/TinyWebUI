@@ -3,12 +3,12 @@
 // API, admin-only to change, and never reach the page or the audit log.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configProblems, DEFAULTS } from '../src/config/config.js';
-import { effectiveConfig, flattenCatalog, nestCatalog } from '../src/config/models.js';
-import { fingerprint } from '../src/access/policy.js';
+import { configProblems, DEFAULTS } from '../src/config/config.ts';
+import { effectiveConfig, flattenCatalog, nestCatalog } from '../src/config/models.ts';
+import { fingerprint } from '../src/access/policy.ts';
 
 const SECRET = 'sk-test-abcdef123456';
 
@@ -70,11 +70,12 @@ const configFile = join(dir, 'tinywebui.config.json');
 writeFileSync(configFile, JSON.stringify({ baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' }));
 writeFileSync(join(dir, 'mcp.json'), '{ "mcpServers": {} }\n');
 const readCfg = () => JSON.parse(readFileSync(configFile, 'utf8'));
+const readSecrets = () => JSON.parse(readFileSync(join(dir, 'tinywebui.secrets.json'), 'utf8'));
 
 const logged = [];
 const origLog = console.log;
 console.log = (...args) => { logged.push(args.join(' ')); };
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({
   port: 0, host: '127.0.0.1', configFile, dbPath: join(dir, 'c.db'),
   config: {
@@ -94,10 +95,18 @@ const root = as('sub-root');
 const user = as('sub-user');
 const post = (who, body) => who('/api/config', { method: 'POST', body });
 
-test('an admin saves a connector: the key lands in the file, never in a response or the log', async () => {
+test('a key written into the config file moves to the secrets file on start', () => {
+  assert.equal(readCfg().apiKey, undefined);
+  assert.equal(readSecrets().apiKey, 'k');
+  if (process.platform !== 'win32') assert.equal(statSync(join(dir, 'tinywebui.secrets.json')).mode & 0o777, 0o600);
+});
+
+test('an admin saves a connector: the key lands in the secrets file, never in the config, a response or the log', async () => {
   const r = await post(root, { connectors: [{ id: 'local', label: 'Local', baseUrl: 'http://localhost:11434/v1', apiKey: SECRET }] });
   assert.equal(r.status, 200);
-  assert.equal(readCfg().connectors[0].apiKey, SECRET, 'the file is the portable record');
+  assert.equal(readSecrets().connectors.local.apiKey, SECRET);
+  assert.ok(!readFileSync(configFile, 'utf8').includes(SECRET), 'the config file holds the shape only');
+  assert.deepEqual(readCfg().connectors[0], { id: 'local', label: 'Local', baseUrl: 'http://localhost:11434/v1' });
   assert.ok(!JSON.stringify(r.data).includes(SECRET));
   const got = (await root('/api/config')).data;
   assert.ok(!JSON.stringify(got).includes(SECRET));
@@ -107,17 +116,37 @@ test('an admin saves a connector: the key lands in the file, never in a response
 
 test('a connector sent without a key keeps its key; null clears it', async () => {
   await post(root, { connectors: [{ id: 'local', baseUrl: 'http://localhost:11434/v1', label: 'Renamed' }] });
-  assert.equal(readCfg().connectors[0].apiKey, SECRET);
+  assert.equal(readSecrets().connectors.local.apiKey, SECRET);
   assert.equal(readCfg().connectors[0].label, 'Renamed');
   await post(root, { connectors: [{ id: 'local', baseUrl: 'http://localhost:11434/v1', apiKey: null }] });
-  assert.equal(readCfg().connectors[0].apiKey, '');
+  assert.equal(readSecrets().connectors, undefined);
+  assert.equal((await root('/api/config')).data.connectors[0].hasApiKey, false);
 });
 
 test('the top-level key follows the same rules', async () => {
   await post(root, { apiKey: 'sk-top-level-key-9999' });
-  assert.equal(readCfg().apiKey, 'sk-top-level-key-9999');
+  assert.equal(readSecrets().apiKey, 'sk-top-level-key-9999');
+  assert.equal(readCfg().apiKey, undefined);
   await post(root, { apiKey: '' });
-  assert.equal(readCfg().apiKey, 'sk-top-level-key-9999', 'empty means unchanged');
+  assert.equal(readSecrets().apiKey, 'sk-top-level-key-9999', 'empty means unchanged');
+});
+
+test('a key can point at the environment instead; the page cannot overwrite it', async () => {
+  process.env.TINYWEBUI_TEST_CONNECTOR_KEY = 'sk-from-the-environment';
+  try {
+    const r = await post(root, { connectors: [{ id: 'env', baseUrl: 'http://localhost:1/v1', apiKey: '${TINYWEBUI_TEST_CONNECTOR_KEY}' }] });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(readCfg().connectors[0].apiKey, '${TINYWEBUI_TEST_CONNECTOR_KEY}', 'a reference is shape, so the config holds it');
+    assert.equal(readSecrets().connectors, undefined);
+    assert.equal((await root('/api/config')).data.connectors[0].keyHint, 'ment');
+    const typed = await post(root, { connectors: [{ id: 'env', baseUrl: 'http://localhost:1/v1', apiKey: 'sk-typed-in' }] });
+    assert.equal(typed.status, 409);
+    assert.match(typed.data.error, /comes from \$\{TINYWEBUI_TEST_CONNECTOR_KEY\}/);
+    assert.equal((await post(root, { connectors: [{ id: 'env', baseUrl: 'http://localhost:1/v1', apiKey: '${NOT_SET_ANYWHERE_X}' }] })).status, 400);
+  } finally {
+    delete process.env.TINYWEBUI_TEST_CONNECTOR_KEY;
+    await post(root, { connectors: [] });
+  }
 });
 
 test('a saved catalog is written nested under its connector, and read back flat', async () => {
@@ -131,7 +160,7 @@ test('a saved catalog is written nested under its connector, and read back flat'
   const file = readCfg();
   assert.deepEqual(file.models, [{ id: 'a', model: 'vendor/a' }]);
   assert.deepEqual(file.connectors[0].models, [{ id: 'b', model: 'llama', cacheTtl: '1h' }]);
-  assert.equal(file.connectors[0].apiKey, SECRET, 'the key survives the reshaping');
+  assert.equal(readSecrets().connectors.local.apiKey, SECRET, 'the key survives the reshaping');
   const got = (await root('/api/config')).data;
   assert.deepEqual(got.models.map((m) => [m.id, m.connector]), [['a', undefined], ['b', 'local']]);
   assert.ok(!('models' in got.connectors[0]));

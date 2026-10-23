@@ -1,0 +1,132 @@
+import { DatabaseSync } from 'node:sqlite';
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { SCHEMA_VERSION, migrate as migrateSchema } from './schema.ts';
+import { ChatStore } from './chats.ts';
+import { MessageStore } from './messages.ts';
+import { AutomationStore } from './automations.ts';
+import { UsageStore } from './usage.ts';
+import { DocumentStore } from './documents.ts';
+import { EmbeddingStore } from './embeddings.ts';
+import { TurnStore } from './turns.ts';
+import { SearchStore } from './search.ts';
+import { UserStore } from './users.ts';
+
+export { SCHEMA_VERSION } from './schema.ts';
+export { ALL_USERS } from './scope.ts';
+export { PASSAGE_SIZE, PASSAGE_OVERLAP } from './documents.ts';
+export { toWire, toView } from './wire.ts';
+export { CORPUS } from './embeddings.ts';
+export { AUX_KIND } from './usage.ts';
+
+/**
+ * Conversation storage.
+ *
+ * The client used to hold the whole transcript and POST it back every turn,
+ * which meant every tool result -- including page-sized ones -- crossed the wire
+ * again on each message and eventually blew the localStorage quota. State lives
+ * here now, and the client sends only the new user message.
+ *
+ * Two things this file deliberately does NOT do: it never parses tool output,
+ * and it never special-cases a tool name. A tool result is an opaque blob from
+ * an arbitrary MCP server. Everything downstream (compaction, expansion) holds
+ * to the same rule.
+ *
+ * One connection, one object per area. Every call names its area --
+ * `store.chats.list()`, `store.documents.add()` -- and each area lives in the
+ * file of the same name next to this one. An area that needs another is
+ * handed it here, so every dependency between areas is listed in one place.
+ */
+
+/**
+ * Conversations, password hashes and session hashes: readable by the owner
+ * only, like the config. A new file is created that way before SQLite opens
+ * it, since SQLite gives its -wal and -shm files the database's own mode; an
+ * existing one is tightened. A file someone else owns keeps the mode they set.
+ */
+function ownerOnly(path: string) {
+  if (!existsSync(path)) closeSync(openSync(path, 'a', 0o600));
+  if (process.platform === 'win32') return;
+  for (const p of [path, `${path}-wal`, `${path}-shm`]) {
+    try { if (existsSync(p)) chmodSync(p, 0o600); } catch { /* not ours to change */ }
+  }
+}
+
+/** Thrown when a database is behind and migrating was not allowed. */
+export class MigrationRequiredError extends Error {}
+
+export class Store {
+  db: DatabaseSync;
+  migratedFrom: number | null;
+  embeddings: EmbeddingStore;
+  messages: MessageStore;
+  automations: AutomationStore;
+  documents: DocumentStore;
+  chats: ChatStore;
+  turns: TurnStore;
+  usage: UsageStore;
+  search: SearchStore;
+  users: UserStore;
+
+  /**
+   * `migrate: false` refuses to touch an existing database that is behind
+   * SCHEMA_VERSION instead of upgrading it on open; a brand-new file is
+   * always created at the current version.
+   */
+  constructor(path: string, { migrate = true } = {}) {
+    if (path !== ':memory:') {
+      mkdirSync(dirname(path), { recursive: true });
+      ownerOnly(path);
+    }
+    this.db = new DatabaseSync(path);
+    const found = this.db.prepare('PRAGMA user_version').get()!.user_version as number;
+    const fresh = !this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='chats'").get();
+    if (!fresh && found > SCHEMA_VERSION) {
+      this.db.close();
+      throw new MigrationRequiredError(`database is at schema ${found}, newer than this TinyWebUI (${SCHEMA_VERSION}); upgrade TinyWebUI`);
+    }
+    if (!fresh && found < SCHEMA_VERSION && !migrate) {
+      this.db.close();
+      throw new MigrationRequiredError(`database is at schema ${found}, needs ${SCHEMA_VERSION}: run \`tinywebui migrate\``);
+    }
+    this.migratedFrom = fresh ? null : found;
+    migrateSchema(this.db, { fresh });
+
+    const { db } = this;
+    this.embeddings = new EmbeddingStore(db);
+    this.messages = new MessageStore(db);
+    this.automations = new AutomationStore(db);
+    this.documents = new DocumentStore(db, { embeddings: this.embeddings });
+    this.chats = new ChatStore(db, { messages: this.messages, automations: this.automations, documents: this.documents, embeddings: this.embeddings });
+    this.turns = new TurnStore(db, { chats: this.chats });
+    this.usage = new UsageStore(db);
+    this.search = new SearchStore(db);
+    this.users = new UserStore(db);
+  }
+
+  schemaVersion(): number {
+    return this.db.prepare('PRAGMA user_version').get()!.user_version as number;
+  }
+
+  /** Gives pre-account, unowned data to the first local administrator. */
+  claimUnowned(userId: string, { removeUserId = null }: { removeUserId?: string | null } = {}): void {
+    this.db.exec('BEGIN');
+    try {
+      this.chats.claimUnowned(userId);
+      this.documents.claimUnowned(userId);
+      this.messages.claimUnownedArtifacts(userId);
+      this.automations.claimUnowned(userId);
+      if (removeUserId) this.users.removePasswordless(removeUserId);
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
+  /** Cheap liveness probe of the database, for /readyz. */
+  ping(): boolean {
+    return this.db.prepare('SELECT 1 AS ok').get()!.ok === 1;
+  }
+
+  close(): void {
+    try { this.db.close(); } catch { /* already gone */ }
+  }
+}

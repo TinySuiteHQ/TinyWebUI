@@ -4,9 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { Store } from '../src/store/index.js';
-import { runChat } from '../src/chat/llm.js';
-import { manageAutomation, runMessage } from '../src/automations/automation.js';
+import { Store } from '../src/store/index.ts';
+import { runChat } from '../src/chat/llm.ts';
+import { manageAutomation, runMessage } from '../src/automations/automation.ts';
 
 /** A provider that plays back one scripted reply per request and records every body. */
 async function scripted(replies) {
@@ -229,8 +229,8 @@ test('the run message says nobody is there to answer', () => {
 
 /* ---------- old images and the hard window ---------- */
 
-import { planEpoch, applyEpoch, planWindow, windowRows } from '../src/chat/compact.js';
-import { toWire, toView } from '../src/store/index.js';
+import { planEpoch, applyEpoch, planWindow, windowRows } from '../src/chat/compact.ts';
+import { toWire, toView } from '../src/store/index.ts';
 
 const IMG = { mime: 'image/png', data: 'iVBORw0KGgo=' };
 
@@ -318,7 +318,7 @@ test('a long plain-text chat is windowed once and then stays put', async () => {
 
 /* ---------- empty answers and tool names ---------- */
 
-import { uniqueName } from '../src/mcp.js';
+import { uniqueName } from '../src/mcp.ts';
 
 test('a final pass that comes back empty says so instead of storing a blank answer', async () => {
   const { rows } = await drive([

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { digest, planEpoch, applyEpoch, estimateTokens } from '../src/chat/compact.js';
-import { textMap } from '../src/tools/context_tool.js';
-import { Store, toWire, toView } from '../src/store/index.js';
-import { callExpand } from '../src/tools/context_tool.js';
+import { digest, planEpoch, applyEpoch, estimateTokens } from '../src/chat/compact.ts';
+import { textMap } from '../src/tools/context_tool.ts';
+import { Store, toWire, toView } from '../src/store/index.ts';
+import { callExpand } from '../src/tools/context_tool.ts';
 
 const big = (n, fill = 'x') => fill.repeat(n);
 

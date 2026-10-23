@@ -7,9 +7,9 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Store } from '../src/store/index.js';
-import { runChat } from '../src/chat/llm.js';
-import { McpHub } from '../src/mcp.js';
+import { Store } from '../src/store/index.ts';
+import { runChat } from '../src/chat/llm.ts';
+import { McpHub } from '../src/mcp.ts';
 
 const MORTAL = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'mortal-mcp-server.mjs');
 const sse = (o) => `data: ${JSON.stringify(o)}\n\n`;

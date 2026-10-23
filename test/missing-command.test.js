@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-import { McpHub, missingCommand } from '../src/mcp.js';
+import { McpHub, missingCommand } from '../src/mcp.ts';
 
 // A PATH with nothing on it, so every bare command is missing.
 const emptyPath = { PATH: mkdtempSync(join(tmpdir(), 'twui-empty-path-')) };
@@ -53,7 +53,7 @@ test('the hub reports it without spawning, and the inventory carries the fix', a
 test('a server that dies while connecting has its stderr logged', () => {
   // In a child process: the hub logs through console.log, which the test
   // runner's own stdout protocol would not survive being mocked.
-  const mcp = pathToFileURL(join(import.meta.dirname, '../src/mcp.js')).href;
+  const mcp = pathToFileURL(join(import.meta.dirname, '../src/mcp.ts')).href;
   const script = `
     import { McpHub } from ${JSON.stringify(mcp)};
     const crash = 'console.error("invalid peer certificate"); process.exit(1)';

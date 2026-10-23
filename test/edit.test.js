@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { Store } from '../src/store/index.js';
+import { Store } from '../src/store/index.ts';
 
 let reply = 'first answer';
 const fake = createServer((req, res) => {
@@ -32,7 +32,7 @@ process.env.TINYWEBUI_BASE_URL = `http://127.0.0.1:${port}/v1`;
 process.env.TINYWEBUI_MODEL = 'fake-model';
 process.env.TINYWEBUI_DB = join(dir, 'chats.db');
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'local' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 

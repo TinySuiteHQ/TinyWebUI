@@ -3,9 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { Store, ALL_USERS } from '../src/store/index.js';
-import { runChat } from '../src/chat/llm.js';
-import { CHECKPOINT_PROMPT, checkpointSource } from '../src/harness/checkpoint.js';
+import { Store, ALL_USERS } from '../src/store/index.ts';
+import { runChat } from '../src/chat/llm.ts';
+import { CHECKPOINT_PROMPT, checkpointSource } from '../src/harness/checkpoint.ts';
 
 const GOOD = ['Objective', 'User constraints', 'Decisions', 'Verified findings',
   'Assumptions and uncertainty', 'Unfinished work'].map((h) => `## ${h}\nNone`).join('\n')
@@ -128,6 +128,6 @@ test('the summary source cuts long tool results and keeps their artifact id', ()
 });
 
 test('llmCompaction is on by default', async () => {
-  const { DEFAULTS } = await import('../src/config/config.js');
+  const { DEFAULTS } = await import('../src/config/config.ts');
   assert.equal(DEFAULTS.llmCompaction, true);
 });

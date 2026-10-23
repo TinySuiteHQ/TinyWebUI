@@ -3,8 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { trustedServer } from './trusted-helpers.js';
-import { Store, ALL_USERS } from '../src/store/index.js';
-import { ipInCidrs } from '../src/access/auth.js';
+import { Store, ALL_USERS } from '../src/store/index.ts';
+import { ipInCidrs } from '../src/access/auth.ts';
 
 const { srv, as, seedChat } = await trustedServer({ logoutUrl: 'https://team.example/cdn-cgi/access/logout' });
 test.after(() => srv.shutdown());

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Where a stored message came from, when it was not typed by the user. The
  * server stamps it (src/automations/scheduler.js) and the page draws such a

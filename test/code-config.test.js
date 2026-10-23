@@ -11,7 +11,7 @@ const dir = mkdtempSync(join(tmpdir(), 'tinywebui-codecfg-'));
 process.env.TINYWEBUI_CONFIG = join(dir, 'config.json');
 delete process.env.TINYWEBUI_MODEL;
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({
   port: 0,
   host: '127.0.0.1',

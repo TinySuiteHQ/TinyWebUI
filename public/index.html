@@ -112,8 +112,8 @@
     <section class="set-group">
       <header><h3>Default endpoint</h3><p>The OpenAI-compatible API used by every model that does not name a connector.</p></header>
       <div class="set-grid">
-        <div class="span-2"><label for="baseUrl">API URL</label><input id="baseUrl" spellcheck="false" placeholder="https://openrouter.ai/api/v1"></div>
-        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><small id="apiKeyNote">Write-only: stored in the config file, never shown again. Leave blank to keep the current key.</small></div>
+        <div class="span-2"><label for="baseUrl">API URL</label><input id="baseUrl" spellcheck="false" placeholder="http://localhost:11434/v1"></div>
+        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><small id="apiKeyNote">Optional. Write-only: kept in the secrets file, never shown again. Leave blank to keep the current key.</small></div>
         <div class="span-2"><button id="testDefault" type="button">Test connection</button> <span id="testDefaultMsg" class="usage"></span></div>
       </div>
     </section>

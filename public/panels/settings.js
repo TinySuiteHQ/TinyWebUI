@@ -4,7 +4,7 @@ import { addError } from '../chat/transcript.js';
 import { whoami, loadAccess } from '../core/access.js';
 import { api } from '../core/api.js';
 import { PANEL, closePanel } from './panels.js';
-import { initModelEditor, renderCatalog, collectCatalog, setLocked, newConnector, modelPages } from './model-editor.js';
+import { initModelEditor, renderCatalog, collectCatalog, setLocked, newConnector, newModel, modelPages, usesDefaultEndpoint } from './model-editor.js';
 import { renderHome } from './settings-home.js';
 
 /**
@@ -24,6 +24,10 @@ export const isReadOnly = () => readOnly;
 // The deployment's model as last loaded; the composer's model menu starts from it.
 let model = '';
 export const configuredModel = () => model;
+// An admin of an instance whose default model has no endpoint yet: the page
+// opens settings on load, since nothing else works until one is connected.
+let setupNeeded = false;
+export const needsSetup = () => setupNeeded;
 
 function renderToolPanel(data) {
   const box = $('tools');
@@ -283,7 +287,8 @@ export function initSettings() {
     isDefault: (id) => Boolean(id) && $('model').value.trim() === id,
     makeDefault: (id) => { $('model').value = id; },
     renameDefault: (from, to) => { if (from && $('model').value.trim() === from) $('model').value = to; },
-    removed: () => showView('home')
+    removed: () => showView('home'),
+    addModel: (cid) => showView('model', newModel(cid))
   });
 }
 
@@ -405,8 +410,9 @@ export async function loadConfig() {
   // + menu, where the tools themselves are.
   // Tier 3 shows your own model; the configured one is only the default.
   const me = whoami();
-  const bits = [['multiuser', 'trusted-header'].includes(me.authMode) && me.model ? me.modelLabel || me.model : cfg.modelLabel || cfg.model];
-  if (!cfg.hasApiKey) bits.push('NO API KEY');
+  const bits = [['multiuser', 'trusted-header'].includes(me.authMode) && me.model ? me.modelLabel || me.model : cfg.modelLabel || cfg.model].filter(Boolean);
+  setupNeeded = admin && !cfg.ready;
+  if (!cfg.ready) bits.push('NO MODEL CONNECTED');
   if (cfg.mcpErrors?.length) bits.push(`${cfg.mcpErrors.length} mcp err`);
   $('status').textContent = bits.join(' · ');
 }
@@ -433,16 +439,22 @@ function buildPatch() {
   };
   if (admin) {
     const apiKey = $('apiKey').value;
+    const catalog = collectCatalog();
+    // A default that is no longer an enabled entry (renamed, removed, or none
+    // picked yet) becomes the first enabled one, as the server would read it.
+    const on = catalog.models.filter((m) => m.enabled !== false);
+    if (on.length && !on.some((m) => m.id === patch.model || (m.model || m.id) === patch.model)) patch.model = on[0].id;
     Object.assign(patch, {
-      baseUrl: $('baseUrl').value.trim(),
-      ...(apiKey ? { apiKey } : {}),
+      // The top-level endpoint only while it is shown; saving it otherwise
+      // would bring the card back with nothing on it.
+      ...(usesDefaultEndpoint() ? { baseUrl: $('baseUrl').value.trim(), ...(apiKey ? { apiKey } : {}) } : {}),
       llmCompaction: $('llmCompaction').value === 'true',
       compactionMaxTokens: Number($('compactionMaxTokens').value) || 8192,
       expandCharBudget: Number($('expandCharBudget').value) || 0,
       cache: $('cache').value === 'true',
       reasoningReplay: $('reasoningReplay').value,
       extraBody: $('extraBody').value.trim() ? JSON.parse($('extraBody').value) : {},
-      ...collectCatalog()
+      ...catalog
     });
   }
   for (const k of lockedKeys) delete patch[k];

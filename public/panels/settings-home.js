@@ -1,10 +1,13 @@
 /**
- * The settings home page: one card per endpoint (the default one, then each
- * connector) with the models it serves listed under it. Rebuilt from the
- * draft every time it is shown, so it always reflects unsaved edits.
+ * The settings home page: one card per connector with the models it serves
+ * listed under it, and the top-level endpoint first only while it serves
+ * anything (code or the environment set it). With none of them it is the
+ * first step of setting up: connect an endpoint, then add its models.
+ * Rebuilt from the draft every time it is shown, so it always reflects
+ * unsaved edits.
  */
 import { $, el } from '../core/dom.js';
-import { connectorPages, modelPages, newModel, isCatalogLocked } from './model-editor.js';
+import { connectorPages, modelPages, newModel, newConnector, isCatalogLocked, usesDefaultEndpoint } from './model-editor.js';
 
 function modelLink(page, { open, defaultModel }) {
   const s = page.summary();
@@ -41,6 +44,9 @@ function card({ title, detail, onEdit, connectorId, models, deps, extra }) {
     c.appendChild(list);
   }
   if (extra) c.appendChild(extra);
+  if (connectorId !== null && !models.length) {
+    c.appendChild(Object.assign(el('p', 'ep-empty'), { textContent: 'No models yet: add the ones people can pick.' }));
+  }
   if (connectorId !== null && !isCatalogLocked()) {
     const add = Object.assign(el('button', 'add-model'), { type: 'button', textContent: '+ Add model' });
     add.onclick = () => deps.open('model', newModel(connectorId));
@@ -64,21 +70,23 @@ export function renderHome(deps) {
   const baseUrl = $('baseUrl').value.trim();
   const cards = [];
 
-  let extra = null;
-  if (!models.length) {
-    extra = el('div', 'ep-open');
-    extra.appendChild(deps.defaultModelField);
-    extra.appendChild(Object.assign(el('small'), { textContent: 'No models are listed, so any model id goes. Add one to choose exactly which models people can pick.' }));
+  if (usesDefaultEndpoint()) {
+    let extra = null;
+    if (!models.length) {
+      extra = el('div', 'ep-open');
+      extra.appendChild(deps.defaultModelField);
+      extra.appendChild(Object.assign(el('small'), { textContent: 'No models are listed, so any model id goes. Add one to choose exactly which models people can pick.' }));
+    }
+    cards.push(card({
+      title: 'Default endpoint',
+      detail: `${baseUrl ? host(baseUrl) : 'no URL set'} · ${deps.defaultKey.set ? `key …${deps.defaultKey.hint || ''}` : 'no key'}`,
+      onEdit: () => deps.open('endpoint'),
+      connectorId: '',
+      models: under(''),
+      deps,
+      extra
+    }));
   }
-  cards.push(card({
-    title: 'Default endpoint',
-    detail: `${baseUrl ? host(baseUrl) : 'no URL set'} · ${deps.defaultKey.set ? `key …${deps.defaultKey.hint || ''}` : 'no key'}`,
-    onEdit: () => deps.open('endpoint'),
-    connectorId: '',
-    models: under(''),
-    deps,
-    extra
-  }));
   for (const p of connectors) {
     const s = p.summary();
     cards.push(card({
@@ -95,5 +103,23 @@ export function renderHome(deps) {
   if (orphans.length) {
     cards.push(card({ title: 'Unknown connector', detail: 'These models name a connector that is not defined.', connectorId: null, models: orphans, deps }));
   }
+  const empty = !cards.length;
+  if (empty) cards.push(setupCard(deps));
+  // The setup card has its own button; a second one under it would only repeat it.
+  $('addConnector').parentElement.hidden = empty;
   $('endpointCards').replaceChildren(...cards);
+}
+
+function setupCard(deps) {
+  const c = el('section', 'set-group ep-card ep-setup');
+  c.appendChild(Object.assign(el('h3'), { textContent: 'Connect a model endpoint' }));
+  c.appendChild(Object.assign(el('p'), {
+    textContent: 'Any OpenAI-compatible API: its URL, and an API key if it needs one. Then add the models people can pick from it.'
+  }));
+  if (!isCatalogLocked()) {
+    const add = Object.assign(el('button', 'primary'), { type: 'button', textContent: 'Add a connector' });
+    add.onclick = () => deps.open('connector', newConnector());
+    c.appendChild(add);
+  }
+  return c;
 }

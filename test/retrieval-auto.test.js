@@ -9,8 +9,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolveRetrieval, PRESETS } from '../src/retrieval/embedding.js';
-import { DEFAULTS, configProblems, createConfigSource } from '../src/config/config.js';
+import { resolveRetrieval, PRESETS } from '../src/retrieval/embedding.ts';
+import { DEFAULTS, configProblems, createConfigSource } from '../src/config/config.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-auto-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -65,7 +65,7 @@ test('$TINYWEBUI_RETRIEVAL_MODE opts out without a config file, and a typo is a 
 });
 
 // `models ensure` as a subprocess, with fetch replaced so any download attempt fails loudly.
-const BIN = fileURLToPath(new URL('../bin/tinywebui.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/tinywebui.ts', import.meta.url));
 const NO_NET = join(dir, 'no-net.mjs');
 writeFileSync(NO_NET, 'globalThis.fetch = async (url) => { throw new Error(`network used: ${url}`); };\n');
 const ensure = (config, extraEnv = {}) => {

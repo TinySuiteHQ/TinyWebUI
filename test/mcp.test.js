@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { McpHub } from '../src/mcp.js';
+import { McpHub } from '../src/mcp.ts';
 
 function fn(name, description = '') {
   return { type: 'function', function: { name, description, parameters: { type: 'object', properties: {} } } };

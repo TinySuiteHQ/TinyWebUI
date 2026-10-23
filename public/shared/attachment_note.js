@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The inline note that tells the model a document's id ("read_document" needs
  * it). It lives in the stored message text, so the page strips it back out to
@@ -5,6 +6,7 @@
  * note, the transcript reads it, and they cannot drift apart.
  */
 
+/** @param {{ id: string, filename: string, char_len: number }} doc */
 export function attachmentNote(doc) {
   return `\n\n[Attached document: "${doc.filename}" (id: ${doc.id}, ${doc.char_len.toLocaleString('en-US')} chars). Use read_document to search or read it.]`;
 }
@@ -14,7 +16,11 @@ export function attachmentNote(doc) {
 const NOTES_AT_END = /(?:\n\n\[Attached document: ".*?" \(id: ([\w.-]+), [\d,]+ chars\)\. Use read_document to search or read it\.\])+$/;
 const ONE_NOTE = /\[Attached document: ".*?" \(id: ([\w.-]+), /g;
 
-/** A stored message's text without its notes, and the document ids they named. */
+/**
+ * A stored message's text without its notes, and the document ids they named.
+ * @param {unknown} content
+ * @returns {{ text: string, ids: string[] }}
+ */
 export function splitAttachmentNotes(content) {
   const text = String(content ?? '');
   const tail = NOTES_AT_END.exec(text);

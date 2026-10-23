@@ -41,7 +41,7 @@ process.env.TINYWEBUI_BASE_URL = `http://127.0.0.1:${port}/v1`;
 process.env.TINYWEBUI_MODEL = 'fake-model';
 process.env.TINYWEBUI_DB = join(dir, 'chats.db');
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'local' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 
@@ -83,7 +83,7 @@ test('search finds a chat whether the word is in the question or the answer', as
 
 test('one result per matching chat, never one per matching message', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-dedupe-'));
-  const { Store, ALL_USERS } = await import('../src/store/index.js');
+  const { Store, ALL_USERS } = await import('../src/store/index.ts');
   const store = new Store(join(dir2, 'x.db'));
 
   // Three messages in one chat all say "lisbon" -- the question, and two
@@ -103,7 +103,7 @@ test('one result per matching chat, never one per matching message', async () =>
 
 test('search does not reach into reasoning, tool calls, tool results, or narration', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-store-'));
-  const { Store, ALL_USERS } = await import('../src/store/index.js');
+  const { Store, ALL_USERS } = await import('../src/store/index.ts');
   const store = new Store(join(dir2, 'x.db'));
   const chat = store.chats.create({ title: 'probe' });
   // A round that opens a tool call: narration + reasoning, then the tool

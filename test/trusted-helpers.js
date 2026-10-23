@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 export async function trustedServer(extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-trusted-'));
-  const { start } = await import('../src/server.js');
+  const { start } = await import('../src/server.ts');
   const srv = await start({
     port: 0, host: '127.0.0.1', configFile: false, mcpServers: {},
     dbPath: join(dir, 'chats.db'),
@@ -33,7 +33,7 @@ export async function trustedServer(extra = {}) {
   /** A chat owned by `who`, with one user message, written straight to the store. */
   const seedChat = async (who, { id, title = 'Seeded chat', content }) => {
     const userId = (await as(who)('/api/auth/me')).data.user.id;
-    const { Store } = await import('../src/store/index.js');
+    const { Store } = await import('../src/store/index.ts');
     const store = new Store(join(dir, 'chats.db'));
     try {
       store.chats.create({ id, title }, userId);

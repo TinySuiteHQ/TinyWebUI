@@ -39,7 +39,7 @@ writeFileSync(process.env.TINYWEBUI_MCP, JSON.stringify({
   mcpServers: { toy: { command: process.execPath, args: [TOY] } }
 }));
 
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'local' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 

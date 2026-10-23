@@ -10,7 +10,7 @@ const dir = new URL('../src/harness/', import.meta.url);
 
 test('src/harness imports only itself, public/shared and node built-ins', () => {
   const bad = [];
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.js'))) {
+  for (const file of readdirSync(dir).filter((f) => /\.[jt]s$/.test(f))) {
     const src = readFileSync(new URL(file, dir), 'utf8');
     for (const [, spec] of src.matchAll(/^\s*(?:import|export)[^'"]*?from\s+['"]([^'"]+)['"]/gm)) {
       if (spec.startsWith('node:') || spec.startsWith('../../public/shared/')) continue;

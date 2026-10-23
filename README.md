@@ -59,19 +59,25 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel. Then connect a model. Put an endpoint and key in `tinywebui.config.json` (start from `example.tinywebui.config.json`) or use the Settings panel:
+Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel. Settings then opens on its first step: add a connector (any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connector. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
 
 ```json
 {
-  "baseUrl": "https://openrouter.ai/api/v1",
-  "apiKey": "sk-or-...",
-  "model": "deepseek/deepseek-v4.1-flash"
+  "connectors": [
+    {
+      "id": "local",
+      "baseUrl": "http://localhost:11434/v1",
+      "models": [{ "id": "llama", "label": "Llama 3.2", "model": "llama3.2" }]
+    }
+  ]
 }
 ```
 
-`tinywebui.config.json` holds API keys and the session-signing secret and is gitignored. Local account password hashes and hashed invitation tokens live in `tinywebui.db`; keep both files private and backed up.
+A connector that needs a key takes `"apiKey": "${NAME}"`, filled in from the environment, or the key typed into Settings.
 
-`npx tinywebui` uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
+`tinywebui.config.json` describes the deployment (endpoints, connectors, models, policy) and holds no secrets. A key is either a `${NAME}` reference, filled in from the environment, or kept in `tinywebui.secrets.json` beside it: what the Settings panel saves, and the generated session-signing secret. A key written straight into the config file moves there the next time the server starts. Accounts, password hashes and conversations live in `tinywebui.db`. TinyWebUI keeps the secrets file and the database readable by their owner only; keep them private and backed up.
+
+`npx tinywebui` keeps the config, keys, database and embedding models in one folder per user: `~/Library/Application Support/TinyWebUI` on macOS, `%LOCALAPPDATA%\TinyWebUI` on Windows and `~/.local/share/tinywebui` (or `$XDG_DATA_HOME/tinywebui`) on Linux. Run it in a folder that has its own `tinywebui.config.json`, or pass `--config`, to use that instead. It uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 
 From a clone, run `npm install && npm start`. With Docker, start the service and create the administrator with an email address and password in the browser. The email is checked for valid format; TinyWebUI does not send mail or require a mail server for local accounts:
 
@@ -108,9 +114,11 @@ In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container dep
 ## Development
 
 ```bash
-npm test        # the whole suite, about 10 seconds
+npm test        # type check, then the whole suite, about 10 seconds
 npm run dev     # restart on changes in src/ and bin/
 ```
+
+The server is TypeScript that Node runs directly, with no build step, so working from a clone needs Node.js 22.18 or later. The npm package ships JavaScript compiled from it (`npm run build`, which `npm pack` runs) and works from 22.13.
 
 [AGENTS.md](AGENTS.md) maps the codebase and says where new code goes. `npm run eval` runs model-behaviour evals from `evals/tasks/` and makes real API calls, so it costs money.
 

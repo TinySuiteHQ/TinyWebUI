@@ -18,18 +18,30 @@
     "bin",
     "src",
     "public",
-    "README.md"
+    "README.md",
+    "!**/*.ts"
   ],
   "engines": {
     "node": ">=22.13"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.18",
+      "onFail": "warn"
+    }
+  },
   "scripts": {
-    "prestart": "node bin/tinywebui.js models ensure",
-    "start": "node bin/tinywebui.js",
-    "predev": "node bin/tinywebui.js models ensure",
-    "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.js",
-    "stop": "pkill -f 'bin/tinywebui.js' || true",
-    "test": "node --test --test-timeout=30000",
+    "prestart": "node bin/tinywebui.ts models ensure",
+    "start": "node bin/tinywebui.ts",
+    "predev": "node bin/tinywebui.ts models ensure",
+    "dev": "node --watch-path=./src --watch-path=./bin bin/tinywebui.ts",
+    "stop": "pkill -f 'bin/tinywebui' || true",
+    "typecheck": "tsc -p .",
+    "test": "tsc -p . && node --test --test-timeout=30000",
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "tsc -b --clean tsconfig.build.json",
+    "prepack": "npm run build",
     "eval": "node evals/run.js"
   },
   "dependencies": {
@@ -45,5 +57,10 @@
   "optionalDependencies": {
     "@huggingface/tokenizers": "^0.2.0",
     "onnxruntime-node": "^1.30.0"
+  },
+  "devDependencies": {
+    "@types/heic-convert": "^2.1.1",
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2"
   }
 }

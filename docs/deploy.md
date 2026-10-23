@@ -55,7 +55,9 @@ Secrets come from the environment:
 | --- | --- |
 | `MODEL_API_KEY` | read by the config above (any name works; it is plain JS) |
 | `TINYWEBUI_SESSION_SECRET` | signs session cookies; set it so restarts keep sessions (tier 2) |
-| `TINYWEBUI_API_KEY` | alternative to `apiKey` for JSON-only configs |
+| `TINYWEBUI_API_KEY` | alternative to `apiKey` for JSON-only configs (or write `"apiKey": "${NAME}"` in the JSON) |
+
+Keys saved from the Settings panel, and a generated session secret, go to `tinywebui.secrets.json` beside the config file -- here `/data/tinywebui.secrets.json`, on the volume -- never into the config file itself. `$TINYWEBUI_SECRETS` moves it.
 
 **`compose.yaml`**:
 
@@ -147,7 +149,7 @@ The fingerprint matches step 2. It covers every setting and MCP server; secret v
 ## 6. Operate
 
 - **Change the deployment:** edit `tinywebui.config.js`, run `validate`, then `docker compose up -d` (a restart). Edits to `/data/tinywebui.config.json` or `mcp.json` reload live, or on `docker compose kill -s HUP tinywebui`.
-- **Users from scripts:** `docker compose exec tinywebui node bin/tinywebui.js users set 'google-oauth2|42' --status approved` records the decision in `/data/tinywebui.config.json`, and the running server applies it.
+- **Users from scripts:** `docker compose exec tinywebui node bin/tinywebui.ts users set 'google-oauth2|42' --status approved` records the decision in `/data/tinywebui.config.json`, and the running server applies it.
 - **See what a role gets:** `docker compose run --rm tinywebui config show --role user`.
 - **Audit:** every change and admin action is a `[tinywebui:audit]` JSON line in `docker compose logs tinywebui`.
 - **Stop:** `SIGTERM` (what `docker compose stop` sends) closes MCP connections and the database cleanly.

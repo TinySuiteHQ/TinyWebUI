@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashPassword } from '../src/access/auth.js';
+import { hashPassword } from '../src/access/auth.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-single-'));
-const { start } = await import('../src/server.js');
+const { start } = await import('../src/server.ts');
 const boot = (config) => start({
   port: 0, host: '127.0.0.1', configFile: false, mcpServers: {}, dbPath: join(dir, 'chats.db'),
   config: { baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'm', ...config }

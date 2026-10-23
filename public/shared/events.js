@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The events a running turn streams to the browser, as `data: {"type": ...}`
  * lines. Shared by both sides: the server imports this file to emit them

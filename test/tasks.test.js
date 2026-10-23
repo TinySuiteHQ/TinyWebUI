@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Store } from '../src/store/index.js';
-import { callManageTasks, openTasksNote, taskToolDef } from '../src/tools/task_tool.js';
+import { Store } from '../src/store/index.ts';
+import { callManageTasks, openTasksNote, taskToolDef } from '../src/tools/task_tool.ts';
 
 test('task tool creates and updates a persistent checklist scoped to one chat', () => {
   const store = new Store(':memory:');

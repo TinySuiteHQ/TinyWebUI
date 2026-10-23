@@ -5,11 +5,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store, ALL_USERS } from '../src/store/index.js';
-import { Retrieval, fuse } from '../src/retrieval/retrieval.js';
-import { callReadDocument } from '../src/tools/document_tool.js';
-import { loadEmbedder, PRESETS } from '../src/retrieval/embedding.js';
-import { configProblems, DEFAULTS } from '../src/config/config.js';
+import { Store, ALL_USERS } from '../src/store/index.ts';
+import { Retrieval, fuse } from '../src/retrieval/retrieval.ts';
+import { callReadDocument } from '../src/tools/document_tool.ts';
+import { loadEmbedder, PRESETS } from '../src/retrieval/embedding.ts';
+import { configProblems, DEFAULTS } from '../src/config/config.ts';
 
 // Words map to concepts, so "car" and "automobile" land together -- the
 // thing BM25 cannot do and embeddings can.
@@ -321,7 +321,7 @@ test('turn vectors follow the transcript: new answers re-embed, rewinds and dele
 
 test('search_chats formats turns with their chat and date', async () => {
   const { store, r, cars, asking } = chatSetup('hybrid');
-  const { callSearchChats } = await import('../src/tools/chat_search_tool.js');
+  const { callSearchChats } = await import('../src/tools/chat_search_tool.ts');
   const out = await callSearchChats({ query: 'automobile', limit: 1 }, { store, retrieval: r, chatId: asking.id });
   assert.match(out, /1 turn\(s\) matching "automobile"/);
   assert.match(out, /"Garage" · \d{4}-\d{2}-\d{2} · chat /);
