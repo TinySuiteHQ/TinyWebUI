@@ -30,6 +30,9 @@ const SECTIONS = ['Prompt', 'Sampling', 'Tools', 'Caching', 'Advanced'];
 const connectorEditors = [];
 const modelEditors = [];
 let locked = false;
+// Whether the top-level endpoint serves anything (set in code or the
+// environment); otherwise every model belongs to a connector.
+let defaultEndpoint = false;
 
 function field(label, input, note) {
   const wrap = el('div');
@@ -60,7 +63,7 @@ function grid(...children) {
 
 /* ---------- connectors ---------- */
 
-function connectorEditor(c = {}, { onRemove, onRename }) {
+function connectorEditor(c = {}, { onRemove, onRename, onAddModel }) {
   const id = textInput(c.id, 'local');
   // An id is what models name; renaming a saved one would orphan them.
   if (c.id) id.readOnly = true;
@@ -68,7 +71,7 @@ function connectorEditor(c = {}, { onRemove, onRename }) {
   id.addEventListener('change', () => { onRename(lastId, id.value.trim()); lastId = id.value.trim(); });
   const label = textInput(c.label, 'Local models');
   const url = textInput(c.baseUrl, 'http://localhost:11434/v1');
-  const key = Object.assign(textInput('', c.hasApiKey ? `set (…${c.keyHint || ''}) — blank keeps it` : 'none'), { type: 'password', autocomplete: 'off' });
+  const key = Object.assign(textInput('', c.hasApiKey ? `set (…${c.keyHint || ''}) — blank keeps it` : 'optional'), { type: 'password', autocomplete: 'off' });
   const clear = Object.assign(el('input'), { type: 'checkbox' });
   const test = Object.assign(el('button'), { type: 'button', textContent: 'Test connection' });
   const msg = el('span', 'usage');
@@ -84,20 +87,26 @@ function connectorEditor(c = {}, { onRemove, onRename }) {
   const remove = Object.assign(el('button'), { type: 'button', textContent: 'Remove connector', className: 'danger' });
   const actions = el('div', 'cfg-actions span-2');
   actions.append(test, msg);
+  // The second step of setting one up: the models people pick from it.
+  const addModel = Object.assign(el('button'), { type: 'button', textContent: 'Add a model →', className: 'primary' });
+  addModel.onclick = () => {
+    if (!id.value.trim()) { msg.textContent = 'give the connector an id first'; id.focus(); return; }
+    onAddModel(id.value.trim());
+  };
 
   const page = el('div');
   page.append(
-    group('Connector', 'An extra endpoint with its own URL and key. Models pick it by id.', grid(
+    group('Connector', 'An OpenAI-compatible API: its URL, and a key if it needs one. Its models are added under it.', grid(
       field('Id', id, 'What a model names in its connector field.'),
       field('Label', label),
       span2(field('API URL', url)),
-      span2(field('API key', key, 'Write-only. Blank keeps the current key.')),
+      span2(field('API key', key, c.hasApiKey ? 'Write-only. Blank keeps the current key.' : 'Optional: leave blank for a server that needs none.')),
       ...(c.hasApiKey ? [span2(clearLabel)] : []),
       actions
     )),
     el('div', 'set-foot')
   );
-  page.lastChild.appendChild(remove);
+  page.lastChild.append(remove, addModel);
   remove.onclick = () => onRemove(page);
   page.read = () => ({
     id: id.value.trim(),
@@ -164,9 +173,10 @@ function readOverride(spec, input, name) {
 
 function connectorChoices(sel, current) {
   const ids = connectorEditors.map((c) => c.summary().id).filter(Boolean);
-  sel.replaceChildren(Object.assign(el('option'), { value: '', textContent: 'Default endpoint' }),
+  const keepDefault = defaultEndpoint || (current === '' && !ids.length);
+  sel.replaceChildren(...(keepDefault ? [Object.assign(el('option'), { value: '', textContent: 'Default endpoint' })] : []),
     ...[...new Set([...ids, ...(current && !ids.includes(current) ? [current] : [])])].map((cid) => Object.assign(el('option'), { value: cid, textContent: cid })));
-  sel.value = current || '';
+  sel.value = current || (keepDefault ? '' : ids[0] || '');
 }
 
 function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }) {
@@ -259,7 +269,8 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
 let hooks = {};
 
 /**
- * `deps`: { isDefault(id), makeDefault(id), renameDefault(from, to), removed() }
+ * `deps`: { isDefault(id), makeDefault(id), renameDefault(from, to), removed(),
+ * addModel(connectorId) }
  * -- the default model lives on the settings page, not in an entry.
  */
 export function initModelEditor(deps) { hooks = deps; }
@@ -270,7 +281,8 @@ function addConnectorEditor(c) {
   const page = connectorEditor(c, {
     onRemove: (p) => removeFrom(connectorEditors, p),
     // A connector still being named carries the models already added under it.
-    onRename: (from, to) => { if (from) for (const m of modelEditors) if (m.summary().connector === from) m.setConnector(to); }
+    onRename: (from, to) => { if (from) for (const m of modelEditors) if (m.summary().connector === from) m.setConnector(to); },
+    onAddModel: (cid) => hooks.addModel(cid)
   });
   connectorEditors.push(page);
   return page;
@@ -289,6 +301,7 @@ function addModelEditor(m) {
 
 /** Rebuilds the draft from /api/config. */
 export function renderCatalog(cfg) {
+  defaultEndpoint = Boolean(cfg.usesDefaultEndpoint);
   connectorEditors.length = 0;
   modelEditors.length = 0;
   for (const c of cfg.connectors || []) addConnectorEditor(c);
@@ -297,7 +310,13 @@ export function renderCatalog(cfg) {
 }
 
 export const newConnector = () => { const p = addConnectorEditor({}); setLocked(locked); return p; };
-export const newModel = (connector) => { const p = addModelEditor(connector ? { connector } : {}); setLocked(locked); return p; };
+export const newModel = (connector) => {
+  const cid = connector || (defaultEndpoint ? '' : connectorEditors[0]?.summary().id);
+  const p = addModelEditor(cid ? { connector: cid } : {});
+  setLocked(locked);
+  return p;
+};
+export const usesDefaultEndpoint = () => defaultEndpoint;
 export const connectorPages = () => [...connectorEditors];
 export const modelPages = () => [...modelEditors];
 

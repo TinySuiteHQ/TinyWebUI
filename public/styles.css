@@ -1437,6 +1437,9 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .add-model { margin-top: .25rem; }
 .ep-open { margin: .25rem 0 .75rem; }
 .ep-open small { display: block; }
+.ep-empty { margin: .25rem 0 .5rem; color: var(--muted); font-size: var(--fs-small); }
+/* A fresh instance: the first step of setting one up. */
+.ep-setup p { margin: .25rem 0 1rem; color: var(--muted); font-size: var(--fs-small); }
 .set-add { width: min(46rem, 100%); margin: 0 auto 1.5rem; }
 .set-nav { width: min(46rem, 100%); margin: 0 auto; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise); overflow: hidden; }
 .set-link {
@@ -1449,7 +1452,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .set-link b { display: block; font-weight: 600; }
 .set-link small { display: block; color: var(--muted); font-size: var(--fs-small); }
 .set-link[hidden] { display: none; }
-.set-foot { width: min(46rem, 100%); margin: 0 auto 1rem; display: flex; justify-content: flex-end; }
+.set-foot { width: min(46rem, 100%); margin: 0 auto 1rem; display: flex; justify-content: flex-end; gap: .5rem; }
 .danger { color: var(--err); }
 .inline-check { display: inline-flex !important; gap: .375rem; align-items: center; margin: 0 !important; font-weight: 400 !important; }
 /* Editor fields inside the model and connector pages. */

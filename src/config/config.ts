@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } from '../access/policy.ts';
-import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
+import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, hasEndpoint, defaultModel, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
 import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
@@ -126,18 +126,19 @@ const SECRETS_FILE = process.env.TINYWEBUI_SECRETS
   : resolve(dirname(CONFIG_FILE), 'tinywebui.secrets.json');
 
 export const DEFAULTS: Omit<Config, 'access'> = {
-  baseUrl: 'https://openrouter.ai/api/v1',
+  // The endpoint of a model that names no connector. Unset: there is none,
+  // and a fresh instance is set up by adding a connector, then its models.
+  // Code and the environment ($TINYWEBUI_BASE_URL) may still set one.
+  baseUrl: '',
   apiKey: '',
-  // A cheap, fast, tool-capable default that caches well on a stable prefix and
-  // needs no cache_control fields. Any OpenAI-compatible model id works.
-  model: 'deepseek/deepseek-v4.1-flash',
-  // The model catalog (see src/config/models.js), on the endpoint above.
-  // Empty everywhere: any model id goes. Listed: only these can be picked,
-  // `model` names one by id, and people see each entry's label. An entry may
-  // set its own prompt, sampling and caching; the top-level values below are
-  // what it inherits.
+  // The default model: a catalog id, or with an empty catalog any model id.
+  model: '',
+  // The model catalog (see src/config/models.js). Empty everywhere: any model
+  // id goes. Listed: only these can be picked, `model` names one by id, and
+  // people see each entry's label. An entry may set its own prompt, sampling
+  // and caching; the top-level values below are what it inherits.
   models: [],
-  // Named endpoints, each with its own baseUrl, apiKey and `models` list.
+  // Named endpoints, each with its own baseUrl, optional apiKey and `models` list.
   connectors: [],
   systemPrompt: [
     'You are a direct, technically precise assistant.',
@@ -418,6 +419,7 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     // A mistyped authMode must fail validation rather than disable login.
     if (typeof cfg.baseUrl === 'string') cfg.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
     Object.assign(cfg, flattenCatalog(cfg));
+    cfg.model = defaultModel(cfg);
     // A session secret is required the moment auth is on; generate and persist
     // one rather than signing cookies with an empty key.
     if (['multiuser', 'trusted-header'].includes(cfg.authMode) && !cfg.sessionSecret && persistSecret) {
@@ -655,6 +657,13 @@ export function publicConfig(cfg: Config) {
     keyHint: keyHint(apiKey),
     modelLabel: labelFor(cfg, cfg.model),
     hasApiKey: Boolean(apiKey),
+    // Whether the default model's turns have an endpoint to go to.
+    ready: hasEndpoint(cfg),
+    // Whether the top-level endpoint serves anything, so the page shows it:
+    // a URL, a key, or a model naming no connector. Otherwise the page offers
+    // connectors only.
+    usesDefaultEndpoint: Boolean(cfg.baseUrl) || Boolean(apiKey)
+      || (Array.isArray(cfg.models) && cfg.models.some((m) => !m.connector)),
     hasGoogleAuth: Boolean(cfg.googleClientId),
   };
 }

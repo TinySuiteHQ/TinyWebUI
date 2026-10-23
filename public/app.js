@@ -18,7 +18,7 @@ import { initComposer } from './chat/composer.js';
 import { PANEL, initPanels, openPanel, closeAllPanels } from './panels/panels.js';
 import {
   initSettings, onSettingsOpen, onSettingsClose, settingsBack, settingsCanClose,
-  loadConfig, loadMcp, loadTools, isLocked, isReadOnly, configuredModel
+  loadConfig, loadMcp, loadTools, isLocked, isReadOnly, configuredModel, needsSetup
 } from './panels/settings.js';
 import { initAutomations, loadAutomations } from './panels/automations.js';
 import { loadUsage } from './panels/usage.js';
@@ -96,7 +96,10 @@ if (!(await needsLogin())) {
   wire();
   newChat();
   // Tools render read-only for non-admins, so they wait on the config.
-  loadConfig().then(() => can(FEATURE.TOOLS) && loadTools());
+  loadConfig().then(() => {
+    if (needsSetup()) openPanel(PANEL.SETTINGS);
+    return can(FEATURE.TOOLS) && loadTools();
+  });
   if (can(FEATURE.MCP)) loadMcp();
   initAdmin();
   loadChats();

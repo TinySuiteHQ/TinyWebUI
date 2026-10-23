@@ -1,5 +1,6 @@
 import { json, readJson, oneOf, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
+import { hasEndpoint } from '../config/models.ts';
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
@@ -187,7 +188,8 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const { chatId, message, documentIds, images } = body;
       const refused = refusedFeature(auth, body);
       if (refused) return json(res, 403, { error: 'feature_disabled', feature: refused });
-      if (!config().apiKey) return json(res, 400, { error: 'No API key. Set TINYWEBUI_API_KEY or apiKey in the config file.' });
+      const model = modelFor(auth.user?.id, auth.role);
+      if (!hasEndpoint(config(), model)) return json(res, 400, { error: 'No model is connected yet: an admin adds a connector and its models in Settings.' });
       if (!message) return json(res, 400, { error: 'message is required' });
       // Ids go into SQL and into URLs the page builds, so they must look like one.
       if (chatId != null && (typeof chatId !== 'string' || !/^[\w.-]{1,128}$/.test(chatId))) return json(res, 400, { error: 'chatId must be an id' });
@@ -231,7 +233,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role), instructions: instructionsFor(auth.user?.id) });
+        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id) });
       return runs.attach(run, res, 0);
     } }
   ];

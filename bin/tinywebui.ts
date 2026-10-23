@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { userDataDir, isInstalled } from '../src/config/data_dir.ts';
 import type { StartOptions } from '../src/server.ts';
 
 const args = process.argv.slice(2);
@@ -36,7 +37,10 @@ tinywebui schema           JSON Schema for the config file
 
 Config comes from ./tinywebui.config.js if it exists, then
 ./tinywebui.config.json ($TINYWEBUI_CONFIG may point at either), and MCP
-servers from mcp.json next to it (or $TINYWEBUI_MCP).
+servers from mcp.json next to it (or $TINYWEBUI_MCP). Installed from npm
+(npx, npm install -g) and run where neither file is, it uses the per-user
+folder instead: ${userDataDir()}
+The keys, database and embedding models live beside the config.
 
 tinywebui.config.js exports the options start() takes, as an object or an
 (async) function returning one:
@@ -64,6 +68,14 @@ if (envPath && /\.[cm]?js$/.test(envPath)) {
   for (const name of ['tinywebui.config.js', 'tinywebui.config.mjs']) {
     const p = resolve(process.cwd(), name);
     if (existsSync(p)) { jsPath = p; break; }
+  }
+  // Installed (npx, npm install -g) and not run in a folder with a config of
+  // its own: the per-user data folder, so keys and chats do not end up in
+  // whichever folder the command happened to run in.
+  if (!jsPath && !existsSync(resolve(process.cwd(), 'tinywebui.config.json')) && isInstalled(import.meta.url)) {
+    const dir = userDataDir();
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    process.env.TINYWEBUI_CONFIG = join(dir, 'tinywebui.config.json');
   }
 }
 

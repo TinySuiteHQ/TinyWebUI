@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
 
 import { createConfigSource, LockedError, ConfigError, configProblems, redactSecrets, type Config, type ConfigOptions, type ConfigSource, type McpServers } from './config/config.ts';
 import { McpHub, missingCommand } from './mcp.ts';
-import { isClosed, findEntry } from './config/models.ts';
+import { isClosed, findEntry, effectiveConfig } from './config/models.ts';
 import { Store, SCHEMA_VERSION } from './store/index.ts';
 import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/policy.ts';
 import { applyAccessPolicy } from './access/auth.ts';
@@ -228,6 +228,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
       const pref = known(store.users.getPrefs(userId).model);
       if (ok(pref)) return pref;
       if (ok(fallback)) return fallback;
+      // Every model allowed and none set up yet: there is nothing to pick.
+      if (allowed === '*') return fallback;
       // First of the role's models still enabled (a parked one never runs).
       return (allowed as string[]).map(known).find(Boolean) || fallback;
     },
@@ -350,7 +352,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
   log.info(`keys:   ${source.secretsPath() || '(in memory)'}`);
   log.info(`mcp:    ${source.mcpPath() || '(in code)'}`);
   log.info(`db:     ${source.dbPath(app.cfg)}`);
-  log.info(`model:  ${app.cfg.model} via ${app.cfg.baseUrl}`);
+  const via = effectiveConfig(app.cfg).baseUrl;
+  log.info(`model:  ${app.cfg.model ? `${app.cfg.model} via ${via || '(no endpoint)'}` : 'none yet: add a connector and its models in Settings'}`);
   log.info(`tools:  ${app.hub.tools.length} from ${app.hub.clients.size} MCP server(s)`);
   // Repeated after the banner, grouped, so it is the last thing a first run shows.
   const offFor = Map.groupBy(app.hub.install, ([, need]) => need.url);

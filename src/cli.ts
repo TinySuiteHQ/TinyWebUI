@@ -367,16 +367,23 @@ const commands: Record<string, Command> = {
         }
         try { return `${file} at schema ${store.schemaVersion()}`; } finally { store.close(); }
       });
-      await check('model endpoint', async () => {
-        const r = await fetch(`${cfg.baseUrl}/models`, {
-          headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
-          signal: AbortSignal.timeout(8000)
+      const endpoints = [
+        ...(cfg.baseUrl ? [{ name: 'model endpoint', baseUrl: cfg.baseUrl, apiKey: cfg.apiKey }] : []),
+        ...cfg.connectors.map((c) => ({ name: `connector ${c.id}`, baseUrl: String(c.baseUrl).replace(/\/+$/, ''), apiKey: c.apiKey || '' }))
+      ];
+      if (!endpoints.length) await check('model endpoint', () => { throw new Error('none: add a connector and its models in Settings'); });
+      for (const ep of endpoints) {
+        await check(ep.name, async () => {
+          const r = await fetch(`${ep.baseUrl}/models`, {
+            headers: ep.apiKey ? { authorization: `Bearer ${ep.apiKey}` } : {},
+            signal: AbortSignal.timeout(8000)
+          });
+          // Some OpenAI-compatible servers have no /models; reachable is what counts.
+          if (r.status >= 500) throw new Error(`${r.status} from ${ep.baseUrl}/models`);
+          if (r.status === 401 || r.status === 403) throw new Error(`${r.status} from ${ep.baseUrl}: check apiKey`);
+          return `${ep.baseUrl} answered ${r.status}`;
         });
-        // Some OpenAI-compatible servers have no /models; reachable is what counts.
-        if (r.status >= 500) throw new Error(`${r.status} from ${cfg.baseUrl}/models`);
-        if (r.status === 401 || r.status === 403) throw new Error(`${r.status} from ${cfg.baseUrl}: check apiKey`);
-        return `${cfg.baseUrl} answered ${r.status}`;
-      });
+      }
       await check('retrieval', async () => {
         const r = await resolveRetrieval(cfg.retrieval, defaultModelsDir(source.path()));
         if (r.fallback) return `lexical (SQLite FTS5) -- auto, because ${r.fallback}`;

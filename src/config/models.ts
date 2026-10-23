@@ -94,7 +94,21 @@ export function nestCatalog(cfg: Record<string, any>): { connectors?: Connector[
   return out;
 }
 
-/** Named endpoints: { id, label?, baseUrl, apiKey? }. The top-level baseUrl/apiKey stay the implicit default. */
+/**
+ * Whether turns on `key` have somewhere to go: an entry's connector, else the
+ * top-level endpoint if it has a URL. A key is optional either way: a local
+ * server may need none.
+ */
+export function hasEndpoint(cfg: Partial<CatalogConfig> & { baseUrl?: string }, key?: string | null): boolean {
+  const e = findEntry(cfg, key ?? cfg.model);
+  return e?.connector && findConnector(cfg, e.connector) ? true : Boolean(cfg.baseUrl);
+}
+
+/**
+ * Named endpoints: { id, label?, baseUrl, apiKey? }. The top-level
+ * baseUrl/apiKey are the endpoint of a model that names none, for a
+ * deployment set up in code or the environment; unset by default.
+ */
 export const connectors = (cfg: Partial<CatalogConfig>): Connector[] => (Array.isArray(cfg.connectors) ? cfg.connectors : []);
 export const findConnector = (cfg: Partial<CatalogConfig>, id: string) => connectors(cfg).find((c) => c.id === id) || null;
 
@@ -103,6 +117,9 @@ export const catalog = (cfg: Partial<CatalogConfig>): ModelEntry[] => (Array.isA
 // model must not reopen the picker to the provider's whole list.
 export const isClosed = (cfg: Partial<CatalogConfig>) => catalog(cfg).length > 0;
 export const enabledEntries = (cfg: Partial<CatalogConfig>) => catalog(cfg).filter((e) => e.enabled !== false);
+
+/** The default model: `model` as set, or unset with a catalog, its first enabled entry. */
+export const defaultModel = (cfg: Partial<CatalogConfig>): string => cfg.model || enabledEntries(cfg)[0]?.id || '';
 
 /** The enabled entry `key` names: by id, or by its provider model id (the default `model` may be either). */
 export function findEntry(cfg: Partial<CatalogConfig>, key: string | null | undefined): ModelEntry | null {
@@ -207,9 +224,10 @@ export function modelProblems(cfg: Record<string, any>): string[] {
   if (!list.length || out.length) return out;
   // A closed catalog: everything that names a model has to name an entry.
   // Role lists may name disabled entries (they just drop out); the default may not.
+  // An unset `model` is the first enabled entry (see defaultModel).
   const on = enabledEntries(cfg).map((e) => e.id);
   if (!on.length) out.push('every entry in models is disabled: enable at least one');
-  else if (!findEntry(cfg, cfg.model)) {
+  else if (cfg.model && !findEntry(cfg, cfg.model)) {
     const off = list.some((e: any) => e.id === cfg.model || e.model === cfg.model);
     out.push(`model "${cfg.model}" ${off ? 'is disabled' : 'is not in the models catalog'}; enabled ids: ${on.join(', ')}`);
   }

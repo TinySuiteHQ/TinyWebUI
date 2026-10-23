@@ -1,7 +1,14 @@
 {
-  "baseUrl": "https://openrouter.ai/api/v1",
-  "apiKey": "${OPENROUTER_API_KEY}",
-  "model": "deepseek/deepseek-v4.1-flash",
+  "connectors": [
+    {
+      "id": "local",
+      "label": "Local models",
+      "baseUrl": "http://localhost:11434/v1",
+      "models": [
+        { "id": "llama", "label": "Llama 3.2", "model": "llama3.2" }
+      ]
+    }
+  ],
 
   "temperature": null,
   "maxTokens": null,
