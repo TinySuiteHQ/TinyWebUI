@@ -117,3 +117,47 @@ is given a management token, e.g.
 `"headers": { "Authorization": "Bearer ${TINYSEARCH_MANAGEMENT_TOKEN}" }`.
 An admin never sees another person's memories or searches there. See
 [mcp-management.md](mcp-management.md).
+
+## Try it on one machine
+
+Three terminals, everything on loopback, with TinyWebUI's own accounts
+standing in for a gateway:
+
+```bash
+# 1. TinyContext: one store per user, management views on
+export TINYCONTEXT_MANAGEMENT_TOKEN=$(openssl rand -hex 20)
+TINYCONTEXT_TENANCY=proxy-header TINYCONTEXT_TENANT_STORE_DIR=./tenants \
+TINYCONTEXT_TENANT_SECRET=$(openssl rand -hex 32) TINYCONTEXT_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
+TINYCONTEXT_MANAGEMENT=on MCP_TRANSPORT=streamable-http MCP_PORT=8101 \
+uvx --from 'tinysuite-context[server]' tinycontext
+
+# 2. TinySearch: shared, each person's own history kept for 7 days
+export TINYSEARCH_MANAGEMENT_TOKEN=$(openssl rand -hex 20)
+TINYSEARCH_MANAGEMENT=on TINYSEARCH_ACTIVITY=history \
+TINYSEARCH_TRUSTED_USER_HEADER=X-TinySearch-User-Id TINYSEARCH_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
+MCP_TRANSPORT=streamable-http MCP_PORT=8102 \
+uvx --from 'tinysuite-search[server]' tinysearch
+
+# 3. TinyWebUI (authMode multiuser: the first sign-up is the admin, who invites the rest)
+npx tinywebui
+```
+
+Give TinyWebUI the same two tokens in its environment, and this `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "tinycontext": { "url": "http://127.0.0.1:8101/mcp",
+      "headers": { "Authorization": "Bearer ${TINYCONTEXT_MANAGEMENT_TOKEN}" },
+      "identity": { "header": "X-TinyContext-User-Id" } },
+    "tinysearch": { "url": "http://127.0.0.1:8102/mcp",
+      "headers": { "Authorization": "Bearer ${TINYSEARCH_MANAGEMENT_TOKEN}" },
+      "identity": { "header": "X-TinySearch-User-Id" } }
+  }
+}
+```
+
+Sign in as two people in two browsers. Each one saves a memory and runs a
+search, then opens **Integrations**. Each sees only their own memories and
+searches. The admin also sees TinySearch's Overview, Domains and Blocking
+rules, and TinyContext's Service view.
