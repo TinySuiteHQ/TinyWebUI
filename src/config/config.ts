@@ -331,9 +331,11 @@ export const DEFAULTS: Omit<Config, 'access'> = {
 // replaces them, so removing them is one save in the MCP panel. Their
 // management pages are on: over stdio the one person here is the operator,
 // and TinySearch still records no activity unless that is turned on too.
+// The version floors are the first releases with management views and
+// per-message identity; raise them when either ships a security fix.
 export const DEFAULT_MCP_SERVERS: Readonly<McpServers> = Object.freeze({
-  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]', 'tinysearch'], env: { TINYSEARCH_MANAGEMENT: 'on' } },
-  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]', 'tinycontext'], env: { TINYCONTEXT_MANAGEMENT: 'on' } },
+  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]>=0.6.7', 'tinysearch'], env: { TINYSEARCH_MANAGEMENT: 'on' } },
+  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]>=0.5.2', 'tinycontext'], env: { TINYCONTEXT_MANAGEMENT: 'on' } },
 });
 
 /**

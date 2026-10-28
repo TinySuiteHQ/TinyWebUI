@@ -129,14 +129,14 @@ export TINYCONTEXT_MANAGEMENT_TOKEN=$(openssl rand -hex 20)
 TINYCONTEXT_TENANCY=proxy-header TINYCONTEXT_TENANT_STORE_DIR=./tenants \
 TINYCONTEXT_TENANT_SECRET=$(openssl rand -hex 32) TINYCONTEXT_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
 TINYCONTEXT_MANAGEMENT=on MCP_TRANSPORT=streamable-http MCP_PORT=8101 \
-uvx --from 'tinysuite-context[server]' tinycontext
+uvx --from 'tinysuite-context[server]>=0.5.2' tinycontext
 
 # 2. TinySearch: shared, each person's own history kept for 7 days
 export TINYSEARCH_MANAGEMENT_TOKEN=$(openssl rand -hex 20)
 TINYSEARCH_MANAGEMENT=on TINYSEARCH_ACTIVITY=history \
 TINYSEARCH_TRUSTED_USER_HEADER=X-TinySearch-User-Id TINYSEARCH_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
 MCP_TRANSPORT=streamable-http MCP_PORT=8102 \
-uvx --from 'tinysuite-search[server]' tinysearch
+uvx --from 'tinysuite-search[server]>=0.6.7' tinysearch
 
 # 3. TinyWebUI (authMode multiuser: the first sign-up is the admin, who invites the rest)
 npx tinywebui
