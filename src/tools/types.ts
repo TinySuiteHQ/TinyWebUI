@@ -27,6 +27,12 @@ export interface ToolContext {
   /** No one is there to ask: an automation run. */
   unattended: boolean;
   askUser: ((request: AskRequest) => Promise<AskOutcome>) | null;
+  /**
+   * The owner of the chat this call runs in, from the store -- never from
+   * the model or the browser. null in a no-login install. Per-user MCP
+   * servers act for this user (McpHub.clientFor).
+   */
+  userId?: string | null;
 }
 
 /** A registered handler. Whatever it returns becomes the result text. */

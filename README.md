@@ -109,7 +109,7 @@ The full reference lives at **[tinysuite.dev/docs/tinywebui](https://tinysuite.d
 | [CLI](https://tinysuite.dev/docs/tinywebui/#cli) | Every command |
 | [Security and limits](https://tinysuite.dev/docs/tinywebui/#security-and-limits) | Exposure, MCP trust, what isn't included |
 
-In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container deployment, and [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`).
+In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, and [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`).
 
 ## Development
 

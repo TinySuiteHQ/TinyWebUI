@@ -157,6 +157,8 @@ function describe(name: string, spec: McpServerSpec, live?: ServerStatus) {
     out.url = maskUrl(spec.url);
     out.transport = spec.transport === 'sse' ? 'sse' : 'http';
     if (spec.headers && Object.keys(spec.headers).length) out.headers = maskMap(spec.headers);
+    // Names only: the value is each user's own, set per call, never stored here.
+    if (spec.identity) out.identity = { header: spec.identity.header, claim: spec.identity.claim || 'id' };
   }
   if (live) {
     out.status = live.status;

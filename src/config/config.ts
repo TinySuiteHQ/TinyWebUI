@@ -6,6 +6,7 @@ import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog
 import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
+import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
 
 export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
 export type ToolApproval = 'writes' | 'all' | 'off';
@@ -93,6 +94,8 @@ export interface McpServerSpec {
   url?: string;
   headers?: Record<string, string>;
   transport?: 'http' | 'sse';
+  /** Per-user connections with this header set to the user (see access/mcp_identity.ts). */
+  identity?: IdentitySpec;
   disabled?: boolean;
   [key: string]: unknown;
 }
@@ -524,6 +527,8 @@ export function createConfigSource(opts: ConfigOptions = {}) {
           throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
         }
       }
+      const identity = serversIdentityProblems(servers);
+      if (identity.length) throw new Error(identity.join('; '));
       // Headers and env here can hold tokens: owner-only, like the config.
       if (existsSync(mcpFile) && process.platform !== 'win32') chmodSync(mcpFile, 0o600);
       writeFileSync(mcpFile, text.endsWith('\n') ? text : text + '\n', { mode: 0o600 });
