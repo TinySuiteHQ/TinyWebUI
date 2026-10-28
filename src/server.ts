@@ -5,7 +5,8 @@ import type { AddressInfo } from 'node:net';
 import { dirname } from 'node:path';
 
 import { createConfigSource, LockedError, ConfigError, configProblems, redactSecrets, type Config, type ConfigOptions, type ConfigSource, type McpServers } from './config/config.ts';
-import { McpHub, missingCommand } from './mcp.ts';
+import { McpHub, missingCommand, type Principal } from './mcp.ts';
+import { serversIdentityProblems, claimValue, LOCAL_PRINCIPAL } from './access/mcp_identity.ts';
 import { isClosed, findEntry, effectiveConfig } from './config/models.ts';
 import { Store, SCHEMA_VERSION } from './store/index.ts';
 import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/policy.ts';
@@ -38,6 +39,7 @@ import { automationRoutes } from './routes/automations.ts';
 import { documentRoutes } from './routes/documents.ts';
 import { chatRoutes } from './routes/chats.ts';
 import { adminRoutes } from './routes/admin.ts';
+import { integrationsRoutes } from './routes/integrations.ts';
 import { EVENT } from '../public/shared/events.js';
 import { FEATURE } from '../public/shared/features.js';
 
@@ -107,7 +109,8 @@ function routeTable(app: App): Route[] {
   };
   return [
     ...authRoutes(deps), ...settingsRoutes(deps), ...mcpRoutes(deps), ...libraryRoutes(deps),
-    ...automationRoutes(deps), ...documentRoutes(deps), ...chatRoutes(deps), ...adminRoutes(deps)
+    ...automationRoutes(deps), ...documentRoutes(deps), ...chatRoutes(deps), ...adminRoutes(deps),
+    ...integrationsRoutes(deps)
   ];
 }
 
@@ -313,8 +316,14 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
 
   // The built-in tools are ours, not an MCP server's, but the model should not
   // be able to tell: they are registered onto the same hub and called the same way.
+  // What a per-user MCP server is told for one user. One person in a no-login
+  // install; otherwise the approved owner's claim, or nothing (refused).
+  const principal: Principal = (userId, claim) => {
+    if (!app.multiUser()) return LOCAL_PRINCIPAL;
+    return userId ? claimValue(store.users.get(userId), claim) : null;
+  };
   const connectHub = async (servers: McpServers) =>
-    (await new McpHub(servers).connect())
+    (await new McpHub(servers, { principal }).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
       .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
       .registerLocal(chatSearchToolDef(), (args, ctx) => callSearchChats(args, { ...ctx, store, retrieval }), { readOnly: true })
@@ -437,6 +446,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
       for (const [name, spec] of Object.entries(servers)) {
         if (!spec || (!spec.command && !spec.url)) throw new Error(`mcp server "${name}" needs either "command" or "url"`);
       }
+      const identity = serversIdentityProblems(servers);
+      if (identity.length) throw new Error(identity.join('; '));
     } catch (err) {
       log.warn(`reload rejected (${reason}): ${err.message}`);
       audit('config.reload_rejected', { reason, problems: [err.message] });

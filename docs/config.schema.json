@@ -517,6 +517,7 @@
                           "tools",
                           "settings",
                           "mcp",
+                          "integrations",
                           "admin",
                           "oversight"
                         ]
@@ -564,6 +565,7 @@
                           "tools",
                           "settings",
                           "mcp",
+                          "integrations",
                           "admin",
                           "oversight"
                         ]

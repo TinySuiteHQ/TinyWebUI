@@ -6,6 +6,7 @@ import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog
 import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
+import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
 
 export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
 export type ToolApproval = 'writes' | 'all' | 'off';
@@ -93,6 +94,8 @@ export interface McpServerSpec {
   url?: string;
   headers?: Record<string, string>;
   transport?: 'http' | 'sse';
+  /** Per-user connections with this header set to the user (see access/mcp_identity.ts). */
+  identity?: IdentitySpec;
   disabled?: boolean;
   [key: string]: unknown;
 }
@@ -325,10 +328,14 @@ export const DEFAULTS: Omit<Config, 'access'> = {
 
 // What an install with no mcp.json starts with: the TinySuite servers, which
 // uv fetches and launches on first use. Any mcp.json, even an empty one,
-// replaces them, so removing them is one save in the MCP panel.
+// replaces them, so removing them is one save in the MCP panel. Their
+// management pages are on: over stdio the one person here is the operator,
+// and TinySearch still records no activity unless that is turned on too.
+// The version floors are the first releases with management views and
+// per-message identity; raise them when either ships a security fix.
 export const DEFAULT_MCP_SERVERS: Readonly<McpServers> = Object.freeze({
-  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]', 'tinysearch'] },
-  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]', 'tinycontext'] },
+  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]>=0.6.7', 'tinysearch'], env: { TINYSEARCH_MANAGEMENT: 'on' } },
+  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]>=0.5.2', 'tinycontext'], env: { TINYCONTEXT_MANAGEMENT: 'on' } },
 });
 
 /**
@@ -524,6 +531,8 @@ export function createConfigSource(opts: ConfigOptions = {}) {
           throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
         }
       }
+      const identity = serversIdentityProblems(servers);
+      if (identity.length) throw new Error(identity.join('; '));
       // Headers and env here can hold tokens: owner-only, like the config.
       if (existsSync(mcpFile) && process.platform !== 'win32') chmodSync(mcpFile, 0o600);
       writeFileSync(mcpFile, text.endsWith('\n') ? text : text + '\n', { mode: 0o600 });

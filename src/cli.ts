@@ -10,6 +10,7 @@ import {
   FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
 } from './access/policy.ts';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
+import { serversIdentityProblems } from './access/mcp_identity.ts';
 import type { UserRole, UserStatus } from './store/users.ts';
 import type { ReadableStream } from 'node:stream/web';
 
@@ -95,7 +96,7 @@ function mcpProblems(servers: McpServers) {
   for (const [name, spec] of Object.entries(servers)) {
     if (!spec || (!spec.command && !spec.url)) problems.push(`mcp server "${name}" needs either "command" or "url"`);
   }
-  return problems;
+  return [...problems, ...serversIdentityProblems(servers)];
 }
 
 /** Server specs with credentials blanked: env values and header values. */

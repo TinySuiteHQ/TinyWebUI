@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal, type InputEstimate, type SystemPart } from '../harness/attribution.ts';
-import { toWire, AUX_KIND, type Store } from '../store/index.ts';
+import { toWire, AUX_KIND, ALL_USERS, type Store } from '../store/index.ts';
 import type { MessageRow, NewMessage } from '../store/messages.ts';
 import type { PrefixFingerprint, StoredUsage } from '../store/usage.ts';
 import type { Config } from '../config/config.ts';
@@ -211,7 +211,11 @@ export async function runChat({
     ? working.findIndex((w) => seqOf.get(w)! >= boundarySeq) - 1
     : -1;
 
-  const tools_ = toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
+  // Whose turn this is, for MCP servers that keep data per user. Read from
+  // the chat record, so it is the owner the route already authorised and not
+  // anything the caller, the browser or the model could name.
+  const userId = store.chats.get(chatId, ALL_USERS)?.user_id ?? null;
+  const tools_ = toolExecutor({ cfg, chatId, userId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
   const saved: { assistant: AssistantMessage; seq: number }[] = [];
   const appended = await runAgentLoop<AssistantMessage, NewMessage>({
     messages: working,

@@ -48,12 +48,12 @@ function stableKey(value: unknown): string {
  * stubbing. State that spans the turn (seen calls, "always allow") lives in
  * the closure, so one executor serves exactly one turn.
  */
-export function toolExecutor({ cfg, chatId, store, hub, emit, unattended, approve, askUser, footer: roundFooter, hooks, signal }: {
-  cfg: Config; chatId: string; store: Store; hub: McpHub; emit: Emit; unattended: boolean;
+export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, unattended, approve, askUser, footer: roundFooter, hooks, signal }: {
+  cfg: Config; chatId: string; userId?: string | null; store: Store; hub: McpHub; emit: Emit; unattended: boolean;
   approve: Approve | null; askUser: ((request: AskRequest) => Promise<AskOutcome>) | null;
   footer: (round: number) => string; hooks: Hooks; signal?: AbortSignal;
 }) {
-  const toolCtx = { store, chatId, budget: cfg.expandCharBudget || 8000, unattended, askUser: unattended ? null : askUser };
+  const toolCtx = { store, chatId, userId, budget: cfg.expandCharBudget || 8000, unattended, askUser: unattended ? null : askUser };
   // Same tool name + same args, seen earlier in this turn, on a tool that has
   // declared its result depends only on its arguments: re-running it only burns
   // a round. Tracked by round so the model can be told exactly when it already

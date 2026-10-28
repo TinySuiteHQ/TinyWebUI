@@ -17,6 +17,9 @@ export const FEATURE = Object.freeze({
   TOOLS: 'tools',
   SETTINGS: 'settings',
   MCP: 'mcp',
+  // The MCP management pages (the Integrations panel): a person's own data
+  // in the servers that offer a page, and for admins the servers' own views.
+  INTEGRATIONS: 'integrations',
   ADMIN: 'admin',
   OVERSIGHT: 'oversight'
 });

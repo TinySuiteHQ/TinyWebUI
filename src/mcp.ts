@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
@@ -10,6 +11,8 @@ import { expandRefs } from './config/refs.ts';
 import type { McpServerSpec, McpServers } from './config/config.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
+import { DISCOVERY_PRINCIPAL, identityProblems, type IdentityClaim } from './access/mcp_identity.ts';
+import { MANIFEST_MIME } from './management.ts';
 
 /** true, false, or decided per call from the arguments. */
 type Flag = boolean | ((args: ToolArgs) => unknown);
@@ -97,7 +100,12 @@ export function missingCommand(spec: McpServerSpec): { message: string; install:
   return { message: `"${cmd}" was not found on PATH`, install: null };
 }
 
-function transportFor(name: string, spec: McpServerSpec) {
+/**
+ * `identity` is the value of spec.identity.header for this connection, added
+ * after ${NAME} expansion so a user's own id can never pull in an environment
+ * variable.
+ */
+function transportFor(name: string, spec: McpServerSpec, identity: string | null = null) {
   if (spec.command) {
     return new StdioClientTransport({
       command: spec.command,
@@ -111,7 +119,8 @@ function transportFor(name: string, spec: McpServerSpec) {
     });
   }
   if (spec.url) {
-    const opts = spec.headers ? { requestInit: { headers: expandAll(spec.headers) } } : undefined;
+    const headers = { ...(expandAll(spec.headers) || {}), ...(identity && spec.identity ? { [spec.identity.header]: identity } : {}) };
+    const opts = Object.keys(headers).length ? { requestInit: { headers } } : undefined;
     const url = new URL(expandRefs(spec.url));
     return spec.transport === 'sse'
       ? new SSEClientTransport(url, opts)
@@ -120,9 +129,30 @@ function transportFor(name: string, spec: McpServerSpec) {
   throw new Error(`mcpServers.${name}: needs either "command" (stdio) or "url" (http)`);
 }
 
+/** What a bound server is told for one user, or null when the call must not go out. */
+export type Principal = (userId: string | null | undefined, claim: IdentityClaim) => string | null;
+
+/** One user's connection to a bound server. */
+interface Pooled { client: Promise<Client>; lastUsed: number; resolved?: Client }
+
+// A user's connection to a bound server closes after this long unused, and
+// a server keeps at most this many (the least recently used goes first).
+export const POOL_IDLE_MS = 10 * 60_000;
+export const POOL_MAX = 200;
+// How long a management read may take before the panel says the server is slow.
+export const MANAGE_TIMEOUT_MS = 10_000;
+
+const quietClose = (client: Promise<Client>) => { client.then((c) => c.close()).catch(() => { /* already gone */ }); };
+
 /**
  * Connects every configured MCP server and exposes their tools as one flat,
  * stably ordered list of OpenAI-style function tools.
+ *
+ * A server with `identity` (access/mcp_identity.ts) keeps data per user, so
+ * its calls never use the shared connection: each user gets a connection of
+ * their own, opened on first use with their identity header and dropped when
+ * idle. The shared connection, which says it is DISCOVERY_PRINCIPAL, only
+ * lists tools and reads the server's instructions and manifest.
  */
 export class McpHub {
   servers: McpServers;
@@ -139,9 +169,29 @@ export class McpHub {
   install: Map<string, Install>;
   dead: Set<string>;
   reconnecting: Map<string, Promise<Client>>;
+  principal: Principal;
+  manifests: Map<string, string>;
+  pools: Map<string, Map<string, Pooled>>;
+  deadPooled: WeakSet<Client>;
+  sweeper: NodeJS.Timeout | null;
 
-  constructor(servers: McpServers = {}) {
+  /**
+   * `principal(userId, claim)` is what a bound server is told for one user
+   * (see access/mcp_identity.ts), or null to refuse the call. The default
+   * refuses everyone, so a hub built without one can never send a user's
+   * call on someone else's connection.
+   */
+  constructor(servers: McpServers = {}, { principal = () => null }: { principal?: Principal } = {}) {
     this.servers = servers;
+    this.principal = principal;
+    // Server -> the URI of its management manifest, for servers that list one.
+    this.manifests = new Map();
+    // Bound servers only: server -> identity value -> that user's connection.
+    // Keyed by the value the header carries, so a pooled client's header is
+    // its key by construction.
+    this.pools = new Map();
+    this.deadPooled = new WeakSet();
+    this.sweeper = null;
     this.closing = false;
     this.clients = new Map();
     this.tools = [];       // OpenAI tool defs, sorted for a stable cache prefix
@@ -190,8 +240,17 @@ export class McpHub {
     for (const name of Object.keys(this.servers).sort()) {
       const spec = this.servers[name];
       if (spec.disabled) continue;
+      // Fail closed: a server meant to see each user separately is not
+      // connected at all rather than connected as one shared caller.
+      const problems = identityProblems(name, spec);
+      if (problems.length) {
+        this.errors.push(`${name}: ${problems.join('; ')}`);
+        log.error(`${name} not connected: ${problems.join('; ')}`);
+        continue;
+      }
       try {
         const client = await this.open(name, spec);
+        await this.discoverManagement(name, client);
         const { tools } = await client.listTools();
         for (const t of tools.sort((a, b) => a.name.localeCompare(b.name))) {
           const flat = uniqueName(`${name}${SEP}${t.name}`, this.routes, RESERVED);
@@ -229,19 +288,178 @@ export class McpHub {
    * fails until someone reloads MCP by hand.
    */
   async open(name: string, spec: McpServerSpec): Promise<Client> {
+    const client = await this.connectClient(name, spec, spec.identity ? DISCOVERY_PRINCIPAL : null);
+    client.onclose = () => { if (!this.closing && this.clients.get(name) === client) this.dead.add(name); };
+    this.clients.set(name, client);
+    this.dead.delete(name);
+    return client;
+  }
+
+  /** A connected client with nothing recorded about it yet. */
+  async connectClient(name: string, spec: McpServerSpec, identity: string | null): Promise<Client> {
     const missing = spec.command ? missingCommand(spec) : null;
     if (missing) throw new MissingCommand(missing.message, missing.install);
     const client = new Client({ name: 'tinywebui', version: '0.1.0' }, { capabilities: {} });
-    const transport = transportFor(name, spec);
+    const transport = transportFor(name, spec, identity);
     // Read before connecting: a child that dies on startup (uv unable to
     // download, a bad import) says why only on stderr, while the SDK reports
     // just "Connection closed".
     this.pipeStderr(name, (transport as StdioClientTransport).stderr);
     await client.connect(transport);
-    client.onclose = () => { if (!this.closing && this.clients.get(name) === client) this.dead.add(name); };
-    this.clients.set(name, client);
-    this.dead.delete(name);
     return client;
+  }
+
+  /**
+   * Notes the server's management manifest (management.ts), if it lists one.
+   * Only where it is: the manifest itself is read per caller, since what a
+   * server offers can depend on who asks.
+   */
+  async discoverManagement(name: string, client: Client): Promise<void> {
+    if (!client.getServerCapabilities()?.resources) return;
+    try {
+      const { resources } = await client.listResources(undefined, { timeout: MANAGE_TIMEOUT_MS });
+      const manifest = resources.find((r) => r.mimeType === MANIFEST_MIME);
+      if (manifest) this.manifests.set(name, manifest.uri);
+    } catch (err) {
+      // Not a reason to drop the server: its tools still work without a page.
+      log.warn(`${name}: could not list resources (${err.message})`);
+    }
+  }
+
+  /** The names of one server's own tools, as it listed them. */
+  toolsOf(server: string): Set<string> {
+    return new Set([...this.routes.values()].filter((r) => r.server === server).map((r) => r.tool));
+  }
+
+  /**
+   * The connection management traffic for `server` goes over: the caller's
+   * own for a bound server's user views, the shared one otherwise (a bound
+   * server's shared connection is the discovery one, never a user's).
+   */
+  async managementClient(server: string, as: { shared: true } | { userId: string | null | undefined }): Promise<Client> {
+    if ('shared' in as || !this.isBound(server)) {
+      if (this.dead.has(server)) return this.reconnect(server);
+      const client = this.clients.get(server);
+      if (!client) throw new Error(`server "${server}" is not connected`);
+      return client;
+    }
+    return this.clientFor(server, as.userId);
+  }
+
+  /** One resource's text, read as `as`. Reads repeat safely, so a dropped connection is retried once. */
+  async readResourceAs(server: string, uri: string, as: { shared: true } | { userId: string | null | undefined }): Promise<string> {
+    const read = async () => {
+      const client = await this.managementClient(server, as);
+      try {
+        const res = await client.readResource({ uri }, { timeout: MANAGE_TIMEOUT_MS });
+        const first = res.contents?.[0] as { text?: string } | undefined;
+        if (typeof first?.text !== 'string') throw new McpError(-32603, 'the resource has no text content');
+        return first.text;
+      } catch (err) {
+        if (!(err instanceof McpError) && this.isBound(server) && !('shared' in as)) this.retire(server, client);
+        throw err;
+      }
+    };
+    try { return await read(); } catch (err) {
+      if (err instanceof McpError) throw err;
+      return read();
+    }
+  }
+
+  /** One of the server's own tools, called as `as`: a management action. */
+  async callToolAs(server: string, tool: string, args: Record<string, unknown>, as: { shared: true } | { userId: string | null | undefined }): Promise<{ text: string; isError: boolean }> {
+    const client = await this.managementClient(server, as);
+    const res = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: MANAGE_TIMEOUT_MS * 3 });
+    const text = ((res.content || []) as { type: string; text?: string }[]).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    return { text, isError: Boolean(res.isError) };
+  }
+
+  /** True when this server's calls run on per-user connections. */
+  isBound(server: string): boolean {
+    return Boolean(this.servers[server]?.identity);
+  }
+
+  /**
+   * The connection a call to `server` goes out on for this user: the shared
+   * one for an ordinary server, the user's own for a bound one -- opened on
+   * first use, one open per user however many calls arrive together.
+   * Throws when a bound server has no one to act for.
+   */
+  async clientFor(server: string, userId: string | null | undefined): Promise<Client> {
+    const spec = this.servers[server];
+    if (!spec?.identity) {
+      if (this.dead.has(server)) return this.reconnect(server);
+      const client = this.clients.get(server);
+      if (!client) throw new Error(`server "${server}" is not connected`);
+      return client;
+    }
+    if (!this.clients.has(server) && !this.dead.has(server)) throw new Error(`server "${server}" is not connected`);
+    const value = this.principal(userId, spec.identity.claim || 'id');
+    if (!value) throw new Error(`"${server}" keeps data per user and this call has no signed-in user to act for, so it was not sent`);
+    let pool = this.pools.get(server);
+    if (!pool) this.pools.set(server, pool = new Map());
+    let entry = pool.get(value);
+    if (entry && await entry.client.then((c) => this.deadPooled.has(c), () => true)) {
+      if (pool.get(value) === entry) pool.delete(value);
+      entry = undefined;
+    }
+    if (!entry) {
+      entry = pool.get(value); // another call may have reopened it meanwhile
+    }
+    if (!entry) {
+      this.evictOldest(pool);
+      const fresh: Pooled = { client: null as unknown as Promise<Client>, lastUsed: Date.now() };
+      const client = this.connectClient(server, spec, value).then((c) => {
+        c.onclose = () => { this.deadPooled.add(c); };
+        fresh.resolved = c;
+        return c;
+      });
+      fresh.client = client;
+      pool.set(value, fresh);
+      client.catch(() => { if (pool.get(value) === fresh) pool.delete(value); });
+      this.armSweeper();
+      entry = fresh;
+    }
+    entry.lastUsed = Date.now();
+    return entry.client;
+  }
+
+  /** Drops one user's connection that has stopped working, so the next call opens a fresh one. */
+  retire(server: string, client: Client): void {
+    this.deadPooled.add(client);
+    const pool = this.pools.get(server);
+    for (const [key, entry] of pool || []) {
+      if (entry.resolved !== client) continue;
+      pool!.delete(key);
+      quietClose(entry.client);
+    }
+  }
+
+  /** Makes room in a full pool by closing its least recently used connection. */
+  evictOldest(pool: Map<string, Pooled>): void {
+    while (pool.size >= POOL_MAX) {
+      let oldest: [string, Pooled] | null = null;
+      for (const pair of pool) if (!oldest || pair[1].lastUsed < oldest[1].lastUsed) oldest = pair;
+      pool.delete(oldest![0]);
+      quietClose(oldest![1].client);
+    }
+  }
+
+  /** Closes per-user connections nobody has used for POOL_IDLE_MS. */
+  sweep(now = Date.now()): void {
+    for (const pool of this.pools.values()) {
+      for (const [key, entry] of pool) {
+        if (now - entry.lastUsed < POOL_IDLE_MS) continue;
+        pool.delete(key);
+        quietClose(entry.client);
+      }
+    }
+  }
+
+  armSweeper(): void {
+    if (this.sweeper || this.closing) return;
+    this.sweeper = setInterval(() => this.sweep(), 60_000);
+    this.sweeper.unref?.();
   }
 
   /**
@@ -311,7 +529,9 @@ export class McpHub {
       const instructions = this.clients.get(name)?.getInstructions() || null;
       // What to install when the server's launcher is missing: { name, url }.
       const install = status === 'error' ? this.install.get(name) || null : null;
-      return { name, status, error, install, instructions, tools: [] as ReturnType<typeof toRow>[] };
+      // Which header carries the user, never a value: per-user servers say so in the panel.
+      const identity = spec.identity ? { header: spec.identity.header, claim: spec.identity.claim || 'id' } : null;
+      return { name, status, error, install, instructions, identity, tools: [] as ReturnType<typeof toRow>[] };
     });
     const byName = new Map(servers.map((row) => [row.name, row]));
     for (const t of this.tools) {
@@ -395,6 +615,7 @@ export class McpHub {
     }
     const route = this.routes.get(flatName);
     if (!route) return `Error: unknown tool "${flatName}"`;
+    if (this.isBound(route.server)) return this.callBound(route, flatName, args, ctx?.userId);
     let client = this.clients.get(route.server)!;
     // Known dead before the call: reconnecting first is always safe, since
     // nothing has been sent yet.
@@ -421,6 +642,31 @@ export class McpHub {
     }
   }
 
+  /** A call to a bound server, on the calling user's own connection. */
+  async callBound(route: { server: string; tool: string }, flatName: string, args: ToolArgs | undefined, userId: string | null | undefined): Promise<string> {
+    let client: Client;
+    try { client = await this.clientFor(route.server, userId); }
+    catch (err) { return `Error calling ${flatName}: ${err.message}`; }
+    try {
+      return await this.callOnce(client, route, flatName, args);
+    } catch (err) {
+      // The server answered with an error: the connection is fine.
+      if (err instanceof McpError) return `Error calling ${flatName}: ${err.message}`;
+      // No answer: this connection is done; the next call opens a fresh one.
+      // A server that no longer knows the session (404: restarted, expired)
+      // never ran the call, so repeating it is always safe. Anything else
+      // follows the shared connection's rule: repeat only what is harmless.
+      this.retire(route.server, client);
+      const expired = err instanceof StreamableHTTPError && err.code === 404;
+      if (!expired && !this.isIdempotent(flatName)) {
+        return `Error calling ${flatName}: the connection to "${route.server}" closed during this call (${err.message}).`
+          + ' It may or may not have taken effect; check before repeating it.';
+      }
+      try { return await this.callOnce(await this.clientFor(route.server, userId), route, flatName, args); }
+      catch (again) { return `Error calling ${flatName}: ${again.message}`; }
+    }
+  }
+
   /** One call, with the result flattened to the text a tool message can carry. */
   async callOnce(client: Client, route: { server: string; tool: string }, flatName: string, args: ToolArgs | undefined): Promise<string> {
     const res = await client.callTool({ name: route.tool, arguments: args || {} });
@@ -438,8 +684,16 @@ export class McpHub {
 
   async close(): Promise<void> {
     this.closing = true;
+    if (this.sweeper) clearInterval(this.sweeper);
+    this.sweeper = null;
     for (const client of this.clients.values()) {
       try { await client.close(); } catch { /* shutting down anyway */ }
+    }
+    for (const pool of this.pools.values()) {
+      for (const entry of pool.values()) {
+        try { await (await entry.client).close(); } catch { /* never opened, or already gone */ }
+      }
+      pool.clear();
     }
   }
 }
