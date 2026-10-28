@@ -90,7 +90,7 @@ async function deployment(t, { servers, authMode = 'trusted-header' }) {
     if (who?.id) headers['x-tinysuite-user-id'] = who.id;
     if (who?.role) headers['x-tinysuite-role'] = who.role;
     const res = await fetch(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    return { status: res.status, data: await res.json().catch(() => null) };
+    return { status: res.status, data: await res.json().catch(() => null), base };
   };
   return { as };
 }
@@ -186,6 +186,16 @@ test('each person sees and changes only their own data on a per-user server', as
   const forged = await alice('/api/integrations/mem/views/memories/actions/delete', { method: 'POST', body: { row: { id: bobsId }, confirm: true } });
   assert.equal(forged.status, 422, 'a forged row id still runs as alice, so it finds nothing');
   assert.ok(mem.stores.get('bob').has(bobsId));
+
+  // A page elsewhere cannot drive an action with the person's credentials.
+  const port = new URL(fixture.url).port;
+  const crossSite = await fetch(`${list.base}/api/integrations/mem/views/memories/actions/delete`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: `http://evil.example:${port}`, 'x-tinysuite-user-id': 'alice' },
+    body: JSON.stringify({ row: { id: aliceId }, confirm: true })
+  });
+  assert.equal(crossSite.status, 403);
+  assert.ok(mem.stores.get('alice').has(aliceId));
 
   const done = await alice('/api/integrations/mem/views/memories/actions/delete', { method: 'POST', body: { row: { id: aliceId }, confirm: true } });
   assert.deepEqual([done.status, done.data.ok], [200, true]);
