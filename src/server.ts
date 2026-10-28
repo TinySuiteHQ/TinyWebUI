@@ -39,6 +39,7 @@ import { automationRoutes } from './routes/automations.ts';
 import { documentRoutes } from './routes/documents.ts';
 import { chatRoutes } from './routes/chats.ts';
 import { adminRoutes } from './routes/admin.ts';
+import { integrationsRoutes } from './routes/integrations.ts';
 import { EVENT } from '../public/shared/events.js';
 import { FEATURE } from '../public/shared/features.js';
 
@@ -108,7 +109,8 @@ function routeTable(app: App): Route[] {
   };
   return [
     ...authRoutes(deps), ...settingsRoutes(deps), ...mcpRoutes(deps), ...libraryRoutes(deps),
-    ...automationRoutes(deps), ...documentRoutes(deps), ...chatRoutes(deps), ...adminRoutes(deps)
+    ...automationRoutes(deps), ...documentRoutes(deps), ...chatRoutes(deps), ...adminRoutes(deps),
+    ...integrationsRoutes(deps)
   ];
 }
 

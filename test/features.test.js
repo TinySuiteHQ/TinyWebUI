@@ -25,6 +25,7 @@ test('a chat-only user is refused every other feature', async () => {
     ['GET', '/api/tools', undefined, 'tools'],
     ['POST', '/api/tools/toggle', { name: 'x', disabled: true }, 'tools'],
     ['GET', '/api/mcp', undefined, 'mcp'],
+    ['GET', '/api/integrations', undefined, 'integrations'],
     ['GET', '/api/search?q=x', undefined, 'search'],
     ['GET', '/api/usage', undefined, 'statistics'],
     ['GET', '/api/folders', undefined, 'folders'],
@@ -53,7 +54,7 @@ test('every route declares the feature it needs', () => {
   // Dispatch and permission are one table: each entry must state a feature
   // (null meaning any signed-in caller) and only name features that exist.
   const known = new Set([null, 'settings', 'model-picker', 'tools', 'mcp', 'search', 'statistics', 'folders',
-    'automations', 'attachments', 'images', 'chat', 'admin', 'oversight']);
+    'automations', 'attachments', 'images', 'chat', 'admin', 'oversight', 'integrations']);
   assert.ok(API_ROUTES.length > 30);
   for (const [method, re, feature] of API_ROUTES) {
     assert.ok(['GET', 'POST', 'PATCH', 'DELETE'].includes(method), `${method} ${re}`);

@@ -12,6 +12,7 @@ import type { McpServerSpec, McpServers } from './config/config.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
 import { DISCOVERY_PRINCIPAL, identityProblems, type IdentityClaim } from './access/mcp_identity.ts';
+import { MANIFEST_MIME } from './management.ts';
 
 /** true, false, or decided per call from the arguments. */
 type Flag = boolean | ((args: ToolArgs) => unknown);
@@ -138,6 +139,8 @@ interface Pooled { client: Promise<Client>; lastUsed: number; resolved?: Client 
 // a server keeps at most this many (the least recently used goes first).
 export const POOL_IDLE_MS = 10 * 60_000;
 export const POOL_MAX = 200;
+// How long a management read may take before the panel says the server is slow.
+export const MANAGE_TIMEOUT_MS = 10_000;
 
 const quietClose = (client: Promise<Client>) => { client.then((c) => c.close()).catch(() => { /* already gone */ }); };
 
@@ -167,6 +170,7 @@ export class McpHub {
   dead: Set<string>;
   reconnecting: Map<string, Promise<Client>>;
   principal: Principal;
+  manifests: Map<string, string>;
   pools: Map<string, Map<string, Pooled>>;
   deadPooled: WeakSet<Client>;
   sweeper: NodeJS.Timeout | null;
@@ -180,6 +184,8 @@ export class McpHub {
   constructor(servers: McpServers = {}, { principal = () => null }: { principal?: Principal } = {}) {
     this.servers = servers;
     this.principal = principal;
+    // Server -> the URI of its management manifest, for servers that list one.
+    this.manifests = new Map();
     // Bound servers only: server -> identity value -> that user's connection.
     // Keyed by the value the header carries, so a pooled client's header is
     // its key by construction.
@@ -244,6 +250,7 @@ export class McpHub {
       }
       try {
         const client = await this.open(name, spec);
+        await this.discoverManagement(name, client);
         const { tools } = await client.listTools();
         for (const t of tools.sort((a, b) => a.name.localeCompare(b.name))) {
           const flat = uniqueName(`${name}${SEP}${t.name}`, this.routes, RESERVED);
@@ -300,6 +307,71 @@ export class McpHub {
     this.pipeStderr(name, (transport as StdioClientTransport).stderr);
     await client.connect(transport);
     return client;
+  }
+
+  /**
+   * Notes the server's management manifest (management.ts), if it lists one.
+   * Only where it is: the manifest itself is read per caller, since what a
+   * server offers can depend on who asks.
+   */
+  async discoverManagement(name: string, client: Client): Promise<void> {
+    if (!client.getServerCapabilities()?.resources) return;
+    try {
+      const { resources } = await client.listResources(undefined, { timeout: MANAGE_TIMEOUT_MS });
+      const manifest = resources.find((r) => r.mimeType === MANIFEST_MIME);
+      if (manifest) this.manifests.set(name, manifest.uri);
+    } catch (err) {
+      // Not a reason to drop the server: its tools still work without a page.
+      log.warn(`${name}: could not list resources (${err.message})`);
+    }
+  }
+
+  /** The names of one server's own tools, as it listed them. */
+  toolsOf(server: string): Set<string> {
+    return new Set([...this.routes.values()].filter((r) => r.server === server).map((r) => r.tool));
+  }
+
+  /**
+   * The connection management traffic for `server` goes over: the caller's
+   * own for a bound server's user views, the shared one otherwise (a bound
+   * server's shared connection is the discovery one, never a user's).
+   */
+  async managementClient(server: string, as: { shared: true } | { userId: string | null | undefined }): Promise<Client> {
+    if ('shared' in as || !this.isBound(server)) {
+      if (this.dead.has(server)) return this.reconnect(server);
+      const client = this.clients.get(server);
+      if (!client) throw new Error(`server "${server}" is not connected`);
+      return client;
+    }
+    return this.clientFor(server, as.userId);
+  }
+
+  /** One resource's text, read as `as`. Reads repeat safely, so a dropped connection is retried once. */
+  async readResourceAs(server: string, uri: string, as: { shared: true } | { userId: string | null | undefined }): Promise<string> {
+    const read = async () => {
+      const client = await this.managementClient(server, as);
+      try {
+        const res = await client.readResource({ uri }, { timeout: MANAGE_TIMEOUT_MS });
+        const first = res.contents?.[0] as { text?: string } | undefined;
+        if (typeof first?.text !== 'string') throw new McpError(-32603, 'the resource has no text content');
+        return first.text;
+      } catch (err) {
+        if (!(err instanceof McpError) && this.isBound(server) && !('shared' in as)) this.retire(server, client);
+        throw err;
+      }
+    };
+    try { return await read(); } catch (err) {
+      if (err instanceof McpError) throw err;
+      return read();
+    }
+  }
+
+  /** One of the server's own tools, called as `as`: a management action. */
+  async callToolAs(server: string, tool: string, args: Record<string, unknown>, as: { shared: true } | { userId: string | null | undefined }): Promise<{ text: string; isError: boolean }> {
+    const client = await this.managementClient(server, as);
+    const res = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: MANAGE_TIMEOUT_MS * 3 });
+    const text = ((res.content || []) as { type: string; text?: string }[]).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    return { text, isError: Boolean(res.isError) };
   }
 
   /** True when this server's calls run on per-user connections. */

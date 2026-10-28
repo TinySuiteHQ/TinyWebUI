@@ -46,7 +46,7 @@ export interface PolicyConfig { authMode: string; access?: AccessConfig }
 
 // Tier 3's out-of-the-box split: users work, admins run the place.
 const DEFAULT_ROLES: Record<UserRole, RoleSpec> = {
-  user: { features: [FEATURE.CHAT, FEATURE.ATTACHMENTS, FEATURE.IMAGES, FEATURE.SEARCH, FEATURE.FOLDERS, FEATURE.AUTOMATIONS, FEATURE.STATISTICS, FEATURE.MODEL_PICKER], models: '*' },
+  user: { features: [FEATURE.CHAT, FEATURE.ATTACHMENTS, FEATURE.IMAGES, FEATURE.SEARCH, FEATURE.FOLDERS, FEATURE.AUTOMATIONS, FEATURE.STATISTICS, FEATURE.MODEL_PICKER, FEATURE.INTEGRATIONS], models: '*' },
   admin: { features: '*', models: '*' }
 };
 
