@@ -17,6 +17,9 @@ test('no mcp.json: TinySearch and TinyContext, launched by uvx', () => {
   assert.ok(servers.tinysearch.args.includes('tinysuite-search[server]'));
   assert.equal(servers.tinycontext.command, 'uvx');
   assert.ok(servers.tinycontext.args.includes('tinysuite-context[server]'));
+  // Their management pages are on; over stdio the one person is the operator.
+  assert.equal(servers.tinysearch.env.TINYSEARCH_MANAGEMENT, 'on');
+  assert.equal(servers.tinycontext.env.TINYCONTEXT_MANAGEMENT, 'on');
   // The MCP panel shows the same servers, so saving it keeps them.
   assert.deepEqual(JSON.parse(source.readMcpFile()).mcpServers, servers);
 });

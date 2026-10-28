@@ -328,10 +328,12 @@ export const DEFAULTS: Omit<Config, 'access'> = {
 
 // What an install with no mcp.json starts with: the TinySuite servers, which
 // uv fetches and launches on first use. Any mcp.json, even an empty one,
-// replaces them, so removing them is one save in the MCP panel.
+// replaces them, so removing them is one save in the MCP panel. Their
+// management pages are on: over stdio the one person here is the operator,
+// and TinySearch still records no activity unless that is turned on too.
 export const DEFAULT_MCP_SERVERS: Readonly<McpServers> = Object.freeze({
-  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]', 'tinysearch'] },
-  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]', 'tinycontext'] },
+  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]', 'tinysearch'], env: { TINYSEARCH_MANAGEMENT: 'on' } },
+  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]', 'tinycontext'], env: { TINYCONTEXT_MANAGEMENT: 'on' } },
 });
 
 /**

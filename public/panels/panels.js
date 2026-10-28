@@ -15,6 +15,7 @@ import { $ } from '../core/dom.js';
 export const PANEL = Object.freeze({
   SETTINGS: 'settings',
   MCP: 'mcp',
+  INTEGRATIONS: 'integrations',
   AUTOMATIONS: 'automations',
   STATISTICS: 'statistics',
   ADMIN: 'admin'

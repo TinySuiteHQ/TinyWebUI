@@ -21,6 +21,7 @@ export const modelAcceptsImages = () => !me.modelTags?.length || me.modelTags.in
 const GATED = {
   [FEATURE.SETTINGS]: ['toggle-settings'],
   [FEATURE.MCP]: ['toggle-mcp'],
+  [FEATURE.INTEGRATIONS]: ['toggle-integrations'],
   [FEATURE.AUTOMATIONS]: ['toggle-automations'],
   [FEATURE.STATISTICS]: ['toggle-statistics'],
   [FEATURE.ADMIN]: ['toggle-admin'],

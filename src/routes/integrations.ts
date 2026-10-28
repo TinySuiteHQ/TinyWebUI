@@ -189,7 +189,9 @@ export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | '
         // Who did what to which server; never the arguments, which are data.
         audit('integration.action', { by: actor(auth), server: name(server), view: view.id, action: action.id, ok: !result.isError });
         cache.get(hub())?.clear();
-        return json(res, result.isError ? 422 : 200, { ok: !result.isError, message: result.text.slice(0, 2000) });
+        const message = result.text.slice(0, 2000);
+        if (result.isError) return json(res, 422, { ok: false, message, error: serverMessage(message) || 'the server refused' });
+        return json(res, 200, { ok: true, message });
       }) }
   ];
 }

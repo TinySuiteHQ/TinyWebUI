@@ -23,6 +23,7 @@ import {
 import { initAutomations, loadAutomations } from './panels/automations.js';
 import { loadUsage } from './panels/usage.js';
 import { initAdmin, loadAdmin } from './panels/admin.js';
+import { initIntegrations, loadIntegrations } from './panels/integrations.js';
 
 /** Local auth with no session: sign in, claim a fresh install, or accept an invite. */
 async function needsLogin() {
@@ -81,12 +82,15 @@ function wire() {
   });
   initSettings();
   initAutomations();
+  initIntegrations();
   initPanels({
     [PANEL.SETTINGS]: { onOpen: onSettingsOpen, onClose: onSettingsClose, onEscape: settingsBack, canClose: settingsCanClose, closeId: 'cancel' },
     // The raw editor and the tool list are reloaded on open, so they reflect
     // any toggles made from the composer menu.
     [PANEL.MCP]: { onOpen: () => Promise.all([loadMcp(), loadTools()]) },
     [PANEL.AUTOMATIONS]: { onOpen: loadAutomations },
+    // Re-read on every open: what a server offers can change between visits.
+    [PANEL.INTEGRATIONS]: { onOpen: loadIntegrations },
     [PANEL.STATISTICS]: { onOpen: loadUsage },
     [PANEL.ADMIN]: { onOpen: loadAdmin }
   }, { onAnyOpen: closeSideDrawer });

@@ -105,3 +105,15 @@ browser ─▶ SSO gateway (Cloudflare Access, oauth2-proxy, Authelia, ...)
 
 To check isolation, sign in as two users and ask each one to save a memory.
 Each user's `list_memories` shows only their own.
+
+## Management pages
+
+With `TINYCONTEXT_MANAGEMENT=on` and `TINYSEARCH_MANAGEMENT=on`, the
+**Integrations** panel shows each person their own memories and search
+history. It reads them on that person's own connection, under the same
+identity as their chats. An admin also sees the servers' instance-wide views
+(TinySearch's domains and health, TinyContext's store count) when the server
+is given a management token, e.g.
+`"headers": { "Authorization": "Bearer ${TINYSEARCH_MANAGEMENT_TOKEN}" }`.
+An admin never sees another person's memories or searches there. See
+[mcp-management.md](mcp-management.md).
