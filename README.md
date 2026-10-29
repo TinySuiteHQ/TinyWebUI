@@ -53,7 +53,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 
 ## Quick start
 
-Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext servers also need **[uv](https://docs.astral.sh/uv/)**, which fetches them the first time they start.
+Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext servers also need **[uv](https://docs.astral.sh/uv/)**, which fetches them the first time they start. With sign-in on, each person gets their own memories and search history, and both keep their data in TinyWebUI's own folder ([docs/multi-user-mcp.md](docs/multi-user-mcp.md)).
 
 ```bash
 npx tinywebui

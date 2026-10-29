@@ -19,7 +19,7 @@ const ICON = { memory: '◎', search: '⌕', database: '▤', globe: '◍', tool
 const enc = encodeURIComponent;
 
 let state = { servers: [], multiUser: false };
-let current = null; // { server, view, query: {}, offset: 0 } while a server is open
+let current = null; // { server, view } while a server is open
 let loadSeq = 0;
 
 const text = (tag, cls, value) => Object.assign(el(tag, cls), { textContent: value ?? '' });
@@ -103,7 +103,7 @@ function openServer(name, viewId) {
   if (!s?.manifest) return renderList();
   const views = s.manifest.views;
   const first = views.find((v) => v.id === viewId) || views.find((v) => v.available) || views[0];
-  current = { server: name, view: first.id, query: {}, offset: 0 };
+  current = { server: name, view: first.id };
   back.hidden = false;
   title.textContent = s.manifest.title || name;
   renderServer();
@@ -118,7 +118,7 @@ function renderServer() {
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', String(v.id === current.view));
     if (!v.available) tab.classList.add('off');
-    tab.onclick = () => { current = { ...current, view: v.id, query: {}, offset: 0 }; renderServer(); };
+    tab.onclick = () => { current = { ...current, view: v.id }; renderServer(); };
     tabs.append(tab);
   }
   const slot = el('div', 'int-view');
@@ -128,22 +128,32 @@ function renderServer() {
     slot.replaceChildren(text('p', 'int-notice', view.reason || 'Not available to you.'));
     return;
   }
-  loadView(s, view, slot);
+  showView(slot, view, `/api/integrations/${enc(s.name)}/views/${enc(view.id)}`);
 }
 
-const viewUrl = (server, view) => `/api/integrations/${enc(server)}/views/${enc(view.id)}`;
+/* ---------- one view, wherever it is shown ---------- */
 
-async function loadView(s, view, slot) {
-  const seq = ++loadSeq;
+/**
+ * Draws one view into `slot`, read from `base` (its .../views/<id> URL), with
+ * its own filters, page and open row. The admin panel's oversight shows other
+ * users' views through this too; they arrive without actions, so none is drawn.
+ */
+export function showView(slot, view, base) {
+  loadView({ view, base, slot, query: {}, offset: 0, seq: 0 });
+}
+
+async function loadView(p) {
+  const { view, slot } = p;
+  const seq = ++p.seq;
   slot.replaceChildren(text('p', 'empty', 'Loading…'));
-  const params = new URLSearchParams(Object.entries(current.query).filter(([, v]) => v));
-  if (view.kind === 'table') params.set('offset', String(current.offset));
+  const params = new URLSearchParams(Object.entries(p.query).filter(([, v]) => v));
+  if (view.kind === 'table') params.set('offset', String(p.offset));
   try {
-    const data = await api.get(`${viewUrl(s.name, view)}?${params}`);
-    if (seq !== loadSeq) return;
-    slot.replaceChildren(...(view.kind === 'stats' ? renderStats(data) : renderTable(s, view, data, slot)));
+    const data = await api.get(`${p.base}?${params}`);
+    if (seq !== p.seq) return;
+    slot.replaceChildren(...(view.kind === 'stats' ? renderStats(data) : renderTable(p, data)));
   } catch (err) {
-    if (seq === loadSeq) slot.replaceChildren(errorBox(err));
+    if (seq === p.seq) slot.replaceChildren(errorBox(err));
   }
 }
 
@@ -160,46 +170,48 @@ function renderStats(data) {
   return [notice(data.notice), grid].filter(Boolean);
 }
 
-function filters(s, view, slot) {
+function filters(p) {
+  const { view } = p;
   if (!view.params.length && !view.actions.some((a) => a.target === 'view')) return null;
   const bar = el('div', 'int-filters');
   let timer;
-  for (const p of view.params) {
-    const id = `int-${p.name}`;
-    const label = Object.assign(text('label', '', p.label), { htmlFor: id });
+  for (const param of view.params) {
+    const id = `int-${param.name}`;
+    const label = Object.assign(text('label', '', param.label), { htmlFor: id });
     let input;
-    if (p.type === 'enum') {
+    if (param.type === 'enum') {
       input = el('select');
       input.append(Object.assign(el('option'), { value: '', textContent: 'Any' }));
-      for (const v of p.values) input.append(Object.assign(el('option'), { value: v, textContent: v }));
-      input.onchange = () => { current.query[p.name] = input.value; current.offset = 0; loadView(s, view, slot); };
+      for (const v of param.values) input.append(Object.assign(el('option'), { value: v, textContent: v }));
+      input.onchange = () => { p.query[param.name] = input.value; p.offset = 0; loadView(p); };
     } else {
-      input = Object.assign(el('input'), { type: 'search', maxLength: p.maxLength });
+      input = Object.assign(el('input'), { type: 'search', maxLength: param.maxLength });
       // Each keystroke would otherwise be a round trip to the server.
       input.oninput = () => {
         clearTimeout(timer);
-        timer = setTimeout(() => { current.query[p.name] = input.value.trim(); current.offset = 0; loadView(s, view, slot); }, 300);
+        timer = setTimeout(() => { p.query[param.name] = input.value.trim(); p.offset = 0; loadView(p); }, 300);
       };
     }
     input.id = id;
-    input.value = current.query[p.name] || '';
+    input.value = p.query[param.name] || '';
     const field = el('div', 'int-field');
     field.append(label, input);
     bar.append(field);
   }
   for (const action of view.actions.filter((a) => a.target === 'view')) {
-    bar.append(actionButton(s, view, action, null, () => loadView(s, view, slot)));
+    bar.append(actionButton(p, action, null, () => loadView(p)));
   }
   return bar;
 }
 
-function renderTable(s, view, data, slot) {
+function renderTable(p, data) {
+  const { view } = p;
   const out = [];
-  const bar = filters(s, view, slot);
+  const bar = filters(p);
   if (bar) out.push(bar);
   if (data.notice) out.push(notice(data.notice));
   if (!data.rows.length) {
-    out.push(text('p', 'empty', current.offset ? 'No more rows.' : 'Nothing here yet.'));
+    out.push(text('p', 'empty', p.offset ? 'No more rows.' : 'Nothing here yet.'));
   } else {
     const table = el('table', 'int-table');
     const thead = el('thead');
@@ -215,7 +227,7 @@ function renderTable(s, view, data, slot) {
       if (view.hasDetail || rowActions.length) {
         tr.tabIndex = 0;
         tr.classList.add('int-row');
-        const open = () => openRow(s, view, row, slot);
+        const open = () => openRow(p, row);
         tr.onclick = open;
         tr.onkeydown = (e) => { if (e.key === 'Enter') open(); };
       }
@@ -225,14 +237,14 @@ function renderTable(s, view, data, slot) {
     out.push(table);
   }
   const pager = el('div', 'int-pager');
-  const first = current.offset + 1;
-  const last = current.offset + data.rows.length;
+  const first = p.offset + 1;
+  const last = p.offset + data.rows.length;
   pager.append(text('span', 'usage', data.rows.length
     ? `${first.toLocaleString()}–${last.toLocaleString()}${data.total !== null ? ` of ${data.total.toLocaleString()}` : ''}` : ''));
-  const prev = Object.assign(el('button'), { type: 'button', textContent: '‹ Previous', disabled: current.offset === 0 });
-  prev.onclick = () => { current.offset = Math.max(0, current.offset - view.pageSize); loadView(s, view, slot); };
+  const prev = Object.assign(el('button'), { type: 'button', textContent: '‹ Previous', disabled: p.offset === 0 });
+  prev.onclick = () => { p.offset = Math.max(0, p.offset - view.pageSize); loadView(p); };
   const next = Object.assign(el('button'), { type: 'button', textContent: 'Next ›', disabled: !data.hasMore });
-  next.onclick = () => { current.offset += data.rows.length || view.pageSize; loadView(s, view, slot); };
+  next.onclick = () => { p.offset += data.rows.length || view.pageSize; loadView(p); };
   pager.append(prev, next);
   out.push(pager);
   return out;
@@ -240,20 +252,21 @@ function renderTable(s, view, data, slot) {
 
 /* ---------- one row ---------- */
 
-async function openRow(s, view, row, slot) {
-  const seq = ++loadSeq;
+async function openRow(p, row) {
+  const { view, slot } = p;
+  const seq = ++p.seq;
   const backToList = Object.assign(el('button', 'int-back-row'), { type: 'button', textContent: '‹ Back to the list' });
-  backToList.onclick = () => loadView(s, view, slot);
+  backToList.onclick = () => loadView(p);
   const panel = el('div', 'int-detail');
   slot.replaceChildren(backToList, panel);
   let detail = { fields: view.columns.map((c) => ({ label: c.label, value: row[c.key], format: c.format })), row };
   if (view.hasDetail && view.rowKey && row[view.rowKey] !== null) {
     panel.replaceChildren(text('p', 'empty', 'Loading…'));
     try {
-      detail = await api.get(`${viewUrl(s.name, view)}/items/${enc(String(row[view.rowKey]))}`);
-      if (seq !== loadSeq) return;
+      detail = await api.get(`${p.base}/items/${enc(String(row[view.rowKey]))}`);
+      if (seq !== p.seq) return;
     } catch (err) {
-      if (seq === loadSeq) panel.replaceChildren(errorBox(err));
+      if (seq === p.seq) panel.replaceChildren(errorBox(err));
       return;
     }
   }
@@ -264,20 +277,20 @@ async function openRow(s, view, row, slot) {
   }
   const actions = el('div', 'int-actions');
   for (const action of view.actions.filter((a) => a.target === 'row')) {
-    actions.append(actionButton(s, view, action, target, () => loadView(s, view, slot), panel));
+    actions.append(actionButton(p, action, target, () => loadView(p), panel));
   }
   panel.replaceChildren(dl, actions);
 }
 
 /* ---------- actions ---------- */
 
-function actionButton(s, view, action, row, done, host = null) {
+function actionButton(p, action, row, done, host = null) {
   const button = Object.assign(el('button', action.destructive ? 'danger' : ''), { type: 'button', textContent: action.label });
-  button.onclick = () => (action.input ? editForm(s, view, action, row, done, host || button.parentElement) : run(s, view, action, row, null, done, button));
+  button.onclick = () => (action.input ? editForm(p, action, row, done, host || button.parentElement) : run(p, action, row, null, done, button));
   return button;
 }
 
-function editForm(s, view, action, row, done, host) {
+function editForm(p, action, row, done, host) {
   const form = el('form', 'int-edit');
   const id = `int-input-${action.id}`;
   const label = Object.assign(text('label', '', action.input.label), { htmlFor: id });
@@ -291,19 +304,19 @@ function editForm(s, view, action, row, done, host) {
   const row_ = el('div', 'int-actions');
   row_.append(save, cancel);
   form.append(label, field, row_);
-  form.onsubmit = (e) => { e.preventDefault(); run(s, view, action, row, field.value, done, save); };
+  form.onsubmit = (e) => { e.preventDefault(); run(p, action, row, field.value, done, save); };
   host.querySelector('.int-edit')?.remove();
   host.append(form);
   field.focus();
 }
 
-async function run(s, view, action, row, input, done, button) {
+async function run(p, action, row, input, done, button) {
   // The server refuses a destructive action without this; the browser's
   // part is to make sure a person actually said yes.
   if (action.destructive && !window.confirm(action.confirm || `${action.label}? This cannot be undone.`)) return;
   button.disabled = true;
   try {
-    const res = await api.post(`${viewUrl(s.name, view)}/actions/${enc(action.id)}`, {
+    const res = await api.post(`${p.base}/actions/${enc(action.id)}`, {
       row: row || undefined, input: input ?? undefined, confirm: action.destructive ? true : undefined
     });
     if (!res.ok) throw new Error(res.message || 'The server refused.');

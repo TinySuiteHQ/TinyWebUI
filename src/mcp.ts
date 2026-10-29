@@ -13,6 +13,7 @@ import type { ToolDef } from './harness/types.ts';
 import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
 import { DISCOVERY_PRINCIPAL, identityProblems, type IdentityClaim } from './access/mcp_identity.ts';
 import { MANIFEST_MIME } from './management.ts';
+import { launchServed, serveProblems, type Served, type ServeSpec } from './mcp_serve.ts';
 
 /** true, false, or decided per call from the arguments. */
 type Flag = boolean | ((args: ToolArgs) => unknown);
@@ -28,8 +29,8 @@ const MAX_NAME = 64;
 // one of these would be shadowed by the local handler without a word.
 const RESERVED = new Set(['expand_context', 'read_document', 'manage_automation', 'ask_user', 'manage_tasks', 'search_chats', 'manage_mcp']);
 
-const expandAll = (obj: Record<string, string> | undefined): Record<string, string> | undefined =>
-  obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandRefs(v)]));
+const expandAll = (obj: Record<string, string> | undefined, env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined =>
+  obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandRefs(v, env)]));
 
 /**
  * The flat name the model sees for a server's tool. Sanitising and the
@@ -103,14 +104,27 @@ export function missingCommand(spec: McpServerSpec): { message: string; install:
 /**
  * `identity` is the value of spec.identity.header for this connection, added
  * after ${NAME} expansion so a user's own id can never pull in an environment
- * variable.
+ * variable. `served` is the address and tokens of a server TinyWebUI started
+ * itself (mcp_serve.ts); its management token goes only on the `shared`,
+ * server-wide connection.
  */
-function transportFor(name: string, spec: McpServerSpec, identity: string | null = null) {
+function transportFor(name: string, spec: McpServerSpec, identity: string | null, {
+  env = process.env, served = null, shared = false
+}: { env?: NodeJS.ProcessEnv; served?: Served | null; shared?: boolean } = {}) {
+  if (served) {
+    const headers = {
+      ...(expandAll(spec.headers, env) || {}),
+      ...served.headers,
+      ...(shared ? served.sharedHeaders : {}),
+      ...(identity && spec.identity ? { [spec.identity.header]: identity } : {})
+    };
+    return new StreamableHTTPClientTransport(new URL(served.url), { requestInit: { headers } });
+  }
   if (spec.command) {
     return new StdioClientTransport({
       command: spec.command,
-      args: (spec.args || []).map((a) => expandRefs(a)),
-      env: { ...process.env, ...(expandAll(spec.env) || {}) } as Record<string, string>,
+      args: (spec.args || []).map((a) => expandRefs(a, env)),
+      env: { ...process.env, ...(expandAll(spec.env, env) || {}) } as Record<string, string>,
       cwd: spec.cwd,
       // Piped rather than inherited so we can label it and, more importantly,
       // drop the shutdown noise -- a stdio server killed by Ctrl-C prints a full
@@ -119,9 +133,9 @@ function transportFor(name: string, spec: McpServerSpec, identity: string | null
     });
   }
   if (spec.url) {
-    const headers = { ...(expandAll(spec.headers) || {}), ...(identity && spec.identity ? { [spec.identity.header]: identity } : {}) };
+    const headers = { ...(expandAll(spec.headers, env) || {}), ...(identity && spec.identity ? { [spec.identity.header]: identity } : {}) };
     const opts = Object.keys(headers).length ? { requestInit: { headers } } : undefined;
-    const url = new URL(expandRefs(spec.url));
+    const url = new URL(expandRefs(spec.url, env));
     return spec.transport === 'sse'
       ? new SSEClientTransport(url, opts)
       : new StreamableHTTPClientTransport(url, opts);
@@ -174,16 +188,28 @@ export class McpHub {
   pools: Map<string, Map<string, Pooled>>;
   deadPooled: WeakSet<Client>;
   sweeper: NodeJS.Timeout | null;
+  dataDir: string | null;
+  secret: (server: string, name: string) => string;
+  served: Map<string, Promise<Served>>;
 
   /**
    * `principal(userId, claim)` is what a bound server is told for one user
    * (see access/mcp_identity.ts), or null to refuse the call. The default
    * refuses everyone, so a hub built without one can never send a user's
    * call on someone else's connection.
+   *
+   * `dataDir` is what `${TINYWEBUI_DATA_DIR}` means in mcp.json, so a server
+   * can keep its data beside TinyWebUI's. `secret(server, name)` returns a
+   * served server's stored secret, generating it on first use (mcp_serve.ts).
    */
-  constructor(servers: McpServers = {}, { principal = () => null }: { principal?: Principal } = {}) {
+  constructor(servers: McpServers = {}, { principal = () => null, dataDir = null, secret }:
+    { principal?: Principal; dataDir?: string | null; secret?: (server: string, name: string) => string } = {}) {
     this.servers = servers;
     this.principal = principal;
+    this.dataDir = dataDir;
+    this.secret = secret ?? ((server, name) => { throw new Error(`${server} needs a stored secret (${name}), and this hub has nowhere to keep one`); });
+    // Servers this hub started over HTTP (serve), one process each.
+    this.served = new Map();
     // Server -> the URI of its management manifest, for servers that list one.
     this.manifests = new Map();
     // Bound servers only: server -> identity value -> that user's connection.
@@ -242,7 +268,7 @@ export class McpHub {
       if (spec.disabled) continue;
       // Fail closed: a server meant to see each user separately is not
       // connected at all rather than connected as one shared caller.
-      const problems = identityProblems(name, spec);
+      const problems = [...identityProblems(name, spec), ...serveProblems(name, spec)];
       if (problems.length) {
         this.errors.push(`${name}: ${problems.join('; ')}`);
         log.error(`${name} not connected: ${problems.join('; ')}`);
@@ -288,25 +314,66 @@ export class McpHub {
    * fails until someone reloads MCP by hand.
    */
   async open(name: string, spec: McpServerSpec): Promise<Client> {
-    const client = await this.connectClient(name, spec, spec.identity ? DISCOVERY_PRINCIPAL : null);
+    const client = await this.connectClient(name, spec, spec.identity ? DISCOVERY_PRINCIPAL : null, true);
     client.onclose = () => { if (!this.closing && this.clients.get(name) === client) this.dead.add(name); };
     this.clients.set(name, client);
     this.dead.delete(name);
     return client;
   }
 
-  /** A connected client with nothing recorded about it yet. */
-  async connectClient(name: string, spec: McpServerSpec, identity: string | null): Promise<Client> {
+  /** What `${NAME}` in mcp.json can refer to: the environment, and where TinyWebUI keeps its data. */
+  get refEnv(): NodeJS.ProcessEnv {
+    return this.dataDir ? { ...process.env, TINYWEBUI_DATA_DIR: this.dataDir } : process.env;
+  }
+
+  /**
+   * A connected client with nothing recorded about it yet. `shared` is the
+   * server-wide connection (tool listing, instance views), never a user's.
+   */
+  async connectClient(name: string, spec: McpServerSpec, identity: string | null, shared = false): Promise<Client> {
     const missing = spec.command ? missingCommand(spec) : null;
     if (missing) throw new MissingCommand(missing.message, missing.install);
+    const served = spec.serve ? await this.serving(name, spec) : null;
     const client = new Client({ name: 'tinywebui', version: '0.1.0' }, { capabilities: {} });
-    const transport = transportFor(name, spec, identity);
+    const transport = transportFor(name, spec, identity, { env: this.refEnv, served, shared });
     // Read before connecting: a child that dies on startup (uv unable to
     // download, a bad import) says why only on stderr, while the SDK reports
     // just "Connection closed".
-    this.pipeStderr(name, (transport as StdioClientTransport).stderr);
+    if (transport instanceof StdioClientTransport) this.pipeStderr(name, transport.stderr);
     await client.connect(transport);
     return client;
+  }
+
+  /**
+   * The running process of a served server, started on first use -- once,
+   * however many connections ask at the same time. When it exits, every
+   * connection to it is dropped and the next call starts it again.
+   */
+  serving(name: string, spec: McpServerSpec): Promise<Served> {
+    const running = this.served.get(name);
+    if (running) return running;
+    const env = this.refEnv;
+    const started = launchServed(spec as McpServerSpec & { serve: ServeSpec }, {
+      env: expandAll(spec.env, env) || {},
+      args: (spec.args || []).map((a) => String(expandRefs(a, env))),
+      secret: (secretName) => this.secret(name, secretName),
+      onLine: (line) => { if (!this.closing) log.info(`${name}: ${line}`); }
+    }).then((served) => {
+      served.exited.then(() => {
+        if (this.served.get(name) !== started) return;
+        this.served.delete(name);
+        if (this.closing) return;
+        log.warn(`${name} stopped; it is started again on the next call`);
+        this.dead.add(name);
+        for (const entry of this.pools.get(name)?.values() || []) if (entry.resolved) this.retire(name, entry.resolved);
+      });
+      return served;
+    }, (err: Error) => {
+      if (this.served.get(name) === started) this.served.delete(name);
+      throw new Error(`could not start: ${err.message}`);
+    });
+    this.served.set(name, started);
+    return started;
   }
 
   /**
@@ -695,5 +762,9 @@ export class McpHub {
       }
       pool.clear();
     }
+    for (const started of this.served.values()) {
+      try { (await started).stop(); } catch { /* it never started */ }
+    }
+    this.served.clear();
   }
 }

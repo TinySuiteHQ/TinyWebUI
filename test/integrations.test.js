@@ -10,7 +10,7 @@ import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 // The SDK's tool schemas must be zod, which the SDK itself depends on.
 import { z } from 'zod';
 
-import { parseManifest, viewUri, detailUri, actionArgs, shapeViewData, MANIFEST_MIME } from '../src/management.ts';
+import { parseManifest, viewUri, detailUri, actionArgs, shapeViewData, shapeDetail, MANIFEST_MIME } from '../src/management.ts';
 import { startMcpHttpServer } from './mcp-http-fixture.js';
 
 /* ---------- a server that offers a management page ---------- */
@@ -103,6 +103,17 @@ test('a valid manifest parses, and the browser never sees tool names or URIs', (
   const m = parseManifest(JSON.stringify(manifestOf([MEMORIES, SERVICE])), TOOLS);
   assert.equal(m.views.length, 2);
   assert.equal(m.views[0].actions[0].tool, 'delete_memory');
+});
+
+test('a multiline detail field keeps one row\'s long text whole; other strings stay short', () => {
+  const view = parseManifest(JSON.stringify(manifestOf([MEMORIES, SERVICE])), TOOLS).views[0];
+  const long = 'x'.repeat(50_000);
+  const { fields } = shapeDetail(view, { fields: [
+    { label: 'What the model was shown', value: long, format: 'multiline' },
+    { label: 'Query', value: long }
+  ] });
+  assert.equal(fields[0].value, long);
+  assert.equal(fields[1].value, `${'x'.repeat(20_000)}…`);
 });
 
 test('a manifest is refused for anything outside the contract', () => {
@@ -212,6 +223,51 @@ test('each person sees and changes only their own data on a per-user server', as
   assert.equal(mem.stores.has('urn:tinywebui:discovery'), false, 'no user data was ever kept under the discovery identity');
 });
 
+test('an admin reads a user\'s own connector data only through oversight: read-only, every read audited', async (t) => {
+  const mem = memoryServer();
+  mem.seed('alice', 'alice likes tea');
+  mem.seed('bob', 'bob likes coffee');
+  const fixture = await startMcpHttpServer({ header: 'x-user', setup: mem.setup });
+  t.after(() => fixture.close());
+  const { as } = await deployment(t, { servers: { mem: { url: fixture.url, identity: { header: 'X-User', claim: 'externalId' } } } });
+  const alice = as({ id: 'alice' }), bob = as({ id: 'bob' }), admin = as({ id: 'root', role: 'admin' });
+  const [aliceId, adminId] = await Promise.all([alice, admin].map(async (who) => (await who('/api/auth/me')).data.user.id));
+  const logged = [];
+  const log = console.log;
+  console.log = (...args) => { logged.push(args.join(' ')); };
+  t.after(() => { console.log = log; });
+
+  const base = `/api/admin/users/${aliceId}/integrations`;
+  const list = await admin(base);
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.data.servers[0].views.map((v) => [v.id, v.actions.length]), [['memories', 0]], 'her own views, told no actions');
+  const page = await admin(`${base}/mem/views/memories`);
+  assert.deepEqual(page.data.rows.map((r) => r.content), ['alice likes tea'], 'exactly what alice sees');
+  const memoryId = page.data.rows[0].id;
+  assert.equal((await admin(`${base}/mem/views/memories/items/${memoryId}`)).data.fields[0].value, 'alice likes tea');
+  assert.equal((await admin(`${base}/mem/views/service`)).status, 404, 'oversight is per-person views only');
+
+  const act = await admin(`${base}/mem/views/memories/actions/delete`, { method: 'POST', body: { row: { id: memoryId }, confirm: true } });
+  assert.equal(act.status, 404, 'oversight has no way to act');
+  assert.ok(mem.stores.get('alice').has(memoryId));
+
+  // A user never reaches another's data: not through oversight, and the
+  // Integrations panel is always their own.
+  for (const path of [base, `${base}/mem/views/memories`, `${base}/mem/views/memories/items/${memoryId}`]) {
+    assert.equal((await bob(path)).status, 403, `bob is refused ${path}`);
+  }
+  assert.deepEqual((await bob('/api/integrations/mem/views/memories')).data.rows.map((r) => r.content), ['bob likes coffee']);
+  assert.deepEqual((await admin('/api/integrations/mem/views/memories')).data.rows, [], 'the admin\'s own panel shows only the admin\'s own');
+
+  const audits = logged.filter((l) => l.startsWith('[tinywebui:audit]')).map((l) => JSON.parse(l.slice(l.indexOf('{'))))
+    .filter((a) => a.event.startsWith('admin.view_user_integration'));
+  assert.deepEqual(audits.map(({ event, by, userId, view, item }) => ({ event, by, userId, view, item })), [
+    { event: 'admin.view_user_integrations', by: adminId, userId: aliceId, view: undefined, item: undefined },
+    { event: 'admin.view_user_integration', by: adminId, userId: aliceId, view: 'memories', item: undefined },
+    { event: 'admin.view_user_integration', by: adminId, userId: aliceId, view: 'memories', item: memoryId }
+  ]);
+});
+
 test('a server everyone shares has no per-person view in a multi-user deployment', async (t) => {
   const mem = memoryServer();
   mem.seed('shared', 'everyone\'s memory');
@@ -225,6 +281,13 @@ test('a server everyone shares has no per-person view in a multi-user deployment
     assert.match(view.reason, /shared by everyone/);
     assert.equal((await as(who)('/api/integrations/mem/views/memories')).status, 403);
   }
+  // Nor through oversight: there is no one user's data to show.
+  const aliceId = (await as({ id: 'alice' })('/api/auth/me')).data.user.id;
+  const admin = as({ id: 'root', role: 'admin' });
+  const overseen = await admin(`/api/admin/users/${aliceId}/integrations`);
+  assert.deepEqual(overseen.data.servers.map((s) => [s.name, s.views.length]), [['mem', 0]]);
+  assert.match(overseen.data.servers[0].reason, /shared by everyone/i);
+  assert.equal((await admin(`/api/admin/users/${aliceId}/integrations/mem/views/memories`)).status, 403);
 });
 
 test('a no-login install is one person who sees every view', async (t) => {

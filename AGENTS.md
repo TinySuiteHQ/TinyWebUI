@@ -34,7 +34,8 @@ src/
                  tool-approval rules
   automations/   scheduled runs: automation.ts (tool + cron), scheduler.ts
   files/         turning uploads into text or wire-safe images
-  mcp.ts         MCP client hub; log.ts; audit.ts; cli.ts
+  mcp.ts         MCP client hub; mcp_serve.ts starts local servers over HTTP (serve);
+                 log.ts; audit.ts; cli.ts
 bin/tinywebui.ts the CLI entry
 public/          the page (plain ES modules, no build); app.js is the entry and the only wiring
   core/        api.js (every JSON call), dom, state, id, md (the only HTML from outside text), access

@@ -30,7 +30,7 @@ async function boundHub(t, { claim } = {}) {
 /* ---------- configuration ---------- */
 
 test('identity is refused on a local server, a reserved header, or a clashing static header', () => {
-  assert.match(identityProblems('m', { command: 'x', identity: { header: 'X-User' } }).join(), /needs a remote/);
+  assert.match(identityProblems('m', { command: 'x', identity: { header: 'X-User' } }).join(), /needs an HTTP server/);
   assert.match(identityProblems('m', { url: 'http://h/mcp', identity: { header: 'Authorization' } }).join(), /connection itself uses it/);
   assert.match(identityProblems('m', { url: 'http://h/mcp', identity: { header: 'Mcp-Session-Id' } }).join(), /connection itself uses it/);
   assert.match(identityProblems('m', { url: 'http://h/mcp', headers: { 'x-user': 'me' }, identity: { header: 'X-User' } }).join(), /fixed value stand in for the user/);
@@ -46,7 +46,7 @@ test('mcp.json with a bad identity is never written', () => {
   const source = createConfigSource({ configFile: join(dir, 'tinywebui.config.json') });
   writeFileSync(join(dir, 'mcp.json'), '{"mcpServers":{}}');
   const bad = JSON.stringify({ mcpServers: { m: { command: 'uvx', identity: { header: 'X-User' } } } });
-  assert.throws(() => source.saveMcpFile(bad), /needs a remote/);
+  assert.throws(() => source.saveMcpFile(bad), /needs an HTTP server/);
   assert.equal(source.readMcpFile(), '{"mcpServers":{}}', 'the file is untouched');
   source.saveMcpFile(JSON.stringify({ mcpServers: { m: { url: 'http://h/mcp', identity: { header: 'X-User' } } } }));
 });

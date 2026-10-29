@@ -316,6 +316,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .admin-chat { display:flex; gap:.75rem; align-items:center; width:100%; text-align:left; padding:.45rem .5rem; border:0; border-top:1px solid var(--line); background:none; color:inherit; font:inherit; cursor:pointer; }
 .admin-chat:hover { background:var(--bg); }
 .admin-chat .usage { margin-left:auto; white-space:nowrap; }
+.admin-connector { padding:.6rem .5rem; border-top:1px solid var(--line); display:grid; gap:.4rem; }
+.admin-connector .int-tabs { width:auto; margin:0; }
 .admin-live { color:var(--accent, currentColor); font-weight:600; }
 .admin-msg { padding:.6rem 0; border-top:1px solid var(--line); }
 .admin-msg-role { font-family:var(--mono); font-size:var(--fs-meta); color:var(--muted); margin-bottom:.25rem; }

@@ -323,7 +323,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     return userId ? claimValue(store.users.get(userId), claim) : null;
   };
   const connectHub = async (servers: McpServers) =>
-    (await new McpHub(servers, { principal }).connect())
+    (await new McpHub(servers, { principal, dataDir: source.dataDir(), secret: source.mcpSecret }).connect())
       .registerLocal(expandToolDef(), (args, ctx) => callExpand(args, { ...ctx, store }), { readOnly: true })
       .registerLocal(documentToolDef(), (args, ctx) => callReadDocument(args, { ...ctx, store, retrieval }), { readOnly: true })
       .registerLocal(chatSearchToolDef(), (args, ctx) => callSearchChats(args, { ...ctx, store, retrieval }), { readOnly: true })

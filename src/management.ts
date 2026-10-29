@@ -53,7 +53,9 @@ const ARG_REF = /^\$row\.([A-Za-z0-9_][A-Za-z0-9_.-]{0,63})$/;
 
 export const LIMITS = Object.freeze({
   views: 12, params: 8, columns: 12, actions: 6, values: 24, label: 80, text: 300,
-  pageSize: 100, inputMax: 20000, uri: 512, rows: 100, cell: 20000, fields: 40, items: 40, notice: 500
+  pageSize: 100, inputMax: 20000, uri: 512, rows: 100, cell: 20000, fields: 40, items: 40, notice: 500,
+  // One row's long text (e.g. everything a tool call returned), not a table's worth of cells.
+  detailText: 200000
 });
 
 class ManifestError extends Error {}
@@ -307,11 +309,14 @@ export function shapeViewData(view: View, data: unknown): Record<string, unknown
 /** Detail data for one row: labelled fields, plus the row the actions bind to. */
 export function shapeDetail(view: View, data: unknown): Record<string, unknown> {
   const d = isObj(data) ? data : {};
-  const fields = (Array.isArray(d.fields) ? d.fields : []).slice(0, LIMITS.fields).filter(isObj).map((f) => ({
-    label: text(f.label, LIMITS.label) || '',
-    value: scalar(f.value),
-    format: FORMATS.includes(f.format as Format) ? f.format : 'text'
-  }));
+  const fields = (Array.isArray(d.fields) ? d.fields : []).slice(0, LIMITS.fields).filter(isObj).map((f) => {
+    const format = FORMATS.includes(f.format as Format) ? f.format : 'text';
+    return {
+      label: text(f.label, LIMITS.label) || '',
+      value: scalar(f.value, format === 'multiline' ? LIMITS.detailText : LIMITS.cell),
+      format
+    };
+  });
   const { rows } = shapeViewData(view, { rows: isObj(d.row) ? [d.row] : [] }) as { rows: Record<string, unknown>[] };
   return { fields, row: rows[0] || null };
 }

@@ -13,6 +13,12 @@
  *   since there is no "own" data on a shared store.
  * - Actions run the server's own tools with the same connection as the view,
  *   and a destructive one needs an explicit confirmation in the request.
+ * - Oversight (/api/admin/users/<id>/integrations): an admin reads another
+ *   user's `user` views on that user's own connection, exactly as they see
+ *   them. Read-only (there is no action route) and every read audited, like
+ *   the oversight of chats in routes/admin.ts. A server everyone shares has no
+ *   one user's data, so it is listed there without views. This is the only
+ *   way to anyone else's data: the panel above is always the caller's own.
  *
  * The browser never learns tool names or resource URIs; it names a server, a
  * view and an action by id, and gets back plain, bounded data.
@@ -34,17 +40,25 @@ const log = logger('integrations');
 
 type As = { shared: true } | { userId: string | null };
 
+/** One server as oversight lists it: its user's views, or why there are none. */
+type OverseenServer = {
+  name: string; perUser: boolean; title: string; icon: string | null;
+  views: ReturnType<typeof publicView>[]; reason: string | null;
+};
+
 // Manifests are re-read at most this often per server and caller: they can
 // differ by caller, and change when a server restarts with other settings.
 const MANIFEST_TTL_MS = 30_000;
 
 const SHARED_HINT = 'This server is shared by everyone here, so it keeps no data of your own to show. '
   + 'An admin can give it an identity to make it per-person.';
+const OVERSIGHT_SHARED = 'Shared by everyone here, so it keeps no data of this user\'s own. '
+  + 'Give it an identity to make it per-person.';
 
 /** A short, safe error text from a server: first line, bounded. */
 const serverMessage = (err: unknown) => String((err as Error)?.message || err).split('\n')[0].slice(0, 300);
 
-export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | 'multiUser'>): Route[] {
+export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'hub' | 'multiUser' | 'store'>): Route[] {
   const cache = new WeakMap<McpHub, Map<string, { at: number; manifest: Manifest }>>();
 
   const asFor = (auth: SignedIn, scope: 'shared' | 'user'): As =>
@@ -113,6 +127,30 @@ export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | '
     if (!found.as) throw new HttpError(403, found.reason!);
     return { view: found.view, as: found.as };
   }
+
+  /** The user an admin is looking at, read as them: or an HttpError saying why not. */
+  function overseen(id: string) {
+    // As in routes/admin.ts: crossing users only means something when there are users.
+    if (!multiUser()) throw new HttpError(403, 'admin_only');
+    const user = store.users.get(id);
+    if (!user) throw new HttpError(404, 'no such user');
+    // A bound server is only ever told an approved user's identity
+    // (mcp_identity.ts), so a pending or disabled account has no connection.
+    if (user.status !== 'approved') throw new HttpError(409, 'this account is not approved, so it has no connection of its own to read');
+    return { user, as: { userId: user.id } satisfies As };
+  }
+
+  /** One of `as`'s own views on a per-user server. */
+  async function overseenView(server: string, viewId: string, as: As) {
+    if (!hub().servers[server]) throw new HttpError(404, 'no such server');
+    if (!hub().isBound(server)) throw new HttpError(403, OVERSIGHT_SHARED);
+    const view = (await manifestAs(server, as)).views.find((v) => v.id === viewId && v.scope === 'user');
+    if (!view) throw new HttpError(404, 'no such view');
+    return view;
+  }
+
+  // Oversight reads; it never acts, so the page is not even told the actions.
+  const readOnly = (view: View) => ({ ...publicView(view), actions: [] });
 
   /** Runs a handler, turning manifest and server failures into clear statuses. */
   const guarded = (fn: (ctx: RouteContext<SignedIn>) => Promise<unknown>) =>
@@ -192,6 +230,45 @@ export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | '
         const message = result.text.slice(0, 2000);
         if (result.isError) return json(res, 422, { ok: false, message, error: serverMessage(message) || 'the server refused' });
         return json(res, 200, { ok: true, message });
+      }) },
+
+    { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/integrations$/, feature: FEATURE.OVERSIGHT,
+      handle: guarded(async ({ res, auth, params: [id] }) => {
+        const { user, as } = overseen(id);
+        audit('admin.view_user_integrations', { by: auth.userId, userId: user.id });
+        const h = hub();
+        const servers = await Promise.all(h.inventory([]).servers.map(async (s) => {
+          const row: OverseenServer = { name: s.name, perUser: h.isBound(s.name), title: s.name, icon: null, views: [], reason: null };
+          if (!row.perUser) return { ...row, reason: OVERSIGHT_SHARED };
+          if (!h.manifests.has(s.name) || s.status !== 'ok') return { ...row, reason: s.status === 'ok' ? 'It offers no management page.' : 'It is not connected.' };
+          try {
+            const m = await manifestAs(s.name, as);
+            const views = m.views.filter((v) => v.scope === 'user').map(readOnly);
+            return { ...row, title: m.title || s.name, icon: m.icon ?? null, views, reason: views.length ? null : 'It shows no per-person views.' };
+          } catch (err) {
+            log.warn(`${s.name}: management manifest unavailable as an overseen user (${serverMessage(err)})`);
+            return { ...row, reason: err instanceof ManifestError ? `invalid manifest: ${err.message}` : `the server did not answer: ${serverMessage(err)}` };
+          }
+        }));
+        return json(res, 200, { user: { id: user.id, name: user.name, email: user.email }, servers });
+      }) },
+
+    { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/integrations\/([^/]+)\/views\/([^/]+)$/, feature: FEATURE.OVERSIGHT,
+      handle: guarded(async ({ res, url, auth, params: [id, server, viewId] }) => {
+        const { user, as } = overseen(id);
+        const view = await overseenView(name(server), name(viewId), as);
+        audit('admin.view_user_integration', { by: auth.userId, userId: user.id, server: name(server), view: view.id });
+        const text = await hub().readResourceAs(name(server), viewUri(view, url.searchParams), as);
+        return json(res, 200, shapeViewData(view, parseJson(text)));
+      }) },
+
+    { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/integrations\/([^/]+)\/views\/([^/]+)\/items\/([^/]+)$/, feature: FEATURE.OVERSIGHT,
+      handle: guarded(async ({ res, auth, params: [id, server, viewId, item] }) => {
+        const { user, as } = overseen(id);
+        const view = await overseenView(name(server), name(viewId), as);
+        audit('admin.view_user_integration', { by: auth.userId, userId: user.id, server: name(server), view: view.id, item: name(item).slice(0, 200) });
+        const text = await hub().readResourceAs(name(server), detailUri(view, name(item)), as);
+        return json(res, 200, shapeDetail(view, parseJson(text)));
       }) }
   ];
 }
