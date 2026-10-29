@@ -117,7 +117,9 @@ Detail:
 
 Only scalar values reach the browser. Nested objects are dropped, and a row
 keeps only the keys your columns, `rowKey` and actions use. Rows are capped
-at 100, and strings at 20,000 characters.
+at 100, and strings at 20,000 characters, except a detail field in
+`multiline` format, which may hold up to 200,000 (one row's long text, such
+as everything a tool call returned).
 
 ## 3. Actions
 
@@ -167,6 +169,13 @@ The manifest can only *narrow* access. It never grants anything.
 | `user` | shown | shown, read as the caller on their own connection | listed, unavailable ("shared by everyone") |
 | `instance` | shown | admins only, on the shared connection | admins only, on the shared connection |
 
+- The Integrations panel only ever shows the caller's own data. An admin
+  reaches another person's `user` views only from the Admin panel
+  (**connectors** next to a user), on that person's own connection, so they
+  see exactly what that person sees. It is read-only: no action is offered or
+  accepted there. Every list, view and row opened is written to the audit log
+  (`admin.view_user_integration`). A shared server has no one person's data,
+  so it shows nothing there either. Your server needs nothing extra for this.
 - Everything goes through TinyWebUI's server. The browser never sees your
   URIs, tool names or credentials, only a server name, a view id and an
   action id.

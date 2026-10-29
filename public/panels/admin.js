@@ -7,6 +7,7 @@ import { $, el } from '../core/dom.js';
 import { renderMarkdown } from '../core/md.js';
 import { whoami } from '../core/access.js';
 import { api } from '../core/api.js';
+import { showView as showConnectorView } from './integrations.js';
 
 let me = null;
 let adminLoadRequest = 0;
@@ -111,7 +112,9 @@ function row(user) {
   }
   const view = Object.assign(el('button'), { type: 'button', textContent: 'chats' });
   view.onclick = () => openUser(user);
-  r.append(who, status, role, view, err);
+  const connectors = Object.assign(el('button'), { type: 'button', textContent: 'connectors' });
+  connectors.onclick = () => openUserConnectors(user);
+  r.append(who, status, role, view, connectors, err);
   return r;
 }
 
@@ -209,6 +212,47 @@ async function openChat(chatId, user) {
   // Monitoring a turn in flight: re-read while it runs, and only while this
   // chat is still the one on screen.
   if (out.running) pollTimer = setTimeout(() => { if (request === adminViewRequest && $('admin').classList.contains('open') && !$('adminView').hidden) openChat(chatId, user); }, 4000);
+}
+
+/* ---------- oversight: a user's data on per-person connectors, read-only ---------- */
+
+const enc = encodeURIComponent;
+
+async function openUserConnectors(user) {
+  const body = showView(`${user.name || user.email || user.id} · connectors`, 'loading…');
+  $('adminBack').onclick = () => loadAdmin();
+  const request = adminViewRequest;
+  let out;
+  try { out = await api.get(`/api/admin/users/${enc(user.id)}/integrations`); }
+  catch (e) { if (request === adminViewRequest) $('adminViewMeta').textContent = e.message; return; }
+  if (request !== adminViewRequest) return;
+  $('adminViewMeta').textContent = 'read-only, as this user sees it; every view you open is logged';
+  for (const s of out.servers) body.appendChild(connectorBlock(user, s));
+  if (!out.servers.length) body.appendChild(Object.assign(el('div', 'empty'), { textContent: 'no connectors' }));
+}
+
+function connectorBlock(user, s) {
+  const box = el('div', 'admin-connector');
+  box.appendChild(Object.assign(el('strong'), { textContent: s.title }));
+  if (s.reason) {
+    box.appendChild(Object.assign(el('div', 'usage'), { textContent: s.reason }));
+    return box;
+  }
+  // Nothing is read until a view is picked: each read is an audited look.
+  const tabs = el('div', 'int-tabs');
+  tabs.setAttribute('role', 'tablist');
+  const slot = el('div', 'int-view');
+  for (const view of s.views) {
+    const tab = Object.assign(el('button'), { type: 'button', textContent: view.title });
+    tab.setAttribute('role', 'tab');
+    tab.onclick = () => {
+      for (const t of tabs.children) { t.classList.toggle('active', t === tab); t.setAttribute('aria-selected', String(t === tab)); }
+      showConnectorView(slot, view, `/api/admin/users/${enc(user.id)}/integrations/${enc(s.name)}/views/${enc(view.id)}`);
+    };
+    tabs.appendChild(tab);
+  }
+  box.append(tabs, slot);
+  return box;
 }
 
 /* ---------- access policy: what the user role may do ---------- */

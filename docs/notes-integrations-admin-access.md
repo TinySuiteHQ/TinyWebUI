@@ -1,12 +1,13 @@
 # Note: admin access to connector data (in progress)
 
-Branch `integrations-admin-access`, paused 2026-10-29. Not pushed.
+Branch `integrations-admin-access`, 2026-10-29.
 
-## Goal
+## Rules (decided)
 
-In a multi-user deployment: regular users see only their own memories and
-searches from a connector, admins see everyone's. Strict isolation (admins
-included) stays opt-in.
+- A user can never reach another user's connector data.
+- An admin can, read-only, and only through the Admin panel (as with chats).
+  Every read is audited.
+- The Integrations panel is always the caller's own data, admins included.
 
 ## What we found
 
@@ -20,32 +21,50 @@ included) stays opt-in.
   user's data lands in one store and any user's chat can query all of it.
 - Per-user separation needs `identity` on the connector (remote `url` servers
   only): each user gets their own connection carrying their id.
-- On a connector with an identity, an admin today sees only the server's
-  `instance` views (whatever overview its management page offers) and their
-  own `user` views.
 
-## Done on this branch
+## Done
 
-Commit `8aaa229`: admins can open a shared (no-identity) connector's `user`
-views, with a note that the data is everyone's. Regular users still see the
-view listed but unavailable.
+- Commit `8aaa229` (admins open a shared connector's `user` views in the
+  Integrations panel, actions included) is reverted: it broke the last two rules.
+- Oversight of connectors, in `src/routes/integrations.ts`:
+  `GET /api/admin/users/<id>/integrations`, `.../<server>/views/<view>` and
+  `.../items/<item>`, behind `FEATURE.OVERSIGHT`. Read on the user's own
+  connection; views are sent without actions and there is no action route.
+  Audited as `admin.view_user_integrations` / `admin.view_user_integration`.
+  A shared connector is listed with no views. A user who is not approved has no
+  connection to read (409).
+- Admin panel: **connectors** next to **chats** on each user. Nothing is read
+  until a view is picked. `showView()` in `public/panels/integrations.js` now
+  carries its own state, so both panels draw views with it.
+- Tests in `test/integrations.test.js`; docs in `mcp-management.md` and
+  `multi-user-mcp.md`.
 
-- `src/routes/integrations.ts`: `access()`, `SHARED_HINT`, `SHARED_NOTE`
-- `public/panels/integrations.js`: shows the note above the view
-- `test/integrations.test.js`: alice is refused, the admin gets everyone's rows
+## Separation belongs to the products
 
-## Proposed next: "view as user"
+TinyContext (hosted tenancy) and TinySearch (`history` mode) separate users
+themselves; TinyWebUI only acts as their trusted proxy. Both trusted the user
+header on the caller's address alone, so anything else that could send from
+that network could name any user. Fixed in the products (uncommitted, both on
+`main`): `TINYCONTEXT_TRUSTED_PROXY_TOKEN` / `TINYSEARCH_TRUSTED_PROXY_TOKEN`,
+sent as `X-TinyContext-Proxy-Token` / `X-TinySearch-Proxy-Token` on every
+request, checked per message alongside the address, required when the user
+header is configured. Stdio is untouched. `multi-user-mcp.md` assumes the next
+patch releases, TinyContext 0.5.3 and TinySearch 0.6.8.
 
-For connectors with an identity:
+Also in TinySearch (uncommitted): `TINYSEARCH_ACTIVITY=content` keeps, per
+caller, the exact text each search, fetch and browser action returned to the
+model (sized by the tools' own limits, no second cap), shown when an entry in
+"My searches" is opened. `browser_storage_state_path` is now one file per
+caller on a server that tells callers apart; the shared page fetcher and
+callers without an identity load none. TinyWebUI shows `multiline` detail
+fields up to 200,000 characters (`LIMITS.detailText`) so that text arrives
+whole.
 
-- An admin picks a user in the Integrations panel; the view and its actions run
-  on that user's own connection (`readResourceAs` / `callToolAs` with that
-  user's id), showing exactly what that user would see.
-- Only admins may pick a user; the server ignores the choice from anyone else.
-- Every read and action is audited as "admin X as user Y".
-- Needs no changes on the MCP server's side.
+## Next
 
-## Open questions
-
-1. Build "view as user"?
-2. Keep or revert commit `8aaa229`?
+- Release both products, then confirm the versions in `multi-user-mcp.md`.
+- `npx tinywebui` in multiuser mode: launch TinyContext and TinySearch as local
+  HTTP servers in their own multi-user modes (loopback, generated proxy token
+  and tenant secret, `identity` on each) instead of stdio, so users are
+  separate by default. TinyWebUI's part is process handling only.
+- Not yet tried in a browser.

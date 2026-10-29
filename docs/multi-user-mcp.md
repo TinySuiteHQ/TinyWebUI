@@ -14,10 +14,12 @@ Give a remote server in `mcp.json` an `identity`:
   "mcpServers": {
     "tinycontext": {
       "url": "http://tinycontext:8000/mcp",
+      "headers": { "X-TinyContext-Proxy-Token": "${TINYCONTEXT_TRUSTED_PROXY_TOKEN}" },
       "identity": { "header": "X-TinyContext-User-Id", "claim": "id" }
     },
     "tinysearch": {
       "url": "http://tinysearch:8000/mcp",
+      "headers": { "X-TinySearch-Proxy-Token": "${TINYSEARCH_TRUSTED_PROXY_TOKEN}" },
       "identity": { "header": "X-TinySearch-User-Id" }
     }
   }
@@ -27,6 +29,9 @@ Give a remote server in `mcp.json` an `identity`:
 - `header` is the request header that carries the user. TinyWebUI sets it.
   A server's static `headers` may not set the same header, and connection
   headers (`Authorization`, `Cookie`, `Mcp-Session-Id`, ...) cannot be used.
+- The `*-Proxy-Token` header proves to the server that a request comes from
+  TinyWebUI (see [the trust boundary](#the-trust-boundary)). Keep the token in
+  `tinywebui.secrets.json` or the environment, never in `mcp.json` itself.
 - `claim` says which value of the user the header carries:
   - `id` (default) is TinyWebUI's own user id: stable, and never reused.
   - `externalId` is the id the SSO gateway sent (`trusted-header` mode).
@@ -67,21 +72,33 @@ is not connected at all, rather than connected without it.
 
 ## The trust boundary
 
-To the MCP server, TinyWebUI acts as an authenticating proxy: the server
-believes the header because only TinyWebUI can reach it. So the server must
-accept that header only from TinyWebUI's address. TinyContext does this in its
-hosted mode:
+To the MCP server, TinyWebUI acts as an authenticating proxy, so the server
+must believe the user header only when TinyWebUI sent it. An address is not
+enough for that: another container on the same network, or any local program
+when the server listens on loopback, could otherwise name any user. Both
+servers therefore need TinyWebUI's address *and* a shared proxy token on every
+request:
 
 ```yaml
 # TinyContext (compose.hosted.yaml)
 TINYCONTEXT_TENANCY: proxy-header
 TINYCONTEXT_TRUSTED_USER_HEADER: X-TinyContext-User-Id
 TINYCONTEXT_TRUSTED_PROXY_CIDRS: 172.20.0.0/16   # the network TinyWebUI reaches it from
+TINYCONTEXT_TRUSTED_PROXY_TOKEN: ${TINYCONTEXT_TRUSTED_PROXY_TOKEN}   # 32+ bytes
+
+# TinySearch
+TINYSEARCH_TRUSTED_USER_HEADER: X-TinySearch-User-Id
+TINYSEARCH_TRUSTED_PROXY_CIDRS: 172.20.0.0/16
+TINYSEARCH_TRUSTED_PROXY_TOKEN: ${TINYSEARCH_TRUSTED_PROXY_TOKEN}     # 32+ characters
 ```
 
-TinyContext checks the peer address and the header on every MCP message, and
-rejects any message without both. Do not publish the MCP servers' ports. Keep
-them on a private network that only TinyWebUI joins.
+TinyWebUI sends the tokens as static `headers` (see [the setting](#the-setting)).
+Both servers check the peer address, the token and the user header on every
+MCP message. TinyContext rejects a message without all three, and refuses to
+start in hosted mode without a token. TinySearch treats it as a caller with no
+identity: no history is kept for it and it reads no one's. Do not publish the
+MCP servers' ports. Keep them on a private network that only TinyWebUI joins.
+This needs TinyContext 0.5.3 and TinySearch 0.6.8 or later.
 
 ## An example deployment
 
@@ -99,8 +116,10 @@ browser ─▶ SSO gateway (Cloudflare Access, oauth2-proxy, Authelia, ...)
    Only the gateway may reach TinyWebUI, and only TinyWebUI may reach the MCP
    servers.
 2. Run TinyContext from its `compose.hosted.yaml` on the private network, with
-   `TINYCONTEXT_TRUSTED_PROXY_CIDRS` covering TinyWebUI's address there.
-3. Run TinySearch on the same network with `MCP_TRANSPORT=streamable-http`.
+   `TINYCONTEXT_TRUSTED_PROXY_CIDRS` covering TinyWebUI's address there and a
+   `TINYCONTEXT_TRUSTED_PROXY_TOKEN`.
+3. Run TinySearch on the same network with `MCP_TRANSPORT=streamable-http`
+   and the `TINYSEARCH_TRUSTED_*` settings above.
 4. Add both to `mcp.json` with `identity` as above, then run `tinywebui validate`.
 
 To check isolation, sign in as two users and ask each one to save a memory.
@@ -115,8 +134,12 @@ identity as their chats. An admin also sees the servers' instance-wide views
 (TinySearch's domains and health, TinyContext's store count) when the server
 is given a management token, e.g.
 `"headers": { "Authorization": "Bearer ${TINYSEARCH_MANAGEMENT_TOKEN}" }`.
-An admin never sees another person's memories or searches there. See
-[mcp-management.md](mcp-management.md).
+With `TINYSEARCH_ACTIVITY=content` instead of `history`, each entry in
+**My searches** also opens to exactly what the model was shown (TinySearch
+0.6.8 or later). An admin never sees another person's memories or searches there. To look
+into one person's, an admin opens **Admin**, then **connectors** next to that
+person. It is read-only, shows exactly what that person sees, and every view
+opened is audited. See [mcp-management.md](mcp-management.md).
 
 ## Try it on one machine
 
@@ -126,32 +149,38 @@ standing in for a gateway:
 ```bash
 # 1. TinyContext: one store per user, management views on
 export TINYCONTEXT_MANAGEMENT_TOKEN=$(openssl rand -hex 20)
+export TINYCONTEXT_TRUSTED_PROXY_TOKEN=$(openssl rand -hex 32)
 TINYCONTEXT_TENANCY=proxy-header TINYCONTEXT_TENANT_STORE_DIR=./tenants \
 TINYCONTEXT_TENANT_SECRET=$(openssl rand -hex 32) TINYCONTEXT_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
 TINYCONTEXT_MANAGEMENT=on MCP_TRANSPORT=streamable-http MCP_PORT=8101 \
-uvx --from 'tinysuite-context[server]>=0.5.2' tinycontext
+uvx --from 'tinysuite-context[server]>=0.5.3' tinycontext
 
 # 2. TinySearch: shared, each person's own history kept for 7 days
 export TINYSEARCH_MANAGEMENT_TOKEN=$(openssl rand -hex 20)
+export TINYSEARCH_TRUSTED_PROXY_TOKEN=$(openssl rand -hex 32)
 TINYSEARCH_MANAGEMENT=on TINYSEARCH_ACTIVITY=history \
 TINYSEARCH_TRUSTED_USER_HEADER=X-TinySearch-User-Id TINYSEARCH_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
 MCP_TRANSPORT=streamable-http MCP_PORT=8102 \
-uvx --from 'tinysuite-search[server]>=0.6.7' tinysearch
+uvx --from 'tinysuite-search[server]>=0.6.8' tinysearch
 
 # 3. TinyWebUI (authMode multiuser: the first sign-up is the admin, who invites the rest)
 npx tinywebui
 ```
 
-Give TinyWebUI the same two tokens in its environment, and this `mcp.json`:
+Give TinyWebUI the same four tokens in its environment, and this `mcp.json`.
+On loopback the proxy tokens are what keep other programs on the machine
+from posing as one of your users:
 
 ```json
 {
   "mcpServers": {
     "tinycontext": { "url": "http://127.0.0.1:8101/mcp",
-      "headers": { "Authorization": "Bearer ${TINYCONTEXT_MANAGEMENT_TOKEN}" },
+      "headers": { "Authorization": "Bearer ${TINYCONTEXT_MANAGEMENT_TOKEN}",
+                   "X-TinyContext-Proxy-Token": "${TINYCONTEXT_TRUSTED_PROXY_TOKEN}" },
       "identity": { "header": "X-TinyContext-User-Id" } },
     "tinysearch": { "url": "http://127.0.0.1:8102/mcp",
-      "headers": { "Authorization": "Bearer ${TINYSEARCH_MANAGEMENT_TOKEN}" },
+      "headers": { "Authorization": "Bearer ${TINYSEARCH_MANAGEMENT_TOKEN}",
+                   "X-TinySearch-Proxy-Token": "${TINYSEARCH_TRUSTED_PROXY_TOKEN}" },
       "identity": { "header": "X-TinySearch-User-Id" } }
   }
 }
