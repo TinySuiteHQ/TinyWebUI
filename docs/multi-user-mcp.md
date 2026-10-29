@@ -5,6 +5,56 @@ multi-user deployment. No server runs per user. TinyContext keeps each user's
 memories apart because TinyWebUI tells it, on every call, which signed-in user
 the call is for.
 
+## Out of the box
+
+With no `mcp.json`, `npx tinywebui` already does all of this. With sign-in on
+(`multiuser`, the default, or `trusted-header`), it starts TinySearch and
+TinyContext itself over HTTP on a free loopback port, in their own multi-user
+modes: TinyContext's hosted tenancy (one store per person) and TinySearch's
+trusted identity (one history per person). Each person's calls go out on a
+connection of their own, and every request carries a proxy token that
+TinyWebUI makes fresh on each start, so nothing else on the machine can pose
+as one of your users. TinyContext's tenant secret is generated once and kept
+in `tinywebui.secrets.json`.
+
+Their data, models and config live in TinyWebUI's own folder, under `mcp/`
+(`%LOCALAPPDATA%\TinyWebUI` on Windows, `~/Library/Application Support/TinyWebUI`
+on macOS, `~/.local/share/tinywebui` on Linux). TinySearch still records
+nothing about what was searched unless `TINYSEARCH_ACTIVITY` is turned on.
+With no sign-in (`local`) there is one person, and both run over stdio.
+
+This is the `serve` setting on a `command` server, which you can use for any
+server that follows the TinySuite convention (`MCP_TRANSPORT`, `MCP_HOST`,
+`MCP_PORT`):
+
+```json
+"tinycontext": {
+  "command": "uvx",
+  "args": ["--python", "3.12", "--from", "tinysuite-context[server]>=0.5.4", "tinycontext"],
+  "env": { "TINYCONTEXT_TENANCY": "proxy-header", "TINYCONTEXT_TRUSTED_PROXY_CIDRS": "127.0.0.1/32",
+           "TINYCONTEXT_TENANT_STORE_DIR": "${TINYWEBUI_DATA_DIR}/mcp/tinycontext/tenants" },
+  "serve": {
+    "proxyToken": { "env": "TINYCONTEXT_TRUSTED_PROXY_TOKEN", "header": "X-TinyContext-Proxy-Token" },
+    "managementToken": "TINYCONTEXT_MANAGEMENT_TOKEN",
+    "secrets": ["TINYCONTEXT_TENANT_SECRET"]
+  },
+  "identity": { "header": "X-TinyContext-User-Id" }
+}
+```
+
+- `proxyToken`: a new random token on every start, given to the server in
+  `env` and sent by TinyWebUI as `header` on every request.
+- `managementToken`: likewise new on every start, and sent only on the
+  server-wide connection that reads the admin's instance views, never on a
+  user's own.
+- `secrets`: env vars that must stay the same across restarts, generated
+  once and kept in the secrets file.
+- `${TINYWEBUI_DATA_DIR}` is TinyWebUI's own data folder.
+
+TinyWebUI stops the server when it stops or reloads MCP, and starts it again
+on the next call if it exits. An `mcp.json` you already have is kept as it
+is: delete it (or its TinySuite entries) to get these defaults.
+
 ## The setting
 
 Give a remote server in `mcp.json` an `identity`:
@@ -44,7 +94,8 @@ A call goes out only if the user exists, is approved, and has that claim.
 Otherwise it is refused and never sent as somebody else. In a no-login
 install (`authMode: 'local'`) everyone is the one person, `local`.
 
-`identity` works only on `url` servers. A `command` (stdio) server is a single
+`identity` works only on HTTP servers: `url` ones, or `command` ones that
+TinyWebUI starts over HTTP with `serve` (above). A stdio server is a single
 process, and every user of a multi-user deployment shares it, including
 whatever data it keeps.
 
@@ -98,7 +149,7 @@ MCP message. TinyContext rejects a message without all three, and refuses to
 start in hosted mode without a token. TinySearch treats it as a caller with no
 identity: no history is kept for it and it reads no one's. Do not publish the
 MCP servers' ports. Keep them on a private network that only TinyWebUI joins.
-This needs TinyContext 0.5.3 and TinySearch 0.6.8 or later.
+This needs TinyContext 0.5.4 and TinySearch 0.6.8 or later.
 
 ## An example deployment
 
@@ -143,8 +194,9 @@ opened is audited. See [mcp-management.md](mcp-management.md).
 
 ## Try it on one machine
 
-Three terminals, everything on loopback, with TinyWebUI's own accounts
-standing in for a gateway:
+`npx tinywebui` does this for you ([Out of the box](#out-of-the-box)). To
+run the servers yourself instead, use three terminals, everything on
+loopback, with TinyWebUI's own accounts standing in for a gateway:
 
 ```bash
 # 1. TinyContext: one store per user, management views on
@@ -153,7 +205,7 @@ export TINYCONTEXT_TRUSTED_PROXY_TOKEN=$(openssl rand -hex 32)
 TINYCONTEXT_TENANCY=proxy-header TINYCONTEXT_TENANT_STORE_DIR=./tenants \
 TINYCONTEXT_TENANT_SECRET=$(openssl rand -hex 32) TINYCONTEXT_TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
 TINYCONTEXT_MANAGEMENT=on MCP_TRANSPORT=streamable-http MCP_PORT=8101 \
-uvx --from 'tinysuite-context[server]>=0.5.3' tinycontext
+uvx --from 'tinysuite-context[server]>=0.5.4' tinycontext
 
 # 2. TinySearch: shared, each person's own history kept for 7 days
 export TINYSEARCH_MANAGEMENT_TOKEN=$(openssl rand -hex 20)

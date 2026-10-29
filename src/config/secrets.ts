@@ -22,11 +22,13 @@ export interface Secrets {
   googleClientSecret?: string;
   authPassword?: string;
   connectors?: Record<string, { apiKey?: string }>;
+  /** Served MCP servers' stored secrets, by server then env var (mcp_serve.ts). */
+  mcp?: Record<string, Record<string, string>>;
 }
 
 type FileConfig = Record<string, any>;
 
-const TOP = [...SECRET_KEYS] as (keyof Omit<Secrets, 'connectors'>)[];
+const TOP = [...SECRET_KEYS] as (keyof Omit<Secrets, 'connectors' | 'mcp'>)[];
 
 /** A value that is a secret itself, rather than empty or a pointer to one. */
 const literal = (v: unknown): v is string => typeof v === 'string' && v !== '' && !hasRef(v);

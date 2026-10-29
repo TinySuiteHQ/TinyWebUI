@@ -7,6 +7,7 @@ import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
 import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
+import { serveProblems, type ServeSpec } from '../mcp_serve.ts';
 
 export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
 export type ToolApproval = 'writes' | 'all' | 'off';
@@ -96,6 +97,8 @@ export interface McpServerSpec {
   transport?: 'http' | 'sse';
   /** Per-user connections with this header set to the user (see access/mcp_identity.ts). */
   identity?: IdentitySpec;
+  /** Start `command` as a local HTTP server instead of over stdio (see mcp_serve.ts). */
+  serve?: ServeSpec;
   disabled?: boolean;
   [key: string]: unknown;
 }
@@ -328,15 +331,70 @@ export const DEFAULTS: Omit<Config, 'access'> = {
 
 // What an install with no mcp.json starts with: the TinySuite servers, which
 // uv fetches and launches on first use. Any mcp.json, even an empty one,
-// replaces them, so removing them is one save in the MCP panel. Their
-// management pages are on: over stdio the one person here is the operator,
-// and TinySearch still records no activity unless that is turned on too.
-// The version floors are the first releases with management views and
-// per-message identity; raise them when either ships a security fix.
-export const DEFAULT_MCP_SERVERS: Readonly<McpServers> = Object.freeze({
-  tinysearch: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-search[server]>=0.6.7', 'tinysearch'], env: { TINYSEARCH_MANAGEMENT: 'on' } },
-  tinycontext: { command: 'uvx', args: ['--python', '3.12', '--from', 'tinysuite-context[server]>=0.5.2', 'tinycontext'], env: { TINYCONTEXT_MANAGEMENT: 'on' } },
-});
+// replaces them, so removing them is one save in the MCP panel. Their data,
+// models and config live under TinyWebUI's own folder, and their management
+// pages are on; TinySearch still records no activity unless that is turned
+// on too.
+//
+// With sign-in (multiuser, trusted-header) they are started over HTTP in
+// their own multi-user modes -- TinyContext's hosted tenancy, TinySearch's
+// trusted identity -- so each person has their own memories and history,
+// and TinyWebUI proves each call with a fresh proxy token (mcp_serve.ts).
+// With no sign-in (local) there is one person, and stdio is enough.
+//
+// The version floors are the first releases with the proxy token (and, for
+// TinyContext, own views open without the operator's management token,
+// which TinyWebUI sends on its server-wide connection only); raise them when
+// either ships a security fix.
+const TINYSEARCH = 'tinysuite-search[server]>=0.6.8';
+const TINYCONTEXT = 'tinysuite-context[server]>=0.5.4';
+
+export function defaultMcpServers(authMode: AuthMode): McpServers {
+  const data = (...parts: string[]) => ['${TINYWEBUI_DATA_DIR}', 'mcp', ...parts].join('/');
+  const uvx = (from: string, cmd: string) => ({ command: 'uvx', args: ['--python', '3.12', '--from', from, cmd] });
+  const searchEnv = {
+    TINYSEARCH_MANAGEMENT: 'on',
+    TINYSEARCH_CONFIG_PATH: data('tinysearch', 'tinysearch_config.json'),
+    TINYSEARCH_MODELS_DIR: data('tinysearch', 'models'),
+    TINYSEARCH_ACTIVITY_DB: data('tinysearch', 'activity.db')
+  };
+  const contextEnv = {
+    TINYCONTEXT_MANAGEMENT: 'on',
+    TINYCONTEXT_CONFIG_PATH: data('tinycontext', 'context_config.json'),
+    TINYCONTEXT_MODELS_DIR: data('tinycontext', 'models'),
+    TINYCONTEXT_MEMORY_DB_PATH: data('tinycontext', 'memories.db')
+  };
+  if (authMode === 'local') {
+    return {
+      tinysearch: { ...uvx(TINYSEARCH, 'tinysearch'), env: searchEnv },
+      tinycontext: { ...uvx(TINYCONTEXT, 'tinycontext'), env: contextEnv }
+    };
+  }
+  return {
+    tinysearch: {
+      ...uvx(TINYSEARCH, 'tinysearch'),
+      env: { ...searchEnv, TINYSEARCH_TRUSTED_USER_HEADER: 'X-TinySearch-User-Id', TINYSEARCH_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' },
+      serve: { proxyToken: { env: 'TINYSEARCH_TRUSTED_PROXY_TOKEN', header: 'X-TinySearch-Proxy-Token' }, managementToken: 'TINYSEARCH_MANAGEMENT_TOKEN' },
+      identity: { header: 'X-TinySearch-User-Id' }
+    },
+    tinycontext: {
+      ...uvx(TINYCONTEXT, 'tinycontext'),
+      env: {
+        ...contextEnv,
+        TINYCONTEXT_TENANCY: 'proxy-header',
+        TINYCONTEXT_TRUSTED_USER_HEADER: 'X-TinyContext-User-Id',
+        TINYCONTEXT_TENANT_STORE_DIR: data('tinycontext', 'tenants'),
+        TINYCONTEXT_TRUSTED_PROXY_CIDRS: '127.0.0.1/32'
+      },
+      serve: {
+        proxyToken: { env: 'TINYCONTEXT_TRUSTED_PROXY_TOKEN', header: 'X-TinyContext-Proxy-Token' },
+        managementToken: 'TINYCONTEXT_MANAGEMENT_TOKEN',
+        secrets: ['TINYCONTEXT_TENANT_SECRET']
+      },
+      identity: { header: 'X-TinyContext-User-Id' }
+    }
+  };
+}
 
 /**
  * One instance's view of its configuration.
@@ -474,7 +532,9 @@ export function createConfigSource(opts: ConfigOptions = {}) {
 
   const readMcp = () => {
     if (codeServers) return JSON.stringify({ mcpServers: codeServers }, null, 2) + '\n';
-    if (!existsSync(mcpFile)) return JSON.stringify({ mcpServers: DEFAULT_MCP_SERVERS }, null, 2) + '\n';
+    if (!existsSync(mcpFile)) {
+      return JSON.stringify({ mcpServers: defaultMcpServers(load({ persistSecret: false }).authMode) }, null, 2) + '\n';
+    }
     return readFileSync(mcpFile, 'utf8');
   };
 
@@ -503,6 +563,20 @@ export function createConfigSource(opts: ConfigOptions = {}) {
     mcpPath: () => (codeServers ? null : mcpFile),
     get mcpLocked() { return Boolean(codeServers) || isFrozen(); },
     isFrozen,
+    /** The folder TinyWebUI keeps its data in: `${TINYWEBUI_DATA_DIR}` in mcp.json. */
+    dataDir: (): string => dirname(file || CONFIG_FILE),
+    /**
+     * A served MCP server's stored secret (mcp_serve.ts), generated on first
+     * use and kept in the secrets file, so it survives restarts.
+     */
+    mcpSecret: (server: string, name: string): string => {
+      const secrets = readSecrets();
+      const stored = secrets.mcp?.[server]?.[name];
+      if (stored) return stored;
+      const value = randomBytes(32).toString('hex');
+      writeSecrets({ ...secrets, mcp: { ...(secrets.mcp || {}), [server]: { ...(secrets.mcp?.[server] || {}), [name]: value } } });
+      return value;
+    },
     dbPath: (cfg?: Pick<Config, 'dbPath'>): string => {
       const set = opts.dbPath || process.env.TINYWEBUI_DB || cfg?.dbPath;
       if (set === ':memory:') return set;
@@ -531,7 +605,7 @@ export function createConfigSource(opts: ConfigOptions = {}) {
           throw new Error(`"${name}" needs either "command" (stdio) or "url" (http)`);
         }
       }
-      const identity = serversIdentityProblems(servers);
+      const identity = [...serversIdentityProblems(servers), ...Object.entries(servers).flatMap(([n, s]) => serveProblems(n, s))];
       if (identity.length) throw new Error(identity.join('; '));
       // Headers and env here can hold tokens: owner-only, like the config.
       if (existsSync(mcpFile) && process.platform !== 'win32') chmodSync(mcpFile, 0o600);

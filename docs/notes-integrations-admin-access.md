@@ -49,7 +49,7 @@ that network could name any user. Fixed in the products (uncommitted, both on
 sent as `X-TinyContext-Proxy-Token` / `X-TinySearch-Proxy-Token` on every
 request, checked per message alongside the address, required when the user
 header is configured. Stdio is untouched. `multi-user-mcp.md` assumes the next
-patch releases, TinyContext 0.5.3 and TinySearch 0.6.8.
+patch releases, TinyContext 0.5.4 and TinySearch 0.6.8.
 
 Also in TinySearch (uncommitted): `TINYSEARCH_ACTIVITY=content` keeps, per
 caller, the exact text each search, fetch and browser action returned to the
@@ -60,11 +60,25 @@ callers without an identity load none. TinyWebUI shows `multiline` detail
 fields up to 200,000 characters (`LIMITS.detailText`) so that text arrives
 whole.
 
+## Separate by default (done, uncommitted)
+
+With no `mcp.json` and sign-in on, TinyWebUI starts TinyContext and TinySearch
+itself over HTTP (`serve`, `src/mcp_serve.ts`) in their own multi-user modes,
+with a fresh proxy token per start, the tenant secret in the secrets file, and
+`identity` on each. Their data, models and config are under
+`${TINYWEBUI_DATA_DIR}/mcp/`. With no sign-in (`local`) they stay on stdio,
+also with their data there. Floors: TinyContext 0.5.4, TinySearch 0.6.8;
+TinyWebUI 0.1.7. TinyContext 0.5.3 is on PyPI but was tagged before the fix
+that opens a user's own views without the operator's management token in
+hosted mode (`b375f56`), so 0.5.4 is needed for that: TinyWebUI sends the
+token on its server-wide connection only. TinySearch 0.6.8 (PyPI) has all of
+its changes. Checked end to end against both checkouts with the exact
+multi-user defaults.
+
 ## Next
 
-- Release both products, then confirm the versions in `multi-user-mcp.md`.
-- `npx tinywebui` in multiuser mode: launch TinyContext and TinySearch as local
-  HTTP servers in their own multi-user modes (loopback, generated proxy token
-  and tenant secret, `identity` on each) instead of stdio, so users are
-  separate by default. TinyWebUI's part is process handling only.
+- Release TinyContext 0.5.4 before TinyWebUI 0.1.7: its defaults require it.
+- An existing install keeps its own `mcp.json`; an install that relied on the
+  old defaults finds an empty memory store (the old one stays at TinyContext's
+  own default path) and downloads the models once more into the new folder.
 - Not yet tried in a browser.

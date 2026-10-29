@@ -11,6 +11,7 @@ import {
 } from './access/policy.ts';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
 import { serversIdentityProblems } from './access/mcp_identity.ts';
+import { serveProblems } from './mcp_serve.ts';
 import type { UserRole, UserStatus } from './store/users.ts';
 import type { ReadableStream } from 'node:stream/web';
 
@@ -96,7 +97,7 @@ function mcpProblems(servers: McpServers) {
   for (const [name, spec] of Object.entries(servers)) {
     if (!spec || (!spec.command && !spec.url)) problems.push(`mcp server "${name}" needs either "command" or "url"`);
   }
-  return [...problems, ...serversIdentityProblems(servers)];
+  return [...problems, ...serversIdentityProblems(servers), ...Object.entries(servers).flatMap(([n, s]) => (s ? serveProblems(n, s) : []))];
 }
 
 /** Server specs with credentials blanked: env values and header values. */
@@ -397,7 +398,7 @@ const commands: Record<string, Command> = {
       for (const [name, spec] of Object.entries(servers)) {
         if (spec?.disabled) { checks.push({ check: `mcp ${name}`, ok: true, detail: 'disabled' }); continue; }
         await check(`mcp ${name}`, async () => {
-          const hub = await new McpHub({ [name]: spec }).connect();
+          const hub = await new McpHub({ [name]: spec }, { dataDir: source.dataDir(), secret: source.mcpSecret }).connect();
           try {
             if (hub.errors.length) throw new Error(hub.errors.join('; '));
             return `${hub.tools.length} tool(s)`;

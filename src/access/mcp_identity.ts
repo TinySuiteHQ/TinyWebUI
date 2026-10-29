@@ -14,7 +14,8 @@
  * header for two concurrent turns to race on. The server still has to check
  * that the header came from TinyWebUI (TinyContext's trusted-proxy CIDRs).
  *
- * Only remote (url) servers can take an identity: a stdio server is one
+ * Only HTTP servers can take an identity -- remote (url), or local ones
+ * TinyWebUI starts over HTTP (serve, mcp_serve.ts): a stdio server is one
  * process, and in a multi-user deployment everyone shares it.
  */
 
@@ -54,7 +55,9 @@ export function identityProblems(name: string, spec: McpServerSpec): string[] {
   const { header, claim, ...rest } = identity as Record<string, unknown>;
   const problems: string[] = [];
   for (const key of Object.keys(rest)) problems.push(`${where}.${key} is not a known setting`);
-  if (!spec.url) problems.push(`${where} needs a remote ("url") server: a local server is one process every user shares`);
+  if (!spec.url && !spec.serve) {
+    problems.push(`${where} needs an HTTP server ("url", or "serve" to start one locally): a stdio server is one process every user shares`);
+  }
   if (typeof header !== 'string' || !HEADER.test(header)) {
     problems.push(`${where}.header must be an HTTP header name, e.g. "X-TinyContext-User-Id"`);
   } else {
