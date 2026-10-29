@@ -9,8 +9,9 @@
  * - `user` views show the caller's own data, so in a multi-user deployment
  *   they need the server to be bound to an identity (access/mcp_identity.ts):
  *   they are read on the caller's own connection, as the caller. On a server
- *   everyone shares, they are listed but unavailable -- including to admins,
- *   since there is no "own" data on a shared store.
+ *   everyone shares there is no "own" data, only everyone's together: admins
+ *   may open it (as they oversee the users anyway), anyone else sees the view
+ *   listed but unavailable. Strict isolation, admins included, is an identity.
  * - Actions run the server's own tools with the same connection as the view,
  *   and a destructive one needs an explicit confirmation in the request.
  *
@@ -38,8 +39,9 @@ type As = { shared: true } | { userId: string | null };
 // differ by caller, and change when a server restarts with other settings.
 const MANIFEST_TTL_MS = 30_000;
 
-const SHARED_HINT = 'This server is shared by everyone here, so it keeps no data of your own to show. '
+const SHARED_HINT = 'This server is shared by everyone here, so it keeps everyone\'s data together: only an admin can open it. '
   + 'An admin can give it an identity to make it per-person.';
+const SHARED_NOTE = 'This server is shared by everyone here: this is everyone\'s data, not only yours.';
 
 /** A short, safe error text from a server: first line, bounded. */
 const serverMessage = (err: unknown) => String((err as Error)?.message || err).split('\n')[0].slice(0, 300);
@@ -65,15 +67,16 @@ export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | '
   }
 
   /** Whether `auth` may open a view of this scope here, and if not, why. */
-  function access(server: string, scope: View['scope'], auth: SignedIn): { as: As; reason?: undefined } | { as?: undefined; reason: string } {
+  function access(server: string, scope: View['scope'], auth: SignedIn): { as: As; reason?: undefined; note?: string } | { as?: undefined; reason: string } {
     const shared = !hub().isBound(server);
     if (scope === 'instance') {
       if (multiUser() && !auth.isAdmin) return { reason: 'admins only' };
       return { as: asFor(auth, 'shared') };
     }
     if (shared) {
-      if (multiUser()) return { reason: SHARED_HINT };
-      return { as: asFor(auth, 'shared') };
+      if (!multiUser()) return { as: asFor(auth, 'shared') };
+      if (!auth.isAdmin) return { reason: SHARED_HINT };
+      return { as: asFor(auth, 'shared'), note: SHARED_NOTE };
     }
     return { as: asFor(auth, 'user') };
   }
@@ -85,7 +88,7 @@ export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | '
   async function viewsFor(server: string, auth: SignedIn) {
     const wantInstance = !multiUser() || auth.isAdmin;
     const bound = hub().isBound(server);
-    const out: { view: View; as?: As; reason?: string }[] = [];
+    const out: { view: View; as?: As; reason?: string; note?: string }[] = [];
     let meta: Manifest | null = null;
     if (wantInstance || !bound) {
       const m = await manifestAs(server, { shared: true });
@@ -150,7 +153,7 @@ export function integrationsRoutes({ hub, multiUser }: Pick<RouteDeps, 'hub' | '
           const { meta, views } = await viewsFor(s.name, auth);
           row.manifest = {
             title: meta.title, description: meta.description, icon: meta.icon, version: meta.version,
-            views: views.map(({ view, as, reason }) => ({ ...publicView(view), available: Boolean(as), reason: reason ?? null }))
+            views: views.map(({ view, as, reason, note }) => ({ ...publicView(view), available: Boolean(as), reason: reason ?? null, note: note ?? null }))
           };
         } catch (err) {
           log.warn(`${s.name}: management manifest unavailable (${serverMessage(err)})`);

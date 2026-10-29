@@ -141,7 +141,7 @@ async function loadView(s, view, slot) {
   try {
     const data = await api.get(`${viewUrl(s.name, view)}?${params}`);
     if (seq !== loadSeq) return;
-    slot.replaceChildren(...(view.kind === 'stats' ? renderStats(data) : renderTable(s, view, data, slot)));
+    slot.replaceChildren(...[notice(view.note), ...(view.kind === 'stats' ? renderStats(data) : renderTable(s, view, data, slot))].filter(Boolean));
   } catch (err) {
     if (seq === loadSeq) slot.replaceChildren(errorBox(err));
   }
