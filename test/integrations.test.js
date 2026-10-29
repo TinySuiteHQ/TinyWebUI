@@ -212,23 +212,19 @@ test('each person sees and changes only their own data on a per-user server', as
   assert.equal(mem.stores.has('urn:tinywebui:discovery'), false, 'no user data was ever kept under the discovery identity');
 });
 
-test('a server everyone shares is open to admins only in a multi-user deployment', async (t) => {
+test('a server everyone shares has no per-person view in a multi-user deployment', async (t) => {
   const mem = memoryServer();
   mem.seed('shared', 'everyone\'s memory');
   const fixture = await startMcpHttpServer({ header: 'x-user', setup: mem.setup });
   t.after(() => fixture.close());
   const { as } = await deployment(t, { servers: { mem: { url: fixture.url } } });
-  const alice = as({ id: 'alice' });
-  const aliceView = (await alice('/api/integrations')).data.servers[0].manifest.views.find((v) => v.id === 'memories');
-  assert.equal(aliceView.available, false);
-  assert.match(aliceView.reason, /shared by everyone/);
-  assert.equal((await alice('/api/integrations/mem/views/memories')).status, 403);
-
-  const admin = as({ id: 'root', role: 'admin' });
-  const adminView = (await admin('/api/integrations')).data.servers[0].manifest.views.find((v) => v.id === 'memories');
-  assert.equal(adminView.available, true);
-  assert.match(adminView.note, /everyone's data/);
-  assert.deepEqual((await admin('/api/integrations/mem/views/memories')).data.rows.map((r) => r.content), ['everyone\'s memory']);
+  for (const who of [{ id: 'alice' }, { id: 'root', role: 'admin' }]) {
+    const list = await as(who)('/api/integrations');
+    const view = list.data.servers[0].manifest.views.find((v) => v.id === 'memories');
+    assert.equal(view.available, false);
+    assert.match(view.reason, /shared by everyone/);
+    assert.equal((await as(who)('/api/integrations/mem/views/memories')).status, 403);
+  }
 });
 
 test('a no-login install is one person who sees every view', async (t) => {
