@@ -8,10 +8,11 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 /**
  * `header` is the identity header to record (lower case). `setup(server)` may
- * register more tools or resources on each session's McpServer.
+ * register more tools or resources on each session's McpServer. `port` brings
+ * a server back where a closed one was, as a restarted server would.
  * Returns { url, calls, requests, sessions, dropSession(id), close() }.
  */
-export async function startMcpHttpServer({ header = 'x-user', setup } = {}) {
+export async function startMcpHttpServer({ header = 'x-user', setup, port: wanted = 0 } = {}) {
   const calls = [];     // { tool, identity, sessionId }
   const requests = [];  // { method, identity, sessionId }
   const sessions = new Map(); // id -> transport
@@ -50,7 +51,7 @@ export async function startMcpHttpServer({ header = 'x-user', setup } = {}) {
     }
     await transport.handleRequest(req, res, parsed);
   });
-  const port = await new Promise((r) => http.listen(0, '127.0.0.1', () => r(http.address().port)));
+  const port = await new Promise((r) => http.listen(wanted, '127.0.0.1', () => r(http.address().port)));
 
   return {
     url: `http://127.0.0.1:${port}/mcp`,

@@ -483,6 +483,11 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
   padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta);
   font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
 }
+.tool-group-retry {
+  display: flex; align-items: center; gap: .5rem; padding: 0 .625rem .5rem 2rem;
+  color: var(--muted); font-size: var(--fs-meta);
+}
+.tool-group-retry button { margin-left: auto; }
 /* The fix for a missing launcher, set apart from the error it follows. */
 .install-link { color: var(--accent); font-family: var(--sans); font-weight: 550; white-space: nowrap; }
 .install-link:hover { text-decoration: underline; }

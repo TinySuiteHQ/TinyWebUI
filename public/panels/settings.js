@@ -61,6 +61,27 @@ async function toggleTool(name, disabled) {
   try { renderToolPanel(await api.post('/api/tools/toggle', { name, disabled })); } catch (err) { addError(err.message); }
 }
 
+async function retryServer(name) {
+  try { renderToolPanel(await api.post(`/api/mcp/servers/${encodeURIComponent(name)}/retry`, {})); } catch (err) { addError(err.message); loadTools(); }
+}
+
+/** How often a server that failed to connect has been tried, when it is next, and a button to try it now. */
+function retryRow(s) {
+  const row = el('div', 'tool-group-retry');
+  const note = el('span');
+  const r = s.retry;
+  if (r) {
+    const tried = `${r.attempts} failed attempt${r.attempts === 1 ? '' : 's'}`;
+    note.textContent = r.nextAt ? `${tried} · tries again at ${new Date(r.nextAt).toLocaleTimeString()}` : tried;
+  }
+  const btn = el('button');
+  btn.type = 'button';
+  btn.textContent = 'Retry now';
+  btn.onclick = () => { btn.disabled = true; btn.textContent = 'Retrying…'; retryServer(s.name); };
+  row.append(note, btn);
+  return row;
+}
+
 async function toggleServer(name, disabled) {
   try { renderToolPanel(await api.post(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, { disabled })); } catch (err) { return addError(err.message); }
   loadMcp(); // the raw editor's disabled: true/false has to catch up too
@@ -192,6 +213,7 @@ function serverGroup(s, mode) {
     if (s.install) err.append(' ', installLink(s.install));
     grp.appendChild(err);
   }
+  if (s.status === 'error') grp.appendChild(retryRow(s));
   if (s.status === 'ok' && s.instructions) {
     const note = el('details', 'tool-group-instructions');
     const sum = el('summary');
