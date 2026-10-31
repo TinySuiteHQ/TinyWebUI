@@ -1550,6 +1550,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .int-card { display: flex; flex-direction: column; gap: .6rem; align-items: flex-start; }
 .int-head { display: flex; gap: .75rem; align-items: center; width: 100%; }
 .int-icon { font-size: 1.4rem; width: 2rem; text-align: center; color: var(--accent); }
+.int-logo { height: 2rem; flex: none; }
 .int-name { display: flex; flex-direction: column; min-width: 0; }
 .int-name h3 { margin: 0; font-size: var(--fs-ui); }
 .int-chips { margin-left: auto; display: flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; }
