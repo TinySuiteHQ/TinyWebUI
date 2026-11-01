@@ -23,7 +23,7 @@ Part of [TinySuite](https://tinysuite.dev). Comes with [TinySearch](https://gith
 
 <img src="docs/demo.webp" width="760" alt="TinyWebUI in 30 seconds: npx tinywebui starts a fresh instance, the admin is created and a model endpoint connected, a question is answered with live web search, and a preference is saved to memory">
 
-<sub>A real first run with DeepSeek V4.1 Flash through OpenRouter, sped up. <a href="docs/demo.mp4">Watch it as a video</a>, or <a href="docs/demo_full.mp4">the full 80-second walkthrough</a>.</sub>
+<sub>A real first run with DeepSeek V4.1 Flash through OpenRouter, sped up. <a href="https://tinysuite.dev/products/tinywebui/">Watch the full 80-second walkthrough</a>.</sub>
 
 **[Read the documentation → tinysuite.dev/docs/tinywebui](https://tinysuite.dev/docs/tinywebui/)**
 
