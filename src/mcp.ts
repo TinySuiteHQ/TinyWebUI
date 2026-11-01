@@ -96,7 +96,7 @@ export function missingCommand(spec: McpServerSpec): { message: string; install:
   }
   const install = INSTALL[cmd] || null;
   if (install) {
-    return { message: `"${cmd}" was not found. This server runs through ${install.name}: install it from ${install.url}, then restart TinyWebUI.`, install };
+    return { message: `"${cmd}" was not found. This server runs through ${install.name}: install it from ${install.url}, then retry this server in the tools panel.`, install };
   }
   return { message: `"${cmd}" was not found on PATH`, install: null };
 }
@@ -158,6 +158,32 @@ export const MANAGE_TIMEOUT_MS = 10_000;
 
 const quietClose = (client: Promise<Client>) => { client.then((c) => c.close()).catch(() => { /* already gone */ }); };
 
+// A remote server that could not be reached is tried again after this long,
+// doubling each time up to the cap: it is usually still starting.
+export const RETRY_FIRST_MS = 2_000;
+export const RETRY_MAX_MS = 60_000;
+
+/** Retry bookkeeping for one server that is not connected. */
+interface Retry { attempts: number; nextAt: number | null; timer: NodeJS.Timeout | null }
+
+/**
+ * Only a server at a URL is retried on its own: it is someone else's process
+ * and may simply not be up yet. A stdio or served server is one this hub
+ * starts, and one that failed to start fails the same way next time.
+ */
+const retriesItself = (spec: McpServerSpec) => Boolean(spec.url) && !spec.command && !spec.serve;
+
+/**
+ * The error with its underlying reason. A refused or unresolvable connection
+ * reaches us as fetch's bare "fetch failed", which names neither the address
+ * nor what went wrong; that is in `cause`.
+ */
+function describe(err: Error): string {
+  const cause = err.cause as { message?: string; code?: string; errors?: { message?: string }[] } | undefined;
+  const why = cause?.message || cause?.errors?.map((e) => e.message).filter(Boolean).join('; ') || cause?.code;
+  return why && !err.message.includes(why) ? `${err.message} (${why})` : err.message;
+}
+
 /**
  * Connects every configured MCP server and exposes their tools as one flat,
  * stably ordered list of OpenAI-style function tools.
@@ -191,6 +217,9 @@ export class McpHub {
   dataDir: string | null;
   secret: (server: string, name: string) => string;
   served: Map<string, Promise<Served>>;
+  retries: Map<string, Retry>;
+  attaching: Map<string, Promise<boolean>>;
+  retryDelay: { first: number; max: number };
 
   /**
    * `principal(userId, claim)` is what a bound server is told for one user
@@ -243,6 +272,11 @@ export class McpHub {
     // Servers whose connection closed after startup, and reconnects under way.
     this.dead = new Set();
     this.reconnecting = new Map();
+    // Servers that never connected: how often they failed and when they are
+    // tried next; and connects under way, so a retry never runs twice at once.
+    this.retries = new Map();
+    this.attaching = new Map();
+    this.retryDelay = { first: RETRY_FIRST_MS, max: RETRY_MAX_MS };
   }
 
   /**
@@ -268,44 +302,124 @@ export class McpHub {
       if (spec.disabled) continue;
       // Fail closed: a server meant to see each user separately is not
       // connected at all rather than connected as one shared caller.
-      const problems = [...identityProblems(name, spec), ...serveProblems(name, spec)];
+      const problems = this.problems(name, spec);
       if (problems.length) {
         this.errors.push(`${name}: ${problems.join('; ')}`);
         log.error(`${name} not connected: ${problems.join('; ')}`);
         continue;
       }
-      try {
-        const client = await this.open(name, spec);
-        await this.discoverManagement(name, client);
-        const { tools } = await client.listTools();
-        for (const t of tools.sort((a, b) => a.name.localeCompare(b.name))) {
-          const flat = uniqueName(`${name}${SEP}${t.name}`, this.routes, RESERVED);
-          this.routes.set(flat, { server: name, tool: t.name });
-          // Both hints, not just readOnly: a read-only tool can still return
-          // something new each time (a clock, a browser snapshot, a queue).
-          if (t.annotations?.readOnlyHint) this.readOnly.set(flat, true);
-          if (t.annotations?.readOnlyHint && t.annotations?.idempotentHint) this.idempotent.add(flat);
-          this.tools.push({
-            type: 'function',
-            function: {
-              name: flat,
-              description: t.description || '',
-              parameters: (t.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} }
-            }
-          });
-        }
-      } catch (err) {
-        this.errors.push(`${name}: ${err.message}`);
-        // Something not installed yet is a setup step, not a crash.
-        if (err instanceof MissingCommand) {
-          if (err.install) this.install.set(name, err.install);
-          log.warn(`${name} not started: ${err.message}`);
-        } else {
-          log.error(`${name} failed to connect: ${err.message}`);
-        }
-      }
+      await this.retry(name);
     }
     return this;
+  }
+
+  /** Why a server's configuration keeps it from being connected at all; retrying cannot help. */
+  problems(name: string, spec: McpServerSpec): string[] {
+    return [...identityProblems(name, spec), ...serveProblems(name, spec)];
+  }
+
+  /**
+   * Connects a server that is not connected, now: at startup, from its retry
+   * timer, or from the panel's retry button. Resolves true once it is up. A
+   * connect already under way is shared rather than started twice.
+   */
+  retry(name: string): Promise<boolean> {
+    const spec = this.servers[name];
+    if (!spec || spec.disabled || this.closing || this.problems(name, spec).length) return Promise.resolve(false);
+    if (this.clients.has(name)) return Promise.resolve(true);
+    const pending = this.attaching.get(name);
+    if (pending) return pending;
+    const state = this.retries.get(name);
+    if (state?.timer) clearTimeout(state.timer);
+    if (state) Object.assign(state, { timer: null, nextAt: null });
+    const run = (async () => {
+      try {
+        await this.attach(name, spec);
+      } catch (err) {
+        this.failed(name, spec, err);
+        return false;
+      }
+      if (this.closing) {
+        // close() ran while this connected and could not see it.
+        quietClose(Promise.resolve(this.clients.get(name)!));
+        return false;
+      }
+      this.errors = this.errors.filter((e) => !e.startsWith(`${name}: `));
+      this.install.delete(name);
+      if (state) log.info(`${name} connected after ${state.attempts} failed attempt${state.attempts === 1 ? '' : 's'}`);
+      this.retries.delete(name);
+      return true;
+    })().finally(() => this.attaching.delete(name));
+    this.attaching.set(name, run);
+    return run;
+  }
+
+  /**
+   * Connects one server and adds its tools. One that comes up late has its
+   * tools sorted in among the others (servers in name order, then the
+   * built-ins), so the tool block reads as if it had been up from the start.
+   */
+  async attach(name: string, spec: McpServerSpec): Promise<void> {
+    const client = await this.open(name, spec);
+    let tools;
+    try {
+      await this.discoverManagement(name, client);
+      ({ tools } = await client.listTools());
+    } catch (err) {
+      // Connected without its tools is not connected: drop it, so a retry starts clean.
+      this.clients.delete(name);
+      quietClose(Promise.resolve(client));
+      throw err;
+    }
+    for (const t of tools.sort((a, b) => a.name.localeCompare(b.name))) {
+      const flat = uniqueName(`${name}${SEP}${t.name}`, this.routes, RESERVED);
+      this.routes.set(flat, { server: name, tool: t.name });
+      // Both hints, not just readOnly: a read-only tool can still return
+      // something new each time (a clock, a browser snapshot, a queue).
+      if (t.annotations?.readOnlyHint) this.readOnly.set(flat, true);
+      if (t.annotations?.readOnlyHint && t.annotations?.idempotentHint) this.idempotent.add(flat);
+      this.tools.push({
+        type: 'function',
+        function: {
+          name: flat,
+          description: t.description || '',
+          parameters: (t.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} }
+        }
+      });
+    }
+    const order = Object.keys(this.servers).sort();
+    const rank = (t: ToolDef) => {
+      const route = this.routes.get(t.function.name);
+      return route ? order.indexOf(route.server) : order.length;
+    };
+    // Stable, so each server's tools and the built-ins keep their own order.
+    this.tools.sort((a, b) => rank(a) - rank(b));
+  }
+
+  /** Records why a server is not connected and, for a remote one, when it is tried again. */
+  failed(name: string, spec: McpServerSpec, err: Error): void {
+    const why = describe(err);
+    this.errors = [...this.errors.filter((e) => !e.startsWith(`${name}: `)), `${name}: ${why}`];
+    // Something not installed yet is a setup step, not a crash.
+    if (err instanceof MissingCommand) {
+      if (err.install) this.install.set(name, err.install);
+      log.warn(`${name} not started: ${err.message}`);
+      return;
+    }
+    const state = this.retries.get(name) ?? { attempts: 0, nextAt: null, timer: null };
+    state.attempts++;
+    this.retries.set(name, state);
+    if (!retriesItself(spec) || this.closing) {
+      log.error(`${name} failed to connect: ${why}`);
+      return;
+    }
+    // Logged once per outage, not on every attempt.
+    if (state.attempts === 1) log.error(`${name} failed to connect: ${why}; retrying in the background`);
+    else log.debug(`${name} still unreachable (attempt ${state.attempts}): ${why}`);
+    const delay = Math.min(this.retryDelay.first * 2 ** (state.attempts - 1), this.retryDelay.max);
+    state.nextAt = Date.now() + delay;
+    state.timer = setTimeout(() => { state.timer = null; this.retry(name).catch(() => { /* recorded by failed() */ }); }, delay);
+    state.timer.unref?.();
   }
 
   /**
@@ -598,7 +712,10 @@ export class McpHub {
       const install = status === 'error' ? this.install.get(name) || null : null;
       // Which header carries the user, never a value: per-user servers say so in the panel.
       const identity = spec.identity ? { header: spec.identity.header, claim: spec.identity.claim || 'id' } : null;
-      return { name, status, error, install, instructions, identity, tools: [] as ReturnType<typeof toRow>[] };
+      // How often it has failed, and when it is tried again on its own (null: only by hand).
+      const tried = status === 'error' ? this.retries.get(name) : undefined;
+      const retry = tried ? { attempts: tried.attempts, nextAt: tried.nextAt } : null;
+      return { name, status, error, install, instructions, identity, retry, tools: [] as ReturnType<typeof toRow>[] };
     });
     const byName = new Map(servers.map((row) => [row.name, row]));
     for (const t of this.tools) {
@@ -753,6 +870,7 @@ export class McpHub {
     this.closing = true;
     if (this.sweeper) clearInterval(this.sweeper);
     this.sweeper = null;
+    for (const state of this.retries.values()) if (state.timer) clearTimeout(state.timer);
     for (const client of this.clients.values()) {
       try { await client.close(); } catch { /* shutting down anyway */ }
     }

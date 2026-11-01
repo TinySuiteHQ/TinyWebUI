@@ -102,6 +102,16 @@ whatever data it keeps.
 `tinywebui validate` checks these rules. A server with an invalid `identity`
 is not connected at all, rather than connected without it.
 
+## When a server is not up yet
+
+A shared server is often still starting when TinyWebUI does, after a host
+reboot for instance. TinyWebUI keeps trying a `url` server it could not reach,
+after 2 seconds and then twice as long each time, up to once a minute, and
+adds its tools as soon as it answers. Restarting TinyWebUI is not needed. The tools
+panel shows each such server's error, how many attempts have failed and when
+the next one is, and has a **Retry now** button. A stdio or `serve` server
+is one TinyWebUI starts itself, so it is retried only from that button.
+
 ## What happens per call
 
 - **Who the user is.** The identity comes from the chat the turn runs in: its

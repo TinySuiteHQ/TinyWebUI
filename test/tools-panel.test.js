@@ -109,6 +109,15 @@ test('toggling an unknown server is a 404, and an unnamed tool toggle is a 400',
   assert.equal((await post('/api/tools/toggle', { disabled: true })).status, 400);
 });
 
+test('retrying answers with the inventory, leaves a connected server as it was, and 404s an unknown one', async () => {
+  const retry = await post('/api/mcp/servers/toy/retry', {});
+  assert.equal(retry.status, 200);
+  const toy = retry.body.servers.find((s) => s.name === 'toy');
+  assert.equal(toy.status, 'ok');
+  assert.equal(toy.retry, null);
+  assert.equal((await post('/api/mcp/servers/nope/retry', {})).status, 404);
+});
+
 test.after(async () => {
   // srv.close() alone only stops accepting new connections -- the live hub
   // still has a real 'toy' child process attached. shutdown() is the same

@@ -11,7 +11,7 @@ import type { Route, RouteDeps } from './types.ts';
 
 const log = logger('mcp');
 
-export function mcpRoutes({ auditMcp, config, hub, source, swapHub }: Pick<RouteDeps, 'auditMcp' | 'config' | 'hub' | 'source' | 'swapHub'>): Route[] {
+export function mcpRoutes({ auditMcp, config, hub, source, swapHub, toolsView }: Pick<RouteDeps, 'auditMcp' | 'config' | 'hub' | 'source' | 'swapHub' | 'toolsView'>): Route[] {
 
   /** Writes mcp.json (audited), then reconnects. A locked or invalid file is the caller's error. */
   const saveAndReconnect = async (res: ServerResponse, text: string, auth: Auth) => {
@@ -58,6 +58,16 @@ export function mcpRoutes({ auditMcp, config, hub, source, swapHub }: Pick<Route
       servers[name] = { ...servers[name], disabled: Boolean(disabled) };
       if (!await saveAndReconnect(res, JSON.stringify({ mcpServers: servers }, null, 2), auth)) return undefined;
       return json(res, 200, { ...hub().inventory(config().disabledTools), disabledTools: config().disabledTools || [] });
+    } },
+
+    // Tries a server that failed to connect again, now, rather than at its
+    // next automatic attempt. It changes no configuration, so it is the tools
+    // panel's to offer, and it works where mcp.json is set in code.
+    { method: 'POST', path: /^\/api\/mcp\/servers\/([^/]+)\/retry$/, feature: FEATURE.TOOLS, handle: async ({ res, params: [rawName] }) => {
+      const name = decodeURIComponent(rawName);
+      if (!hub().servers[name]) return json(res, 404, { error: `no such server "${name}"` });
+      await hub().retry(name);
+      return json(res, 200, toolsView());
     } }
   ];
 }

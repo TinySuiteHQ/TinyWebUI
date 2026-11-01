@@ -16,6 +16,9 @@ const back = $('integrationsBack');
 const title = $('integrationsTitle');
 
 const ICON = { memory: '◎', search: '⌕', database: '▤', globe: '◍', tool: '⚒', plug: '⏚' };
+// TinySuite's own servers get their mark, shipped with the page; the id only
+// picks one of these files, so a server still supplies no markup or URL.
+const LOGO = { tinycontext: 'icons/tinycontext.svg', tinysearch: 'icons/tinysearch.svg' };
 const enc = encodeURIComponent;
 
 let state = { servers: [], multiUser: false };
@@ -42,11 +45,17 @@ function errorBox(err) { return text('p', 'int-error', err.message || String(err
 
 /* ---------- the list ---------- */
 
+function serverIcon(manifest) {
+  const logo = Object.hasOwn(LOGO, manifest?.id) ? LOGO[manifest.id] : null;
+  if (!logo) return text('span', 'int-icon', ICON[manifest?.icon] || ICON.plug);
+  return Object.assign(el('img', 'int-icon int-logo'), { src: logo, alt: '' });
+}
+
 function serverCard(s) {
   const card = el('section', 'statistics-block int-card');
   const head = el('div', 'int-head');
   const manifest = s.manifest;
-  head.append(text('span', 'int-icon', ICON[manifest?.icon] || ICON.plug));
+  head.append(serverIcon(manifest));
   const name = el('div', 'int-name');
   name.append(text('h3', '', manifest?.title || s.name));
   const meta = [s.name !== manifest?.title ? s.name : null, manifest?.version ? `v${manifest.version}` : null, `${s.tools} tool${s.tools === 1 ? '' : 's'}`]

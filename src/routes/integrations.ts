@@ -187,7 +187,7 @@ export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'h
         try {
           const { meta, views } = await viewsFor(s.name, auth);
           row.manifest = {
-            title: meta.title, description: meta.description, icon: meta.icon, version: meta.version,
+            id: meta.id, title: meta.title, description: meta.description, icon: meta.icon, version: meta.version,
             views: views.map(({ view, as, reason }) => ({ ...publicView(view), available: Boolean(as), reason: reason ?? null }))
           };
         } catch (err) {
