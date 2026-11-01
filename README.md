@@ -21,9 +21,9 @@ Part of [TinySuite](https://tinysuite.dev). Comes with [TinySearch](https://gith
 [![Discord](https://img.shields.io/badge/Discord-Join%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/mFFKF9bf5e)
 ![MCP Client](https://img.shields.io/badge/MCP-client-blue)
 
-<img src="docs/demo.gif" width="800" alt="TinyWebUI from a fresh start: a web research turn with a task list and a tool approval, questions about an attached document, the model asking which tone to use, then chat search, statistics, MCP servers, automations and settings">
+<img src="docs/demo.webp" width="760" alt="TinyWebUI in 30 seconds: npx tinywebui starts a fresh instance, the admin is created and a model endpoint connected, a question is answered with live web search, and a preference is saved to memory">
 
-<sub>From a fresh start, using DeepSeek V4.1 Flash through OpenRouter. The wait during the research turn is shown at 4× speed. <a href="docs/demo.mp4">Full-resolution video</a>.</sub>
+<sub>A real first run with DeepSeek V4.1 Flash through OpenRouter, sped up. <a href="docs/demo.mp4">Watch it as a video</a>, or <a href="docs/demo_full.mp4">the full 80-second walkthrough</a>.</sub>
 
 **[Read the documentation → tinysuite.dev/docs/tinywebui](https://tinysuite.dev/docs/tinywebui/)**
 
