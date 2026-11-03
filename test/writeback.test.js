@@ -16,7 +16,7 @@ const { start } = await import('../src/server.ts');
 const code = {
   authMode: 'trusted-header', trustedProxyCidrs: ['127.0.0.1/32'],
   baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k',
-  access: { bootstrapAdmins: ['sub-root'], users: { 'sub-pinned': { status: 'approved' } } }
+  access: { bootstrapAdmins: ['sub-root'], newUsers: 'approved', users: { 'sub-pinned': { status: 'approved' } } }
 };
 const boot = (db) => start({ port: 0, host: '127.0.0.1', configFile, config: code, dbPath: join(dir, db) });
 

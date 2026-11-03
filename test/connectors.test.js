@@ -80,7 +80,7 @@ const srv = await start({
   port: 0, host: '127.0.0.1', configFile, dbPath: join(dir, 'c.db'),
   config: {
     authMode: 'trusted-header', trustedProxyCidrs: ['127.0.0.1/32'],
-    access: { bootstrapAdmins: ['sub-root'], roles: { user: { features: ['chat', 'settings'] } } }
+    access: { bootstrapAdmins: ['sub-root'], newUsers: 'approved', roles: { user: { features: ['chat', 'settings'] } } }
   }
 });
 test.after(async () => { console.log = origLog; await srv.shutdown(); });

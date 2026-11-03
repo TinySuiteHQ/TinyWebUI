@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 
-export type UserRole = 'admin' | 'user';
+/** 'admin', 'user', or the name of a custom role in access.roles (access/policy.ts). */
+export type UserRole = string;
 export type UserStatus = 'pending' | 'approved' | 'disabled';
 
 export interface UserRow {
@@ -74,7 +75,7 @@ export class UserStore {
     `).all() as unknown as UserListing[];
   }
 
-  /** Admin-side changes only: role in (admin,user), status in (pending,approved,disabled). */
+  /** Admin-side changes only: a defined role, status in (pending,approved,disabled). */
   update(id: string, { role, status }: { role?: UserRole; status?: UserStatus } = {}): UserRow | null {
     const sets: string[] = []; const vals: SQLInputValue[] = [];
     if (role !== undefined) { sets.push('role = ?'); vals.push(role); }
@@ -84,6 +85,17 @@ export class UserStore {
     }
     if (sets.length) this.db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     return this.get(id);
+  }
+
+  /** How many accounts hold each role, by role name. */
+  roleCounts(): Record<UserRole, number> {
+    const rows = this.db.prepare('SELECT role, COUNT(*) AS n FROM users GROUP BY role').all() as { role: UserRole; n: number }[];
+    return Object.fromEntries(rows.map((r) => [r.role, r.n]));
+  }
+
+  /** Moves everyone holding `from` to `to` (a deleted role's people); returns how many moved. */
+  moveRole(from: UserRole, to: UserRole): number {
+    return Number(this.db.prepare('UPDATE users SET role = ? WHERE role = ?').run(to, from).changes);
   }
 
   byExternalId(externalId: string): UserRow | null {

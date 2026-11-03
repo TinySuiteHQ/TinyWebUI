@@ -9,7 +9,7 @@ import { McpHub, missingCommand, type Principal } from './mcp.ts';
 import { serversIdentityProblems, claimValue, LOCAL_PRINCIPAL } from './access/mcp_identity.ts';
 import { isClosed, findEntry, effectiveConfig } from './config/models.ts';
 import { Store, SCHEMA_VERSION } from './store/index.ts';
-import { fingerprint, featuresFor, modelsFor, resolveAccess } from './access/policy.ts';
+import { fingerprint, featuresFor, modelsFor, customizeFor } from './access/policy.ts';
 import { applyAccessPolicy } from './access/auth.ts';
 import { audit } from './audit.ts';
 import { logger } from './log.ts';
@@ -240,7 +240,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     /** A person's own instructions, added after the system prompt, when an admin lets users set them. */
     instructionsFor(userId) {
       if (!userId || !app.multiUser()) return null;
-      if (!resolveAccess(app.cfg).customize.includes('instructions')) return null;
+      if (!customizeFor(app.cfg, store.users.get(userId)?.role).includes('instructions')) return null;
       return store.users.getPrefs(userId).instructions || null;
     },
 

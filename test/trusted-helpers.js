@@ -14,7 +14,10 @@ export async function trustedServer(extra = {}) {
       authMode: 'trusted-header',
       trustedProxyCidrs: ['127.0.0.1/32', '::1/128'],
       baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'm',
-      ...extra
+      ...extra,
+      // New people wait for an admin by default; these suites are about what
+      // happens once they are in, so they opt out unless they say otherwise.
+      access: { newUsers: 'approved', ...extra.access }
     }
   });
   const base = `http://127.0.0.1:${srv.address().port}`;
