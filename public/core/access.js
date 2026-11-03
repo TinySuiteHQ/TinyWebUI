@@ -52,8 +52,9 @@ export async function loadAccess() {
   for (const [feature, ids] of Object.entries(GATED)) {
     for (const id of ids) { const node = $(id); if (node) node.hidden = !can(feature); }
   }
-  // Settings also opens for someone whose admin lets them customise their own experience.
-  $('toggle-settings').hidden = !(can(FEATURE.SETTINGS) || me.customize?.length);
+  // Settings also opens for someone whose admin lets them customise their own
+  // experience, and for anyone with a password of their own to change.
+  $('toggle-settings').hidden = !(can(FEATURE.SETTINGS) || me.customize?.length || me.hasPassword);
   const search = $('chatSearch')?.closest('.search-row');
   if (search) search.hidden = !can(FEATURE.SEARCH);
   // The + button opens attach and tools; with neither there is nothing in it.

@@ -213,6 +213,8 @@ function renderTools(body, data) {
 /* ---- model menu ---- */
 
 const LEVEL_NAMES = { off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
+// Catalogs longer than this get a search box in the model menu.
+const SEARCH_FROM = 8;
 
 /** The pill's tag: the thinking level the next message asks for, when the model has one. */
 function renderThinking() {
@@ -308,6 +310,20 @@ async function buildModelMenu(pop) {
     closed = Boolean(out.catalog);
   } catch { supported = false; }
   if (closed) search.placeholder = 'Search models';
+  // A short catalog is read at a glance, so it gets a heading instead of a search
+  // box; one model is simply named, since there is nothing to pick between.
+  const searchable = !closed || models.length > SEARCH_FROM;
+  if (!searchable) {
+    search.replaceWith(Object.assign(el('div', 'pop-label'), { textContent: models.length === 1 ? 'Model' : 'Models' }));
+    const only = models.length === 1 && models[0].id === current ? models[0] : null;
+    if (only) {
+      const row = el('div', 'pop-item pop-model pop-only');
+      row.appendChild(Object.assign(el('span', 'pop-name'), { textContent: only.name }));
+      if (only.description) row.appendChild(Object.assign(el('span', 'pop-meta'), { textContent: only.description }));
+      list.replaceChildren(row);
+      return;
+    }
+  }
 
   const render = () => {
     const q = search.value.trim().toLowerCase();
@@ -353,4 +369,6 @@ async function buildModelMenu(pop) {
     choose(models.some((m) => m.id === q) ? q : first || q);
   };
   render();
+  // Without the search box, keyboard focus starts on the model in use.
+  if (!searchable) (list.querySelector('[aria-checked="true"]') || list.querySelector('.pop-model'))?.focus();
 }

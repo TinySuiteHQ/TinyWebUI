@@ -177,7 +177,8 @@ function connectorEditor(c = {}, { onRemove, onRename, onAddModel }) {
   id.addEventListener('change', () => { onRename(lastId, id.value.trim()); lastId = id.value.trim(); });
   const label = textInput(c.label, 'Local models');
   const url = textInput(c.baseUrl, 'http://localhost:11434/v1');
-  const key = Object.assign(textInput('', c.hasApiKey ? `set (…${c.keyHint || ''}) — blank keeps it` : 'optional'), { type: 'password', autocomplete: 'off' });
+  // new-password, not off: browsers ignore off on password fields and would fill in the saved login password.
+  const key = Object.assign(textInput('', c.hasApiKey ? `set (…${c.keyHint || ''}) — blank keeps it` : 'optional'), { type: 'password', autocomplete: 'new-password' });
   const clear = Object.assign(el('input'), { type: 'checkbox' });
   const test = Object.assign(el('button'), { type: 'button', textContent: 'Test connection' });
   const msg = el('span', 'usage');

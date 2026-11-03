@@ -1,4 +1,5 @@
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
@@ -6,12 +7,15 @@ import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defa
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
 import { REASONING_REPLAY, LEGACY_TAGS, THINKING_LEVELS, THINKING_SEND } from './config/models.ts';
 import {
-  validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
+  validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass, passwordProblem,
   FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
 } from './access/policy.ts';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
 import { serversIdentityProblems } from './access/mcp_identity.ts';
 import { serveProblems } from './mcp_serve.ts';
+import { hashPassword } from './access/auth.ts';
+import { normalizeEmail } from './access/email.ts';
+import { audit } from './audit.ts';
 import type { UserRole, UserStatus } from './store/users.ts';
 import type { ReadableStream } from 'node:stream/web';
 
@@ -184,6 +188,11 @@ const commands: Record<string, Command> = {
    * users set <id> [--role admin|user|<custom role>] [--status pending|approved|disabled] [--clear]
    *                       records the decision in config.json (a running
    *                       server picks it up through its file watch)
+   * users password <email> [--stdin]
+   *                       break glass: a new password for a local account,
+   *                       generated and printed (or read from stdin), and
+   *                       every session of it signed out. Whoever can run
+   *                       this on the server already holds the database.
    */
   users(args, opts) {
     const [sub, externalId] = args;
@@ -232,7 +241,39 @@ const commands: Record<string, Command> = {
       out(clear ? `cleared ${externalId}` : `${externalId}: ${JSON.stringify(users[externalId])}`);
       return 0;
     }
-    process.stderr.write(`error: unknown users command "${sub}" (list, set)\n`);
+    if (sub === 'password') {
+      const email = normalizeEmail(externalId);
+      if (!email) { process.stderr.write('usage: tinywebui users password <email> [--stdin]\n'); return 1; }
+      if (cfg.authMode !== 'multiuser') { process.stderr.write(`error: authMode is ${cfg.authMode}; passwords belong to the sign-in gateway, not TinyWebUI\n`); return 1; }
+      const dbFile = source.dbPath(cfg);
+      if (dbFile === ':memory:' || !existsSync(dbFile)) { process.stderr.write(`error: no database at ${dbFile}\n`); return 1; }
+      let password: string;
+      if (args.includes('--stdin')) {
+        password = readFileSync(0, 'utf8').replace(/\r?\n$/, '');
+        const problem = passwordProblem(password);
+        if (problem) { process.stderr.write(`error: ${problem}\n`); return 1; }
+      } else {
+        // Comfortably past the rule, and easy to read out loud or paste.
+        password = randomBytes(18).toString('base64url');
+      }
+      const store = new Store(dbFile);
+      try {
+        const user = store.users.byEmail(email);
+        if (!user?.password_hash) {
+          const local = store.users.list().filter((u) => u.has_password).map((u) => `${u.email} (${u.role})`);
+          process.stderr.write(`error: no local account with that email${local.length ? `; local accounts: ${local.join(', ')}` : ''}\n`);
+          return 1;
+        }
+        store.users.setPassword(user.id, hashPassword(password));
+        store.users.deleteUserSessions(user.id);
+        audit('auth.password_changed', { userId: user.id, by: 'cli' });
+        out(args.includes('--stdin') ? `password set for ${user.email}` : `new password for ${user.email}: ${password}`);
+        out('Every session of this account was signed out. Sign in, then change it under Settings > My preferences.');
+        if (user.status !== 'approved') out(`note: this account is ${user.status}; it cannot sign in until it is approved.`);
+        return 0;
+      } finally { store.close(); }
+    }
+    process.stderr.write(`error: unknown users command "${sub}" (list, set, password)\n`);
     return 1;
   },
 

@@ -311,6 +311,11 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .gate-who:empty, #gateNote:empty { display:none; }
 .gate-actions { display:flex; gap:.5rem; justify-content:center; margin-top:.75rem; }
 #loginMsg:empty { display:none; }
+.login-rule { margin-top:-.35rem; color:var(--muted); font-size:var(--fs-meta); }
+.login-rule[hidden] { display:none; }
+.pw-actions { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.75rem; }
+.pw-msg { font-size:var(--fs-meta); color:var(--err); }
+.pw-msg.ok { color:var(--tool); }
 
 /* Admin: People and Roles tabs. */
 .adm-tabs { display:flex; gap:.25rem; margin-left:.5rem; }
@@ -364,6 +369,11 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .adm-quiet { background:none; color:var(--muted); }
 .adm-quiet:hover { color:var(--err); border-color:var(--err); }
 .adm-err { flex-basis:100%; color:var(--err); font-size:var(--fs-meta); }
+.adm-pw { flex-basis:100%; display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; padding:.6rem; margin-top:.25rem; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--panel); }
+.adm-pw input { flex:1 1 11rem; width:auto; }
+.adm-pw button { flex:none; }
+.adm-pw-rule { flex-basis:100%; }
+.adm-pw-done { color:var(--tool); }
 .adm-foot { font-size:var(--fs-meta); color:var(--muted); text-align:center; }
 .adm-lede { margin:0; line-height:1.5; font-size:var(--fs-ui); color:var(--muted); }
 .adm-lede b { color:var(--fg); font-weight:550; }
@@ -1480,6 +1490,9 @@ button.pop-item:active:not(:disabled) { transform: none; }
 }
 .pop-model::after { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .pop-model[aria-checked="true"] { background: var(--accent-soft); }
+.pop-only { cursor: default; }
+.pop-only:hover { background: none; }
+.pop-only .pop-name { font-weight: 600; }
 .pop-model[aria-checked="true"] .pop-name { font-weight: 600; }
 .pop-model[aria-checked="true"]::after {
   content: ""; width: .5rem; height: .875rem; margin-right: .25rem; flex-shrink: 0;

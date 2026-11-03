@@ -114,7 +114,7 @@
       <header><h3>Default endpoint</h3><p>The OpenAI-compatible API used by every model that does not name a connector.</p></header>
       <div class="set-grid">
         <div class="span-2"><label for="baseUrl">API URL</label><input id="baseUrl" spellcheck="false" placeholder="http://localhost:11434/v1"></div>
-        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><small id="apiKeyNote">Optional. Write-only: kept in the secrets file, never shown again. Leave blank to keep the current key.</small></div>
+        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false"><small id="apiKeyNote">Optional. Write-only: kept in the secrets file, never shown again. Leave blank to keep the current key.</small></div>
         <div class="span-2"><button id="testDefault" type="button">Test connection</button> <span id="testDefaultMsg" class="usage"></span></div>
       </div>
     </section>
@@ -205,6 +205,18 @@
       <textarea id="myInstructions" rows="5" maxlength="4000" aria-label="My instructions"></textarea>
     </section>
 
+    <form class="set-group mine" id="passwordGroup" hidden>
+      <header><h3>Password</h3><p id="passwordRule"></p></header>
+      <!-- Tells password managers whose password this is; without it they guess, and fill the chat search. -->
+      <input id="pwUser" type="text" autocomplete="username" hidden>
+      <div class="set-grid">
+        <div class="span-2"><label for="pwCurrent">Current password</label><input id="pwCurrent" type="password" autocomplete="current-password" required></div>
+        <div><label for="pwNew">New password</label><input id="pwNew" type="password" autocomplete="new-password" required></div>
+        <div><label for="pwConfirm">Confirm new password</label><input id="pwConfirm" type="password" autocomplete="new-password" required></div>
+      </div>
+      <div class="pw-actions"><button class="primary" type="submit">Change password</button><span id="pwMsg" class="pw-msg" role="status"></span></div>
+    </form>
+
     <section class="set-group mine" id="themeGroup">
       <header><h3>Appearance</h3></header>
       <div class="set-grid">
@@ -274,6 +286,9 @@
       <input id="loginEmail" type="email" autocomplete="email" hidden>
       <label for="loginPassword">Password</label>
       <input id="loginPassword" type="password" autocomplete="current-password" required>
+      <small id="loginRule" class="login-rule" hidden></small>
+      <label id="loginConfirmLabel" for="loginConfirm" hidden>Confirm password</label>
+      <input id="loginConfirm" type="password" autocomplete="new-password" hidden>
       <button id="loginSubmit" class="primary" type="submit">Sign in</button>
       <div id="loginMsg" class="usage" role="alert"></div>
     </form>

@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.ts';
 import { isClosed, findEntry, labelFor, thinkingView, takesImages, usesTools } from '../config/models.ts';
-import { modelsFor, customizeFor, fingerprint, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
+import { modelsFor, customizeFor, fingerprint, passwordProblem, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
 import {
   hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.ts';
@@ -20,8 +20,8 @@ function localAccount(body: Record<string, any>): { error: string } | { error?: 
   const email = normalizeEmail(body.email);
   const password = typeof body.password === 'string' ? body.password : '';
   if (!validEmail(email)) return { error: 'enter a valid email address' };
-  if (password.length < MIN_PASSWORD_LENGTH) return { error: `use at least ${MIN_PASSWORD_LENGTH} characters` };
-  if (password.length > 1024) return { error: 'password is too long' };
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem };
   return { email, password };
 }
 
@@ -59,7 +59,11 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
         thinking: signedIn ? thinkingFacts(cfg, model) : null,
         user: auth.user
           ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
-          : null
+          : null,
+        // Local accounts only: behind a gateway (SSO) passwords are the gateway's business.
+        hasPassword: signedIn && cfg.authMode === 'multiuser' && Boolean(auth.user?.password_hash),
+        // The one password rule, so every form can say it before the server has to.
+        passwordMin: MIN_PASSWORD_LENGTH
       });
     } },
 
@@ -148,6 +152,35 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
       const token = sessionToken(req, cfg);
       if (token) destroySession(store, token);
       res.setHeader('set-cookie', clearCookie({ secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
+      return json(res, 200, { ok: true });
+    } },
+
+    // Changing your own password: the current one first, then the same rule as
+    // everywhere. Wrong guesses count toward the login lockout, and every other
+    // session of the account ends, so a stolen one stops working.
+    { method: 'POST', path: /^\/api\/me\/password$/, feature: null, handle: async ({ req, res, auth }) => {
+      const cfg = config();
+      const user = auth.user;
+      if (cfg.authMode !== 'multiuser' || !user?.password_hash) return json(res, 404, { error: 'this account has no password to change' });
+      const key = `password:${user.id}`;
+      const now = Date.now();
+      const f = loginFailures.get(key);
+      if (f && now - f.first > LOGIN_WINDOW_MS) loginFailures.delete(key);
+      const entry = loginFailures.get(key);
+      if (entry && entry.count >= LOGIN_MAX) return json(res, 429, { error: 'too many attempts, try again later' });
+      const { current, password } = await readJson(req);
+      if (!verifyPassword(typeof current === 'string' ? current : '', user.password_hash)) {
+        loginFailures.set(key, { first: entry?.first ?? now, count: (entry?.count ?? 0) + 1 });
+        audit('auth.password_change_rejected', { userId: user.id });
+        return json(res, 403, { error: 'your current password is not right' });
+      }
+      const problem = passwordProblem(password);
+      if (problem) return json(res, 400, { error: problem });
+      loginFailures.delete(key);
+      store.users.setPassword(user.id, hashPassword(password));
+      const token = sessionToken(req, cfg);
+      if (token) store.users.deleteOtherSessions(user.id, hashToken(token));
+      audit('auth.password_changed', { userId: user.id, by: user.id });
       return json(res, 200, { ok: true });
     } },
 

@@ -82,11 +82,24 @@ async function needsLogin() {
   for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = false;
   $('loginEmail').required = true;
   $('loginPassword').autocomplete = setup || joining ? 'new-password' : 'current-password';
+  // A new password is typed twice, and the rule is said before the server has to.
+  const creating = setup || joining;
+  for (const id of ['loginConfirmLabel', 'loginConfirm', 'loginRule']) $(id).hidden = !creating;
+  $('loginConfirm').required = creating;
+  if (creating) {
+    $('loginPassword').minLength = me.passwordMin;
+    $('loginRule').textContent = `At least ${me.passwordMin} characters.`;
+  }
   $('loginSubmit').textContent = setup ? 'Create administrator' : joining ? 'Create account' : 'Sign in';
   $('loginEmail').focus();
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginMsg').textContent = '';
+    if (creating && $('loginPassword').value !== $('loginConfirm').value) {
+      $('loginMsg').textContent = 'The two passwords do not match.';
+      $('loginConfirm').select();
+      return;
+    }
     try {
       const account = {
         email: $('loginEmail').value,

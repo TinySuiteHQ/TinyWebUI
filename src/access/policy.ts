@@ -149,6 +149,18 @@ export function modelsFor(cfg: PolicyConfig, role: UserRole | null | undefined):
 }
 
 export const MIN_PASSWORD_LENGTH = 10;
+const MAX_PASSWORD_LENGTH = 1024;
+
+/**
+ * The one rule every local password meets, whoever sets it: the first admin,
+ * someone joining by invitation, a person changing their own, or an admin
+ * setting one for them. Null when the password is acceptable.
+ */
+export function passwordProblem(password: unknown): string | null {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return `use at least ${MIN_PASSWORD_LENGTH} characters`;
+  if (password.length > MAX_PASSWORD_LENGTH) return 'password is too long';
+  return null;
+}
 
 /** Every problem with a config, as readable strings. Empty means valid. */
 // Takes the config as read, before anything about it is known to hold.

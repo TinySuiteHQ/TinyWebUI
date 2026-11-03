@@ -86,7 +86,16 @@ docker compose build
 docker compose up -d
 ```
 
-The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes. `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
+The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes.
+
+Since no mail is sent, there is no emailed reset. People change their own password under Settings → My preferences, and an admin can set a new one for anyone from the Admin panel. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
+
+```bash
+node bin/tinywebui.ts users password owner@example.com                          # from a clone
+docker compose exec tinywebui node bin/tinywebui.ts users password owner@example.com
+```
+
+ `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
 
 The former password-only `single` mode now fails startup instead of opening without login. To move such an installation to local accounts, set `authMode` to `multiuser`, restart, and create the administrator in the browser. On that first setup, existing unowned chats, files, artifacts, folders and automations move to the new administrator. Remove any `TINYWEBUI_PASSWORD` environment variable; it no longer selects an auth mode.
 

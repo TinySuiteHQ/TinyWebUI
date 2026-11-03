@@ -20,7 +20,7 @@ export interface UserRow {
 }
 
 export type UserListing = Pick<UserRow, 'id' | 'email' | 'name' | 'role' | 'status' | 'external_id' | 'created_at' | 'last_login_at'>
-  & { chat_count: number };
+  & { chat_count: number; has_password: number };
 
 export interface SessionRow { token_hash: string; user_id: string; created_at: number; expires_at: number }
 export interface InviteRow { id: string; email: string | null; created_by: string; created_at: number; expires_at: number }
@@ -70,6 +70,7 @@ export class UserStore {
   list(): UserListing[] {
     return this.db.prepare(`
       SELECT u.id, u.email, u.name, u.role, u.status, u.external_id, u.created_at, u.last_login_at,
+             (u.password_hash IS NOT NULL) AS has_password,
              (SELECT COUNT(*) FROM chats c WHERE c.user_id = u.id) AS chat_count
       FROM users u ORDER BY u.created_at ASC
     `).all() as unknown as UserListing[];
@@ -214,6 +215,15 @@ export class UserStore {
 
   deleteSession(tokenHash: string): void {
     this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+  }
+
+  setPassword(id: string, passwordHash: string): void {
+    this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+  }
+
+  /** Ends every session of the user's except the one making the change. */
+  deleteOtherSessions(userId: string, keepTokenHash: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(userId, keepTokenHash);
   }
 
   deleteUserSessions(userId: string): void {

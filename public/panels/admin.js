@@ -245,11 +245,50 @@ function personRow(user) {
       if (confirm(`Turn off access for ${user.name || user.email || 'this person'}? They are signed out at once; you can restore it later.`)) patch([off], { status: 'disabled' });
     });
     off.disabled = locked;
-    actions.append(role, chats, connectors, off);
+    actions.append(role, chats, connectors);
+    // Local accounts only: a gateway (SSO) account has no password here. Your own is under My preferences.
+    if (user.hasPassword && !self) actions.appendChild(button('Set password', 'adm-small', () => togglePasswordForm(r, user)));
+    actions.appendChild(off);
   }
   if (locked) actions.title = self ? 'This is your own account' : `Declared in code (${user.pinnedInCode})`;
   r.append(avatar(user), who, actions, err);
   return r;
+}
+
+/**
+ * An admin choosing a new password for someone who cannot sign in. Typed
+ * twice, held to the same rule as every password, and it signs them out
+ * everywhere: they sign in again with the new one.
+ */
+function togglePasswordForm(row, user) {
+  const open = row.querySelector('.adm-pw');
+  if (open) { open.remove(); return; }
+  const form = el('form', 'adm-pw');
+  const min = whoami().passwordMin;
+  const field = (label) => {
+    const input = Object.assign(el('input'), { type: 'password', autocomplete: 'new-password', required: true, minLength: min, placeholder: label });
+    input.setAttribute('aria-label', label);
+    return input;
+  };
+  const pw = field('New password');
+  const again = field('Confirm new password');
+  const save = Object.assign(el('button', 'primary'), { type: 'submit', textContent: 'Set password' });
+  const msg = text('div', 'adm-err', '');
+  msg.setAttribute('role', 'alert');
+  form.append(pw, again, save, button('Cancel', '', () => form.remove()), text('div', 'adm-meta adm-pw-rule', `At least ${min} characters. ${user.name || user.email || 'They'} will be signed out everywhere.`), msg);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    msg.textContent = '';
+    if (pw.value !== again.value) { msg.textContent = 'The two passwords do not match.'; again.select(); return; }
+    save.disabled = true;
+    try {
+      await api.post(`/api/admin/users/${enc(user.id)}/password`, { password: pw.value });
+      form.replaceChildren(text('div', 'adm-meta adm-pw-done', `Password set. Let ${user.name || user.email || 'them'} know the new one; they were signed out.`));
+      setTimeout(() => form.remove(), 6000);
+    } catch (err) { msg.textContent = err.message; save.disabled = false; }
+  };
+  row.appendChild(form);
+  pw.focus();
 }
 
 /** Who goes in which group, in the order the panel shows them. */
