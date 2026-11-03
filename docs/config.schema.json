@@ -487,11 +487,10 @@
             ]
           },
           "uniqueItems": true,
-          "description": "What users may personalise."
+          "description": "What a role may personalise, unless it says."
         },
         "roles": {
           "type": "object",
-          "additionalProperties": false,
           "properties": {
             "admin": {
               "type": "object",
@@ -538,6 +537,17 @@
                       }
                     }
                   ]
+                },
+                "customize": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "theme",
+                      "instructions"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "description": "What this role may personalise; defaults to access.customize."
                 }
               }
             },
@@ -586,10 +596,84 @@
                       }
                     }
                   ]
+                },
+                "customize": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "theme",
+                      "instructions"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "description": "What this role may personalise; defaults to access.customize."
                 }
               }
             }
-          }
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "features": {
+                "oneOf": [
+                  {
+                    "const": "*"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "chat",
+                        "attachments",
+                        "images",
+                        "search",
+                        "folders",
+                        "automations",
+                        "statistics",
+                        "model-picker",
+                        "tools",
+                        "settings",
+                        "mcp",
+                        "integrations",
+                        "admin",
+                        "oversight"
+                      ]
+                    },
+                    "uniqueItems": true
+                  }
+                ]
+              },
+              "models": {
+                "oneOf": [
+                  {
+                    "const": "*"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "customize": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "theme",
+                    "instructions"
+                  ]
+                },
+                "uniqueItems": true,
+                "description": "What this role may personalise; defaults to access.customize."
+              }
+            }
+          },
+          "description": "admin and user always exist; any other name is a custom role."
         },
         "users": {
           "type": "object",
@@ -598,10 +682,8 @@
             "additionalProperties": false,
             "properties": {
               "role": {
-                "enum": [
-                  "admin",
-                  "user"
-                ]
+                "type": "string",
+                "description": "admin, user, or a role in access.roles"
               },
               "status": {
                 "enum": [

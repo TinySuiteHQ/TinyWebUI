@@ -80,8 +80,11 @@ function resolveIdentity(req: IncomingMessage, pathname: string, cfg: Config, st
 export function resolveAuth(req: IncomingMessage, pathname: string, cfg: Config, store: Store): Auth {
   const auth = resolveIdentity(req, pathname, cfg, store) as Auth;
   // Features come from the policy for the caller's role; nobody signed in
-  // gets none, which leaves only the routes the table marks open.
-  auth.features = auth.userId !== undefined ? featuresFor(cfg, auth.role) : new Set();
+  // gets none, which leaves only the routes the table marks open. Nor does
+  // someone still waiting (or turned away): /api/auth/me answers them, and
+  // must not describe an app they cannot use.
+  const standing = !auth.user || auth.user.status === 'approved';
+  auth.features = auth.userId !== undefined && standing ? featuresFor(cfg, auth.role) : new Set();
   if (cfg.authMode === 'trusted-header' && auth.user) auth.isAdmin = auth.features.has(FEATURE.ADMIN);
   return auth;
 }

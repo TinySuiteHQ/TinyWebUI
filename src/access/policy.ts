@@ -9,8 +9,9 @@ import type { UserRole, UserStatus } from '../store/users.ts';
  *
  *   access: {
  *     bootstrapAdmins: ['<gateway user id>'],   // always admin, always approved
- *     newUsers: 'approved' | 'pending',
- *     roles: { user: { features: [...], models: [...] | '*' }, admin: { features: '*' } },
+ *     newUsers: 'pending' | 'approved',             // 'pending' unless the files say otherwise
+ *     roles: { user: { features: [...], models: [...] | '*', customize?: [...] }, admin: { features: '*' },
+ *              '<custom role>': { ... } },                 // any other name is a custom role
  *     users: { '<gateway user id>': { role?, status? } }  // admin decisions, written back
  *   }
  *
@@ -25,10 +26,13 @@ export const FEATURES: Feature[] = Object.values(FEATURE);
 /** What a signed-in user may personalise (access.customize). Model choice is the model-picker feature's. */
 export const CUSTOMIZABLE = ['theme', 'instructions'];
 
-export const ROLES: UserRole[] = ['admin', 'user'];
+/** Always there, whatever the files say; custom roles sit beside them in access.roles. */
+export const BUILTIN_ROLES: UserRole[] = ['admin', 'user'];
 export const STATUSES: UserStatus[] = ['pending', 'approved', 'disabled'];
+/** What a custom role may be called: a short lowercase handle, so it is safe as a key, a header value and a CLI flag. */
+export const ROLE_NAME = /^[a-z][a-z0-9-]{0,31}$/;
 
-export interface RoleSpec { features?: Feature[] | '*'; models?: string[] | '*' }
+export interface RoleSpec { features?: Feature[] | '*'; models?: string[] | '*'; customize?: string[] }
 /** An admin decision about one user, kept in access.users. */
 export interface UserPin { role?: UserRole; status?: UserStatus }
 
@@ -37,7 +41,7 @@ export interface AccessConfig {
   bootstrapAdmins?: string[];
   newUsers?: 'approved' | 'pending';
   customize?: string[];
-  roles?: Partial<Record<UserRole, RoleSpec>>;
+  roles?: Record<string, RoleSpec>;
   users?: Record<string, UserPin>;
 }
 
@@ -45,7 +49,7 @@ export interface AccessConfig {
 export interface PolicyConfig { authMode: string; access?: AccessConfig }
 
 // Tier 3's out-of-the-box split: users work, admins run the place.
-const DEFAULT_ROLES: Record<UserRole, RoleSpec> = {
+const DEFAULT_ROLES: Record<string, RoleSpec> = {
   user: { features: [FEATURE.CHAT, FEATURE.ATTACHMENTS, FEATURE.IMAGES, FEATURE.SEARCH, FEATURE.FOLDERS, FEATURE.AUTOMATIONS, FEATURE.STATISTICS, FEATURE.MODEL_PICKER, FEATURE.INTEGRATIONS], models: '*' },
   admin: { features: '*', models: '*' }
 };
@@ -88,18 +92,39 @@ export function mergeAccess(fileAccess: unknown = {}, codeAccess: unknown = {}):
 /** The effective policy, with defaults filled in, for a loaded config. */
 export function resolveAccess(cfg: PolicyConfig) {
   const a = cfg.access || {};
-  const roles = {} as Record<UserRole, RoleSpec>;
-  for (const r of ROLES) roles[r] = { ...DEFAULT_ROLES[r], ...(a.roles?.[r] || {}) };
+  const customize = Array.isArray(a.customize) ? a.customize : ['theme'];
+  // No prototype: a role is looked up by a name from a header or the database,
+  // and 'constructor' must not find Object's.
+  const roles: Record<UserRole, Required<RoleSpec>> = Object.create(null);
+  const declared = a.roles && typeof a.roles === 'object' ? a.roles : {};
+  // A custom role starts with nothing: what it may do is what it lists.
+  for (const r of new Set([...BUILTIN_ROLES, ...Object.keys(declared)])) {
+    roles[r] = { features: [], models: '*', customize, ...DEFAULT_ROLES[r], ...(declared[r] || {}) };
+  }
   return {
     bootstrapAdmins: Array.isArray(a.bootstrapAdmins) ? a.bootstrapAdmins.map(String) : [],
-    newUsers: a.newUsers || 'approved' as const,
-    customize: Array.isArray(a.customize) ? a.customize : ['theme'],
+    // Someone a gateway lets through has signed in, not been let in: an admin approves them.
+    newUsers: a.newUsers || 'pending' as const,
+    // The default for a role that does not say; each role's own list is in `roles`.
+    customize,
     roles,
     users: a.users && typeof a.users === 'object' ? a.users : {}
   };
 }
 
 const expand = (list: Feature[] | '*' | undefined) => new Set<string>(list === '*' ? FEATURES : list || []);
+
+/** Every role a user can hold here: the built-ins, then the custom ones in the order they were declared. */
+export const roleNames = (cfg: PolicyConfig): UserRole[] => Object.keys(resolveAccess(cfg).roles);
+
+/** Whether `name` is a role this config defines. */
+export const isRole = (cfg: PolicyConfig, name: unknown): name is UserRole =>
+  typeof name === 'string' && Object.hasOwn(resolveAccess(cfg).roles, name);
+
+/** What a person with this role may personalise (theme, instructions). */
+export function customizeFor(cfg: PolicyConfig, role: UserRole | null | undefined): string[] {
+  return role && isRole(cfg, role) ? resolveAccess(cfg).roles[role].customize : [];
+}
 
 /**
  * What a signed-in person may use. Tiers 1 and 2 are one person, who gets
@@ -111,14 +136,16 @@ export function featuresFor(cfg: PolicyConfig, role: UserRole | null | undefined
     all.delete('admin'); all.delete('oversight');
     return all;
   }
-  return expand(role ? resolveAccess(cfg).roles[role]?.features : undefined);
+  return expand(role && isRole(cfg, role) ? resolveAccess(cfg).roles[role].features : undefined);
 }
 
 /** '*' or the list of model ids this role may pick. */
 export function modelsFor(cfg: PolicyConfig, role: UserRole | null | undefined): string[] | '*' {
   if (!['multiuser', 'trusted-header'].includes(cfg.authMode)) return '*';
-  const m = role ? resolveAccess(cfg).roles[role]?.models : undefined;
-  return m === '*' || m === undefined ? '*' : m.map(String);
+  // An unknown role (one deleted from the files by hand) gets no features, so no model either.
+  if (!role || !isRole(cfg, role)) return [];
+  const m = resolveAccess(cfg).roles[role].models;
+  return m === '*' ? '*' : m.map(String);
 }
 
 export const MIN_PASSWORD_LENGTH = 10;
@@ -149,11 +176,18 @@ export function validateConfig(cfg: Record<string, any>, { env = process.env } =
     if (a.customize !== undefined && !(Array.isArray(a.customize) && a.customize.every((c: string) => CUSTOMIZABLE.includes(c)))) {
       errors.push(`access.customize must be a list from ${CUSTOMIZABLE.join(', ')}`);
     }
-    for (const [role, spec] of Object.entries<any>(a.roles || {})) {
-      if (!ROLES.includes(role as UserRole)) { errors.push(`access.roles.${role}: unknown role (known: ${ROLES.join(', ')})`); continue; }
+    const roles = a.roles && typeof a.roles === 'object' && !Array.isArray(a.roles) ? a.roles : {};
+    if (a.roles !== undefined && roles !== a.roles) errors.push('access.roles must be an object');
+    for (const [role, spec] of Object.entries<any>(roles)) {
+      if (!ROLE_NAME.test(role)) { errors.push(`access.roles.${role}: a role name is lowercase letters, digits and dashes, starting with a letter (at most 32)`); continue; }
       if (!spec || typeof spec !== 'object') { errors.push(`access.roles.${role} must be an object`); continue; }
       for (const k of Object.keys(spec)) {
-        if (!['features', 'models'].includes(k)) errors.push(`access.roles.${role}.${k} is not a known setting`);
+        if (!['features', 'models', 'customize'].includes(k)) errors.push(`access.roles.${role}.${k} is not a known setting`);
+      }
+      if (spec.customize !== undefined) {
+        const bad = Array.isArray(spec.customize) ? spec.customize.filter((c: unknown) => !CUSTOMIZABLE.includes(c as string)) : null;
+        if (!bad) errors.push(`access.roles.${role}.customize must be a list from ${CUSTOMIZABLE.join(', ')}`);
+        else if (bad.length) errors.push(`access.roles.${role}.customize: unknown ${bad.map((c: unknown) => `"${c}"`).join(', ')} (known: ${CUSTOMIZABLE.join(', ')})`);
       }
       if (spec.features !== undefined && spec.features !== '*') {
         if (!Array.isArray(spec.features)) errors.push(`access.roles.${role}.features must be '*' or a list`);
@@ -165,9 +199,10 @@ export function validateConfig(cfg: Record<string, any>, { env = process.env } =
         errors.push(`access.roles.${role}.models must be '*' or a list of model ids (catalog ids when models is set)`);
       }
     }
+    const defined = [...new Set([...BUILTIN_ROLES, ...Object.keys(roles).filter((r) => ROLE_NAME.test(r))])];
     for (const [id, u] of Object.entries<any>(a.users || {})) {
       if (!u || typeof u !== 'object') { errors.push(`access.users["${id}"] must be an object`); continue; }
-      if (u.role !== undefined && !ROLES.includes(u.role)) errors.push(`access.users["${id}"].role must be one of ${ROLES.join(', ')}`);
+      if (u.role !== undefined && !defined.includes(u.role)) errors.push(`access.users["${id}"].role must be one of ${defined.join(', ')}`);
       if (u.status !== undefined && !STATUSES.includes(u.status)) errors.push(`access.users["${id}"].status must be one of ${STATUSES.join(', ')}`);
     }
   }

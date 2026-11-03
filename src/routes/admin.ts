@@ -1,7 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { json, readJson, oneOf } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.ts';
-import { validateConfig, fingerprint, resolveAccess, FEATURES, CUSTOMIZABLE, ROLES, STATUSES } from '../access/policy.ts';
+import {
+  validateConfig, fingerprint, resolveAccess, roleNames, FEATURES, CUSTOMIZABLE, BUILTIN_ROLES, ROLE_NAME, STATUSES,
+  type AccessConfig, type Feature, type RoleSpec
+} from '../access/policy.ts';
 import { catalog, modelProblems } from '../config/models.ts';
 import { destroyUserSessions, hashToken } from '../access/auth.ts';
 import { normalizeEmail, validEmail } from '../access/email.ts';
@@ -30,6 +33,56 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
   // Wraps a handler so it refuses outside multi-user deployments.
   const multi = (handle: (ctx: AdminContext) => unknown) => (ctx: RouteContext<SignedIn>) =>
     (multiUser() ? handle(ctx as AdminContext) : json(ctx.res, 403, { error: 'admin_only' }));
+
+  /**
+   * Rewrites the file's access block, which is the record of every policy
+   * decision. Refuses when code or a freeze owns it, and when the result
+   * would not load; otherwise writes and reloads. Returns the refusal, or null.
+   */
+  const writeAccess = (change: (access: AccessConfig) => AccessConfig): { status: number; error: string } | null => {
+    if (source.isFrozen() || source.lockedKeys().has('access')) return { status: 409, error: 'access is set in code or frozen: change the files instead' };
+    const file = source.readFile();
+    const access = change(file.access && typeof file.access === 'object' ? file.access : {});
+    const problems = [...validateConfig({ ...config(), access }), ...modelProblems({ ...config(), access })];
+    if (problems.length) return { status: 400, error: problems.join('; ') };
+    source.writeFile({ ...file, access });
+    refreshConfig();
+    return null;
+  };
+
+  /** Writes what a role grants into the file: a new role, or the fields sent for an existing one. */
+  const saveRole = (name: string, body: Record<string, unknown>, auth: AdminContext['auth'], res: AdminContext['res'], created: boolean) => {
+    const { features, models, customize } = body;
+    const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+    if (features !== undefined && !strings(features)) return json(res, 400, { error: 'features must be a list' });
+    if (models !== undefined && models !== '*' && !strings(models)) return json(res, 400, { error: "models must be '*' or a list" });
+    if (customize !== undefined && !strings(customize)) return json(res, 400, { error: 'customize must be a list' });
+    let spec: RoleSpec = {};
+    const refused = writeAccess((access) => {
+      spec = {
+        ...(access.roles?.[name] || {}),
+        // Names only so far: validateConfig rejects any that is not a feature before anything is written.
+        ...(features !== undefined ? { features: features as Feature[] } : {}),
+        ...(models !== undefined ? { models } : {}),
+        ...(customize !== undefined ? { customize } : {})
+      };
+      return { ...access, roles: { ...(access.roles || {}), [name]: spec } };
+    });
+    if (refused) return json(res, refused.status, { error: refused.error });
+    audit(created ? 'admin.role_created' : 'admin.role_changed', { by: auth.userId, role: name, spec });
+    return json(res, created ? 201 : 200, { roles: rolesView() });
+  };
+
+  // Each role as the Roles tab shows it: what it grants, spelled out, and who holds it.
+  const rolesView = () => {
+    const { roles } = resolveAccess(config());
+    const counts = store.users.roleCounts();
+    return Object.entries(roles).map(([name, spec]) => ({
+      name, builtin: BUILTIN_ROLES.includes(name), fixed: name === 'admin',
+      features: spec.features === '*' ? FEATURES : spec.features,
+      models: spec.models, customize: spec.customize, users: counts[name] || 0
+    }));
+  };
 
   return [
     { method: 'GET', path: /^\/api\/admin\/invites$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
@@ -79,7 +132,8 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
       const { role, status } = await readJson(req);
-      if (role !== undefined && !oneOf(role, ROLES)) return json(res, 400, { error: 'role must be admin or user' });
+      const roles = roleNames(config());
+      if (role !== undefined && !oneOf(role, roles)) return json(res, 400, { error: `role must be one of ${roles.join(', ')}` });
       if (status !== undefined && !oneOf(status, STATUSES)) {
         return json(res, 400, { error: 'status must be pending, approved or disabled' });
       }
@@ -119,40 +173,51 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       return json(res, 200, { user: adminUserView(updated!) });
     }) },
 
-    // What the `user` role may do, what new users start as, and what users may
-    // personalise. The admin role is not editable here: it cannot be locked
-    // out of the panel that edits it. Written to the file like every decision.
+    // The roles and what each may do. The admin role is shown but not
+    // editable: it cannot be locked out of the panel that edits it. Every
+    // change is written to the file like any other decision. How new people
+    // start (access.newUsers) is not offered: they wait for an admin unless
+    // the files say otherwise.
     { method: 'GET', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
-      const a = resolveAccess(config());
       return json(res, 200, {
         features: FEATURES, customizable: CUSTOMIZABLE, models: catalog(config()).map((m) => m.id),
-        user: a.roles.user, newUsers: a.newUsers, customize: a.customize,
-        locked: source.lockedKeys().has('access')
+        roles: rolesView(), newUsers: resolveAccess(config()).newUsers,
+        locked: source.isFrozen() || source.lockedKeys().has('access')
       });
     }) },
 
-    { method: 'POST', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
-      if (source.isFrozen() || source.lockedKeys().has('access')) return json(res, 409, { error: 'access is set in code or frozen: change the files instead' });
-      const { features, models, newUsers, customize } = await readJson(req);
+    { method: 'POST', path: /^\/api\/admin\/roles$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
+      const body = await readJson(req);
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!ROLE_NAME.test(name)) return json(res, 400, { error: 'a role name is lowercase letters, digits and dashes, starting with a letter (at most 32)' });
+      if (roleNames(config()).includes(name)) return json(res, 409, { error: `there is already a role called ${name}` });
+      return saveRole(name, body, auth, res, true);
+    }) },
+
+    // Only the fields sent change.
+    { method: 'PATCH', path: /^\/api\/admin\/roles\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth, params: [name] }) => {
+      if (name === 'admin') return json(res, 400, { error: 'the admin role always has everything' });
+      if (!roleNames(config()).includes(name)) return json(res, 404, { error: 'no such role' });
+      return saveRole(name, await readJson(req), auth, res, false);
+    }) },
+
+    // A custom role's people fall back to the user role, in the file and the database.
+    { method: 'DELETE', path: /^\/api\/admin\/roles\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(({ res, auth, params: [name] }) => {
+      if (BUILTIN_ROLES.includes(name)) return json(res, 400, { error: 'the admin and user roles cannot be deleted' });
       const file = source.readFile();
-      const access = file.access && typeof file.access === 'object' ? file.access : {};
-      const user = { ...(access.roles?.user || {}) };
-      if (features !== undefined) user.features = features;
-      if (models !== undefined) user.models = models;
-      const merged = {
-        ...access,
-        roles: { ...(access.roles || {}), user },
-        ...(newUsers !== undefined ? { newUsers } : {}),
-        ...(customize !== undefined ? { customize } : {})
-      };
-      const next = { ...file, access: merged };
-      const problems = [...validateConfig({ ...config(), access: merged }), ...modelProblems({ ...config(), access: merged })];
-      if (problems.length) return json(res, 400, { error: problems.join('; ') });
-      source.writeFile(next);
-      refreshConfig();
-      audit('admin.policy_changed', { by: auth.userId, user, newUsers: merged.newUsers ?? null, customize: merged.customize ?? null });
-      const a = resolveAccess(config());
-      return json(res, 200, { user: a.roles.user, newUsers: a.newUsers, customize: a.customize });
+      if (!Object.hasOwn(file.access?.roles || {}, name)) return json(res, 404, { error: 'no such role in the config file' });
+      const refused = writeAccess((access) => {
+        const roles = { ...(access.roles || {}) };
+        delete roles[name];
+        if (!access.users) return { ...access, roles };
+        const users = Object.fromEntries(Object.entries(access.users)
+          .map(([id, pin]) => [id, pin.role === name ? { ...pin, role: 'user' } : pin]));
+        return { ...access, roles, users };
+      });
+      if (refused) return json(res, refused.status, { error: refused.error });
+      const moved = store.users.moveRole(name, 'user');
+      audit('admin.role_deleted', { by: auth.userId, role: name, moved });
+      return json(res, 200, { roles: rolesView(), moved });
     }) },
 
     // Oversight: read-only, every view audited. Reached through ALL_USERS on

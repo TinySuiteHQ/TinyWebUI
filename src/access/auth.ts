@@ -2,7 +2,7 @@ import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from
 import { BlockList, isIP } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { TLSSocket } from 'node:tls';
-import { resolveAccess, type PolicyConfig, type UserPin } from './policy.ts';
+import { resolveAccess, isRole, type PolicyConfig, type UserPin } from './policy.ts';
 import { audit } from '../audit.ts';
 import type { Store } from '../store/index.ts';
 import type { UserRole, UserRow, UserSync } from '../store/users.ts';
@@ -154,7 +154,6 @@ export function ipInCidrs(ip: string | undefined, cidrs: unknown): boolean {
   return list.check(ip, isIP(ip) === 6 ? 'ipv6' : 'ipv4');
 }
 
-const HEADER_ROLES = new Set(['admin', 'user']);
 const LOGIN_TOUCH_MS = 60_000;
 
 function header(req: IncomingMessage, name: string) {
@@ -180,7 +179,8 @@ export function resolveTrustedUser(req: IncomingMessage, store: Store, cfg: Conf
   const email = header(req, cfg.trustedEmailHeader).slice(0, 320).toLowerCase() || null;
   const name = header(req, cfg.trustedNameHeader).slice(0, 200) || null;
   const rawRole = header(req, cfg.trustedRoleHeader).toLowerCase();
-  const role = HEADER_ROLES.has(rawRole) ? rawRole as UserRole : null;
+  // A gateway may name any role defined here, custom ones included; anything else is ignored.
+  const role: UserRole | null = isRole(cfg, rawRole) ? rawRole : null;
 
   const now = Date.now();
   // Precedence: the files (bootstrapAdmins, access.users) > gateway role

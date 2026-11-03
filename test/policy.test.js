@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateConfig, featuresFor, modelsFor, fingerprint, keyClass, mergeAccess } from '../src/access/policy.ts';
+import {
+  validateConfig, featuresFor, modelsFor, customizeFor, roleNames, isRole, resolveAccess, fingerprint, keyClass, mergeAccess
+} from '../src/access/policy.ts';
 import { createConfigSource, LockedError } from '../src/config/config.ts';
 
 const tier3 = (access) => ({ authMode: 'trusted-header', trustedProxyCidrs: ['10.0.0.0/8'], access });
@@ -19,11 +21,11 @@ test('every mistake is named', () => {
     authMode: 'trusted-header',
     access: {
       nonsense: 1, newUsers: 'maybe', bootstrapAdmins: 'me',
-      roles: { user: { features: ['chat', 'teleport'], models: 7, colour: 'x' }, owner: {} },
+      roles: { user: { features: ['chat', 'teleport'], models: 7, colour: 'x', customize: ['wallpaper'] }, 'Big Boss': {} },
       users: { a: { role: 'god', status: 'asleep' } }
     }
   }).join('\n');
-  for (const needle of ['trustedProxyCidrs', 'access.nonsense', 'newUsers', 'bootstrapAdmins', 'teleport', 'models must be', 'colour', 'unknown role', 'role must be', 'status must be']) {
+  for (const needle of ['trustedProxyCidrs', 'access.nonsense', 'newUsers', 'bootstrapAdmins', 'teleport', 'models must be', 'colour', 'wallpaper', 'a role name is', 'role must be', 'status must be']) {
     assert.match(errs, new RegExp(needle), needle);
   }
   assert.match(validateConfig({ authMode: 'single' }, { env: {} }).join(), /no longer supported/);
@@ -42,6 +44,28 @@ test('features and models resolve per role, with sensible defaults', () => {
   assert.ok(!featuresFor(tier3(), 'user').has('settings'), 'users get no settings by default');
   const solo = featuresFor({ authMode: 'local' }, null);
   assert.ok(solo.has('settings') && solo.has('mcp') && !solo.has('admin'));
+});
+
+test('custom roles sit beside the built-ins, start with nothing, and say what they may personalise', () => {
+  const cfg = tier3({
+    customize: ['theme', 'instructions'],
+    roles: { reviewer: { features: ['chat', 'oversight'], models: ['m2'], customize: [] }, empty: {} },
+    users: { a: { role: 'reviewer' } }
+  });
+  assert.deepEqual(validateConfig(cfg), []);
+  assert.deepEqual(roleNames(cfg), ['admin', 'user', 'reviewer', 'empty']);
+  assert.deepEqual([...featuresFor(cfg, 'reviewer')].sort(), ['chat', 'oversight']);
+  assert.deepEqual(modelsFor(cfg, 'reviewer'), ['m2']);
+  assert.deepEqual(customizeFor(cfg, 'reviewer'), []);
+  assert.deepEqual(customizeFor(cfg, 'user'), ['theme', 'instructions'], 'a role that does not say takes access.customize');
+  assert.equal(featuresFor(cfg, 'empty').size, 0);
+  // A role the files no longer define (or never did) grants nothing.
+  for (const gone of ['editor', 'constructor', '__proto__']) {
+    assert.equal(featuresFor(cfg, gone).size, 0, gone);
+    assert.deepEqual(modelsFor(cfg, gone), [], gone);
+    assert.equal(isRole(cfg, gone), false, gone);
+  }
+  assert.equal(resolveAccess(tier3()).newUsers, 'pending', 'new people wait for an admin unless the files say otherwise');
 });
 
 test('code wins over the file in access, per user too', () => {

@@ -33,7 +33,7 @@
     <button id="toggle-mcp" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>MCP servers</span></button>
     <button id="toggle-settings" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
     <button id="toggle-statistics" class="nav-item" type="button"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Statistics</span></button>
-    <button id="toggle-admin" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Admin</span></button>
+    <button id="toggle-admin" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Admin</span><span id="adminNavBadge" class="adm-badge" hidden></span></button>
     <button id="logout" class="nav-item" type="button" hidden><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg><span>Log out</span></button>
   </nav>
   <div class="side-label"><span>Recent conversations</span><button id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v4M10 13h4"/></svg></button></div>
@@ -279,29 +279,63 @@
     </form>
   </div>
 
+  <div id="gate" hidden>
+    <div class="login-card gate-card" role="status" aria-live="polite">
+      <div class="gate-icon" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <h2 id="gateTitle">Waiting for approval</h2>
+      <p id="gateText" class="gate-text"></p>
+      <p id="gateWho" class="gate-who"></p>
+      <div class="gate-actions">
+        <button id="gateCheck" type="button">Check now</button>
+        <button id="gateLogout" type="button" hidden>Sign out</button>
+      </div>
+      <small id="gateNote" class="usage"></small>
+    </div>
+  </div>
+
   <section id="admin" aria-label="Admin">
-    <div class="automation-head"><h2>Admin</h2></div>
+    <div class="automation-head">
+      <h2>Admin</h2>
+      <div class="adm-tabs" role="tablist" aria-label="Admin sections">
+        <button id="adminTabPeople" type="button" role="tab" aria-controls="adminPeople" aria-selected="true" class="active">People <span id="adminWaitingBadge" class="adm-badge" hidden></span></button>
+        <button id="adminTabRoles" type="button" role="tab" aria-controls="adminRoles" aria-selected="false">Roles</button>
+      </div>
+    </div>
     <div class="statistics-content">
-      <section class="statistics-block">
-        <div class="sec-h">users <span id="adminCount" class="usage"></span></div>
-        <div id="adminMsg" class="usage"></div>
-        <form id="adminInvite" class="invite-form" hidden>
-          <label for="inviteEmail">Invite by email <span class="usage">optional</span></label>
-          <div><input id="inviteEmail" type="email" autocomplete="off" placeholder="person@example.com"><button class="primary" type="submit">Create invite</button></div>
-          <div id="inviteResult" class="usage"></div>
-          <div id="adminInvites" class="admin-users"></div>
-        </form>
-        <div id="adminUsers" class="admin-users"></div>
-      </section>
-      <section id="adminPolicy" class="statistics-block">
-        <div class="sec-h">what users can do <span id="policyMsg" class="usage"></span></div>
-        <div class="usage admin-note">Applies to everyone with the user role. Admins always have everything. Saved to the config file.</div>
-        <div class="policy-group"><b>Features</b><div id="policyFeatures" class="policy-checks"></div></div>
-        <div class="policy-group" id="policyModelsGroup"><b>Models they may pick</b><div id="policyModels" class="policy-checks"></div></div>
-        <div class="policy-group"><b>They may customise</b><div id="policyCustomize" class="policy-checks"></div></div>
-        <div class="policy-group"><b>New users start as</b> <select id="policyNewUsers"><option value="approved">approved</option><option value="pending">pending (an admin approves)</option></select></div>
-        <button id="policySave" class="primary" type="button">Save policy</button>
-      </section>
+      <div id="adminPeople" role="tabpanel" aria-labelledby="adminTabPeople">
+        <div class="adm-wrap">
+          <div class="adm-toolbar">
+            <input id="adminSearch" type="search" placeholder="Find people by name or email" aria-label="Find people" autocomplete="off">
+            <button id="adminInviteToggle" type="button" class="primary" hidden>Invite</button>
+          </div>
+          <form id="adminInvite" class="adm-invite" hidden>
+            <label for="inviteEmail">Invite someone <span class="adm-meta">email optional: leave it empty for a link anyone can use once</span></label>
+            <div class="adm-invite-row"><input id="inviteEmail" type="email" autocomplete="off" placeholder="person@example.com"><button class="primary" type="submit">Create link</button></div>
+            <div id="inviteResult" class="usage" role="status"></div>
+            <div id="adminInvites" class="adm-invites"></div>
+          </form>
+          <div id="adminFilters" class="adm-filters" role="group" aria-label="Show"></div>
+          <div id="adminMsg" class="usage" role="alert"></div>
+          <div id="adminUsers" class="adm-groups"></div>
+          <div id="adminFoot" class="adm-foot"></div>
+        </div>
+      </div>
+      <div id="adminRoles" role="tabpanel" aria-labelledby="adminTabRoles" hidden>
+        <div class="adm-wrap">
+          <p class="adm-lede">A role decides what everyone holding it can use. People get exactly what their role allows; change the role to change what they can do. <b>Admin</b> and <b>User</b> always exist.</p>
+          <div id="rolesMsg" class="usage" role="alert"></div>
+          <div id="roleList" class="adm-roles"></div>
+          <form id="roleNew" class="adm-role-new">
+            <label for="roleNewName">New role</label>
+            <div class="adm-invite-row">
+              <input id="roleNewName" type="text" autocomplete="off" placeholder="e.g. reviewer" pattern="[a-z][a-z0-9\-]{0,31}" maxlength="32" required>
+              <select id="roleNewFrom" aria-label="Start from"></select>
+              <button class="primary" type="submit">Create role</button>
+            </div>
+            <small class="adm-meta">Lowercase letters, digits and dashes. It starts as a copy of the role you pick.</small>
+          </form>
+        </div>
+      </div>
       <section id="adminView" class="statistics-block" hidden>
         <div class="sec-h"><button id="adminBack" type="button">← back</button> <span id="adminViewTitle"></span><span id="adminViewMeta" class="usage"></span></div>
         <div class="usage admin-note">Read-only admin view. Every view is recorded in the audit log.</div>

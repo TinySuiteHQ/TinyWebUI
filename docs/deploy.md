@@ -33,10 +33,12 @@ export default {
 
     access: {
       bootstrapAdmins: ['google-oauth2|1234567890'],
-      newUsers: 'pending',
+      newUsers: 'pending',                        // the default: an admin approves each new person
       roles: {
         user:  { features: ['chat', 'attachments', 'images', 'search', 'folders', 'model-picker'], models: ['fast', 'smart'] },
-        admin: { features: '*' }
+        admin: { features: '*' },
+        // Any other name is a custom role, assignable from the Admin panel.
+        reviewer: { features: ['chat', 'search', 'oversight'], models: ['smart'], customize: ['theme'] }
       }
     }
   },

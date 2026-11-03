@@ -25,9 +25,50 @@ import { loadUsage } from './panels/usage.js';
 import { initAdmin, loadAdmin } from './panels/admin.js';
 import { initIntegrations, loadIntegrations } from './panels/integrations.js';
 
+// How often the waiting room asks whether an admin has let this person in.
+const GATE_POLL_MS = 15_000;
+
+/**
+ * Signed in, not let in (yet): a page that says so and nothing else, instead
+ * of an app whose every request would be refused. Re-checks on its own and
+ * opens the app the moment an admin approves.
+ */
+function waitingRoom(me) {
+  const disabled = me.user.status === 'disabled';
+  $('gate').hidden = false;
+  $('gateTitle').textContent = disabled ? 'Access turned off' : 'Waiting for approval';
+  $('gateText').textContent = disabled
+    ? 'An administrator has turned off your access. If you think that is a mistake, ask them to turn it back on.'
+    : 'Your account has been created. An administrator needs to approve it before you can start; this page opens by itself once they do.';
+  $('gateWho').textContent = me.user.email || me.user.name ? `Signed in as ${me.user.email || me.user.name}` : '';
+  $('gate').classList.toggle('off', disabled);
+  if (me.logoutUrl || me.authMode === 'multiuser') {
+    $('gateLogout').hidden = false;
+    $('gateLogout').onclick = async () => {
+      try { await api.post('/api/auth/logout'); } catch { /* going anyway */ }
+      if (me.logoutUrl) location.href = me.logoutUrl; else location.reload();
+    };
+  }
+  let timer = null;
+  const check = async () => {
+    clearTimeout(timer);
+    $('gateNote').textContent = 'Checking…';
+    let now = null;
+    try { now = await api.get('/api/auth/me'); } catch { /* offline for a moment: try again later */ }
+    if (now?.user?.status === 'approved') { location.reload(); return; }
+    if (now?.user && now.user.status !== me.user.status) { location.reload(); return; }
+    $('gateNote').textContent = `Last checked ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    if (!disabled) timer = setTimeout(check, GATE_POLL_MS);
+  };
+  $('gateCheck').onclick = check;
+  $('gateCheck').hidden = disabled;
+  if (!disabled) timer = setTimeout(check, GATE_POLL_MS);
+}
+
 /** Local auth with no session: sign in, claim a fresh install, or accept an invite. */
 async function needsLogin() {
   const me = await loadAccess();
+  if (me.user && me.user.status !== 'approved') { waitingRoom(me); return true; }
   if (me.authMode !== 'multiuser' || me.user) return false;
   const invite = new URLSearchParams(location.search).get('invite');
   if (invite) history.replaceState(null, '', location.pathname);

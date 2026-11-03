@@ -7,7 +7,7 @@ import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOpti
 import { REASONING_REPLAY, MODEL_TAGS } from './config/models.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
-  FEATURES, ROLES, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
+  FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
 } from './access/policy.ts';
 import { Store, SCHEMA_VERSION, MigrationRequiredError } from './store/index.ts';
 import { serversIdentityProblems } from './access/mcp_identity.ts';
@@ -151,8 +151,8 @@ const commands: Record<string, Command> = {
     });
     const role = flag(args, 'role');
     if (role) {
-      if (!ROLES.includes(role as UserRole)) { process.stderr.write(`error: unknown role "${role}" (known: ${ROLES.join(', ')})\n`); return 1; }
-      out({ role, authMode: cfg.authMode, ...roleFor(role as UserRole) });
+      if (!roleNames(cfg).includes(role)) { process.stderr.write(`error: unknown role "${role}" (known: ${roleNames(cfg).join(', ')})\n`); return 1; }
+      out({ role, authMode: cfg.authMode, ...roleFor(role) });
       return 0;
     }
     const settings: Record<string, unknown> = {};
@@ -168,7 +168,7 @@ const commands: Record<string, Command> = {
       files: { config: source.path(), secrets: source.secretsPath(), mcp: source.mcpPath() || '(in code)' },
       authMode: cfg.authMode,
       roles: ['multiuser', 'trusted-header'].includes(cfg.authMode)
-        ? Object.fromEntries(ROLES.map((r) => [r, roleFor(r)]))
+        ? Object.fromEntries(roleNames(cfg).map((r) => [r, roleFor(r)]))
         : { you: roleFor(null) },
       access: ['multiuser', 'trusted-header'].includes(cfg.authMode)
         ? { bootstrapAdmins: access.bootstrapAdmins, newUsers: access.newUsers, users: access.users }
@@ -181,7 +181,7 @@ const commands: Record<string, Command> = {
 
   /**
    * users list            provisioned users, with any decision pinned in the files
-   * users set <id> [--role admin|user] [--status pending|approved|disabled] [--clear]
+   * users set <id> [--role admin|user|<custom role>] [--status pending|approved|disabled] [--clear]
    *                       records the decision in config.json (a running
    *                       server picks it up through its file watch)
    */
@@ -221,7 +221,7 @@ const commands: Record<string, Command> = {
       const status = flag(args, 'status');
       const clear = args.includes('--clear');
       if (!clear && role === undefined && status === undefined) { process.stderr.write('error: nothing to set (use --role, --status or --clear)\n'); return 1; }
-      if (role !== undefined && !ROLES.includes(role as UserRole)) { process.stderr.write(`error: role must be one of ${ROLES.join(', ')}\n`); return 1; }
+      if (role !== undefined && !roleNames(cfg).includes(role)) { process.stderr.write(`error: role must be one of ${roleNames(cfg).join(', ')}\n`); return 1; }
       if (status !== undefined && !STATUSES.includes(status as UserStatus)) { process.stderr.write(`error: status must be one of ${STATUSES.join(', ')}\n`); return 1; }
       const file = source.readFile();
       const fileAccess = file.access && typeof file.access === 'object' ? file.access : {};
@@ -427,7 +427,10 @@ export function configSchema() {
   const featureList = { oneOf: [{ const: '*' }, { type: 'array', items: { enum: FEATURES }, uniqueItems: true }] };
   const role = {
     type: 'object', additionalProperties: false,
-    properties: { features: featureList, models: { oneOf: [{ const: '*' }, { type: 'array', items: { type: 'string' } }] } }
+    properties: {
+      features: featureList, models: { oneOf: [{ const: '*' }, { type: 'array', items: { type: 'string' } }] },
+      customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What this role may personalise; defaults to access.customize.' }
+    }
   };
   properties.retrieval = {
     type: 'object', additionalProperties: false, 'x-change': 'file-only (restart to apply)',
@@ -484,13 +487,17 @@ export function configSchema() {
     properties: {
       bootstrapAdmins: { type: 'array', items: { type: 'string' }, description: 'Gateway user ids that are always approved admins.' },
       newUsers: { enum: ['approved', 'pending'] },
-      customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What users may personalise.' },
-      roles: { type: 'object', additionalProperties: false, properties: Object.fromEntries(ROLES.map((r) => [r, role])) },
+      customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What a role may personalise, unless it says.' },
+      roles: {
+        type: 'object', properties: Object.fromEntries(BUILTIN_ROLES.map((r) => [r, role])),
+        propertyNames: { pattern: ROLE_NAME.source }, additionalProperties: role,
+        description: 'admin and user always exist; any other name is a custom role.'
+      },
       users: {
         type: 'object',
         additionalProperties: {
           type: 'object', additionalProperties: false,
-          properties: { role: { enum: ROLES }, status: { enum: STATUSES } }
+          properties: { role: { type: 'string', description: 'admin, user, or a role in access.roles' }, status: { enum: STATUSES } }
         }
       }
     }

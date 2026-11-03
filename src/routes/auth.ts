@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.ts';
 import { isClosed, findEntry, labelFor } from '../config/models.ts';
-import { modelsFor, fingerprint, resolveAccess, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
+import { modelsFor, customizeFor, fingerprint, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
 import {
   hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.ts';
@@ -30,7 +30,8 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
   return [
     { method: 'GET', path: /^\/api\/auth\/me$/, feature: null, handle: ({ res, auth }) => {
       const cfg = config();
-      const signedIn = auth.userId !== undefined;
+      // Waiting or turned away: who they are, and nothing about the app.
+      const signedIn = auth.userId !== undefined && (!auth.user || auth.user.status === 'approved');
       const model = signedIn ? modelFor(auth.user?.id, auth.role) : null;
       return json(res, 200, {
         authMode: cfg.authMode,
@@ -38,8 +39,8 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
         logoutUrl: cfg.logoutUrl || '',
         isAdmin: Boolean(auth.isAdmin),
         // What this person may personalise, and their saved instructions (multi-user only).
-        customize: multiUser() && auth.user ? resolveAccess(cfg).customize : [],
-        instructions: multiUser() && auth.user ? store.users.getPrefs(auth.user.id).instructions || '' : '',
+        customize: multiUser() && auth.user && signedIn ? customizeFor(cfg, auth.role) : [],
+        instructions: multiUser() && auth.user && signedIn ? store.users.getPrefs(auth.user.id).instructions || '' : '',
         features: [...auth.features],
         models: signedIn ? modelsFor(cfg, auth.role) : [],
         model,
@@ -149,7 +150,7 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
       const user = auth.user!;
       const { model, instructions } = await readJson(req);
       if (instructions !== undefined) {
-        if (!resolveAccess(cfg).customize.includes('instructions')) return json(res, 403, { error: 'your administrator has not enabled personal instructions' });
+        if (!customizeFor(cfg, auth.role).includes('instructions')) return json(res, 403, { error: 'your administrator has not enabled personal instructions' });
         if (instructions !== null && (typeof instructions !== 'string' || instructions.length > 4000)) return json(res, 400, { error: 'instructions must be text of at most 4000 characters, or null' });
         store.users.setPref(user.id, 'instructions', instructions && instructions.trim() ? instructions.trim() : null);
         if (model === undefined) return json(res, 200, { instructions: instructions && instructions.trim() ? instructions.trim() : '' });
