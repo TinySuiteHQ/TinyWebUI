@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
-import { REASONING_REPLAY, MODEL_TAGS } from './config/models.ts';
+import { REASONING_REPLAY, MODEL_TAGS, THINKING_LEVELS, THINKING_SEND } from './config/models.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
@@ -463,6 +463,14 @@ export function configSchema() {
       cacheMode: { enum: ['auto', 'implicit', 'explicit', 'rolling', 'off'] },
       cacheTtl: { enum: ['5m', '1h'] },
       reasoningReplay: { enum: REASONING_REPLAY },
+      thinking: {
+        type: 'object', additionalProperties: false, description: 'How hard the model thinks; several choices let people switch from the model menu.',
+        properties: {
+          default: { enum: THINKING_LEVELS },
+          choices: { type: 'array', items: { enum: THINKING_LEVELS }, uniqueItems: true },
+          send: { enum: THINKING_SEND, description: 'auto: guessed from the endpoint' }
+        }
+      },
       extraBody: { type: 'object', description: 'Merged over the global extraBody.' }
     }
   });

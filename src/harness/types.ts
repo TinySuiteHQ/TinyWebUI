@@ -87,6 +87,10 @@ export interface ExtraBody {
 
 export type CacheMode = 'auto' | 'implicit' | 'explicit' | 'rolling' | 'off';
 export type ReasoningReplay = 'auto' | 'omit' | 'reasoning_content' | 'reasoning_details';
+/** How hard a model thinks before it answers, on one scale whatever the provider calls it. */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
+/** Which request field carries the level; see thinkingStyle in provider.ts. */
+export type ThinkingSend = 'auto' | 'effort' | 'openrouter' | 'anthropic' | 'switch';
 
 /** The part of the config a provider request reads. */
 export interface ProviderConfig {
@@ -99,6 +103,9 @@ export interface ProviderConfig {
   cacheTtl?: string;
   reasoningReplay?: ReasoningReplay;
   extraBody?: ExtraBody;
+  /** This turn's thinking level; null or absent sends nothing, leaving it to the provider. */
+  thinkingLevel?: ThinkingLevel | null;
+  thinkingSend?: ThinkingSend;
   temperature?: number | null;
   maxTokens?: number | null;
   compactionMaxTokens?: number;

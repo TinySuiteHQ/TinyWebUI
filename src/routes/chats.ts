@@ -1,6 +1,6 @@
 import { json, readJson, oneOf, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
-import { hasEndpoint } from '../config/models.ts';
+import { hasEndpoint, THINKING_LEVELS } from '../config/models.ts';
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
@@ -12,6 +12,9 @@ import type { ServerResponse } from 'node:http';
 import type { Auth } from '../access/auth_gate.ts';
 
 const MAX_IMAGES = 8;
+
+/** The thinking level a send asked for, if it names one; whether the model allows it is runs' call. */
+const thinkingAsked = (body: Record<string, unknown>) => (oneOf(body.thinking, THINKING_LEVELS) ? body.thinking : null);
 const F = FEATURE.CHAT;
 
 /** Images and documents on a turn need their own features, whatever the route. */
@@ -109,7 +112,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       // rewound transcript and then attaches, the same path a reload takes,
       // rather than reading a stream through a response it also has to
       // redraw behind.
-      runs.start({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role), instructions: instructionsFor(auth.user?.id) });
+      runs.start({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role), instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body) });
       return json(res, 200, { ok: true, running: true });
     } },
 
@@ -233,7 +236,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id) });
+        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body) });
       return runs.attach(run, res, 0);
     } }
   ];

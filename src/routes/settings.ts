@@ -4,6 +4,7 @@ import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.ts';
 import { audit } from '../audit.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
+import { thinkingReport } from '../chat/thinking.ts';
 import { FEATURE } from '../../public/shared/features.js';
 import type { Route, RouteDeps } from './types.ts';
 import type { McpHub } from '../mcp.ts';
@@ -17,7 +18,7 @@ export const toolList = (hub: McpHub) => hub.tools.map((t) => ({
   parameters: t.function.parameters
 }));
 
-export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }: Pick<RouteDeps, 'config' | 'configFor' | 'hub' | 'saveConfig' | 'toolsView'>): Route[] {
+export function settingsRoutes({ config, configFor, hub, saveConfig, store, toolsView }: Pick<RouteDeps, 'config' | 'configFor' | 'hub' | 'saveConfig' | 'store' | 'toolsView'>): Route[] {
   // The provider's model list, cached per endpoint for a few minutes:
   // OpenRouter's list is large and the picker is opened far more often than
   // the catalogue changes.
@@ -48,6 +49,22 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
   };
 
   return [
+    // What thinking settings did on each catalog model, for the model editor.
+    { method: 'GET', path: /^\/api\/models\/thinking$/, feature: FEATURE.SETTINGS, handle: ({ res, auth }) => {
+      if (!auth.isAdmin) return json(res, 403, { error: 'only an admin can see this' });
+      return json(res, 200, { models: thinkingReport(config(), store) });
+    } },
+
+    // Forgets a refusal (or the record so far), so the model's next turn sends its level again.
+    { method: 'DELETE', path: /^\/api\/models\/([^/]+)\/thinking$/, feature: FEATURE.SETTINGS, handle: ({ res, auth, params: [raw] }) => {
+      if (!auth.isAdmin) return json(res, 403, { error: 'only an admin can change this' });
+      let id: string;
+      try { id = decodeURIComponent(raw); } catch { return json(res, 400, { error: 'bad model id' }); }
+      const forgot = store.modelThinking.forget(id);
+      if (forgot) audit('admin.thinking_reset', { by: actor(auth), model: id });
+      return json(res, 200, { ok: true, forgot });
+    } },
+
     { method: 'GET', path: /^\/api\/config$/, feature: null, handle: ({ res, auth }) => json(res, 200, {
       ...configFor(auth),
       tools: toolList(hub()),

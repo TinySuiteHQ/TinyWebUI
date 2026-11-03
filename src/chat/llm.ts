@@ -84,11 +84,15 @@ export async function runChat({
   takeInput = null,
   // ({ question, choices, allowFreeText }) => Promise<{ answered, answer? , reason? }>:
   // puts an ask_user question to the user. Absent on unattended runs.
-  askUser = null
+  askUser = null,
+  // Optional request fields this endpoint has already refused, learned once.
+  // Handed in when the caller wants to know afterwards (a refused thinking level).
+  disabled = new Set<string>()
 }: {
   cfg: Config; chatId: string; store: Store; tools: ToolDef[]; hub: McpHub; emit: Emit; signal?: AbortSignal;
   historyFromSeq?: number | null; unattended?: boolean; approve?: Approve | null; hooks?: Hooks;
   takeInput?: (() => string[] | Promise<string[]>) | null; askUser?: ((request: AskRequest) => Promise<AskOutcome>) | null;
+  disabled?: Set<string>;
 }): Promise<(AssistantMessage | NewMessage)[]> {
   const maxRounds = Math.max(1, cfg.maxToolRounds || 12);
   const operatorPrompt = cfg.systemPrompt;
@@ -103,8 +107,6 @@ export async function runChat({
   });
   const owner = (name: string | undefined) => hub?.routes?.get(name!)?.server || 'built-ins';
 
-  // Optional request fields this endpoint has already refused, learned once.
-  const disabled = new Set<string>();
 
   // Automation executions remain ordinary, visible chat turns, but do not
   // inherit the conversation that happened before the automation was created.

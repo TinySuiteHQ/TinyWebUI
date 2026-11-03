@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS aux_usage (
   created_at INTEGER NOT NULL
 );
 
+-- What thinking settings did on each catalog model, for the admin who set
+-- them. sig is the endpoint, provider model and request format the facts
+-- were learned under; once any of those changes they no longer apply.
+CREATE TABLE IF NOT EXISTS model_thinking (
+  model_id     TEXT PRIMARY KEY,
+  sig          TEXT NOT NULL,
+  refused_at   INTEGER,
+  last_level   TEXT,
+  last_tokens  INTEGER,
+  last_text    INTEGER NOT NULL DEFAULT 0,
+  last_at      INTEGER,
+  quiet_turns  INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -349,7 +363,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a

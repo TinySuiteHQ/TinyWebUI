@@ -16,9 +16,17 @@
  * its settings but cannot be picked or run until switched back on. Pure, like
  * policy.js.
  */
-import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
+import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
 
 export type ModelTag = 'vision' | 'reasoning' | 'tools';
+
+/**
+ * How a model thinks, set by an admin per entry. `default` is what a turn
+ * uses; `choices` are the levels a person may pick from the composer (one, or
+ * none, means the level is fixed). `send` says which request field carries it
+ * when the endpoint is not one the provider table recognises.
+ */
+export interface ThinkingSpec { default?: ThinkingLevel; choices?: ThinkingLevel[]; send?: ThinkingSend }
 
 export interface ModelEntry {
   id: string;
@@ -36,6 +44,7 @@ export interface ModelEntry {
   cacheTtl?: '5m' | '1h';
   extraBody?: ExtraBody;
   reasoningReplay?: ReasoningReplay;
+  thinking?: ThinkingSpec;
 }
 
 /** A named endpoint; `models` only in the file's nested shape (see flattenCatalog). */
@@ -50,10 +59,13 @@ export const MODEL_OVERRIDES: (keyof ModelEntry & string)[] = ['systemPrompt', '
 /** Values of `reasoningReplay`; see reasoningReplay in harness/provider.js. */
 export const REASONING_REPLAY: ReasoningReplay[] = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
 
+export const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high'];
+export const THINKING_SEND: ThinkingSend[] = ['auto', 'effort', 'openrouter', 'anthropic', 'switch'];
+
 /** What a model can do; the page uses these (e.g. `vision` gates image upload). */
 export const MODEL_TAGS: ModelTag[] = ['vision', 'reasoning', 'tools'];
 
-const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', ...MODEL_OVERRIDES]);
+const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', 'thinking', ...MODEL_OVERRIDES]);
 
 /**
  * The file keeps each model with the endpoint that serves it: top-level
@@ -136,6 +148,28 @@ export function labelFor(cfg: Partial<CatalogConfig>, key: string): string {
 /** What the picker lists for one entry. Prompts and knobs stay server-side. */
 export const publicEntry = (e: ModelEntry) => ({ id: e.id, name: e.label || e.id, description: e.description || null, tags: e.tags || [] });
 
+/** The levels a person may pick and the one they get otherwise, or null when the entry leaves thinking to the provider. */
+export function thinkingView(spec: ThinkingSpec | undefined): { default: ThinkingLevel; choices: ThinkingLevel[] } | null {
+  if (!spec) return null;
+  const choices = spec.choices?.length ? THINKING_LEVELS.filter((l) => spec.choices!.includes(l)) : [];
+  const fallback = choices.includes('medium') ? 'medium' : choices[0] || 'medium';
+  const level = spec.default ?? fallback;
+  return { default: level, choices: choices.length > 1 ? choices : [level] };
+}
+
+/**
+ * What one turn on `key` thinks at and how it is sent: the level the person
+ * asked for when the entry offers it, else the entry's default. Null when the
+ * entry says nothing about thinking, so nothing is sent.
+ */
+export function thinkingFor(cfg: Partial<CatalogConfig>, key: string | null | undefined, asked?: unknown): { level: ThinkingLevel; send: ThinkingSend } | null {
+  const e = findEntry(cfg, key ?? cfg.model);
+  const view = thinkingView(e?.thinking);
+  if (!view) return null;
+  const level = view.choices.find((l) => l === asked) || view.default;
+  return { level, send: e!.thinking!.send || 'auto' };
+}
+
 /**
  * The config one turn runs with: the entry's overrides over the global
  * settings and its provider id as `model`. extraBody merges, so an entry can
@@ -190,6 +224,19 @@ export function connectorProblems(cfg: Record<string, any>): string[] {
   return out;
 }
 
+function thinkingProblems(t: any, at: string): string[] {
+  if (!t || typeof t !== 'object' || Array.isArray(t)) return [`${at} must be an object like { default: 'medium', choices: ['low', 'medium', 'high'] }`];
+  const out: string[] = [];
+  for (const k of Object.keys(t)) if (!['default', 'choices', 'send'].includes(k)) out.push(`${at}.${k} is not a known setting (known: default, choices, send)`);
+  if (t.default !== undefined && !THINKING_LEVELS.includes(t.default)) out.push(`${at}.default must be one of ${THINKING_LEVELS.join(', ')}`);
+  if (t.choices !== undefined) {
+    if (!(Array.isArray(t.choices) && t.choices.every((l: ThinkingLevel) => THINKING_LEVELS.includes(l)))) out.push(`${at}.choices must be a list from ${THINKING_LEVELS.join(', ')}`);
+    else if (t.default !== undefined && t.choices.length && !t.choices.includes(t.default)) out.push(`${at}.default "${t.default}" must be one of its choices`);
+  }
+  if (t.send !== undefined && !THINKING_SEND.includes(t.send)) out.push(`${at}.send must be one of ${THINKING_SEND.join(', ')}`);
+  return out;
+}
+
 const NUMERIC: Record<string, string> = { temperature: 'a number or null', maxTokens: 'a number or null' };
 
 /** Every problem with the catalog and what refers into it. */
@@ -220,6 +267,7 @@ export function modelProblems(cfg: Record<string, any>): string[] {
     if (e.connector !== undefined && typeof e.connector !== 'string') out.push(`${at}.connector must be a connector id`);
     if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t: ModelTag) => MODEL_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${MODEL_TAGS.join(', ')}`);
     if (e.extraBody !== undefined && !(e.extraBody && typeof e.extraBody === 'object' && !Array.isArray(e.extraBody))) out.push(`${at}.extraBody must be an object`);
+    if (e.thinking !== undefined) out.push(...thinkingProblems(e.thinking, `${at}.thinking`));
   });
   if (!list.length || out.length) return out;
   // A closed catalog: everything that names a model has to name an entry.

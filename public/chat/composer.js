@@ -1,11 +1,11 @@
 /**
  * The composer's two menus: + (attach files, turn tools and MCP servers on
- * and off) and the model chip (switch model). Both are popovers anchored to
+ * and off) and the model chip (switch model, and how hard it thinks). Both are popovers anchored to
  * the composer card and rebuilt from the server every time they open, so they
  * never show a state the server has already moved past.
  */
 import { $, el, installLink } from '../core/dom.js';
-import { can, whoami, loadAccess } from '../core/access.js';
+import { can, whoami, loadAccess, thinkingPick, setThinkingPick } from '../core/access.js';
 import { addError } from './transcript.js';
 import { pickFiles } from './attachments.js';
 import { openLibrary } from './library.js';
@@ -85,6 +85,7 @@ export function initComposer(deps) {
   });
   attachBtn.addEventListener('click', () => openMenu(attachBtn, 'left', buildToolsMenu));
   modelBtn.addEventListener('click', () => openMenu(modelBtn, 'right', buildModelMenu));
+  renderThinking();
 }
 
 /** An on/off switch; `onToggle(next)` returns a promise, and the switch holds still until it settles. */
@@ -207,11 +208,62 @@ function renderTools(body, data) {
 
 /* ---- model menu ---- */
 
+const LEVEL_NAMES = { off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
+
+/** The pill's tag: the thinking level the next message asks for, when the model has one. */
+function renderThinking() {
+  const tag = $('thinkingTag');
+  const level = thinkingPick();
+  // A level the provider turned down is not sent, so the pill does not claim one.
+  tag.hidden = !level || Boolean(whoami().thinking?.refused);
+  if (!level) return;
+  tag.textContent = LEVEL_NAMES[level] || level;
+  tag.title = `Thinking: ${LEVEL_NAMES[level] || level}`;
+  tag.classList.toggle('off', level === 'off');
+}
+
+/** How hard the current model thinks: a switch when its admin offers a choice, a line when the level is fixed. */
+function thinkingSection(pop) {
+  const t = whoami().thinking;
+  if (!t) return;
+  const box = el('div', `pop-think${t.refused ? ' refused' : ''}`);
+  box.appendChild(Object.assign(el('div', 'pop-label'), { textContent: 'Thinking' }));
+  if (t.refused) box.title = 'This provider or model does not support this setting.';
+  if (t.choices.length < 2) {
+    const who = ['multiuser', 'trusted-header'].includes(whoami().authMode) ? 'set by your administrator' : 'fixed for this model';
+    box.appendChild(Object.assign(el('div', 'pop-note'), { textContent: `${LEVEL_NAMES[t.default]} · ${who}` }));
+  } else {
+    const seg = el('div', 'think-seg');
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Thinking level');
+    const mark = () => { for (const b of seg.children) b.setAttribute('aria-checked', String(b.dataset.level === thinkingPick())); };
+    for (const level of t.choices) {
+      const b = Object.assign(el('button'), { type: 'button', textContent: LEVEL_NAMES[level] || level });
+      b.dataset.level = level;
+      b.setAttribute('role', 'radio');
+      // Not `disabled`: a disabled button swallows the hover that shows why.
+      if (t.refused) b.setAttribute('aria-disabled', 'true');
+      b.onclick = () => { if (t.refused) return; setThinkingPick(level); mark(); renderThinking(); };
+      seg.appendChild(b);
+    }
+    mark();
+    box.appendChild(seg);
+    box.appendChild(Object.assign(el('div', 'pop-note'), {
+      textContent: t.refused ? 'Not supported by this model\'s provider.' : 'Deeper thinking answers harder questions better, and takes longer.'
+    }));
+  }
+  pop.append(box, el('hr', 'pop-sep'));
+}
+
 async function buildModelMenu(pop) {
   // Tier 3: the pill is a personal choice among your role's models, saved
   // per user; it never changes anyone else's model.
   const personal = ['multiuser', 'trusted-header'].includes(whoami().authMode);
   const current = personal ? whoami().model : config.model();
+  // Re-read first: a turn since the page loaded may have found the level refused.
+  await loadAccess();
+  renderThinking();
+  thinkingSection(pop);
   if (!personal && config.isLocked('model')) {
     pop.appendChild(Object.assign(el('div', 'pop-note'), {
       textContent: config.isReadOnly() ? 'The model is managed by your administrator.' : 'The model is set in code and cannot be switched here.'
@@ -237,7 +289,8 @@ async function buildModelMenu(pop) {
       else await api.post('/api/config', { model: id });
     } catch (err) { return addError(err.message); }
     await config.load();
-    await loadAccess(); // the new model's capability tags
+    await loadAccess(); // the new model's capability tags and thinking levels
+    renderThinking();
   };
 
   let models = [];

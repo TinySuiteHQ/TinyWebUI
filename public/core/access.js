@@ -17,6 +17,24 @@ export const whoami = () => me;
 /** False only when the catalog tags the current model and `vision` is not among them: untagged means unknown, so allowed. */
 export const modelAcceptsImages = () => !me.modelTags?.length || me.modelTags.includes('vision');
 
+/**
+ * The thinking level to ask for: what this person last picked for the current
+ * model, when the model still offers it, else the model's default. Null when
+ * the model leaves thinking to the provider. Kept per browser and per model;
+ * the server checks it against the model's settings either way.
+ */
+export function thinkingPick() {
+  const t = me.thinking;
+  if (!t) return null;
+  let saved = null;
+  try { saved = localStorage.getItem(`tinywebui.thinking.${me.model}`); } catch { /* storage blocked */ }
+  return t.choices.includes(saved) ? saved : t.default;
+}
+
+export function setThinkingPick(level) {
+  try { localStorage.setItem(`tinywebui.thinking.${me.model}`, level); } catch { /* storage blocked: this send still uses it */ }
+}
+
 // Nav items and controls that exist only for one feature.
 const GATED = {
   [FEATURE.SETTINGS]: ['toggle-settings'],

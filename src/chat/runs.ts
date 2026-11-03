@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.ts';
-import { effectiveConfig } from '../config/models.ts';
+import { effectiveConfig, thinkingFor } from '../config/models.ts';
+import { recordThinking, thinkingRefused } from './thinking.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../public/shared/events.js';
 import { CORPUS, type Store } from '../store/index.ts';
@@ -48,6 +49,8 @@ export interface RunOptions {
   model?: string | null;
   lead?: string | null;
   instructions?: string | null;
+  /** The thinking level the person asked for; the model's own settings decide whether it applies. */
+  thinking?: string | null;
 }
 
 /** The part of the app a run reads live (built in server.js). */
@@ -95,7 +98,7 @@ export function createRuns(app: RunsApp) {
    * `lead` is a queued follow-up that starts this run: stored after baseCount
    * and sent as an event, so a live view and a reload each show it once.
    */
-  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null }: RunOptions): Run {
+  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null, thinking = null }: RunOptions): Run {
     const run: Run = {
       events: [],
       subs: new Set(),
@@ -180,12 +183,21 @@ export function createRuns(app: RunsApp) {
     // Not awaited: the run outlives the request that started it.
     void (async () => {
       try {
-        const base = effectiveConfig(app.cfg, model);
+        // A level this model's endpoint has refused is not sent again until its setup changes.
+        const think = thinkingFor(app.cfg, model, thinking);
+        const level = think && !thinkingRefused(app.cfg, store, model) ? think.level : null;
+        const base = { ...effectiveConfig(app.cfg, model), thinkingLevel: level, thinkingSend: think?.send };
         const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}
 
 The user's own instructions:
 ${instructions}` } : base;
-        await runChat({ cfg, chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
+        const disabled = new Set<string>();
+        let added: Awaited<ReturnType<typeof runChat>> = [];
+        try {
+          added = await runChat({ cfg, chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser, disabled });
+        } finally {
+          if (level) recordThinking(app.cfg, store, model, level, { refused: disabled.has('thinking'), messages: added });
+        }
       } catch (err) {
         emit({ type: EVENT.ERROR, error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -200,7 +212,7 @@ ${instructions}` } : base;
         const next = ok && !unattended ? store.chats.takeQueued(chat.id, { first: true })[0] : null;
         if (next) {
           emit({ type: EVENT.NEXT_RUN });
-          start({ chat, tools, model, lead: next.content });
+          start({ chat, tools, model, lead: next.content, instructions, thinking });
         }
         try { onFinish?.({
           ok,

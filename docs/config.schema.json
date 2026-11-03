@@ -104,6 +104,43 @@
               "reasoning_details"
             ]
           },
+          "thinking": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "How hard the model thinks; several choices let people switch from the model menu.",
+            "properties": {
+              "default": {
+                "enum": [
+                  "off",
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "off",
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                },
+                "uniqueItems": true
+              },
+              "send": {
+                "enum": [
+                  "auto",
+                  "effort",
+                  "openrouter",
+                  "anthropic",
+                  "switch"
+                ],
+                "description": "auto: guessed from the endpoint"
+              }
+            }
+          },
           "extraBody": {
             "type": "object",
             "description": "Merged over the global extraBody."
@@ -217,6 +254,43 @@
                     "reasoning_content",
                     "reasoning_details"
                   ]
+                },
+                "thinking": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "How hard the model thinks; several choices let people switch from the model menu.",
+                  "properties": {
+                    "default": {
+                      "enum": [
+                        "off",
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "off",
+                          "low",
+                          "medium",
+                          "high"
+                        ]
+                      },
+                      "uniqueItems": true
+                    },
+                    "send": {
+                      "enum": [
+                        "auto",
+                        "effort",
+                        "openrouter",
+                        "anthropic",
+                        "switch"
+                      ],
+                      "description": "auto: guessed from the endpoint"
+                    }
+                  }
                 },
                 "extraBody": {
                   "type": "object",
