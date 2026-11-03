@@ -128,6 +128,10 @@ async function buildToolsMenu(pop) {
   pop.appendChild(el('hr', 'pop-sep'));
   }
 
+  // The switches still matter for other models, so they stay; this just says why nothing is called.
+  if (whoami().modelTools === false) {
+    pop.appendChild(Object.assign(el('div', 'pop-note pop-warn'), { textContent: 'The current model is set to use no tools. These switches apply to the other models.' }));
+  }
   const body = el('div', 'pop-scroll');
   body.appendChild(Object.assign(el('div', 'pop-note'), { textContent: 'Loading tools…' }));
   pop.appendChild(body);

@@ -49,6 +49,14 @@
             "type": "string",
             "description": "Older flat form: id of an entry in connectors. Prefer listing the model under that connector."
           },
+          "images": {
+            "type": "boolean",
+            "description": "false: people cannot send this model images. Default true."
+          },
+          "tools": {
+            "type": "boolean",
+            "description": "false: the model is offered no tools. Default true."
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -59,7 +67,7 @@
               ]
             },
             "uniqueItems": true,
-            "description": "What the model can do."
+            "description": "Older form of images/tools: listed tags without vision mean images off."
           },
           "systemPrompt": {
             "type": "string",
@@ -200,6 +208,14 @@
                   "type": "boolean",
                   "description": "false: keep the settings, hide and refuse the model."
                 },
+                "images": {
+                  "type": "boolean",
+                  "description": "false: people cannot send this model images. Default true."
+                },
+                "tools": {
+                  "type": "boolean",
+                  "description": "false: the model is offered no tools. Default true."
+                },
                 "tags": {
                   "type": "array",
                   "items": {
@@ -210,7 +226,7 @@
                     ]
                   },
                   "uniqueItems": true,
-                  "description": "What the model can do."
+                  "description": "Older form of images/tools: listed tags without vision mean images off."
                 },
                 "systemPrompt": {
                   "type": "string",

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.ts';
-import { effectiveConfig, thinkingFor } from '../config/models.ts';
+import { effectiveConfig, findEntry, thinkingFor, usesTools } from '../config/models.ts';
 import { recordThinking, thinkingRefused } from './thinking.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../public/shared/events.js';
@@ -194,7 +194,9 @@ ${instructions}` } : base;
         const disabled = new Set<string>();
         let added: Awaited<ReturnType<typeof runChat>> = [];
         try {
-          added = await runChat({ cfg, chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser, disabled });
+          // A model its admin set to no tools gets none, whatever the person's role allows.
+          const offered = usesTools(findEntry(app.cfg, model ?? app.cfg.model)) ? tools : [];
+          added = await runChat({ cfg, chatId: chat.id, store, tools: offered, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser, disabled });
         } finally {
           if (level) recordThinking(app.cfg, store, model, level, { refused: disabled.has('thinking'), messages: added });
         }

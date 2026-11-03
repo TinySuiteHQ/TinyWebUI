@@ -8,7 +8,6 @@
 import { $, el } from '../core/dom.js';
 import { api } from '../core/api.js';
 
-const TAGS = ['vision', 'reasoning', 'tools'];
 
 /**
  * The settings a model may override, as fields. Each one inherits the global
@@ -298,14 +297,16 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
   const enabled = Object.assign(el('input'), { type: 'checkbox', checked: m.enabled !== false });
   const enabledLabel = el('label', 'inline-check');
   enabledLabel.append(enabled, ' Enabled: people can pick it');
-  const tags = el('div', 'cfg-tags');
-  const tagBoxes = TAGS.map((t) => {
-    const cb = Object.assign(el('input'), { type: 'checkbox', checked: (m.tags || []).includes(t) });
-    const l = el('label');
-    l.append(cb, ` ${t}`);
-    tags.appendChild(l);
-    return [t, cb];
-  });
+  // On unless switched off. An older entry's tags without `vision` meant images off, and still do
+  // (takesImages in config/models.ts); saving writes the switch instead of the tags.
+  const switchBox = (on, text) => {
+    const cb = Object.assign(el('input'), { type: 'checkbox', checked: on });
+    const l = el('label', 'inline-check');
+    l.append(cb, ` ${text}`);
+    return [l, cb];
+  };
+  const [imagesLabel, images] = switchBox(m.images ?? !(m.tags?.length && !m.tags.includes('vision')), 'People can send it images');
+  const [toolsLabel, tools] = switchBox(m.tools !== false, 'It can call tools and MCP servers');
   const defaultBtn = Object.assign(el('button'), { type: 'button' });
   const showDefault = () => {
     const on = isDefault(id.value.trim());
@@ -322,7 +323,8 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
     span2(field('Description', description)),
     field('Provider model id', model, 'Blank: the id above.'),
     field('Connector', connector),
-    span2(field('Capabilities', tags)),
+    field('Images', imagesLabel, 'Off: images are refused for this model. Only for models that cannot see.'),
+    field('Tools', toolsLabel, 'Off: no tools are offered, whatever people switch on. Only for models that break on tool calls.'),
     span2(el('div', 'cfg-actions'))
   )));
   page.querySelector('.cfg-actions').append(enabledLabel, defaultBtn);
@@ -361,8 +363,8 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
       ...(model.value.trim() ? { model: model.value.trim() } : {}),
       ...(connector.value ? { connector: connector.value } : {})
     };
-    const chosen = tagBoxes.filter(([, cb]) => cb.checked).map(([t]) => t);
-    if (chosen.length) out.tags = chosen;
+    if (!images.checked) out.images = false;
+    if (!tools.checked) out.tools = false;
     if (!enabled.checked) out.enabled = false;
     for (const [spec, input] of inputs) {
       const v = readOverride(spec, input, name);
@@ -374,7 +376,7 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
   };
   page.summary = () => ({
     id: id.value.trim(), label: label.value.trim(), model: model.value.trim(), connector: connector.value,
-    enabled: enabled.checked, tags: tagBoxes.filter(([, cb]) => cb.checked).map(([t]) => t)
+    enabled: enabled.checked, images: images.checked, tools: tools.checked
   });
   page.setConnector = (cid) => { connectorChoices(connector, cid); };
   page.syncThinking = thinking.sync;

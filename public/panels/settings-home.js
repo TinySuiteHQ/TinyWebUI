@@ -20,7 +20,9 @@ function modelLink(page, { open, defaultModel }) {
   sub.textContent = [s.model || s.id, s.enabled ? '' : 'disabled'].filter(Boolean).join(' · ');
   const chips = el('span', 'model-chips');
   if (s.id && s.id === defaultModel) chips.appendChild(Object.assign(el('span', 'chip chip-default'), { textContent: 'default' }));
-  for (const t of s.tags) chips.appendChild(Object.assign(el('span', 'chip'), { textContent: t }));
+  // Only what is switched off: on is the default and says nothing.
+  if (!s.images) chips.appendChild(Object.assign(el('span', 'chip'), { textContent: 'no images' }));
+  if (!s.tools) chips.appendChild(Object.assign(el('span', 'chip'), { textContent: 'no tools' }));
   const text = el('span', 'model-text');
   text.append(name, sub);
   b.append(text, chips, Object.assign(el('span', 'chev'), { textContent: '›', ariaHidden: 'true' }));

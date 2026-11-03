@@ -18,7 +18,6 @@
  */
 import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
 
-export type ModelTag = 'vision' | 'reasoning' | 'tools';
 
 /**
  * How a model thinks, set by an admin per entry. `default` is what a turn
@@ -35,7 +34,12 @@ export interface ModelEntry {
   description?: string;
   enabled?: boolean;
   connector?: string;
-  tags?: ModelTag[];
+  /** People may send this model images. On unless false. */
+  images?: boolean;
+  /** The model is offered tools. On unless false: off is for a model that cannot call them. */
+  tools?: boolean;
+  /** Older form: what the model can do. Still read (see takesImages); the editor writes images/tools instead. */
+  tags?: string[];
   systemPrompt?: string;
   temperature?: number | null;
   maxTokens?: number | null;
@@ -62,10 +66,10 @@ export const REASONING_REPLAY: ReasoningReplay[] = ['auto', 'omit', 'reasoning_c
 export const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high'];
 export const THINKING_SEND: ThinkingSend[] = ['auto', 'effort', 'openrouter', 'anthropic', 'switch'];
 
-/** What a model can do; the page uses these (e.g. `vision` gates image upload). */
-export const MODEL_TAGS: ModelTag[] = ['vision', 'reasoning', 'tools'];
+/** The older `tags` values, accepted so configs that list them still load. */
+export const LEGACY_TAGS = ['vision', 'reasoning', 'tools'];
 
-const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', 'thinking', ...MODEL_OVERRIDES]);
+const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'images', 'tools', 'tags', 'thinking', ...MODEL_OVERRIDES]);
 
 /**
  * The file keeps each model with the endpoint that serves it: top-level
@@ -146,7 +150,18 @@ export function labelFor(cfg: Partial<CatalogConfig>, key: string): string {
 }
 
 /** What the picker lists for one entry. Prompts and knobs stay server-side. */
-export const publicEntry = (e: ModelEntry) => ({ id: e.id, name: e.label || e.id, description: e.description || null, tags: e.tags || [] });
+export const publicEntry = (e: ModelEntry) => ({ id: e.id, name: e.label || e.id, description: e.description || null });
+
+/**
+ * Whether people may send this model images. On unless an admin switched it
+ * off; an older entry whose tags leave out `vision` stays off, as it was.
+ * No entry (an open catalog) means nothing is known, so nothing is refused.
+ */
+export const takesImages = (e: ModelEntry | null | undefined): boolean =>
+  !e || (e.images ?? !(e.tags?.length && !e.tags.includes('vision')));
+
+/** Whether this model is offered tools. On unless an admin switched it off. */
+export const usesTools = (e: ModelEntry | null | undefined): boolean => !e || e.tools !== false;
 
 /** The levels a person may pick and the one they get otherwise, or null when the entry leaves thinking to the provider. */
 export function thinkingView(spec: ThinkingSpec | undefined): { default: ThinkingLevel; choices: ThinkingLevel[] } | null {
@@ -265,7 +280,8 @@ export function modelProblems(cfg: Record<string, any>): string[] {
     if (e.cacheTtl !== undefined && !['5m', '1h'].includes(e.cacheTtl)) out.push(`${at}.cacheTtl must be 5m or 1h`);
     if (e.enabled !== undefined && typeof e.enabled !== 'boolean') out.push(`${at}.enabled must be true or false`);
     if (e.connector !== undefined && typeof e.connector !== 'string') out.push(`${at}.connector must be a connector id`);
-    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t: ModelTag) => MODEL_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${MODEL_TAGS.join(', ')}`);
+    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t: string) => LEGACY_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${LEGACY_TAGS.join(', ')}`);
+    for (const k of ['images', 'tools']) if (e[k] !== undefined && typeof e[k] !== 'boolean') out.push(`${at}.${k} must be true or false`);
     if (e.extraBody !== undefined && !(e.extraBody && typeof e.extraBody === 'object' && !Array.isArray(e.extraBody))) out.push(`${at}.extraBody must be an object`);
     if (e.thinking !== undefined) out.push(...thinkingProblems(e.thinking, `${at}.thinking`));
   });

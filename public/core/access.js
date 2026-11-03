@@ -14,8 +14,8 @@ let features = new Set();
 export const can = (feature) => features.has(feature);
 export const whoami = () => me;
 
-/** False only when the catalog tags the current model and `vision` is not among them: untagged means unknown, so allowed. */
-export const modelAcceptsImages = () => !me.modelTags?.length || me.modelTags.includes('vision');
+/** False only when an admin switched images off for the current model. */
+export const modelAcceptsImages = () => me.modelImages !== false;
 
 /**
  * The thinking level to ask for: what this person last picked for the current

@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
-import { REASONING_REPLAY, MODEL_TAGS, THINKING_LEVELS, THINKING_SEND } from './config/models.ts';
+import { REASONING_REPLAY, LEGACY_TAGS, THINKING_LEVELS, THINKING_SEND } from './config/models.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass,
   FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
@@ -455,7 +455,9 @@ export function configSchema() {
       description: { type: 'string' },
       enabled: { type: 'boolean', description: 'false: keep the settings, hide and refuse the model.' },
       ...(nested ? {} : { connector: { type: 'string', description: 'Older flat form: id of an entry in connectors. Prefer listing the model under that connector.' } }),
-      tags: { type: 'array', items: { enum: MODEL_TAGS }, uniqueItems: true, description: 'What the model can do.' },
+      images: { type: 'boolean', description: 'false: people cannot send this model images. Default true.' },
+      tools: { type: 'boolean', description: 'false: the model is offered no tools. Default true.' },
+      tags: { type: 'array', items: { enum: LEGACY_TAGS }, uniqueItems: true, description: 'Older form of images/tools: listed tags without vision mean images off.' },
       systemPrompt: { type: 'string', description: 'Replaces the top-level systemPrompt for this model.' },
       temperature: num,
       maxTokens: num,

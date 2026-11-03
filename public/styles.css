@@ -1432,6 +1432,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .pop-sep { border: 0; border-top: 1px solid var(--line); margin: .25rem -.375rem; }
 .pop-label { padding: .5rem .5rem .25rem; color: var(--faint); font-size: var(--fs-meta); font-weight: 500; }
 .pop-note { padding: .5rem; color: var(--muted); font-size: var(--fs-meta); }
+.pop-warn { margin: .125rem .25rem .25rem; border-radius: var(--r-sm); background: var(--panel); color: var(--fg); }
 .pop-foot { color: var(--muted); font-size: var(--fs-meta); margin-top: .25rem; border-top: 1px solid var(--line); border-radius: 0 0 var(--r-sm) var(--r-sm); }
 .pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pop-meta { color: var(--faint); font-size: var(--fs-meta); flex-shrink: 0; font-variant-numeric: tabular-nums; }
