@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.ts';
 import { effectiveConfig, findEntry, thinkingFor, usesTools } from '../config/models.ts';
-import { recordThinking, thinkingRefused } from './thinking.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../public/shared/events.js';
 import { CORPUS, type Store } from '../store/index.ts';
@@ -183,23 +182,18 @@ export function createRuns(app: RunsApp) {
     // Not awaited: the run outlives the request that started it.
     void (async () => {
       try {
-        // A level this model's endpoint has refused is not sent again until its setup changes.
+        // Always sent when the model has a level. An endpoint that ignores it
+        // answers as usual; one that rejects it has the field dropped for the
+        // rest of this turn (post() in provider.ts). Nothing is remembered.
         const think = thinkingFor(app.cfg, model, thinking);
-        const level = think && !thinkingRefused(app.cfg, store, model) ? think.level : null;
-        const base = { ...effectiveConfig(app.cfg, model), thinkingLevel: level, thinkingSend: think?.send };
+        const base = { ...effectiveConfig(app.cfg, model), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
         const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}
 
 The user's own instructions:
 ${instructions}` } : base;
-        const disabled = new Set<string>();
-        let added: Awaited<ReturnType<typeof runChat>> = [];
-        try {
-          // A model its admin set to no tools gets none, whatever the person's role allows.
-          const offered = usesTools(findEntry(app.cfg, model ?? app.cfg.model)) ? tools : [];
-          added = await runChat({ cfg, chatId: chat.id, store, tools: offered, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser, disabled });
-        } finally {
-          if (level) recordThinking(app.cfg, store, model, level, { refused: disabled.has('thinking'), messages: added });
-        }
+        // A model its admin set to no tools gets none, whatever the person's role allows.
+        const offered = usesTools(findEntry(app.cfg, model ?? app.cfg.model)) ? tools : [];
+        await runChat({ cfg, chatId: chat.id, store, tools: offered, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
       } catch (err) {
         emit({ type: EVENT.ERROR, error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {

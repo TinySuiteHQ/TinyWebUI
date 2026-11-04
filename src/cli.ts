@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
-import { REASONING_REPLAY, LEGACY_TAGS, THINKING_LEVELS, THINKING_SEND } from './config/models.ts';
+import { REASONING_REPLAY, LEGACY_TAGS, THINKING_CHOICES, THINKING_SEND } from './config/models.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass, passwordProblem,
   FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
@@ -509,8 +509,8 @@ export function configSchema() {
       thinking: {
         type: 'object', additionalProperties: false, description: 'How hard the model thinks; several choices let people switch from the model menu.',
         properties: {
-          default: { enum: THINKING_LEVELS },
-          choices: { type: 'array', items: { enum: THINKING_LEVELS }, uniqueItems: true },
+          default: { enum: THINKING_CHOICES, description: "provider: send nothing, so the provider's own default applies (the default)" },
+          choices: { type: 'array', items: { enum: THINKING_CHOICES }, uniqueItems: true },
           send: { enum: THINKING_SEND, description: 'auto: guessed from the endpoint' }
         }
       },

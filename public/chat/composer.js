@@ -212,7 +212,7 @@ function renderTools(body, data) {
 
 /* ---- model menu ---- */
 
-const LEVEL_NAMES = { off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
+const LEVEL_NAMES = { provider: 'Default', off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
 // Catalogs longer than this get a search box in the model menu.
 const SEARCH_FROM = 8;
 
@@ -220,9 +220,9 @@ const SEARCH_FROM = 8;
 function renderThinking() {
   const tag = $('thinkingTag');
   const level = thinkingPick();
-  // A level the provider turned down is not sent, so the pill does not claim one.
-  tag.hidden = !level || Boolean(whoami().thinking?.refused);
-  if (!level) return;
+  // The provider's own default asks for nothing, so the pill claims nothing.
+  tag.hidden = !level || level === 'provider';
+  if (tag.hidden) return;
   tag.textContent = LEVEL_NAMES[level] || level;
   tag.title = `Thinking: ${LEVEL_NAMES[level] || level}`;
   tag.classList.toggle('off', level === 'off');
@@ -232,9 +232,8 @@ function renderThinking() {
 function thinkingSection(pop) {
   const t = whoami().thinking;
   if (!t) return;
-  const box = el('div', `pop-think${t.refused ? ' refused' : ''}`);
+  const box = el('div', 'pop-think');
   box.appendChild(Object.assign(el('div', 'pop-label'), { textContent: 'Thinking' }));
-  if (t.refused) box.title = 'This provider or model does not support this setting.';
   if (t.choices.length < 2) {
     const who = ['multiuser', 'trusted-header'].includes(whoami().authMode) ? 'set by your administrator' : 'fixed for this model';
     box.appendChild(Object.assign(el('div', 'pop-note'), { textContent: `${LEVEL_NAMES[t.default]} · ${who}` }));
@@ -247,15 +246,13 @@ function thinkingSection(pop) {
       const b = Object.assign(el('button'), { type: 'button', textContent: LEVEL_NAMES[level] || level });
       b.dataset.level = level;
       b.setAttribute('role', 'radio');
-      // Not `disabled`: a disabled button swallows the hover that shows why.
-      if (t.refused) b.setAttribute('aria-disabled', 'true');
-      b.onclick = () => { if (t.refused) return; setThinkingPick(level); mark(); renderThinking(); };
+      b.onclick = () => { setThinkingPick(level); mark(); renderThinking(); };
       seg.appendChild(b);
     }
     mark();
     box.appendChild(seg);
     box.appendChild(Object.assign(el('div', 'pop-note'), {
-      textContent: t.refused ? 'Not supported by this model\'s provider.' : 'Deeper thinking answers harder questions better, and takes longer.'
+      textContent: 'Default leaves it to the provider. Deeper thinking answers harder questions better, and takes longer. Some models ignore it.'
     }));
   }
   pop.append(box, el('hr', 'pop-sep'));
@@ -266,9 +263,6 @@ async function buildModelMenu(pop) {
   // per user; it never changes anyone else's model.
   const personal = ['multiuser', 'trusted-header'].includes(whoami().authMode);
   const current = personal ? whoami().model : config.model();
-  // Re-read first: a turn since the page loaded may have found the level refused.
-  await loadAccess();
-  renderThinking();
   thinkingSection(pop);
   if (!personal && config.isLocked('model')) {
     pop.appendChild(Object.assign(el('div', 'pop-note'), {

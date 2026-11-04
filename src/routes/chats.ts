@@ -1,6 +1,6 @@
 import { json, readJson, oneOf, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
-import { hasEndpoint, findEntry, takesImages, THINKING_LEVELS } from '../config/models.ts';
+import { hasEndpoint, findEntry, takesImages, THINKING_CHOICES } from '../config/models.ts';
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
@@ -16,7 +16,7 @@ const MAX_IMAGES = 8;
 const NO_IMAGES = 'this model does not take images: pick another model, or ask an admin to switch images on for it';
 
 /** The thinking level a send asked for, if it names one; whether the model allows it is runs' call. */
-const thinkingAsked = (body: Record<string, unknown>) => (oneOf(body.thinking, THINKING_LEVELS) ? body.thinking : null);
+const thinkingAsked = (body: Record<string, unknown>) => (oneOf(body.thinking, THINKING_CHOICES) ? body.thinking : null);
 const F = FEATURE.CHAT;
 
 /** Images and documents on a turn need their own features, whatever the route. */

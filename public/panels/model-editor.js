@@ -26,7 +26,7 @@ const OVERRIDES = [
 ];
 const SECTIONS = ['Prompt', 'Sampling', 'Tools', 'Caching', 'Advanced'];
 
-const LEVELS = [['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
+const LEVELS = [['provider', 'Default'], ['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
 // How the level reaches the provider; 'auto' guesses from the endpoint (thinkingStyle in harness/provider.ts).
 const SENDS = [
   ['auto', 'Auto: guess from the endpoint'],
@@ -36,97 +36,50 @@ const SENDS = [
   ['switch', 'enable_thinking on/off (Qwen-style local templates)']
 ];
 
-// What thinking did on each model, from /api/models/thinking; refreshed with the catalog.
-let thinkingFacts = {};
-const levelName = (l) => LEVELS.find(([v]) => v === l)?.[1] || l;
-
-/**
- * What the admin is told about a model's thinking: a refusal, which stops
- * the level being sent and greys the switch out, else what the last turns
- * reported. Missing reasoning is only a hint: some providers never report it.
- */
-function thinkingStatus(box, modelId, refresh) {
-  const f = thinkingFacts[modelId];
-  const line = (text, strong) => {
-    const p = el('div');
-    if (strong) p.appendChild(Object.assign(el('b'), { textContent: strong }));
-    if (text) p.append(strong ? ` ${text}` : text);
-    return p;
-  };
-  box.classList.toggle('refused', Boolean(f?.refusedAt));
-  if (f?.refusedAt) {
-    const retry = Object.assign(el('button'), { type: 'button', textContent: 'Try again' });
-    retry.disabled = locked;
-    retry.onclick = async () => {
-      retry.disabled = true;
-      try { await api.del(`/api/models/${encodeURIComponent(modelId)}/thinking`); delete thinkingFacts[modelId]; refresh(); }
-      catch (err) { retry.disabled = false; box.appendChild(line(err.message)); }
-    };
-    box.replaceChildren(
-      line(`(${new Date(f.refusedAt).toLocaleString()}). People see the switch greyed out, and no level is sent. Changing the endpoint, the provider model or "Send it as" tries again by itself.`, 'This endpoint refused thinking settings'),
-      retry
-    );
-    return;
-  }
-  if (!f?.lastAt) { box.replaceChildren(line('No turns with thinking yet. What they report shows up here.')); return; }
-  const what = f.lastTokens != null ? `${f.lastTokens.toLocaleString()} reasoning tokens`
-    : f.lastText ? 'reasoning came back, with no token count' : 'no reasoning reported';
-  const lines = [line(`${what} (${new Date(f.lastAt).toLocaleString()})`, `Last turn at ${levelName(f.lastLevel)}:`)];
-  if (f.quietTurns >= 2) {
-    lines.push(line(`No reasoning reported in the last ${f.quietTurns} turns with thinking on. Some providers never report it (Anthropic's OpenAI-compatible endpoint, for one), so this is a hint, not proof. If the model can think, try another "Send it as"; if it cannot, set the level to "Provider decides" so people get no switch.`));
-  }
-  box.replaceChildren(...lines);
-}
-
-/** Fetches what thinking did on each model and redraws every editor's status. Admins only; anyone else simply sees none. */
-async function loadThinkingFacts() {
-  try { thinkingFacts = (await api.get('/api/models/thinking')).models || {}; } catch { thinkingFacts = {}; }
-  for (const p of modelEditors) p.syncThinking?.();
-}
-
 /**
  * The Thinking section: the level a turn uses, which levels people may pick
- * from the composer, and how it is sent. "Provider decides" sends nothing.
+ * from the composer, and how it is sent. Default (`provider`) sends nothing,
+ * and is all a model gets unless the admin offers or fixes another level.
  */
-function thinkingEditor(t, modelId) {
+function thinkingEditor(t) {
   const options = (sel, list, value) => {
     sel.replaceChildren(...list.map(([v, label]) => Object.assign(el('option'), { value: v, textContent: label })));
     sel.value = value;
     return sel;
   };
-  const level = options(el('select'), [['', 'Provider decides (send nothing)'], ...LEVELS], t?.default || (t ? 'medium' : ''));
+  const level = options(el('select'), LEVELS.map(([v, label]) => [v, v === 'provider' ? 'Provider default (send nothing)' : label]), t?.default || 'provider');
   const send = options(el('select'), SENDS, t?.send || 'auto');
   const picks = el('div', 'cfg-tags');
   const boxes = LEVELS.map(([v, label]) => {
-    const cb = Object.assign(el('input'), { type: 'checkbox', value: v, checked: (t?.choices || []).includes(v) });
+    // A model without thinking settings starts with Default ticked, so offering a level keeps it;
+    // a saved fixed level (no choices) stays fixed.
+    const cb = Object.assign(el('input'), { type: 'checkbox', value: v, checked: (t ? t.choices || [] : ['provider']).includes(v) });
+    cb.onchange = () => sync();
     const l = el('label');
     l.append(cb, ` ${label}`);
     picks.appendChild(l);
     return cb;
   });
-  const status = el('div', 'think-status');
-  // The default is always one of the choices, and with no level there is nothing to choose.
+  const picked = () => boxes.filter((cb) => cb.checked || cb.value === level.value).map((cb) => cb.value);
+  // The default is always one of the choices; "Send it as" matters only once some level is sent.
   const sync = () => {
     for (const cb of boxes) {
-      cb.disabled = locked || !level.value || cb.value === level.value;
+      cb.disabled = locked || cb.value === level.value;
       if (cb.value === level.value) cb.checked = true;
     }
-    send.disabled = locked || !level.value;
-    // Facts belong to the saved model; a level being set up has none yet.
-    status.hidden = !level.value || !modelId();
-    if (!status.hidden) thinkingStatus(status, modelId(), sync);
+    send.disabled = locked || picked().every((v) => v === 'provider');
   };
   level.onchange = sync;
   const section = group('Thinking', 'How hard this model thinks before it answers. Tick more than one level to let people switch from the model menu; a single level is fixed.', grid(
     field('Level', level, 'What every turn uses unless the person picks another.'),
     field('Send it as', send, 'Auto knows OpenRouter and Anthropic; everything else gets reasoning_effort.'),
-    span2(field('People may pick', picks, 'Only the default ticked: the level is fixed.')),
-    span2(status)
+    span2(field('People may pick', picks, 'Only the default ticked: the level is fixed.'))
   ));
   section.sync = sync;
   section.read = () => {
-    if (!level.value) return undefined;
-    const choices = boxes.filter((cb) => cb.checked || cb.value === level.value).map((cb) => cb.value);
+    const choices = picked();
+    // Only the provider's default: nothing to pick or send, so no settings at all.
+    if (choices.every((v) => v === 'provider')) return undefined;
     return { default: level.value, ...(choices.length > 1 ? { choices } : {}), ...(send.value !== 'auto' ? { send: send.value } : {}) };
   };
   sync();
@@ -330,7 +283,7 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
   )));
   page.querySelector('.cfg-actions').append(enabledLabel, defaultBtn);
   // Facts are kept under the saved id; an id being typed has none.
-  const thinking = thinkingEditor(m.thinking, () => m.id || '');
+  const thinking = thinkingEditor(m.thinking);
   for (const section of SECTIONS) {
     // Thinking sits with the other knobs on how the model answers.
     if (section === 'Tools') page.appendChild(thinking);
@@ -352,8 +305,6 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
     for (const [spec, input] of inputs) inheritHint(spec, input);
     showDefault();
     thinking.sync();
-    // Turns since the catalog loaded may have learned something.
-    if (m.thinking) loadThinkingFacts();
   };
   page.read = () => {
     const name = id.value.trim();
@@ -427,7 +378,6 @@ export function renderCatalog(cfg) {
   for (const c of cfg.connectors || []) addConnectorEditor(c);
   for (const m of cfg.models || []) addModelEditor(m);
   setLocked(locked);
-  loadThinkingFacts();
 }
 
 export const newConnector = () => { const p = addConnectorEditor({}); setLocked(locked); return p; };

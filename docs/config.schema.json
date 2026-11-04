@@ -119,16 +119,19 @@
             "properties": {
               "default": {
                 "enum": [
+                  "provider",
                   "off",
                   "low",
                   "medium",
                   "high"
-                ]
+                ],
+                "description": "provider: send nothing, so the provider's own default applies (the default)"
               },
               "choices": {
                 "type": "array",
                 "items": {
                   "enum": [
+                    "provider",
                     "off",
                     "low",
                     "medium",
@@ -278,16 +281,19 @@
                   "properties": {
                     "default": {
                       "enum": [
+                        "provider",
                         "off",
                         "low",
                         "medium",
                         "high"
-                      ]
+                      ],
+                      "description": "provider: send nothing, so the provider's own default applies (the default)"
                     },
                     "choices": {
                       "type": "array",
                       "items": {
                         "enum": [
+                          "provider",
                           "off",
                           "low",
                           "medium",

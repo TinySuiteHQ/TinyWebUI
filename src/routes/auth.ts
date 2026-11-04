@@ -5,7 +5,6 @@ import {
   hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.ts';
 import { audit } from '../audit.ts';
-import { thinkingRefused } from '../chat/thinking.ts';
 import { OWNER_ID } from '../access/auth_gate.ts';
 import { normalizeEmail, validEmail } from '../access/email.ts';
 import { FEATURE } from '../../public/shared/features.js';
@@ -28,11 +27,6 @@ function localAccount(body: Record<string, any>): { error: string } | { error?: 
 export function authRoutes({ config, modelFor, multiUser, source, store, version }: Pick<RouteDeps, 'config' | 'modelFor' | 'multiUser' | 'source' | 'store' | 'version'>): Route[] {
   const loginFailures = new Map();
 
-  const thinkingFacts = (cfg: ReturnType<typeof config>, model: string | null) => {
-    const view = thinkingView(findEntry(cfg, model)?.thinking);
-    return view && { ...view, refused: thinkingRefused(cfg, store, model) };
-  };
-
   return [
     { method: 'GET', path: /^\/api\/auth\/me$/, feature: null, handle: ({ res, auth }) => {
       const cfg = config();
@@ -54,9 +48,8 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
         // What the admin left on for this model; both default to on.
         modelImages: signedIn ? takesImages(findEntry(cfg, model)) : false,
         modelTools: signedIn ? usesTools(findEntry(cfg, model)) : false,
-        // The levels this model lets a person pick, and its default; null when it leaves thinking to the
-        // provider. `refused`: its endpoint turned the setting down, so the page greys the switch out.
-        thinking: signedIn ? thinkingFacts(cfg, model) : null,
+        // The levels this model lets a person pick, and its default; null when it leaves thinking to the provider.
+        thinking: signedIn ? thinkingView(findEntry(cfg, model)?.thinking) : null,
         user: auth.user
           ? { id: auth.user.id, email: auth.user.email, name: auth.user.name ?? null, role: auth.user.role, status: auth.user.status }
           : null,

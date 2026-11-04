@@ -25,7 +25,14 @@ import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend
  * none, means the level is fixed). `send` says which request field carries it
  * when the endpoint is not one the provider table recognises.
  */
-export interface ThinkingSpec { default?: ThinkingLevel; choices?: ThinkingLevel[]; send?: ThinkingSend }
+export interface ThinkingSpec { default?: ThinkingChoice; choices?: ThinkingChoice[]; send?: ThinkingSend }
+
+/**
+ * A level an entry may offer: one sent to the provider, or `provider`, which
+ * sends nothing so the provider's own default applies. Kept out of the
+ * harness's ThinkingLevel: on the wire it is the absence of a level.
+ */
+export type ThinkingChoice = 'provider' | ThinkingLevel;
 
 export interface ModelEntry {
   id: string;
@@ -63,7 +70,7 @@ export const MODEL_OVERRIDES: (keyof ModelEntry & string)[] = ['systemPrompt', '
 /** Values of `reasoningReplay`; see reasoningReplay in harness/provider.js. */
 export const REASONING_REPLAY: ReasoningReplay[] = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
 
-export const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high'];
+export const THINKING_CHOICES: ThinkingChoice[] = ['provider', 'off', 'low', 'medium', 'high'];
 export const THINKING_SEND: ThinkingSend[] = ['auto', 'effort', 'openrouter', 'anthropic', 'switch'];
 
 /** The older `tags` values, accepted so configs that list them still load. */
@@ -163,26 +170,32 @@ export const takesImages = (e: ModelEntry | null | undefined): boolean =>
 /** Whether this model is offered tools. On unless an admin switched it off. */
 export const usesTools = (e: ModelEntry | null | undefined): boolean => !e || e.tools !== false;
 
-/** The levels a person may pick and the one they get otherwise, or null when the entry leaves thinking to the provider. */
-export function thinkingView(spec: ThinkingSpec | undefined): { default: ThinkingLevel; choices: ThinkingLevel[] } | null {
+/**
+ * The levels a person may pick and the one they get otherwise, or null when
+ * there is nothing to pick and nothing to send. Without a `default` it is the
+ * provider's own, unless the admin left that out of the choices.
+ */
+export function thinkingView(spec: ThinkingSpec | undefined): { default: ThinkingChoice; choices: ThinkingChoice[] } | null {
   if (!spec) return null;
-  const choices = spec.choices?.length ? THINKING_LEVELS.filter((l) => spec.choices!.includes(l)) : [];
-  const fallback = choices.includes('medium') ? 'medium' : choices[0] || 'medium';
+  const choices = spec.choices?.length ? THINKING_CHOICES.filter((l) => spec.choices!.includes(l)) : [];
+  const fallback = !choices.length || choices.includes('provider') ? 'provider' : choices.includes('medium') ? 'medium' : choices[0];
   const level = spec.default ?? fallback;
-  return { default: level, choices: choices.length > 1 ? choices : [level] };
+  const offered = choices.length > 1 ? choices : [level];
+  return offered.length === 1 && level === 'provider' ? null : { default: level, choices: offered };
 }
 
 /**
  * What one turn on `key` thinks at and how it is sent: the level the person
- * asked for when the entry offers it, else the entry's default. Null when the
- * entry says nothing about thinking, so nothing is sent.
+ * asked for when the entry offers it, else the entry's default. Null when
+ * nothing is sent: the entry says nothing about thinking, or the level is
+ * the provider's own.
  */
 export function thinkingFor(cfg: Partial<CatalogConfig>, key: string | null | undefined, asked?: unknown): { level: ThinkingLevel; send: ThinkingSend } | null {
   const e = findEntry(cfg, key ?? cfg.model);
   const view = thinkingView(e?.thinking);
   if (!view) return null;
   const level = view.choices.find((l) => l === asked) || view.default;
-  return { level, send: e!.thinking!.send || 'auto' };
+  return level === 'provider' ? null : { level, send: e!.thinking!.send || 'auto' };
 }
 
 /**
@@ -240,12 +253,12 @@ export function connectorProblems(cfg: Record<string, any>): string[] {
 }
 
 function thinkingProblems(t: any, at: string): string[] {
-  if (!t || typeof t !== 'object' || Array.isArray(t)) return [`${at} must be an object like { default: 'medium', choices: ['low', 'medium', 'high'] }`];
+  if (!t || typeof t !== 'object' || Array.isArray(t)) return [`${at} must be an object like { default: 'provider', choices: ['provider', 'low', 'high'] }`];
   const out: string[] = [];
   for (const k of Object.keys(t)) if (!['default', 'choices', 'send'].includes(k)) out.push(`${at}.${k} is not a known setting (known: default, choices, send)`);
-  if (t.default !== undefined && !THINKING_LEVELS.includes(t.default)) out.push(`${at}.default must be one of ${THINKING_LEVELS.join(', ')}`);
+  if (t.default !== undefined && !THINKING_CHOICES.includes(t.default)) out.push(`${at}.default must be one of ${THINKING_CHOICES.join(', ')}`);
   if (t.choices !== undefined) {
-    if (!(Array.isArray(t.choices) && t.choices.every((l: ThinkingLevel) => THINKING_LEVELS.includes(l)))) out.push(`${at}.choices must be a list from ${THINKING_LEVELS.join(', ')}`);
+    if (!(Array.isArray(t.choices) && t.choices.every((l: ThinkingChoice) => THINKING_CHOICES.includes(l)))) out.push(`${at}.choices must be a list from ${THINKING_CHOICES.join(', ')}`);
     else if (t.default !== undefined && t.choices.length && !t.choices.includes(t.default)) out.push(`${at}.default "${t.default}" must be one of its choices`);
   }
   if (t.send !== undefined && !THINKING_SEND.includes(t.send)) out.push(`${at}.send must be one of ${THINKING_SEND.join(', ')}`);

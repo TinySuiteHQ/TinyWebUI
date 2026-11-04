@@ -69,20 +69,6 @@ CREATE TABLE IF NOT EXISTS aux_usage (
   created_at INTEGER NOT NULL
 );
 
--- What thinking settings did on each catalog model, for the admin who set
--- them. sig is the endpoint, provider model and request format the facts
--- were learned under; once any of those changes they no longer apply.
-CREATE TABLE IF NOT EXISTS model_thinking (
-  model_id     TEXT PRIMARY KEY,
-  sig          TEXT NOT NULL,
-  refused_at   INTEGER,
-  last_level   TEXT,
-  last_tokens  INTEGER,
-  last_text    INTEGER NOT NULL DEFAULT 0,
-  last_at      INTEGER,
-  quiet_turns  INTEGER NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -420,6 +406,9 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   if (!fresh) renameToPassages(db);
   db.exec(SCHEMA);
   if (!fresh) moveDocumentVectors(db);
+  // Only ever on unreleased schema-14 databases: thinking refusals were once
+  // remembered per model. Now the field is simply sent, so the table goes.
+  db.exec('DROP TABLE IF EXISTS model_thinking');
   // Nullable everywhere: unused (null) when auth is off, the exact behavior
   // installs already have; set only once per-user scoping is opted into.
   ensureColumn(db, 'chats', 'user_id', 'TEXT');

@@ -11,7 +11,6 @@ import { EmbeddingStore } from './embeddings.ts';
 import { TurnStore } from './turns.ts';
 import { SearchStore } from './search.ts';
 import { UserStore } from './users.ts';
-import { ModelThinkingStore } from './model_thinking.ts';
 
 export { SCHEMA_VERSION } from './schema.ts';
 export { ALL_USERS } from './scope.ts';
@@ -68,7 +67,6 @@ export class Store {
   usage: UsageStore;
   search: SearchStore;
   users: UserStore;
-  modelThinking: ModelThinkingStore;
 
   /**
    * `migrate: false` refuses to touch an existing database that is behind
@@ -104,7 +102,6 @@ export class Store {
     this.usage = new UsageStore(db);
     this.search = new SearchStore(db);
     this.users = new UserStore(db);
-    this.modelThinking = new ModelThinkingStore(db);
   }
 
   schemaVersion(): number {

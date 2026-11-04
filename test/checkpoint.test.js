@@ -90,6 +90,16 @@ test('with llmCompaction the dropped turns are summarised into the system prompt
   } finally { p.close(); }
 });
 
+test('a summary sends no thinking level, whatever the turn asked for', async () => {
+  const p = await provider();
+  const store = new Store(':memory:');
+  const chat = longChat(store);
+  try { await turn(store, chat, p, { llmCompaction: true, thinkingLevel: 'high' }); } finally { p.close(); }
+  assert.equal(p.chats[0].reasoning_effort, 'high');
+  assert.equal(p.summaries.length, 1);
+  assert.equal(p.summaries[0].reasoning_effort, undefined);
+});
+
 test('a summary not in checkpoint form is not stored; the window still moves', async () => {
   const p = await provider({ summary: 'Sure! Here is what happened.' });
   const store = new Store(':memory:');

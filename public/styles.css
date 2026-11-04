@@ -1400,15 +1400,6 @@ main:has(#wrap:empty) #form { max-width: 48rem; }
 .think-seg button { flex: 1; min-height: 1.875rem; padding: .125rem .25rem; border: 0; border-radius: calc(var(--r-sm) - 2px); background: none; color: var(--muted); font-size: var(--fs-meta); }
 .think-seg button[aria-checked="true"] { background: var(--raise); color: var(--fg); font-weight: 550; box-shadow: 0 1px 2px rgb(0 0 0 / 10%); }
 .pop-think .pop-note { padding-top: .375rem; }
-.pop-think.refused { cursor: help; }
-.pop-think.refused .think-seg { opacity: .5; }
-.pop-think.refused .think-seg button { cursor: help; }
-.think-status { display: flex; flex-direction: column; gap: .25rem; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); font-size: var(--fs-meta); color: var(--muted); }
-.think-status b { color: var(--fg); font-weight: 550; }
-.think-status.refused { border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
-.think-status.refused b { color: var(--err); }
-.think-status button { align-self: flex-start; margin-top: .25rem; font-size: var(--fs-meta); min-height: 2rem; padding: .25rem .6rem; }
-.think-status[hidden] { display: none; }
 #modelBtn .chev { width: .875rem; height: .875rem; color: var(--muted); transition: transform var(--t-fast); }
 #modelBtn[aria-expanded="true"] .chev { transform: rotate(180deg); }
 #attach[aria-expanded="true"] { background: var(--accent-soft); }
