@@ -17,6 +17,23 @@ test('every response carries the security headers', async () => {
   }
 });
 
+test('page files are revalidated on every use, so an upgrade never mixes old and new modules', async () => {
+  for (const path of ['/', '/app.js', '/panels/admin.js', '/styles.css']) {
+    const res = await fetch(base + path);
+    await res.arrayBuffer();
+    assert.equal(res.headers.get('cache-control'), 'no-cache', path);
+    const etag = res.headers.get('etag');
+    assert.match(etag, /^"[\w-]+"$/, path);
+    // What a cache asks with; a compressing proxy weakens the tag.
+    for (const tag of [etag, `W/${etag}`, `"other", ${etag}`]) {
+      assert.equal((await fetch(base + path, { headers: { 'if-none-match': tag } })).status, 304, `${path} ${tag}`);
+    }
+    const changed = await fetch(base + path, { headers: { 'if-none-match': '"something-older"' } });
+    assert.equal(changed.status, 200, path);
+    await changed.arrayBuffer();
+  }
+});
+
 test('a cross-site mutation is refused; same-origin and non-browser clients are not', async () => {
   const post = (headers) => fetch(`${base}/api/folders`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: '{"name":"f"}' });
   assert.equal((await post({ origin: 'https://evil.example' })).status, 403);

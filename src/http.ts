@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -113,7 +114,21 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse): Pr
   try {
     const data = await readFile(file);
     const ext = file.slice(file.lastIndexOf('.'));
-    res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream' });
+    // The page's modules are loaded by fixed names, so they must never be
+    // served from a cache without asking: with no header at all, a CDN in
+    // front (Cloudflare caches .js and .css by extension) hands out the old
+    // admin.js beside an upgraded index.html, and the page breaks. no-cache
+    // plus an ETag keeps a cache, but every use revalidates; an unchanged
+    // file costs a 304.
+    const etag = `"${createHash('sha1').update(data).digest('base64url')}"`;
+    const headers = { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': 'no-cache', etag };
+    // A proxy that compresses (Cloudflare does) sends it back weakened, W/"...".
+    const asked = String(req.headers['if-none-match'] || '').split(/\s*,\s*/).map((t) => t.replace(/^W\//, ''));
+    if (asked.includes(etag)) {
+      res.writeHead(304, headers);
+      return void res.end();
+    }
+    res.writeHead(200, headers);
     res.end(data);
   } catch {
     json(res, 404, { error: 'not found' });
