@@ -8,7 +8,6 @@
 import { $, el } from '../core/dom.js';
 import { api } from '../core/api.js';
 
-const TAGS = ['vision', 'reasoning', 'tools'];
 
 /**
  * The settings a model may override, as fields. Each one inherits the global
@@ -26,6 +25,66 @@ const OVERRIDES = [
   { key: 'extraBody', section: 'Advanced', label: 'Extra request body (JSON)', type: 'json', note: 'Merged over the default body.' }
 ];
 const SECTIONS = ['Prompt', 'Sampling', 'Tools', 'Caching', 'Advanced'];
+
+const LEVELS = [['provider', 'Default'], ['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
+// How the level reaches the provider; 'auto' guesses from the endpoint (thinkingStyle in harness/provider.ts).
+const SENDS = [
+  ['auto', 'Auto: guess from the endpoint'],
+  ['effort', 'reasoning_effort (OpenAI, Gemini, Ollama, vLLM)'],
+  ['openrouter', 'reasoning.effort (OpenRouter)'],
+  ['anthropic', 'thinking budget (Anthropic)'],
+  ['switch', 'enable_thinking on/off (Qwen-style local templates)']
+];
+
+/**
+ * The Thinking section: the level a turn uses, which levels people may pick
+ * from the composer, and how it is sent. Default (`provider`) sends nothing,
+ * and is all a model gets unless the admin offers or fixes another level.
+ */
+function thinkingEditor(t) {
+  const options = (sel, list, value) => {
+    sel.replaceChildren(...list.map(([v, label]) => Object.assign(el('option'), { value: v, textContent: label })));
+    sel.value = value;
+    return sel;
+  };
+  const level = options(el('select'), LEVELS.map(([v, label]) => [v, v === 'provider' ? 'Provider default (send nothing)' : label]), t?.default || 'provider');
+  const send = options(el('select'), SENDS, t?.send || 'auto');
+  const picks = el('div', 'cfg-tags');
+  const boxes = LEVELS.map(([v, label]) => {
+    // A model without thinking settings starts with Default ticked, so offering a level keeps it;
+    // a saved fixed level (no choices) stays fixed.
+    const cb = Object.assign(el('input'), { type: 'checkbox', value: v, checked: (t ? t.choices || [] : ['provider']).includes(v) });
+    cb.onchange = () => sync();
+    const l = el('label');
+    l.append(cb, ` ${label}`);
+    picks.appendChild(l);
+    return cb;
+  });
+  const picked = () => boxes.filter((cb) => cb.checked || cb.value === level.value).map((cb) => cb.value);
+  // The default is always one of the choices; "Send it as" matters only once some level is sent.
+  const sync = () => {
+    for (const cb of boxes) {
+      cb.disabled = locked || cb.value === level.value;
+      if (cb.value === level.value) cb.checked = true;
+    }
+    send.disabled = locked || picked().every((v) => v === 'provider');
+  };
+  level.onchange = sync;
+  const section = group('Thinking', 'How hard this model thinks before it answers. Tick more than one level to let people switch from the model menu; a single level is fixed.', grid(
+    field('Level', level, 'What every turn uses unless the person picks another.'),
+    field('Send it as', send, 'Auto knows OpenRouter and Anthropic; everything else gets reasoning_effort.'),
+    span2(field('People may pick', picks, 'Only the default ticked: the level is fixed.'))
+  ));
+  section.sync = sync;
+  section.read = () => {
+    const choices = picked();
+    // Only the provider's default: nothing to pick or send, so no settings at all.
+    if (choices.every((v) => v === 'provider')) return undefined;
+    return { default: level.value, ...(choices.length > 1 ? { choices } : {}), ...(send.value !== 'auto' ? { send: send.value } : {}) };
+  };
+  sync();
+  return section;
+}
 
 const connectorEditors = [];
 const modelEditors = [];
@@ -71,7 +130,8 @@ function connectorEditor(c = {}, { onRemove, onRename, onAddModel }) {
   id.addEventListener('change', () => { onRename(lastId, id.value.trim()); lastId = id.value.trim(); });
   const label = textInput(c.label, 'Local models');
   const url = textInput(c.baseUrl, 'http://localhost:11434/v1');
-  const key = Object.assign(textInput('', c.hasApiKey ? `set (…${c.keyHint || ''}) — blank keeps it` : 'optional'), { type: 'password', autocomplete: 'off' });
+  // new-password, not off: browsers ignore off on password fields and would fill in the saved login password.
+  const key = Object.assign(textInput('', c.hasApiKey ? `set (…${c.keyHint || ''}) — blank keeps it` : 'optional'), { type: 'password', autocomplete: 'new-password' });
   const clear = Object.assign(el('input'), { type: 'checkbox' });
   const test = Object.assign(el('button'), { type: 'button', textContent: 'Test connection' });
   const msg = el('span', 'usage');
@@ -191,14 +251,16 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
   const enabled = Object.assign(el('input'), { type: 'checkbox', checked: m.enabled !== false });
   const enabledLabel = el('label', 'inline-check');
   enabledLabel.append(enabled, ' Enabled: people can pick it');
-  const tags = el('div', 'cfg-tags');
-  const tagBoxes = TAGS.map((t) => {
-    const cb = Object.assign(el('input'), { type: 'checkbox', checked: (m.tags || []).includes(t) });
-    const l = el('label');
-    l.append(cb, ` ${t}`);
-    tags.appendChild(l);
-    return [t, cb];
-  });
+  // On unless switched off. An older entry's tags without `vision` meant images off, and still do
+  // (takesImages in config/models.ts); saving writes the switch instead of the tags.
+  const switchBox = (on, text) => {
+    const cb = Object.assign(el('input'), { type: 'checkbox', checked: on });
+    const l = el('label', 'inline-check');
+    l.append(cb, ` ${text}`);
+    return [l, cb];
+  };
+  const [imagesLabel, images] = switchBox(m.images ?? !(m.tags?.length && !m.tags.includes('vision')), 'People can send it images');
+  const [toolsLabel, tools] = switchBox(m.tools !== false, 'It can call tools and MCP servers');
   const defaultBtn = Object.assign(el('button'), { type: 'button' });
   const showDefault = () => {
     const on = isDefault(id.value.trim());
@@ -215,11 +277,16 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
     span2(field('Description', description)),
     field('Provider model id', model, 'Blank: the id above.'),
     field('Connector', connector),
-    span2(field('Capabilities', tags)),
+    field('Images', imagesLabel, 'Off: images are refused for this model. Only for models that cannot see.'),
+    field('Tools', toolsLabel, 'Off: no tools are offered, whatever people switch on. Only for models that break on tool calls.'),
     span2(el('div', 'cfg-actions'))
   )));
   page.querySelector('.cfg-actions').append(enabledLabel, defaultBtn);
+  // Facts are kept under the saved id; an id being typed has none.
+  const thinking = thinkingEditor(m.thinking);
   for (const section of SECTIONS) {
+    // Thinking sits with the other knobs on how the model answers.
+    if (section === 'Tools') page.appendChild(thinking);
     const mine = inputs.filter(([s]) => s.section === section);
     page.appendChild(group(section, section === 'Prompt' ? 'Blank fields inherit the defaults for all models.' : null,
       grid(...mine.map(([s, input]) => {
@@ -237,6 +304,7 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
     connectorChoices(connector, connector.value);
     for (const [spec, input] of inputs) inheritHint(spec, input);
     showDefault();
+    thinking.sync();
   };
   page.read = () => {
     const name = id.value.trim();
@@ -247,20 +315,23 @@ function modelEditor(m = {}, { onRemove, isDefault, makeDefault, renameDefault }
       ...(model.value.trim() ? { model: model.value.trim() } : {}),
       ...(connector.value ? { connector: connector.value } : {})
     };
-    const chosen = tagBoxes.filter(([, cb]) => cb.checked).map(([t]) => t);
-    if (chosen.length) out.tags = chosen;
+    if (!images.checked) out.images = false;
+    if (!tools.checked) out.tools = false;
     if (!enabled.checked) out.enabled = false;
     for (const [spec, input] of inputs) {
       const v = readOverride(spec, input, name);
       if (v !== undefined) out[spec.key] = v;
     }
+    const think = thinking.read();
+    if (think) out.thinking = think;
     return out;
   };
   page.summary = () => ({
     id: id.value.trim(), label: label.value.trim(), model: model.value.trim(), connector: connector.value,
-    enabled: enabled.checked, tags: tagBoxes.filter(([, cb]) => cb.checked).map(([t]) => t)
+    enabled: enabled.checked, images: images.checked, tools: tools.checked
   });
   page.setConnector = (cid) => { connectorChoices(connector, cid); };
+  page.syncThinking = thinking.sync;
   return page;
 }
 
@@ -332,5 +403,7 @@ export function collectCatalog() {
 export function setLocked(on) {
   locked = on;
   for (const p of [...connectorEditors, ...modelEditors]) for (const n of p.querySelectorAll('input,select,textarea,button')) n.disabled = on;
+  // Unlocking must not enable what the thinking level itself rules out.
+  for (const p of modelEditors) p.syncThinking?.();
 }
 export const isCatalogLocked = () => locked;

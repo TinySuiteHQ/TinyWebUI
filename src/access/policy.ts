@@ -10,6 +10,7 @@ import type { UserRole, UserStatus } from '../store/users.ts';
  *   access: {
  *     bootstrapAdmins: ['<gateway user id>'],   // always admin, always approved
  *     newUsers: 'pending' | 'approved',             // 'pending' unless the files say otherwise
+ *     allowRequests: boolean,                       // multiuser: anyone may ask for an account; false unless true
  *     roles: { user: { features: [...], models: [...] | '*', customize?: [...] }, admin: { features: '*' },
  *              '<custom role>': { ... } },                 // any other name is a custom role
  *     users: { '<gateway user id>': { role?, status? } }  // admin decisions, written back
@@ -40,6 +41,7 @@ export interface UserPin { role?: UserRole; status?: UserStatus }
 export interface AccessConfig {
   bootstrapAdmins?: string[];
   newUsers?: 'approved' | 'pending';
+  allowRequests?: boolean;
   customize?: string[];
   roles?: Record<string, RoleSpec>;
   users?: Record<string, UserPin>;
@@ -105,6 +107,8 @@ export function resolveAccess(cfg: PolicyConfig) {
     bootstrapAdmins: Array.isArray(a.bootstrapAdmins) ? a.bootstrapAdmins.map(String) : [],
     // Someone a gateway lets through has signed in, not been let in: an admin approves them.
     newUsers: a.newUsers || 'pending' as const,
+    // Off unless switched on: the addresses are unchecked, so an open form invites a queue of strangers.
+    allowRequests: a.allowRequests === true,
     // The default for a role that does not say; each role's own list is in `roles`.
     customize,
     roles,
@@ -149,6 +153,18 @@ export function modelsFor(cfg: PolicyConfig, role: UserRole | null | undefined):
 }
 
 export const MIN_PASSWORD_LENGTH = 10;
+const MAX_PASSWORD_LENGTH = 1024;
+
+/**
+ * The one rule every local password meets, whoever sets it: the first admin,
+ * someone joining by invitation, a person changing their own, or an admin
+ * setting one for them. Null when the password is acceptable.
+ */
+export function passwordProblem(password: unknown): string | null {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return `use at least ${MIN_PASSWORD_LENGTH} characters`;
+  if (password.length > MAX_PASSWORD_LENGTH) return 'password is too long';
+  return null;
+}
 
 /** Every problem with a config, as readable strings. Empty means valid. */
 // Takes the config as read, before anything about it is known to hold.
@@ -165,7 +181,7 @@ export function validateConfig(cfg: Record<string, any>, { env = process.env } =
   const a: Record<string, any> | undefined = cfg.access;
   if (a !== undefined) {
     if (!a || typeof a !== 'object' || Array.isArray(a)) return [...errors, 'access must be an object'];
-    const known = new Set(['bootstrapAdmins', 'newUsers', 'roles', 'users', 'customize']);
+    const known = new Set(['bootstrapAdmins', 'newUsers', 'allowRequests', 'roles', 'users', 'customize']);
     for (const k of Object.keys(a)) if (!known.has(k)) errors.push(`access.${k} is not a known setting`);
     if (a.bootstrapAdmins !== undefined && !(Array.isArray(a.bootstrapAdmins) && a.bootstrapAdmins.every((x) => typeof x === 'string' && x))) {
       errors.push('access.bootstrapAdmins must be a list of gateway user ids');
@@ -173,6 +189,7 @@ export function validateConfig(cfg: Record<string, any>, { env = process.env } =
     if (a.newUsers !== undefined && !['approved', 'pending'].includes(a.newUsers)) {
       errors.push("access.newUsers must be 'approved' or 'pending'");
     }
+    if (a.allowRequests !== undefined && typeof a.allowRequests !== 'boolean') errors.push('access.allowRequests must be true or false');
     if (a.customize !== undefined && !(Array.isArray(a.customize) && a.customize.every((c: string) => CUSTOMIZABLE.includes(c)))) {
       errors.push(`access.customize must be a list from ${CUSTOMIZABLE.join(', ')}`);
     }

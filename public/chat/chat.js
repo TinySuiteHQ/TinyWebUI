@@ -13,6 +13,7 @@ import { renderTasks, dropFinishedTasks } from './tasks.js';
 import { renderQueue, enqueue, reclaimQueue, holdFollowup } from './queue.js';
 import { api } from '../core/api.js';
 import { newId } from '../core/id.js';
+import { thinkingPick } from '../core/access.js';
 
 const input = $('input');
 let chatLoadCtrl = null;
@@ -262,7 +263,8 @@ async function onSubmit(e) {
         chatId: state.chat.id,
         message: placeholder,
         documentIds: docs.map((a) => a.id),
-        images
+        images,
+        thinking: thinkingPick()
       }),
       signal: ctrl.signal
     });

@@ -12,6 +12,8 @@ export interface UserRow {
   google_sub: string | null;
   external_id: string | null;
   password_hash: string | null;
+  /** What someone asking for an account wrote to the admin; null otherwise. */
+  request_note: string | null;
   role: UserRole;
   status: UserStatus;
   created_at: number;
@@ -19,8 +21,8 @@ export interface UserRow {
   last_login_at: number | null;
 }
 
-export type UserListing = Pick<UserRow, 'id' | 'email' | 'name' | 'role' | 'status' | 'external_id' | 'created_at' | 'last_login_at'>
-  & { chat_count: number };
+export type UserListing = Pick<UserRow, 'id' | 'email' | 'name' | 'role' | 'status' | 'external_id' | 'created_at' | 'last_login_at' | 'request_note'>
+  & { chat_count: number; has_password: number };
 
 export interface SessionRow { token_hash: string; user_id: string; created_at: number; expires_at: number }
 export interface InviteRow { id: string; email: string | null; created_by: string; created_at: number; expires_at: number }
@@ -69,7 +71,8 @@ export class UserStore {
 
   list(): UserListing[] {
     return this.db.prepare(`
-      SELECT u.id, u.email, u.name, u.role, u.status, u.external_id, u.created_at, u.last_login_at,
+      SELECT u.id, u.email, u.name, u.role, u.status, u.external_id, u.created_at, u.last_login_at, u.request_note,
+             (u.password_hash IS NOT NULL) AS has_password,
              (SELECT COUNT(*) FROM chats c WHERE c.user_id = u.id) AS chat_count
       FROM users u ORDER BY u.created_at ASC
     `).all() as unknown as UserListing[];
@@ -156,6 +159,26 @@ export class UserStore {
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
+  /**
+   * Someone asking for an account from the sign-in page: a pending local user.
+   * Never touches an existing row, whatever its state: changing a waiting
+   * request's password would let anyone claim it before it is approved.
+   * `full` when `maxWaiting` requests are already waiting.
+   */
+  requestAccess({ email, passwordHash, note, maxWaiting, now = Date.now() }:
+    { email: string; passwordHash: string; note: string | null; maxWaiting: number; now?: number }): 'created' | 'exists' | 'full' {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (this.byEmail(email)) { this.db.exec('ROLLBACK'); return 'exists'; }
+      const waiting = this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE status = 'pending' AND password_hash IS NOT NULL").get()!.n as number;
+      if (waiting >= maxWaiting) { this.db.exec('ROLLBACK'); return 'full'; }
+      this.db.prepare(`INSERT INTO users (id, email, password_hash, request_note, role, status, created_at)
+        VALUES (?, ?, ?, ?, 'user', 'pending', ?)`).run(randomUUID(), email, passwordHash, note, now);
+      this.db.exec('COMMIT');
+      return 'created';
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
   createInvite({ id, tokenHash, email, createdBy, createdAt = Date.now(), expiresAt }:
     { id: string; tokenHash: string; email: string | null; createdBy: string; createdAt?: number; expiresAt: number }): InviteRow {
     this.db.prepare(`INSERT INTO invitations
@@ -214,6 +237,15 @@ export class UserStore {
 
   deleteSession(tokenHash: string): void {
     this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+  }
+
+  setPassword(id: string, passwordHash: string): void {
+    this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+  }
+
+  /** Ends every session of the user's except the one making the change. */
+  deleteOtherSessions(userId: string, keepTokenHash: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(userId, keepTokenHash);
   }
 
   deleteUserSessions(userId: string): void {

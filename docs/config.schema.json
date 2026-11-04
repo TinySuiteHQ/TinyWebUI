@@ -49,6 +49,14 @@
             "type": "string",
             "description": "Older flat form: id of an entry in connectors. Prefer listing the model under that connector."
           },
+          "images": {
+            "type": "boolean",
+            "description": "false: people cannot send this model images. Default true."
+          },
+          "tools": {
+            "type": "boolean",
+            "description": "false: the model is offered no tools. Default true."
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -59,7 +67,7 @@
               ]
             },
             "uniqueItems": true,
-            "description": "What the model can do."
+            "description": "Older form of images/tools: listed tags without vision mean images off."
           },
           "systemPrompt": {
             "type": "string",
@@ -103,6 +111,46 @@
               "reasoning_content",
               "reasoning_details"
             ]
+          },
+          "thinking": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "How hard the model thinks; several choices let people switch from the model menu.",
+            "properties": {
+              "default": {
+                "enum": [
+                  "provider",
+                  "off",
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "description": "provider: send nothing, so the provider's own default applies (the default)"
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "provider",
+                    "off",
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                },
+                "uniqueItems": true
+              },
+              "send": {
+                "enum": [
+                  "auto",
+                  "effort",
+                  "openrouter",
+                  "anthropic",
+                  "switch"
+                ],
+                "description": "auto: guessed from the endpoint"
+              }
+            }
           },
           "extraBody": {
             "type": "object",
@@ -163,6 +211,14 @@
                   "type": "boolean",
                   "description": "false: keep the settings, hide and refuse the model."
                 },
+                "images": {
+                  "type": "boolean",
+                  "description": "false: people cannot send this model images. Default true."
+                },
+                "tools": {
+                  "type": "boolean",
+                  "description": "false: the model is offered no tools. Default true."
+                },
                 "tags": {
                   "type": "array",
                   "items": {
@@ -173,7 +229,7 @@
                     ]
                   },
                   "uniqueItems": true,
-                  "description": "What the model can do."
+                  "description": "Older form of images/tools: listed tags without vision mean images off."
                 },
                 "systemPrompt": {
                   "type": "string",
@@ -217,6 +273,46 @@
                     "reasoning_content",
                     "reasoning_details"
                   ]
+                },
+                "thinking": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "How hard the model thinks; several choices let people switch from the model menu.",
+                  "properties": {
+                    "default": {
+                      "enum": [
+                        "provider",
+                        "off",
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "description": "provider: send nothing, so the provider's own default applies (the default)"
+                    },
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "provider",
+                          "off",
+                          "low",
+                          "medium",
+                          "high"
+                        ]
+                      },
+                      "uniqueItems": true
+                    },
+                    "send": {
+                      "enum": [
+                        "auto",
+                        "effort",
+                        "openrouter",
+                        "anthropic",
+                        "switch"
+                      ],
+                      "description": "auto: guessed from the endpoint"
+                    }
+                  }
                 },
                 "extraBody": {
                   "type": "object",
@@ -477,6 +573,10 @@
             "approved",
             "pending"
           ]
+        },
+        "allowRequests": {
+          "type": "boolean",
+          "description": "multiuser: people may ask for an account from the sign-in page; an admin approves each. Off unless true."
         },
         "customize": {
           "type": "array",

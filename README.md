@@ -47,7 +47,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Hybrid local search** (BM25 plus a small on-device embedding model) over documents and past chats.
 - **Long chats that stay affordable.** Cache-friendly prefixes, one-time compaction of large tool results, and per-round token statistics.
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
-- **Private by default.** The first account becomes the administrator; later local accounts require a single-use invitation. Teams can alternatively put SSO in front.
+- **Private by default.** The first account becomes the administrator; later local accounts come from a single-use invitation, or, with `access.allowRequests: true` (off by default), ask from the sign-in page and wait for an admin to approve them. Teams can alternatively put SSO in front.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
 - **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
 
@@ -59,7 +59,7 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel. Settings then opens on its first step: add a connector (any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connector. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
+Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel, where requests for access from the sign-in page also wait for approval. Settings then opens on its first step: add a connector (any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connector. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
 
 ```json
 {
@@ -86,7 +86,16 @@ docker compose build
 docker compose up -d
 ```
 
-The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes. `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
+The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes.
+
+Since no mail is sent, there is no emailed reset. People change their own password under Settings → My preferences, and an admin can set a new one for anyone from the Admin panel. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
+
+```bash
+node bin/tinywebui.ts users password owner@example.com                          # from a clone
+docker compose exec tinywebui node bin/tinywebui.ts users password owner@example.com
+```
+
+ `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
 
 The former password-only `single` mode now fails startup instead of opening without login. To move such an installation to local accounts, set `authMode` to `multiuser`, restart, and create the administrator in the browser. On that first setup, existing unowned chats, files, artifacts, folders and automations move to the new administrator. Remove any `TINYWEBUI_PASSWORD` environment variable; it no longer selects an auth mode.
 

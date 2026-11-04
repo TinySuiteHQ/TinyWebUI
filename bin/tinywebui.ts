@@ -33,6 +33,9 @@ tinywebui fingerprint      the config's fingerprint (secrets never included)
 tinywebui users list       users and the decisions pinned in the files
 tinywebui users set <id> [--role admin|user] [--status pending|approved|disabled] [--clear]
                            record a decision in config.json (a running server reloads it)
+tinywebui users password <email> [--stdin]
+                           break glass: a new password for a local account (printed,
+                           or read from stdin); signs that account out everywhere
 tinywebui schema           JSON Schema for the config file
 
 Config comes from ./tinywebui.config.js if it exists, then

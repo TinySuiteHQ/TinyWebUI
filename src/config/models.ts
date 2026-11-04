@@ -16,9 +16,23 @@
  * its settings but cannot be picked or run until switched back on. Pure, like
  * policy.js.
  */
-import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
+import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
 
-export type ModelTag = 'vision' | 'reasoning' | 'tools';
+
+/**
+ * How a model thinks, set by an admin per entry. `default` is what a turn
+ * uses; `choices` are the levels a person may pick from the composer (one, or
+ * none, means the level is fixed). `send` says which request field carries it
+ * when the endpoint is not one the provider table recognises.
+ */
+export interface ThinkingSpec { default?: ThinkingChoice; choices?: ThinkingChoice[]; send?: ThinkingSend }
+
+/**
+ * A level an entry may offer: one sent to the provider, or `provider`, which
+ * sends nothing so the provider's own default applies. Kept out of the
+ * harness's ThinkingLevel: on the wire it is the absence of a level.
+ */
+export type ThinkingChoice = 'provider' | ThinkingLevel;
 
 export interface ModelEntry {
   id: string;
@@ -27,7 +41,12 @@ export interface ModelEntry {
   description?: string;
   enabled?: boolean;
   connector?: string;
-  tags?: ModelTag[];
+  /** People may send this model images. On unless false. */
+  images?: boolean;
+  /** The model is offered tools. On unless false: off is for a model that cannot call them. */
+  tools?: boolean;
+  /** Older form: what the model can do. Still read (see takesImages); the editor writes images/tools instead. */
+  tags?: string[];
   systemPrompt?: string;
   temperature?: number | null;
   maxTokens?: number | null;
@@ -36,6 +55,7 @@ export interface ModelEntry {
   cacheTtl?: '5m' | '1h';
   extraBody?: ExtraBody;
   reasoningReplay?: ReasoningReplay;
+  thinking?: ThinkingSpec;
 }
 
 /** A named endpoint; `models` only in the file's nested shape (see flattenCatalog). */
@@ -50,10 +70,13 @@ export const MODEL_OVERRIDES: (keyof ModelEntry & string)[] = ['systemPrompt', '
 /** Values of `reasoningReplay`; see reasoningReplay in harness/provider.js. */
 export const REASONING_REPLAY: ReasoningReplay[] = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
 
-/** What a model can do; the page uses these (e.g. `vision` gates image upload). */
-export const MODEL_TAGS: ModelTag[] = ['vision', 'reasoning', 'tools'];
+export const THINKING_CHOICES: ThinkingChoice[] = ['provider', 'off', 'low', 'medium', 'high'];
+export const THINKING_SEND: ThinkingSend[] = ['auto', 'effort', 'openrouter', 'anthropic', 'switch'];
 
-const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'tags', ...MODEL_OVERRIDES]);
+/** The older `tags` values, accepted so configs that list them still load. */
+export const LEGACY_TAGS = ['vision', 'reasoning', 'tools'];
+
+const ENTRY_KEYS = new Set(['id', 'model', 'label', 'description', 'enabled', 'connector', 'images', 'tools', 'tags', 'thinking', ...MODEL_OVERRIDES]);
 
 /**
  * The file keeps each model with the endpoint that serves it: top-level
@@ -134,7 +157,46 @@ export function labelFor(cfg: Partial<CatalogConfig>, key: string): string {
 }
 
 /** What the picker lists for one entry. Prompts and knobs stay server-side. */
-export const publicEntry = (e: ModelEntry) => ({ id: e.id, name: e.label || e.id, description: e.description || null, tags: e.tags || [] });
+export const publicEntry = (e: ModelEntry) => ({ id: e.id, name: e.label || e.id, description: e.description || null });
+
+/**
+ * Whether people may send this model images. On unless an admin switched it
+ * off; an older entry whose tags leave out `vision` stays off, as it was.
+ * No entry (an open catalog) means nothing is known, so nothing is refused.
+ */
+export const takesImages = (e: ModelEntry | null | undefined): boolean =>
+  !e || (e.images ?? !(e.tags?.length && !e.tags.includes('vision')));
+
+/** Whether this model is offered tools. On unless an admin switched it off. */
+export const usesTools = (e: ModelEntry | null | undefined): boolean => !e || e.tools !== false;
+
+/**
+ * The levels a person may pick and the one they get otherwise, or null when
+ * there is nothing to pick and nothing to send. Without a `default` it is the
+ * provider's own, unless the admin left that out of the choices.
+ */
+export function thinkingView(spec: ThinkingSpec | undefined): { default: ThinkingChoice; choices: ThinkingChoice[] } | null {
+  if (!spec) return null;
+  const choices = spec.choices?.length ? THINKING_CHOICES.filter((l) => spec.choices!.includes(l)) : [];
+  const fallback = !choices.length || choices.includes('provider') ? 'provider' : choices.includes('medium') ? 'medium' : choices[0];
+  const level = spec.default ?? fallback;
+  const offered = choices.length > 1 ? choices : [level];
+  return offered.length === 1 && level === 'provider' ? null : { default: level, choices: offered };
+}
+
+/**
+ * What one turn on `key` thinks at and how it is sent: the level the person
+ * asked for when the entry offers it, else the entry's default. Null when
+ * nothing is sent: the entry says nothing about thinking, or the level is
+ * the provider's own.
+ */
+export function thinkingFor(cfg: Partial<CatalogConfig>, key: string | null | undefined, asked?: unknown): { level: ThinkingLevel; send: ThinkingSend } | null {
+  const e = findEntry(cfg, key ?? cfg.model);
+  const view = thinkingView(e?.thinking);
+  if (!view) return null;
+  const level = view.choices.find((l) => l === asked) || view.default;
+  return level === 'provider' ? null : { level, send: e!.thinking!.send || 'auto' };
+}
 
 /**
  * The config one turn runs with: the entry's overrides over the global
@@ -190,6 +252,19 @@ export function connectorProblems(cfg: Record<string, any>): string[] {
   return out;
 }
 
+function thinkingProblems(t: any, at: string): string[] {
+  if (!t || typeof t !== 'object' || Array.isArray(t)) return [`${at} must be an object like { default: 'provider', choices: ['provider', 'low', 'high'] }`];
+  const out: string[] = [];
+  for (const k of Object.keys(t)) if (!['default', 'choices', 'send'].includes(k)) out.push(`${at}.${k} is not a known setting (known: default, choices, send)`);
+  if (t.default !== undefined && !THINKING_CHOICES.includes(t.default)) out.push(`${at}.default must be one of ${THINKING_CHOICES.join(', ')}`);
+  if (t.choices !== undefined) {
+    if (!(Array.isArray(t.choices) && t.choices.every((l: ThinkingChoice) => THINKING_CHOICES.includes(l)))) out.push(`${at}.choices must be a list from ${THINKING_CHOICES.join(', ')}`);
+    else if (t.default !== undefined && t.choices.length && !t.choices.includes(t.default)) out.push(`${at}.default "${t.default}" must be one of its choices`);
+  }
+  if (t.send !== undefined && !THINKING_SEND.includes(t.send)) out.push(`${at}.send must be one of ${THINKING_SEND.join(', ')}`);
+  return out;
+}
+
 const NUMERIC: Record<string, string> = { temperature: 'a number or null', maxTokens: 'a number or null' };
 
 /** Every problem with the catalog and what refers into it. */
@@ -218,8 +293,10 @@ export function modelProblems(cfg: Record<string, any>): string[] {
     if (e.cacheTtl !== undefined && !['5m', '1h'].includes(e.cacheTtl)) out.push(`${at}.cacheTtl must be 5m or 1h`);
     if (e.enabled !== undefined && typeof e.enabled !== 'boolean') out.push(`${at}.enabled must be true or false`);
     if (e.connector !== undefined && typeof e.connector !== 'string') out.push(`${at}.connector must be a connector id`);
-    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t: ModelTag) => MODEL_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${MODEL_TAGS.join(', ')}`);
+    if (e.tags !== undefined && !(Array.isArray(e.tags) && e.tags.every((t: string) => LEGACY_TAGS.includes(t)))) out.push(`${at}.tags must be a list from ${LEGACY_TAGS.join(', ')}`);
+    for (const k of ['images', 'tools']) if (e[k] !== undefined && typeof e[k] !== 'boolean') out.push(`${at}.${k} must be true or false`);
     if (e.extraBody !== undefined && !(e.extraBody && typeof e.extraBody === 'object' && !Array.isArray(e.extraBody))) out.push(`${at}.extraBody must be an object`);
+    if (e.thinking !== undefined) out.push(...thinkingProblems(e.thinking, `${at}.thinking`));
   });
   if (!list.length || out.length) return out;
   // A closed catalog: everything that names a model has to name an entry.

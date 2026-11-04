@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.ts';
-import { effectiveConfig } from '../config/models.ts';
+import { effectiveConfig, findEntry, thinkingFor, usesTools } from '../config/models.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../public/shared/events.js';
 import { CORPUS, type Store } from '../store/index.ts';
@@ -48,6 +48,8 @@ export interface RunOptions {
   model?: string | null;
   lead?: string | null;
   instructions?: string | null;
+  /** The thinking level the person asked for; the model's own settings decide whether it applies. */
+  thinking?: string | null;
 }
 
 /** The part of the app a run reads live (built in server.js). */
@@ -95,7 +97,7 @@ export function createRuns(app: RunsApp) {
    * `lead` is a queued follow-up that starts this run: stored after baseCount
    * and sent as an event, so a live view and a reload each show it once.
    */
-  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null }: RunOptions): Run {
+  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null, thinking = null }: RunOptions): Run {
     const run: Run = {
       events: [],
       subs: new Set(),
@@ -180,12 +182,18 @@ export function createRuns(app: RunsApp) {
     // Not awaited: the run outlives the request that started it.
     void (async () => {
       try {
-        const base = effectiveConfig(app.cfg, model);
+        // Always sent when the model has a level. An endpoint that ignores it
+        // answers as usual; one that rejects it has the field dropped for the
+        // rest of this turn (post() in provider.ts). Nothing is remembered.
+        const think = thinkingFor(app.cfg, model, thinking);
+        const base = { ...effectiveConfig(app.cfg, model), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
         const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}
 
 The user's own instructions:
 ${instructions}` } : base;
-        await runChat({ cfg, chatId: chat.id, store, tools, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
+        // A model its admin set to no tools gets none, whatever the person's role allows.
+        const offered = usesTools(findEntry(app.cfg, model ?? app.cfg.model)) ? tools : [];
+        await runChat({ cfg, chatId: chat.id, store, tools: offered, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });
       } catch (err) {
         emit({ type: EVENT.ERROR, error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
@@ -200,7 +208,7 @@ ${instructions}` } : base;
         const next = ok && !unattended ? store.chats.takeQueued(chat.id, { first: true })[0] : null;
         if (next) {
           emit({ type: EVENT.NEXT_RUN });
-          start({ chat, tools, model, lead: next.content });
+          start({ chat, tools, model, lead: next.content, instructions, thinking });
         }
         try { onFinish?.({
           ok,

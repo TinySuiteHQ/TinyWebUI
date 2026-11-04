@@ -114,7 +114,7 @@
       <header><h3>Default endpoint</h3><p>The OpenAI-compatible API used by every model that does not name a connector.</p></header>
       <div class="set-grid">
         <div class="span-2"><label for="baseUrl">API URL</label><input id="baseUrl" spellcheck="false" placeholder="http://localhost:11434/v1"></div>
-        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><small id="apiKeyNote">Optional. Write-only: kept in the secrets file, never shown again. Leave blank to keep the current key.</small></div>
+        <div class="span-2"><label for="apiKey">API key</label><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false"><small id="apiKeyNote">Optional. Write-only: kept in the secrets file, never shown again. Leave blank to keep the current key.</small></div>
         <div class="span-2"><button id="testDefault" type="button">Test connection</button> <span id="testDefaultMsg" class="usage"></span></div>
       </div>
     </section>
@@ -205,6 +205,18 @@
       <textarea id="myInstructions" rows="5" maxlength="4000" aria-label="My instructions"></textarea>
     </section>
 
+    <form class="set-group mine" id="passwordGroup" hidden>
+      <header><h3>Password</h3><p id="passwordRule"></p></header>
+      <!-- Tells password managers whose password this is; without it they guess, and fill the chat search. -->
+      <input id="pwUser" type="text" autocomplete="username" hidden>
+      <div class="set-grid">
+        <div class="span-2"><label for="pwCurrent">Current password</label><input id="pwCurrent" type="password" autocomplete="current-password" required></div>
+        <div><label for="pwNew">New password</label><input id="pwNew" type="password" autocomplete="new-password" required></div>
+        <div><label for="pwConfirm">Confirm new password</label><input id="pwConfirm" type="password" autocomplete="new-password" required></div>
+      </div>
+      <div class="pw-actions"><button class="primary" type="submit">Change password</button><span id="pwMsg" class="pw-msg" role="status"></span></div>
+    </form>
+
     <section class="set-group mine" id="themeGroup">
       <header><h3>Appearance</h3></header>
       <div class="set-grid">
@@ -274,8 +286,14 @@
       <input id="loginEmail" type="email" autocomplete="email" hidden>
       <label for="loginPassword">Password</label>
       <input id="loginPassword" type="password" autocomplete="current-password" required>
+      <small id="loginRule" class="login-rule" hidden></small>
+      <label id="loginConfirmLabel" for="loginConfirm" hidden>Confirm password</label>
+      <input id="loginConfirm" type="password" autocomplete="new-password" hidden>
+      <label id="loginNoteLabel" for="loginNote" hidden>Note to the administrator <span class="login-optional">(optional)</span></label>
+      <textarea id="loginNote" rows="3" maxlength="500" placeholder="Who you are, or why you need access" hidden></textarea>
       <button id="loginSubmit" class="primary" type="submit">Sign in</button>
       <div id="loginMsg" class="usage" role="alert"></div>
+      <p id="loginSwitch" class="login-switch" hidden><span id="loginSwitchText"></span> <button id="loginSwitchBtn" type="button" class="link"></button></p>
     </form>
   </div>
 
@@ -314,6 +332,10 @@
             <div id="inviteResult" class="usage" role="status"></div>
             <div id="adminInvites" class="adm-invites"></div>
           </form>
+          <label id="adminRequests" class="adm-requests" hidden>
+            <input id="adminRequestsOn" type="checkbox">
+            <span>Let people request access from the sign-in page <span class="adm-meta">Requests wait under Waiting until you approve them. Their email addresses are not checked.</span></span>
+          </label>
           <div id="adminFilters" class="adm-filters" role="group" aria-label="Show"></div>
           <div id="adminMsg" class="usage" role="alert"></div>
           <div id="adminUsers" class="adm-groups"></div>
@@ -378,7 +400,7 @@
       <div class="composer-bar">
         <button type="button" id="attach" class="icon-btn" title="Attach files and tools" aria-label="Attach files and tools" aria-haspopup="menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <span class="grow"></span>
-        <button type="button" id="modelBtn" class="model-chip" aria-haspopup="menu" aria-expanded="false" title="Switch model"><span id="status" role="status" aria-live="polite"></span><svg class="ic chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button type="button" id="modelBtn" class="model-chip" aria-haspopup="menu" aria-expanded="false" title="Switch model"><span id="status" role="status" aria-live="polite"></span><span id="thinkingTag" class="think-tag" hidden></span><svg class="ic chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         <button class="primary" id="send" type="submit" aria-label="Send"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
       </div>
     </form>

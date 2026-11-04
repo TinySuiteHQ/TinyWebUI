@@ -193,6 +193,12 @@ function personRow(user) {
   top.appendChild(text('strong', '', user.name || user.email || user.id));
   const self = me?.user?.id === user.id;
   if (self) top.appendChild(text('span', 'chip', 'you'));
+  // Asked from the sign-in page: nobody vouches for the address, so the admin is told.
+  if (user.status === 'pending' && user.hasPassword) {
+    const chip = text('span', 'chip', 'asked to join');
+    chip.title = 'Requested access from the sign-in page. The email address is not checked: approve only people you expect.';
+    top.appendChild(chip);
+  }
   if (user.pinnedInCode) {
     const chip = text('span', 'chip', 'set in config');
     chip.title = `Declared in tinywebui.config.js (${user.pinnedInCode}); change it there.`;
@@ -202,6 +208,8 @@ function personRow(user) {
     ? [user.name && user.email, `asked ${ago(user.createdAt)}`]
     : [user.name && user.email, plural(user.chatCount ?? 0, 'chat'), `seen ${ago(user.lastLoginAt)}`];
   who.append(top, text('span', 'adm-meta', meta.filter(Boolean).join(' · ')));
+  // Their own words, as text: it comes from someone nobody has let in yet.
+  if (user.note) who.appendChild(text('span', 'adm-request-note', user.note));
   const err = text('div', 'adm-err', '');
   err.setAttribute('role', 'alert');
   // Your own account can't be demoted or disabled from here -- the server
@@ -245,16 +253,55 @@ function personRow(user) {
       if (confirm(`Turn off access for ${user.name || user.email || 'this person'}? They are signed out at once; you can restore it later.`)) patch([off], { status: 'disabled' });
     });
     off.disabled = locked;
-    actions.append(role, chats, connectors, off);
+    actions.append(role, chats, connectors);
+    // Local accounts only: a gateway (SSO) account has no password here. Your own is under My preferences.
+    if (user.hasPassword && !self) actions.appendChild(button('Set password', 'adm-small', () => togglePasswordForm(r, user)));
+    actions.appendChild(off);
   }
   if (locked) actions.title = self ? 'This is your own account' : `Declared in code (${user.pinnedInCode})`;
   r.append(avatar(user), who, actions, err);
   return r;
 }
 
+/**
+ * An admin choosing a new password for someone who cannot sign in. Typed
+ * twice, held to the same rule as every password, and it signs them out
+ * everywhere: they sign in again with the new one.
+ */
+function togglePasswordForm(row, user) {
+  const open = row.querySelector('.adm-pw');
+  if (open) { open.remove(); return; }
+  const form = el('form', 'adm-pw');
+  const min = whoami().passwordMin;
+  const field = (label) => {
+    const input = Object.assign(el('input'), { type: 'password', autocomplete: 'new-password', required: true, minLength: min, placeholder: label });
+    input.setAttribute('aria-label', label);
+    return input;
+  };
+  const pw = field('New password');
+  const again = field('Confirm new password');
+  const save = Object.assign(el('button', 'primary'), { type: 'submit', textContent: 'Set password' });
+  const msg = text('div', 'adm-err', '');
+  msg.setAttribute('role', 'alert');
+  form.append(pw, again, save, button('Cancel', '', () => form.remove()), text('div', 'adm-meta adm-pw-rule', `At least ${min} characters. ${user.name || user.email || 'They'} will be signed out everywhere.`), msg);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    msg.textContent = '';
+    if (pw.value !== again.value) { msg.textContent = 'The two passwords do not match.'; again.select(); return; }
+    save.disabled = true;
+    try {
+      await api.post(`/api/admin/users/${enc(user.id)}/password`, { password: pw.value });
+      form.replaceChildren(text('div', 'adm-meta adm-pw-done', `Password set. Let ${user.name || user.email || 'them'} know the new one; they were signed out.`));
+      setTimeout(() => form.remove(), 6000);
+    } catch (err) { msg.textContent = err.message; save.disabled = false; }
+  };
+  row.appendChild(form);
+  pw.focus();
+}
+
 /** Who goes in which group, in the order the panel shows them. */
 function groups() {
-  const out = [{ key: 'pending', title: 'Waiting for approval', note: 'New sign-ups. Approve each into a role, or turn them away.', people: [] }];
+  const out = [{ key: 'pending', title: 'Waiting for approval', note: 'New sign-ups and access requests. Approve each into a role, or turn them away.', people: [] }];
   const byRole = new Map();
   for (const name of roles()) {
     const g = { key: `role:${name}`, title: { admin: 'Admins', user: 'Users' }[name] || roleLabel(name), people: [] };
@@ -613,6 +660,42 @@ function connectorBlock(user, s) {
 
 /* ---------- loading ---------- */
 
+let configPrint = '';
+
+/** How people get in, and the config fingerprint to compare with the checked-in files. */
+function renderFoot() {
+  const joining = me.authMode === 'multiuser'
+    ? policy?.allowRequests ? 'People join by invitation, or ask from the sign-in page and wait for approval.' : 'People join by invitation; the invitation is the approval.'
+    : policy?.newUsers === 'approved' ? 'New sign-ups are let in straight away (access.newUsers in the config file).'
+      : 'New sign-ups wait here until an admin approves them.';
+  $('adminFoot').textContent = `${joining} · Config ${configPrint}`;
+  $('adminFoot').title = 'Config fingerprint: compare with `tinywebui fingerprint` on the checked-in files';
+}
+
+/** The "Request access" switch: multiuser only, and read-only when code or a freeze owns the access block. */
+function renderRequestsSwitch() {
+  const box = $('adminRequests');
+  box.hidden = me.authMode !== 'multiuser' || !policy;
+  if (box.hidden) return;
+  const input = $('adminRequestsOn');
+  input.checked = Boolean(policy.allowRequests);
+  input.disabled = Boolean(policy.locked);
+  box.title = policy.locked ? 'The access settings are set in code or frozen: change the files instead.' : '';
+  input.onchange = async () => {
+    input.disabled = true;
+    $('adminMsg').textContent = '';
+    try {
+      const out = await api.patch('/api/admin/policy', { allowRequests: input.checked });
+      policy.allowRequests = out.allowRequests;
+      renderFoot();
+    } catch (err) {
+      $('adminMsg').textContent = err.message;
+      input.checked = Boolean(policy.allowRequests);
+    }
+    input.disabled = false;
+  };
+}
+
 async function refreshPolicy() {
   try { policy = await api.get('/api/admin/policy'); } catch (err) { $('rolesMsg').textContent = err.message; return; }
   renderRoles();
@@ -633,10 +716,8 @@ export async function loadAdmin() {
   }
   users = usersOut.value.users;
   renderPeople();
-  const joining = me.authMode === 'multiuser' ? 'People join by invitation; the invitation is the approval.'
-    : policy?.newUsers === 'approved' ? 'New sign-ups are let in straight away (access.newUsers in the config file).'
-      : 'New sign-ups wait here until an admin approves them.';
-  $('adminFoot').textContent = `${joining} · Config ${usersOut.value.fingerprint}`;
-  $('adminFoot').title = 'Config fingerprint: compare with `tinywebui fingerprint` on the checked-in files';
+  configPrint = usersOut.value.fingerprint;
+  renderRequestsSwitch();
+  renderFoot();
   if (!$('adminInvite').hidden) loadInvites();
 }

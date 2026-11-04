@@ -14,8 +14,26 @@ let features = new Set();
 export const can = (feature) => features.has(feature);
 export const whoami = () => me;
 
-/** False only when the catalog tags the current model and `vision` is not among them: untagged means unknown, so allowed. */
-export const modelAcceptsImages = () => !me.modelTags?.length || me.modelTags.includes('vision');
+/** False only when an admin switched images off for the current model. */
+export const modelAcceptsImages = () => me.modelImages !== false;
+
+/**
+ * The thinking level to ask for: what this person last picked for the current
+ * model, when the model still offers it, else the model's default. Null when
+ * the model leaves thinking to the provider. Kept per browser and per model;
+ * the server checks it against the model's settings either way.
+ */
+export function thinkingPick() {
+  const t = me.thinking;
+  if (!t) return null;
+  let saved = null;
+  try { saved = localStorage.getItem(`tinywebui.thinking.${me.model}`); } catch { /* storage blocked */ }
+  return t.choices.includes(saved) ? saved : t.default;
+}
+
+export function setThinkingPick(level) {
+  try { localStorage.setItem(`tinywebui.thinking.${me.model}`, level); } catch { /* storage blocked: this send still uses it */ }
+}
 
 // Nav items and controls that exist only for one feature.
 const GATED = {
@@ -34,8 +52,9 @@ export async function loadAccess() {
   for (const [feature, ids] of Object.entries(GATED)) {
     for (const id of ids) { const node = $(id); if (node) node.hidden = !can(feature); }
   }
-  // Settings also opens for someone whose admin lets them customise their own experience.
-  $('toggle-settings').hidden = !(can(FEATURE.SETTINGS) || me.customize?.length);
+  // Settings also opens for someone whose admin lets them customise their own
+  // experience, and for anyone with a password of their own to change.
+  $('toggle-settings').hidden = !(can(FEATURE.SETTINGS) || me.customize?.length || me.hasPassword);
   const search = $('chatSearch')?.closest('.search-row');
   if (search) search.hidden = !can(FEATURE.SEARCH);
   // The + button opens attach and tools; with neither there is nothing in it.

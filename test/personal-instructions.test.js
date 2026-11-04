@@ -53,12 +53,13 @@ test('saved per user and used only on that user\'s turns', async () => {
   assert.equal((await alice('/api/auth/me')).data.instructions, '');
 });
 
-test('/api/auth/me reports the current model\'s capability tags', async () => {
+test('/api/auth/me reports what the current model has switched on', async () => {
   const t = await trustedServer({
     baseUrl: `http://127.0.0.1:${port}/v1`, model: 'eyes',
     models: [{ id: 'eyes', tags: ['vision'] }, { id: 'plain' }]
   });
   try {
-    assert.deepEqual((await t.as({ id: 'sub-x' })('/api/auth/me')).data.modelTags, ['vision']);
+    const me = (await t.as({ id: 'sub-x' })('/api/auth/me')).data;
+    assert.deepEqual([me.modelImages, me.modelTools], [true, true]);
   } finally { await t.srv.shutdown(); }
 });

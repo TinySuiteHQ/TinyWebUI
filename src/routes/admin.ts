@@ -2,11 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { json, readJson, oneOf } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.ts';
 import {
-  validateConfig, fingerprint, resolveAccess, roleNames, FEATURES, CUSTOMIZABLE, BUILTIN_ROLES, ROLE_NAME, STATUSES,
+  validateConfig, fingerprint, resolveAccess, roleNames, passwordProblem, FEATURES, CUSTOMIZABLE, BUILTIN_ROLES, ROLE_NAME, STATUSES,
   type AccessConfig, type Feature, type RoleSpec
 } from '../access/policy.ts';
 import { catalog, modelProblems } from '../config/models.ts';
-import { destroyUserSessions, hashToken } from '../access/auth.ts';
+import { destroyUserSessions, hashPassword, hashToken } from '../access/auth.ts';
 import { normalizeEmail, validEmail } from '../access/email.ts';
 import { audit } from '../audit.ts';
 import { FEATURE } from '../../public/shared/features.js';
@@ -17,10 +17,14 @@ import type { UserListing, UserRow } from '../store/users.ts';
 /** Multi-user, behind the admin or oversight feature: someone is signed in. */
 type AdminContext = RouteContext<SignedIn & { user: UserRow }>;
 
-function adminUserView(u: Omit<UserListing, 'chat_count'> & { chat_count?: number }) {
+function adminUserView(u: Omit<UserListing, 'chat_count' | 'has_password'> & { chat_count?: number; has_password?: number; password_hash?: string | null }) {
   return {
     id: u.id, email: u.email, name: u.name ?? null, role: u.role, status: u.status,
-    createdAt: u.created_at, lastLoginAt: u.last_login_at, chatCount: u.chat_count ?? null
+    createdAt: u.created_at, lastLoginAt: u.last_login_at, chatCount: u.chat_count ?? null,
+    // A local account an admin can set a password for; gateway (SSO) accounts have none.
+    hasPassword: Boolean(u.has_password ?? u.password_hash),
+    // Only while the request is waiting: once decided, it has done its job.
+    note: u.status === 'pending' ? u.request_note ?? null : null
   };
 }
 
@@ -173,6 +177,24 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       return json(res, 200, { user: adminUserView(updated!) });
     }) },
 
+    // Someone locked out (there is no email reset) gets a new password from an
+    // admin. Same rule as everywhere; every session of theirs ends. Your own
+    // goes through My preferences, which asks for the current one.
+    { method: 'POST', path: /^\/api\/admin\/users\/([\w-]+)\/password$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth, params: [id] }) => {
+      if (config().authMode !== 'multiuser') return json(res, 404, { error: 'passwords belong to the sign-in gateway here' });
+      const target = store.users.get(id);
+      if (!target) return json(res, 404, { error: 'no such user' });
+      if (target.id === auth.userId) return json(res, 400, { error: 'change your own password under My preferences' });
+      if (!target.password_hash) return json(res, 400, { error: 'this account signs in another way and has no password' });
+      const { password } = await readJson(req);
+      const problem = passwordProblem(password);
+      if (problem) return json(res, 400, { error: problem });
+      store.users.setPassword(target.id, hashPassword(password));
+      destroyUserSessions(store, target.id);
+      audit('auth.password_changed', { userId: target.id, by: auth.userId });
+      return json(res, 200, { ok: true });
+    }) },
+
     // The roles and what each may do. The admin role is shown but not
     // editable: it cannot be locked out of the panel that edits it. Every
     // change is written to the file like any other decision. How new people
@@ -181,9 +203,19 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     { method: 'GET', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
       return json(res, 200, {
         features: FEATURES, customizable: CUSTOMIZABLE, models: catalog(config()).map((m) => m.id),
-        roles: rolesView(), newUsers: resolveAccess(config()).newUsers,
+        roles: rolesView(), newUsers: resolveAccess(config()).newUsers, allowRequests: resolveAccess(config()).allowRequests,
         locked: source.isFrozen() || source.lockedKeys().has('access')
       });
+    }) },
+
+    // Whether the sign-in page offers "Request access". Written to the file like any other decision.
+    { method: 'PATCH', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
+      const { allowRequests } = await readJson(req);
+      if (typeof allowRequests !== 'boolean') return json(res, 400, { error: 'allowRequests must be true or false' });
+      const refused = writeAccess((access) => ({ ...access, allowRequests }));
+      if (refused) return json(res, refused.status, { error: refused.error });
+      audit('admin.requests_changed', { by: auth.userId, allowRequests });
+      return json(res, 200, { allowRequests: resolveAccess(config()).allowRequests });
     }) },
 
     { method: 'POST', path: /^\/api\/admin\/roles$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {

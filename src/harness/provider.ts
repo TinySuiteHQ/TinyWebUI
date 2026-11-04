@@ -1,7 +1,8 @@
 /* The provider side of a turn: request shape, prompt caching, retries and the SSE stream. */
 import { EVENT } from '../../public/shared/events.js';
 import type {
-  CacheDirective, CacheMode, ChatMessage, Chunk, Emit, ProviderConfig, ReasoningReplay, RequestBody, RequestPlan, WireMessage
+  CacheDirective, CacheMode, ChatMessage, Chunk, Emit, ProviderConfig, ReasoningReplay, RequestBody, RequestPlan,
+  ThinkingLevel, ThinkingSend, WireMessage
 } from './types.ts';
 
 /**
@@ -117,6 +118,50 @@ export function reasoningReplay(cfg: ProviderConfig): Exclude<ReasoningReplay, '
   return host === 'api.deepseek.com' ? REPLAY.CONTENT : REPLAY.OMIT;
 }
 
+// Token budgets for an endpoint that takes a budget rather than a level.
+const THINKING_BUDGET = { low: 2048, medium: 8192, high: 24576 } as const;
+// Room left for the answer itself when a budget forces max_tokens up.
+const ANSWER_ROOM = 8192;
+
+/**
+ * Which request field carries a thinking level. There is no common one:
+ * OpenRouter nests it under `reasoning`, Anthropic's OpenAI-compatible endpoint
+ * ignores `reasoning_effort` and wants a token budget, and Qwen-style chat
+ * templates on local servers can only switch thinking on or off. Everything
+ * else that takes a level (OpenAI, Gemini, Ollama, vLLM, xAI) reads
+ * `reasoning_effort`. A model's `thinking.send` overrides the guess.
+ */
+export function thinkingStyle(cfg: ProviderConfig): Exclude<ThinkingSend, 'auto'> {
+  if (cfg.thinkingSend && cfg.thinkingSend !== 'auto') return cfg.thinkingSend;
+  if (isOpenRouter(cfg)) return 'openrouter';
+  let host = '';
+  try { host = new URL(cfg.baseUrl || '').hostname.toLowerCase(); } catch { /* no endpoint set */ }
+  return host === 'api.anthropic.com' ? 'anthropic' : 'effort';
+}
+
+function applyThinking(body: RequestBody, cfg: ProviderConfig, level: ThinkingLevel) {
+  const merged = (key: string) => (body[key] && typeof body[key] === 'object' ? body[key] as Record<string, unknown> : {});
+  switch (thinkingStyle(cfg)) {
+    case 'openrouter':
+      // Merged, so reasoning settings in extraBody (exclude, say) survive.
+      body.reasoning = { ...merged('reasoning'), effort: level === 'off' ? 'none' : level };
+      return;
+    case 'anthropic': {
+      if (level === 'off') { body.thinking = { type: 'disabled' }; return; }
+      const budget = THINKING_BUDGET[level];
+      body.thinking = { type: 'enabled', budget_tokens: budget };
+      // The budget has to fit under max_tokens, with room left to answer.
+      if (!(typeof body.max_tokens === 'number' && body.max_tokens > budget)) body.max_tokens = budget + ANSWER_ROOM;
+      return;
+    }
+    case 'switch':
+      body.chat_template_kwargs = { ...merged('chat_template_kwargs'), enable_thinking: level !== 'off' };
+      return;
+    default:
+      body.reasoning_effort = level === 'off' ? 'none' : level;
+  }
+}
+
 /**
  * Prompt-cache shaping: one fixed key order for every message on the wire.
  *
@@ -214,7 +259,11 @@ export function buildMessages(cfg: ProviderConfig, history: ChatMessage[], epoch
 const OPTIONAL = [
   { probe: /cache_control|ephemeral/i, drop: 'cache' },
   { probe: /tool_choice/i, drop: 'tool_choice' },
-  { probe: /stream_options|include_usage/i, drop: 'stream_options' }
+  { probe: /stream_options|include_usage/i, drop: 'stream_options' },
+  // A model that cannot think (or not at that level) still answers; it just
+  // does so at its own default. `\breasoning\b` leaves reasoning_details,
+  // which is about replayed history, to its own handling.
+  { probe: /reasoning_effort|\breasoning\b|thinking|budget_tokens|chat_template_kwargs/i, drop: 'thinking' }
 ];
 
 /** Builds one request body, leaving out whatever this endpoint has refused. */
@@ -255,6 +304,7 @@ export function buildBody(cfg: ProviderConfig, { turn, tools, lastCall, epochInd
   // the provider's default instead of ours.
   if (cfg.temperature != null) body.temperature = cfg.temperature;
   if (cfg.maxTokens != null) body.max_tokens = cfg.maxTokens;
+  if (cfg.thinkingLevel && !disabled.has('thinking')) applyThinking(body, cfg, cfg.thinkingLevel);
   if (tools.length) {
     // The tool block stays in the request even on the final pass: dropping it
     // would change the cached prefix. `tool_choice: none` is what blocks the call.

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { trustedServer } from './trusted-helpers.js';
 import { configProblems, DEFAULTS } from '../src/config/config.ts';
-import { effectiveConfig } from '../src/config/models.ts';
+import { effectiveConfig, takesImages, usesTools } from '../src/config/models.ts';
 
 const seen = [];
 const fake = createServer((req, res) => {
@@ -45,8 +45,8 @@ test('the picker lists the role\'s catalog entries by label, never provider ids'
   const out = (await alice('/api/models')).data;
   assert.equal(out.catalog, true);
   assert.deepEqual(out.models, [
-    { id: 'quick', name: 'Quick', description: 'Everyday questions', tags: [] },
-    { id: 'deep', name: 'Thorough', description: null, tags: [] }
+    { id: 'quick', name: 'Quick', description: 'Everyday questions' },
+    { id: 'deep', name: 'Thorough', description: null }
   ]);
   assert.equal(JSON.stringify(out).includes('vendor/'), false);
   const me = (await alice('/api/auth/me')).data;
@@ -102,4 +102,39 @@ test('a disabled entry is hidden, refused and cannot be the default', () => {
 test('the picker and prefs skip disabled entries', async () => {
   assert.equal((await alice('/api/models')).data.models.some((m) => m.id === 'parked'), false);
   assert.equal((await alice('/api/me/prefs', { method: 'POST', body: { model: 'parked' } })).status, 403);
+});
+
+test('images and tools are on unless an admin switches them off; older tags keep meaning what they meant', () => {
+  assert.equal(takesImages({ id: 'a' }), true);
+  assert.equal(takesImages({ id: 'a', tags: ['tools'] }), false, 'tags that left out vision always meant no images');
+  assert.equal(takesImages({ id: 'a', tags: ['vision'] }), true);
+  assert.equal(takesImages({ id: 'a', tags: ['tools'], images: true }), true, 'the switch wins over old tags');
+  assert.equal(takesImages({ id: 'a', images: false }), false);
+  assert.equal(takesImages(null), true, 'an open catalog refuses nothing');
+  assert.equal(usesTools({ id: 'a', tags: ['vision'] }), true, 'old tags never turned tools off');
+  assert.equal(usesTools({ id: 'a', tools: false }), false);
+  assert.match(configProblems({ models: [{ id: 'a', images: 'yes', tools: 0 }] }).join(), /images must be true or false.*tools must be true or false/);
+  assert.deepEqual(configProblems({ models: [{ id: 'a', tags: ['vision', 'reasoning', 'tools'] }], model: 'a' }), [], 'older configs still load');
+});
+
+test('a model with tools off is offered none, and one with images off refuses them on the server', async () => {
+  const s = await trustedServer({
+    baseUrl: `http://127.0.0.1:${port}/v1`, model: 'plain',
+    models: [{ id: 'plain', tools: false, images: false }]
+  });
+  try {
+    const me = (await s.as({ id: 'sub-p' })('/api/auth/me')).data;
+    assert.deepEqual([me.modelImages, me.modelTools], [false, false]);
+    const post = (body) => fetch(`${s.base}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-tinysuite-user-id': 'sub-p' }, body: JSON.stringify(body)
+    });
+    const before = seen.length;
+    const refused = await post({ message: 'look', images: [{ mime: 'image/png', dataBase64: 'iVBORw0KGgo=' }] });
+    assert.equal(refused.status, 400);
+    assert.match((await refused.json()).error, /does not take images/);
+    assert.equal(seen.length, before, 'nothing reached the provider');
+    assert.equal((await s.as({ id: 'sub-p' })('/api/chats')).data.chats.length, 0, 'and no empty chat was left behind');
+    await (await post({ message: 'hi' })).text();
+    assert.equal(seen.at(-1).tools, undefined, 'no tools on the wire');
+  } finally { await s.srv.shutdown(); }
 });

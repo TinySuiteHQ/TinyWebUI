@@ -78,8 +78,10 @@ export async function summarize({ cfg, source, signal, emit, onUsage }: {
   // Operator extras meant for the chat (forced tools, a response format) must
   // not leak into a request that may only return prose.
   for (const k of ['tools', 'tool_choice', 'parallel_tool_calls', 'response_format']) delete extraBody[k];
+  // No thinking level: condensing text the model already has gains nothing from
+  // it, and reasoning spends the summary's own token budget.
   const summaryCfg = { ...cfg, systemPrompt: CHECKPOINT_PROMPT, maxTokens: cfg.compactionMaxTokens || 8192,
-    cache: false, extraBody };
+    cache: false, extraBody, thinkingLevel: null };
   const res = await post(summaryCfg, { turn: [{ role: 'user', content: source }], tools: [], lastCall: true, epochIndex: -1 },
     signal, new Set(), emit);
   let text = '';

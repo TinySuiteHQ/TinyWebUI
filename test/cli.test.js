@@ -112,3 +112,36 @@ test('config show is effective; unknown commands fail', () => {
   assert.deepEqual(JSON.parse(run('config', 'show', '--role', 'user').out).features, ['chat']);
   assert.equal(run('nonsense').code, 1);
 });
+
+test('users password is the break glass: a new password for a local account, every session ended', async () => {
+  const local = mkdtempSync(join(tmpdir(), 'tinywebui-cli-pw-'));
+  writeFileSync(join(local, 'tinywebui.config.json'), '{ "authMode": "multiuser" }\n');
+  writeFileSync(join(local, 'mcp.json'), '{ "mcpServers": {} }\n');
+  const { Store } = await import('../src/store/index.ts');
+  const { hashPassword, verifyPassword } = await import('../src/access/auth.ts');
+  const db = join(local, 'tinywebui.db');
+  const store = new Store(db);
+  const admin = store.users.createFirstLocal({ email: 'owner@example.com', passwordHash: hashPassword('forgotten password') });
+  store.users.addSession('some-session', admin.id, Date.now() + 60_000);
+  store.close();
+  const go = (input, ...args) => {
+    const env = { ...process.env, TINYWEBUI_DB: db };
+    delete env.TINYWEBUI_CONFIG; delete env.TINYWEBUI_MCP;
+    const r = spawnSync(process.execPath, [BIN, 'users', 'password', ...args], { cwd: local, env, encoding: 'utf8', input });
+    return { code: r.status, out: r.stdout, err: r.stderr };
+  };
+  const hash = () => { const s = new Store(db); try { return [s.users.byEmail('owner@example.com').password_hash, s.users.getSession('some-session')]; } finally { s.close(); } };
+  try {
+    assert.match(go('', 'nobody@example.com').err, /no local account.*owner@example\.com \(admin\)/);
+    const r = go('', 'OWNER@example.com');
+    assert.equal(r.code, 0, r.err);
+    const issued = /new password for owner@example\.com: (\S+)/.exec(r.out)[1];
+    const [now, session] = hash();
+    assert.ok(verifyPassword(issued, now) && issued.length >= 10);
+    assert.equal(session, null, 'the account is signed out everywhere');
+    assert.match(go('short\n', 'owner@example.com', '--stdin').err, /at least 10 characters/);
+    assert.equal(go('chosen by the owner\n', 'owner@example.com', '--stdin').code, 0);
+    assert.ok(verifyPassword('chosen by the owner', hash()[0]));
+    assert.doesNotMatch(go('chosen again here\n', 'owner@example.com', '--stdin').out, /chosen again here/, 'a password from stdin is never echoed');
+  } finally { rmSync(local, { recursive: true, force: true }); }
+});

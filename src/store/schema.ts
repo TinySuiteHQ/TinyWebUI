@@ -349,7 +349,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -406,6 +406,9 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   if (!fresh) renameToPassages(db);
   db.exec(SCHEMA);
   if (!fresh) moveDocumentVectors(db);
+  // Only ever on unreleased schema-14 databases: thinking refusals were once
+  // remembered per model. Now the field is simply sent, so the table goes.
+  db.exec('DROP TABLE IF EXISTS model_thinking');
   // Nullable everywhere: unused (null) when auth is off, the exact behavior
   // installs already have; set only once per-user scoping is opted into.
   ensureColumn(db, 'chats', 'user_id', 'TEXT');
@@ -443,6 +446,8 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   // metadata reconciled from the gateway; external_id decides who owns what.
   ensureColumn(db, 'users', 'external_id', 'TEXT');
   ensureColumn(db, 'users', 'name', 'TEXT');
+  // What someone asking for an account told the admin (request-access in routes/auth.ts).
+  ensureColumn(db, 'users', 'request_note', 'TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_external_id ON users(external_id)');
   // Per-user preferences (tier 3): harmless choices like which allowed
   // model to use. Deployment settings never live here.

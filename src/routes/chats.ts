@@ -1,6 +1,6 @@
 import { json, readJson, oneOf, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
-import { hasEndpoint } from '../config/models.ts';
+import { hasEndpoint, findEntry, takesImages, THINKING_CHOICES } from '../config/models.ts';
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
@@ -12,6 +12,11 @@ import type { ServerResponse } from 'node:http';
 import type { Auth } from '../access/auth_gate.ts';
 
 const MAX_IMAGES = 8;
+
+const NO_IMAGES = 'this model does not take images: pick another model, or ask an admin to switch images on for it';
+
+/** The thinking level a send asked for, if it names one; whether the model allows it is runs' call. */
+const thinkingAsked = (body: Record<string, unknown>) => (oneOf(body.thinking, THINKING_CHOICES) ? body.thinking : null);
 const F = FEATURE.CHAT;
 
 /** Images and documents on a turn need their own features, whatever the route. */
@@ -103,13 +108,15 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
         if (doc?.chat_id === id) content += attachmentNote(doc);
       }
       const kept = Array.isArray(images) ? images.filter((img) => img?.mime && img?.data) : [];
+      const model = modelFor(auth.user?.id, auth.role);
+      if (kept.length && !takesImages(findEntry(config(), model))) return json(res, 400, { error: NO_IMAGES });
       store.messages.add(id, { role: 'user', content, ...(kept.length ? { images: kept } : {}) });
 
       // The run is started but not streamed back here. The client reloads the
       // rewound transcript and then attaches, the same path a reload takes,
       // rather than reading a stream through a response it also has to
       // redraw behind.
-      runs.start({ chat: found, tools: toolsFor(auth.features), model: modelFor(auth.user?.id, auth.role), instructions: instructionsFor(auth.user?.id) });
+      runs.start({ chat: found, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body) });
       return json(res, 200, { ok: true, running: true });
     } },
 
@@ -191,6 +198,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const model = modelFor(auth.user?.id, auth.role);
       if (!hasEndpoint(config(), model)) return json(res, 400, { error: 'No model is connected yet: an admin adds a connector and its models in Settings.' });
       if (!message) return json(res, 400, { error: 'message is required' });
+      if (Array.isArray(images) && images.length && !takesImages(findEntry(config(), model))) return json(res, 400, { error: NO_IMAGES });
       // Ids go into SQL and into URLs the page builds, so they must look like one.
       if (chatId != null && (typeof chatId !== 'string' || !/^[\w.-]{1,128}$/.test(chatId))) return json(res, 400, { error: 'chatId must be an id' });
 
@@ -233,7 +241,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id) });
+        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body) });
       return runs.attach(run, res, 0);
     } }
   ];

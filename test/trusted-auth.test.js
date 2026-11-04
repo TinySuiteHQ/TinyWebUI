@@ -157,3 +157,12 @@ test('admins can read any user\'s chats and documents; users cannot', async () =
   assert.equal((await other(`/api/admin/documents/${doc.id}`)).status, 403);
   assert.equal((await admin('/api/admin/chats/nope')).status, 404);
 });
+
+test('behind a gateway there are no passwords to change or set', async () => {
+  assert.equal((await admin('/api/auth/me')).data.hasPassword, false);
+  assert.equal((await admin('/api/me/password', { method: 'POST', body: { current: 'x', password: 'long enough password' } })).status, 404);
+  const other = as({ id: 'sub-pw', email: 'pw@example.com' });
+  const id = (await other('/api/auth/me')).data.user.id;
+  assert.equal((await admin('/api/admin/users')).data.users.find((u) => u.id === id).hasPassword, false);
+  assert.equal((await admin(`/api/admin/users/${id}/password`, { method: 'POST', body: { password: 'long enough password' } })).status, 404);
+});

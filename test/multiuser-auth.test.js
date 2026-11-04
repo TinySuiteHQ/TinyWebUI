@@ -119,3 +119,41 @@ test('local users sign in by normalized email and can log out', async () => {
   assert.equal((await call('/api/auth/logout', { method: 'POST', cookie: login.cookie })).status, 200);
   assert.equal((await call('/api/chats', { cookie: login.cookie })).status, 401);
 });
+
+const login = async (email, password) => call('/api/auth/login', { method: 'POST', body: { email, password } });
+
+test('a person changes their own password: current one first, same rule, other sessions end', async () => {
+  const here = (await login('friend@example.com', 'friend password')).cookie;
+  const elsewhere = (await login('friend@example.com', 'friend password')).cookie;
+  const me = (await call('/api/auth/me', { cookie: here })).data;
+  assert.deepEqual([me.hasPassword, me.passwordMin], [true, 10]);
+
+  const wrong = await call('/api/me/password', { method: 'POST', cookie: here, body: { current: 'not it', password: 'brand new password' } });
+  assert.equal(wrong.status, 403);
+  const short = await call('/api/me/password', { method: 'POST', cookie: here, body: { current: 'friend password', password: 'short' } });
+  assert.equal(short.status, 400);
+  assert.match(short.data.error, /at least 10 characters/);
+
+  assert.equal((await call('/api/me/password', { method: 'POST', cookie: here, body: { current: 'friend password', password: 'brand new password' } })).status, 200);
+  assert.equal((await call('/api/chats', { cookie: here })).status, 200, 'the session that changed it stays');
+  assert.equal((await call('/api/chats', { cookie: elsewhere })).status, 401, 'every other session ends');
+  assert.equal((await login('friend@example.com', 'friend password')).status, 401);
+  assert.equal((await login('friend@example.com', 'brand new password')).status, 200);
+});
+
+test('an admin sets a password for someone locked out, under the same rule', async () => {
+  const friendSession = (await login('friend@example.com', 'brand new password')).cookie;
+  const listed = (await call('/api/admin/users', { cookie: adminCookie })).data.users;
+  const friend = listed.find((u) => u.email === 'friend@example.com');
+  const owner = listed.find((u) => u.email === 'owner@example.com');
+  assert.equal(friend.hasPassword, true);
+
+  const set = (id, password, cookie = adminCookie) => call(`/api/admin/users/${id}/password`, { method: 'POST', cookie, body: { password } });
+  assert.equal((await set(friend.id, 'tiny')).status, 400);
+  assert.equal((await set(owner.id, 'owner new password')).status, 400, 'your own goes through My preferences');
+  assert.equal((await set(owner.id, 'hijacked password', friendSession)).status, 403, 'admins only');
+
+  assert.equal((await set(friend.id, 'reset by the admin')).status, 200);
+  assert.equal((await call('/api/chats', { cookie: friendSession })).status, 401, 'they are signed out everywhere');
+  assert.equal((await login('friend@example.com', 'reset by the admin')).status, 200);
+});

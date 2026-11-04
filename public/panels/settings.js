@@ -297,7 +297,26 @@ export function settingsBack() {
   return true;
 }
 
+/** Changes the signed-in person's own password; its own form, apart from the settings draft. */
+async function changePassword(event) {
+  event.preventDefault();
+  const msg = $('pwMsg');
+  msg.textContent = '';
+  msg.classList.remove('ok');
+  if ($('pwNew').value !== $('pwConfirm').value) { msg.textContent = 'The two new passwords do not match.'; $('pwConfirm').select(); return; }
+  const button = $('passwordGroup').querySelector('button');
+  button.disabled = true;
+  try {
+    await api.post('/api/me/password', { current: $('pwCurrent').value, password: $('pwNew').value });
+    for (const id of ['pwCurrent', 'pwNew', 'pwConfirm']) $(id).value = '';
+    msg.textContent = 'Password changed. Your other sessions were signed out.';
+    msg.classList.add('ok');
+  } catch (err) { msg.textContent = err.message; }
+  finally { button.disabled = false; }
+}
+
 export function initSettings() {
+  $('passwordGroup').onsubmit = changePassword;
   $('saveMcp').onclick = saveMcp;
   $('save').onclick = saveConfig;
   $('testDefault').onclick = testDefault;
@@ -379,14 +398,20 @@ export async function loadConfig() {
   $('myInstructionsGroup').hidden = !mine.includes('instructions');
   $('myInstructions').value = whoami().instructions || '';
   $('themeGroup').hidden = readOnly && !mine.includes('theme');
-  $('myPrefsLink').hidden = readOnly ? !mine.length : false;
+  // Local accounts only; behind a gateway (SSO) there is no password here to change.
+  const ownPassword = Boolean(whoami().hasPassword);
+  $('passwordGroup').hidden = !ownPassword;
+  $('pwUser').value = whoami().user?.email || '';
+  $('pwNew').minLength = whoami().passwordMin || 0;
+  $('passwordRule').textContent = `At least ${whoami().passwordMin} characters. Changing it signs out your other sessions.`;
+  $('myPrefsLink').hidden = readOnly ? !(mine.length || ownPassword) : false;
   for (const id of FORM_KEYS) {
     const locked = readOnly || lockedKeys.has(id);
     $(id).disabled = locked;
     $(id).title = readOnly ? 'managed by your administrator' : locked ? 'set in code' : '';
   }
   $('save').disabled = readOnly ? !mine.includes('instructions') : Boolean(cfg.frozen);
-  if (readOnly) $('saveMsg').textContent = mine.length ? '' : 'managed by your administrator';
+  if (readOnly) $('saveMsg').textContent = mine.length || ownPassword ? '' : 'managed by your administrator';
   else if (cfg.frozen) $('saveMsg').textContent = 'frozen deployment: settings are managed in its files';
   if (cfg.frozen) for (const id of FORM_KEYS) $(id).title = 'frozen deployment: change the config file';
   $('systemPrompt').value = cfg.systemPrompt;

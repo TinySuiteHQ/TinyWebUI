@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } from '../access/policy.ts';
 import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, hasEndpoint, defaultModel, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
 import { logger } from '../log.ts';
-import type { CacheMode, ExtraBody, ReasoningReplay } from '../harness/types.ts';
+import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
 import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
 import { serveProblems, type ServeSpec } from '../mcp_serve.ts';
@@ -84,6 +84,10 @@ export interface Config {
   frozen: boolean;
   retrieval: RetrievalConfig;
   access?: AccessConfig;
+  // Per turn, never from a file: what the turn's model and the person chose
+  // (thinkingFor in models.ts). Not in DEFAULTS, so a file that sets them is refused.
+  thinkingLevel?: ThinkingLevel | null;
+  thinkingSend?: ThinkingSend;
 }
 
 /** An MCP server as mcp.json declares it: a command to spawn (stdio) or a URL (http). */

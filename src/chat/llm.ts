@@ -103,7 +103,7 @@ export async function runChat({
   });
   const owner = (name: string | undefined) => hub?.routes?.get(name!)?.server || 'built-ins';
 
-  // Optional request fields this endpoint has already refused, learned once.
+  // Optional request fields this endpoint has already refused, learned once per turn.
   const disabled = new Set<string>();
 
   // Automation executions remain ordinary, visible chat turns, but do not
