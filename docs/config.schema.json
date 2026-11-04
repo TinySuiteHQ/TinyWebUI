@@ -576,7 +576,7 @@
         },
         "allowRequests": {
           "type": "boolean",
-          "description": "multiuser: people may ask for an account from the sign-in page; an admin approves each. On unless false."
+          "description": "multiuser: people may ask for an account from the sign-in page; an admin approves each. Off unless true."
         },
         "customize": {
           "type": "array",

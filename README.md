@@ -47,7 +47,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Hybrid local search** (BM25 plus a small on-device embedding model) over documents and past chats.
 - **Long chats that stay affordable.** Cache-friendly prefixes, one-time compaction of large tool results, and per-round token statistics.
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
-- **Private by default.** The first account becomes the administrator; later local accounts come from a single-use invitation, or ask from the sign-in page and wait for an admin to approve them (`access.allowRequests: false` turns that off). Teams can alternatively put SSO in front.
+- **Private by default.** The first account becomes the administrator; later local accounts come from a single-use invitation, or, with `access.allowRequests: true` (off by default), ask from the sign-in page and wait for an admin to approve them. Teams can alternatively put SSO in front.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
 - **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
 

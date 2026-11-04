@@ -10,7 +10,7 @@ import type { UserRole, UserStatus } from '../store/users.ts';
  *   access: {
  *     bootstrapAdmins: ['<gateway user id>'],   // always admin, always approved
  *     newUsers: 'pending' | 'approved',             // 'pending' unless the files say otherwise
- *     allowRequests: boolean,                       // multiuser: anyone may ask for an account; true unless false
+ *     allowRequests: boolean,                       // multiuser: anyone may ask for an account; false unless true
  *     roles: { user: { features: [...], models: [...] | '*', customize?: [...] }, admin: { features: '*' },
  *              '<custom role>': { ... } },                 // any other name is a custom role
  *     users: { '<gateway user id>': { role?, status? } }  // admin decisions, written back
@@ -107,8 +107,8 @@ export function resolveAccess(cfg: PolicyConfig) {
     bootstrapAdmins: Array.isArray(a.bootstrapAdmins) ? a.bootstrapAdmins.map(String) : [],
     // Someone a gateway lets through has signed in, not been let in: an admin approves them.
     newUsers: a.newUsers || 'pending' as const,
-    // A request grants nothing until an admin approves it, so it is on unless switched off.
-    allowRequests: a.allowRequests !== false,
+    // Off unless switched on: the addresses are unchecked, so an open form invites a queue of strangers.
+    allowRequests: a.allowRequests === true,
     // The default for a role that does not say; each role's own list is in `roles`.
     customize,
     roles,
