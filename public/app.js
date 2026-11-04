@@ -65,54 +65,83 @@ function waitingRoom(me) {
   if (!disabled) timer = setTimeout(check, GATE_POLL_MS);
 }
 
-/** Local auth with no session: sign in, claim a fresh install, or accept an invite. */
+/**
+ * Local auth with no session: sign in, claim a fresh install, accept an
+ * invite, or ask for an account. A request makes a pending account; signing
+ * in to it lands in the waiting room, which opens the app once it is approved.
+ */
 async function needsLogin() {
   const me = await loadAccess();
   if (me.user && me.user.status !== 'approved') { waitingRoom(me); return true; }
   if (me.authMode !== 'multiuser' || me.user) return false;
   const invite = new URLSearchParams(location.search).get('invite');
   if (invite) history.replaceState(null, '', location.pathname);
-  const setup = me.needsSetup && !invite;
-  const joining = Boolean(invite);
-  const box = $('login');
-  box.hidden = false;
-  $('loginTitle').textContent = setup ? 'Create the administrator' : joining ? 'Join TinyWebUI' : 'TinyWebUI';
-  $('loginHelp').textContent = setup ? 'The first account owns this installation and can invite others.'
-    : joining ? 'Create your account using this invitation.' : '';
-  for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = false;
-  $('loginEmail').required = true;
-  $('loginPassword').autocomplete = setup || joining ? 'new-password' : 'current-password';
-  // A new password is typed twice, and the rule is said before the server has to.
-  const creating = setup || joining;
-  for (const id of ['loginConfirmLabel', 'loginConfirm', 'loginRule']) $(id).hidden = !creating;
-  $('loginConfirm').required = creating;
-  if (creating) {
-    $('loginPassword').minLength = me.passwordMin;
-    $('loginRule').textContent = `At least ${me.passwordMin} characters.`;
-  }
-  $('loginSubmit').textContent = setup ? 'Create administrator' : joining ? 'Create account' : 'Sign in';
-  $('loginEmail').focus();
+  $('login').hidden = false;
+  let mode = me.needsSetup && !invite ? 'setup' : invite ? 'join' : 'signin';
+
+  const TEXT = {
+    setup: { title: 'Create the administrator', help: 'The first account owns this installation and can invite others.', submit: 'Create administrator' },
+    join: { title: 'Join TinyWebUI', help: 'Create your account using this invitation.', submit: 'Create account' },
+    signin: { title: 'TinyWebUI', help: '', submit: 'Sign in' },
+    request: { title: 'Request access', help: 'An administrator approves each request before you can start.', submit: 'Send request' }
+  };
+  const show = (next, note = '') => {
+    mode = next;
+    const creating = mode !== 'signin';
+    $('loginTitle').textContent = TEXT[mode].title;
+    $('loginHelp').textContent = TEXT[mode].help;
+    $('loginSubmit').textContent = TEXT[mode].submit;
+    for (const id of ['loginEmailLabel', 'loginEmail']) $(id).hidden = false;
+    $('loginEmail').required = true;
+    $('loginPassword').autocomplete = creating ? 'new-password' : 'current-password';
+    // A new password is typed twice, and the rule is said before the server has to.
+    for (const id of ['loginConfirmLabel', 'loginConfirm', 'loginRule']) $(id).hidden = !creating;
+    $('loginConfirm').required = creating;
+    for (const id of ['loginNoteLabel', 'loginNote']) $(id).hidden = mode !== 'request';
+    $('loginPassword').minLength = creating && me.passwordMin ? me.passwordMin : 0;
+    if (creating && me.passwordMin) $('loginRule').textContent = `At least ${me.passwordMin} characters.`;
+    // Only between signing in and asking: setup and invitations have one way through.
+    const other = mode === 'signin' && me.canRequest ? 'request' : mode === 'request' ? 'signin' : null;
+    $('loginSwitch').hidden = !other;
+    if (other) {
+      $('loginSwitchText').textContent = other === 'request' ? "Don't have an account?" : 'Already have one?';
+      $('loginSwitchBtn').textContent = other === 'request' ? 'Request access' : 'Sign in';
+      $('loginSwitchBtn').onclick = () => { show(other); $('loginPassword').value = $('loginConfirm').value = ''; };
+    }
+    $('loginMsg').textContent = note;
+    $('loginEmail').focus();
+  };
+  show(mode);
+
+  const signIn = (account) => api.post('/api/auth/login', account);
   $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginMsg').textContent = '';
-    if (creating && $('loginPassword').value !== $('loginConfirm').value) {
+    if (mode !== 'signin' && $('loginPassword').value !== $('loginConfirm').value) {
       $('loginMsg').textContent = 'The two passwords do not match.';
       $('loginConfirm').select();
       return;
     }
+    const account = { email: $('loginEmail').value, password: $('loginPassword').value };
     try {
-      const account = {
-        email: $('loginEmail').value,
-        password: $('loginPassword').value
-      };
-      await api.post(setup ? '/api/auth/setup' : joining ? '/api/auth/accept-invite' : '/api/auth/login',
-        setup || joining ? { ...account, ...(joining ? { token: invite } : {}) }
-          : { email: account.email, password: account.password });
-      if (joining) location.href = location.pathname;
+      if (mode === 'setup') await api.post('/api/auth/setup', account);
+      else if (mode === 'join') await api.post('/api/auth/accept-invite', { ...account, token: invite });
+      else if (mode === 'signin') await signIn(account);
+      else {
+        await api.post('/api/auth/request-access', { ...account, note: $('loginNote').value.trim() || null });
+        // Straight into the waiting room. The server says "sent" even for an
+        // address that already has an account; then this sign-in fails, and
+        // the page says no more than that the request went out.
+        try { await signIn(account); } catch {
+          show('signin', 'Request sent. Once an administrator approves it, sign in with that email and password.');
+          return;
+        }
+      }
+      if (mode === 'join') location.href = location.pathname;
       else location.reload();
     } catch (err) {
       $('loginMsg').textContent = err.message;
-      if (!setup && !joining) $('loginPassword').select();
+      if (mode === 'signin') $('loginPassword').select();
     }
   };
   return true;

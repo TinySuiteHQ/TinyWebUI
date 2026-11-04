@@ -22,7 +22,9 @@ function adminUserView(u: Omit<UserListing, 'chat_count' | 'has_password'> & { c
     id: u.id, email: u.email, name: u.name ?? null, role: u.role, status: u.status,
     createdAt: u.created_at, lastLoginAt: u.last_login_at, chatCount: u.chat_count ?? null,
     // A local account an admin can set a password for; gateway (SSO) accounts have none.
-    hasPassword: Boolean(u.has_password ?? u.password_hash)
+    hasPassword: Boolean(u.has_password ?? u.password_hash),
+    // Only while the request is waiting: once decided, it has done its job.
+    note: u.status === 'pending' ? u.request_note ?? null : null
   };
 }
 
@@ -201,9 +203,19 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     { method: 'GET', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
       return json(res, 200, {
         features: FEATURES, customizable: CUSTOMIZABLE, models: catalog(config()).map((m) => m.id),
-        roles: rolesView(), newUsers: resolveAccess(config()).newUsers,
+        roles: rolesView(), newUsers: resolveAccess(config()).newUsers, allowRequests: resolveAccess(config()).allowRequests,
         locked: source.isFrozen() || source.lockedKeys().has('access')
       });
+    }) },
+
+    // Whether the sign-in page offers "Request access". Written to the file like any other decision.
+    { method: 'PATCH', path: /^\/api\/admin\/policy$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {
+      const { allowRequests } = await readJson(req);
+      if (typeof allowRequests !== 'boolean') return json(res, 400, { error: 'allowRequests must be true or false' });
+      const refused = writeAccess((access) => ({ ...access, allowRequests }));
+      if (refused) return json(res, refused.status, { error: refused.error });
+      audit('admin.requests_changed', { by: auth.userId, allowRequests });
+      return json(res, 200, { allowRequests: resolveAccess(config()).allowRequests });
     }) },
 
     { method: 'POST', path: /^\/api\/admin\/roles$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth }) => {

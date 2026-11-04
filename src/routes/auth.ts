@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.ts';
 import { isClosed, findEntry, labelFor, thinkingView, takesImages, usesTools } from '../config/models.ts';
-import { modelsFor, customizeFor, fingerprint, passwordProblem, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
+import { modelsFor, customizeFor, fingerprint, passwordProblem, resolveAccess, MIN_PASSWORD_LENGTH } from '../access/policy.ts';
 import {
   hashPassword, hashToken, verifyPassword, createSession, destroySession, sessionToken, sessionCookie, clearCookie, isSecureRequest
 } from '../access/auth.ts';
@@ -14,6 +14,12 @@ import type { Route, RouteDeps } from './types.ts';
 const LOGIN_MAX = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const DUMMY_PASSWORD_HASH = hashPassword('tinywebui timing placeholder');
+// Access requests: per address, and how many may wait at once, so an open
+// sign-in page cannot be used to fill the admin's list.
+const REQUEST_MAX = 5;
+const REQUEST_WINDOW_MS = 60 * 60_000;
+const MAX_WAITING = 50;
+const NOTE_MAX = 500;
 
 function localAccount(body: Record<string, any>): { error: string } | { error?: undefined; email: string; password: string } {
   const email = normalizeEmail(body.email);
@@ -26,6 +32,10 @@ function localAccount(body: Record<string, any>): { error: string } | { error?: 
 
 export function authRoutes({ config, modelFor, multiUser, source, store, version }: Pick<RouteDeps, 'config' | 'modelFor' | 'multiUser' | 'source' | 'store' | 'version'>): Route[] {
   const loginFailures = new Map();
+  const requestCounts = new Map<string, { first: number; count: number }>();
+  // Whether the sign-in page offers "Request access": an installation with an administrator, and not switched off.
+  const requestsOpen = (cfg: ReturnType<typeof config>) =>
+    cfg.authMode === 'multiuser' && store.users.localCount() > 0 && resolveAccess(cfg).allowRequests;
 
   return [
     { method: 'GET', path: /^\/api\/auth\/me$/, feature: null, handle: ({ res, auth }) => {
@@ -36,6 +46,8 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
       return json(res, 200, {
         authMode: cfg.authMode,
         needsSetup: cfg.authMode === 'multiuser' && store.users.localCount() === 0,
+        // The sign-in page offers "Request access".
+        canRequest: !auth.user && requestsOpen(cfg),
         logoutUrl: cfg.logoutUrl || '',
         isAdmin: Boolean(auth.isAdmin),
         // What this person may personalise, and their saved instructions (multi-user only).
@@ -80,7 +92,9 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
         audit('auth.rejected', { reason: 'bad_password' });
         return json(res, 401, { error: 'wrong email or password' });
       }
-      if (user.status !== 'approved') return json(res, 403, { error: user.status === 'disabled' ? 'account disabled' : 'account pending approval' });
+      // A pending account signs in to the waiting room, which opens the app once an admin approves it;
+      // its session reaches nothing else (auth_gate.ts).
+      if (user.status === 'disabled') return json(res, 403, { error: 'account disabled' });
       loginFailures.delete(who);
       store.users.sync(user.id, { last_login_at: now });
       const token = createSession(store, user.id, cfg.sessionTtlDays);
@@ -108,6 +122,33 @@ export function authRoutes({ config, modelFor, multiUser, source, store, version
       audit('auth.login', { userId: user.id });
       res.setHeader('set-cookie', sessionCookie(token, cfg.sessionSecret, { secure: isSecureRequest(req, cfg.trustedProxyCidrs) }));
       return json(res, 201, { ok: true });
+    } },
+
+    // Asking for an account with an email, a password and an optional note: a pending local user an admin approves into a role.
+    // The reply is the same whether or not the address already has an account,
+    // so this cannot be used to find out who does; an existing account is never changed.
+    { method: 'POST', path: /^\/api\/auth\/request-access$/, feature: null, handle: async ({ req, res }) => {
+      const cfg = config();
+      if (cfg.authMode !== 'multiuser') return json(res, 404, { error: 'not found' });
+      if (!requestsOpen(cfg)) return json(res, 403, { error: 'access requests are turned off here; ask an administrator for an invitation' });
+      const who = req.socket.remoteAddress || '?';
+      const now = Date.now();
+      const seen = requestCounts.get(who);
+      const entry = seen && now - seen.first <= REQUEST_WINDOW_MS ? seen : { first: now, count: 0 };
+      if (entry.count >= REQUEST_MAX) return json(res, 429, { error: 'too many requests, try again later' });
+      const body = await readJson(req);
+      const account = localAccount(body);
+      if (account.error !== undefined) return json(res, 400, { error: account.error });
+      if (body.note != null && typeof body.note !== 'string') return json(res, 400, { error: 'note must be text' });
+      if (typeof body.note === 'string' && body.note.length > NOTE_MAX) return json(res, 400, { error: `keep the note under ${NOTE_MAX} characters` });
+      const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
+      requestCounts.set(who, { first: entry.first, count: entry.count + 1 });
+      // Hashed either way, so an address that already exists takes as long as one that does not.
+      const outcome = store.users.requestAccess({ email: account.email, note, passwordHash: hashPassword(account.password), maxWaiting: MAX_WAITING });
+      if (outcome === 'full') return json(res, 503, { error: 'too many requests are waiting already; try again later' });
+      if (outcome === 'created') audit('user.access_requested', { email: account.email });
+      else audit('auth.rejected', { reason: 'request_for_existing_email' });
+      return json(res, 202, { ok: true });
     } },
 
     { method: 'POST', path: /^\/api\/auth\/accept-invite$/, feature: null, handle: async ({ req, res }) => {

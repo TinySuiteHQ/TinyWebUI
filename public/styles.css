@@ -313,6 +313,12 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 #loginMsg:empty { display:none; }
 .login-rule { margin-top:-.35rem; color:var(--muted); font-size:var(--fs-meta); }
 .login-rule[hidden] { display:none; }
+.login-optional { color:var(--muted); font-weight:400; }
+#loginNote { resize:vertical; min-height:4.5rem; }
+#loginNote[hidden] { display:none; }
+.login-switch { margin:.25rem 0 0; text-align:center; color:var(--muted); font-size:var(--fs-meta); }
+.login-switch[hidden] { display:none; }
+.login-switch .link { padding:0; border:0; background:none; color:var(--accent); font:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
 .pw-actions { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.75rem; }
 .pw-msg { font-size:var(--fs-meta); color:var(--err); }
 .pw-msg.ok { color:var(--tool); }
@@ -375,6 +381,11 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .adm-pw-rule { flex-basis:100%; }
 .adm-pw-done { color:var(--tool); }
 .adm-foot { font-size:var(--fs-meta); color:var(--muted); text-align:center; }
+.adm-requests { display:flex; align-items:flex-start; gap:.6rem; margin:0; padding:.75rem 1rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); color:var(--fg); font-size:var(--fs-ui); cursor:pointer; }
+.adm-requests[hidden] { display:none; }
+.adm-request-note { display:block; margin-top:.3rem; padding:.4rem .6rem; border-left:2px solid var(--line); color:var(--fg); font-size:var(--fs-meta); white-space:pre-wrap; overflow-wrap:anywhere; }
+.adm-requests input { flex:none; width:auto; margin-top:.2rem; }
+.adm-requests .adm-meta { display:block; margin-top:.15rem; }
 .adm-lede { margin:0; line-height:1.5; font-size:var(--fs-ui); color:var(--muted); }
 .adm-lede b { color:var(--fg); font-weight:550; }
 .adm-roles { display:flex; flex-direction:column; gap:.6rem; }

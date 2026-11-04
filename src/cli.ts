@@ -538,6 +538,7 @@ export function configSchema() {
     properties: {
       bootstrapAdmins: { type: 'array', items: { type: 'string' }, description: 'Gateway user ids that are always approved admins.' },
       newUsers: { enum: ['approved', 'pending'] },
+      allowRequests: { type: 'boolean', description: 'multiuser: people may ask for an account from the sign-in page; an admin approves each. On unless false.' },
       customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What a role may personalise, unless it says.' },
       roles: {
         type: 'object', properties: Object.fromEntries(BUILTIN_ROLES.map((r) => [r, role])),

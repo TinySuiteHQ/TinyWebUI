@@ -289,8 +289,11 @@
       <small id="loginRule" class="login-rule" hidden></small>
       <label id="loginConfirmLabel" for="loginConfirm" hidden>Confirm password</label>
       <input id="loginConfirm" type="password" autocomplete="new-password" hidden>
+      <label id="loginNoteLabel" for="loginNote" hidden>Note to the administrator <span class="login-optional">(optional)</span></label>
+      <textarea id="loginNote" rows="3" maxlength="500" placeholder="Who you are, or why you need access" hidden></textarea>
       <button id="loginSubmit" class="primary" type="submit">Sign in</button>
       <div id="loginMsg" class="usage" role="alert"></div>
+      <p id="loginSwitch" class="login-switch" hidden><span id="loginSwitchText"></span> <button id="loginSwitchBtn" type="button" class="link"></button></p>
     </form>
   </div>
 
@@ -329,6 +332,10 @@
             <div id="inviteResult" class="usage" role="status"></div>
             <div id="adminInvites" class="adm-invites"></div>
           </form>
+          <label id="adminRequests" class="adm-requests" hidden>
+            <input id="adminRequestsOn" type="checkbox">
+            <span>Let people request access from the sign-in page <span class="adm-meta">Requests wait under Waiting until you approve them. Their email addresses are not checked.</span></span>
+          </label>
           <div id="adminFilters" class="adm-filters" role="group" aria-label="Show"></div>
           <div id="adminMsg" class="usage" role="alert"></div>
           <div id="adminUsers" class="adm-groups"></div>

@@ -446,6 +446,8 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   // metadata reconciled from the gateway; external_id decides who owns what.
   ensureColumn(db, 'users', 'external_id', 'TEXT');
   ensureColumn(db, 'users', 'name', 'TEXT');
+  // What someone asking for an account told the admin (request-access in routes/auth.ts).
+  ensureColumn(db, 'users', 'request_note', 'TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_external_id ON users(external_id)');
   // Per-user preferences (tier 3): harmless choices like which allowed
   // model to use. Deployment settings never live here.
