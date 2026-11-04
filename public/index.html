@@ -217,10 +217,19 @@
       <div class="pw-actions"><button class="primary" type="submit">Change password</button><span id="pwMsg" class="pw-msg" role="status"></span></div>
     </form>
 
-    <section class="set-group mine" id="themeGroup">
-      <header><h3>Appearance</h3></header>
+    <section class="set-group mine" id="themeGroup" hidden>
+      <header><h3>Appearance</h3><p>Themes change as you pick them; no need to save.</p></header>
       <div class="set-grid">
-        <div><label for="theme">Theme</label><select id="theme"><option value="">Default</option></select></div>
+        <div id="themePick"><label for="theme">Theme</label><select id="theme"></select></div>
+        <div id="themeDefaultPick" hidden><label for="defaultTheme">Default for everyone</label><select id="defaultTheme"></select><small>What people see unless their role may pick their own.</small></div>
+      </div>
+      <div class="theme-actions" id="themeActions">
+        <a class="btn" id="themeTemplate" href="themes/template.css" download="tinywebui-theme.css">Download template</a>
+        <button type="button" id="themeImport">Import theme…</button>
+        <input type="file" id="themeFile" accept=".css,text/css" hidden>
+        <label class="theme-share" id="themeShareLabel" hidden><input type="checkbox" id="themeShare"> for everyone</label>
+        <button type="button" id="themeDelete" hidden>Delete this theme</button>
+        <span id="themeMsg" class="pw-msg" role="status"></span>
       </div>
     </section>
     </div>
@@ -409,7 +418,6 @@
 
 </div>
 
-<script type="module" src="themes/theme-loader.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

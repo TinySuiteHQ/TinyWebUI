@@ -10,11 +10,14 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('../public/', import.meta.url));
 const AREAS = ['core', 'chat', 'panels', 'shared'];
 // What each area may import besides itself.
-const MAY_USE = { core: ['shared'], chat: ['core', 'shared'], panels: ['chat', 'core', 'shared'], shared: [] };
+// themes/: only the loader is a page module (app.js hands it to panels/appearance.js);
+// the themes' own scenery is loaded by it at run time and imports nothing of the page.
+const MAY_USE = { core: ['shared'], chat: ['core', 'shared'], panels: ['chat', 'core', 'shared'], shared: [], themes: [] };
 
 const rel = (abs) => relative(ROOT, abs).split(sep).join('/');
 const modules = [
   'app.js',
+  'themes/theme-loader.js',
   ...AREAS.flatMap((area) => readdirSync(join(ROOT, area)).filter((f) => f.endsWith('.js')).map((f) => `${area}/${f}`))
 ];
 const source = Object.fromEntries(modules.map((m) => [m, readFileSync(join(ROOT, m), 'utf8')]));

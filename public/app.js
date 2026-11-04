@@ -24,6 +24,8 @@ import { initAutomations, loadAutomations } from './panels/automations.js';
 import { loadUsage } from './panels/usage.js';
 import { initAdmin, loadAdmin } from './panels/admin.js';
 import { initIntegrations, loadIntegrations } from './panels/integrations.js';
+import { initAppearance, loadThemes } from './panels/appearance.js';
+import { applyTheme, builtInThemes, localChoice, setLocalChoice, paintLastTheme } from './themes/theme-loader.js';
 
 // How often the waiting room asks whether an admin has let this person in.
 const GATE_POLL_MS = 15_000;
@@ -164,10 +166,12 @@ function wire() {
     openMcp: () => openPanel(PANEL.MCP)
   });
   initSettings();
+  initAppearance({ applyTheme, builtInThemes, localChoice, setLocalChoice, isLocked });
   initAutomations();
   initIntegrations();
   initPanels({
-    [PANEL.SETTINGS]: { onOpen: onSettingsOpen, onClose: onSettingsClose, onEscape: settingsBack, canClose: settingsCanClose, closeId: 'cancel' },
+    // Themes are re-read on open: an admin may have added or removed one since.
+    [PANEL.SETTINGS]: { onOpen: () => { onSettingsOpen(); loadThemes(); }, onClose: onSettingsClose, onEscape: settingsBack, canClose: settingsCanClose, closeId: 'cancel' },
     // The raw editor and the tool list are reloaded on open, so they reflect
     // any toggles made from the composer menu.
     [PANEL.MCP]: { onOpen: () => Promise.all([loadMcp(), loadTools()]) },
@@ -179,11 +183,16 @@ function wire() {
   }, { onAnyOpen: closeSideDrawer });
 }
 
+// Last visit's theme straight away, sign-in page included; loadThemes() corrects it.
+paintLastTheme();
+
 if (!(await needsLogin())) {
   wire();
   newChat();
-  // Tools render read-only for non-admins, so they wait on the config.
+  // Tools render read-only for non-admins, so they wait on the config, and so
+  // does the theme picker, which needs to know whether the default is pinned.
   loadConfig().then(() => {
+    loadThemes();
     if (needsSetup()) openPanel(PANEL.SETTINGS);
     return can(FEATURE.TOOLS) && loadTools();
   });

@@ -6,7 +6,8 @@ knows any theme exists, and adding one never changes either file.
 ```
 public/themes/
   manifest.json       the list. one line per theme
-  theme-loader.js     the only bridge to the app
+  theme-loader.js     the only bridge to the app (app.js hands it to panels/appearance.js)
+  template.css        what "Download template" gives: the default look, to edit and import
   drivers/
     scene-kit.js      the runtime a moving theme is built on
   fall-fairy/
@@ -37,9 +38,31 @@ Anything past that is yours, on one condition: **scope every rule under
 `[data-theme="<id>"]`.** A theme that leaks outside its own attribute is a
 fork of the stylesheet wearing a theme's clothes.
 
-The picker in settings → appearance is built from the manifest, and the choice
-is remembered in `localStorage`. Removing a theme's files is a complete
-uninstall.
+The picker in settings → appearance is built from the manifest. Removing a
+theme's files is a complete uninstall.
+
+## Who sees which theme
+
+- **The default for everyone** is `theme` in `tinywebui.config.json`: `''`
+  for the plain look, a built-in's id, or an imported theme shared with
+  everyone. An admin sets it under Appearance.
+- **A person's own pick** is allowed for roles that list `theme` in
+  `customize` (`access.customize` sets the default for roles that don't say).
+  Their pick is kept on their account. With sign-in off, there is one person,
+  and the pick is kept in the browser.
+
+## Imported themes
+
+Anyone who may pick a theme can also import one: **Download template** gives
+`template.css`, which is the default look written out as variables, light and
+dark. They edit it and **Import** it back. An admin can import a theme for
+everyone, which can then be the default. Imported themes live in the database
+(`store/themes.ts`), not here, and are served from `/api/themes/<id>.css`.
+
+They are CSS only, with no scenery module, and the server refuses `@import`,
+any `url()` but `data:`, and files over 64 KB. Every rule sits under
+`:root[data-theme="custom"]`, the attribute the page sets while an imported
+theme is on.
 
 ## A theme that moves
 

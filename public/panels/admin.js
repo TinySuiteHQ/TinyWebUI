@@ -65,7 +65,7 @@ const FEATURE_GROUPS = [
   ['Their own space', [FEATURE.AUTOMATIONS, FEATURE.STATISTICS, FEATURE.INTEGRATIONS]],
   ['Running the place', [FEATURE.SETTINGS, FEATURE.MCP, FEATURE.OVERSIGHT]]
 ];
-const CUSTOMIZE_INFO = { theme: ['Theme', 'Pick their own look'], instructions: ['Personal instructions', 'Add their own instructions for the model'] };
+const CUSTOMIZE_INFO = { theme: ['Theme', 'Pick or import their own look instead of the default'], instructions: ['Personal instructions', 'Add their own instructions for the model'] };
 const featureName = (f) => FEATURE_INFO[f]?.[0] || f;
 
 const text = (tag, cls, value) => Object.assign(el(tag, cls), { textContent: value });

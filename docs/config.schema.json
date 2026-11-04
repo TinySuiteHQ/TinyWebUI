@@ -411,6 +411,10 @@
       "type": "string",
       "x-change": "editable (UI writes it back here)"
     },
+    "theme": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
     "toolApproval": {
       "enum": [
         "writes",

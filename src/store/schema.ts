@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS invitations (
 );
 CREATE INDEX IF NOT EXISTS invitations_active ON invitations(expires_at) WHERE used_at IS NULL;
 
+-- Themes people imported (Settings -> My preferences -> Appearance): one CSS
+-- file each, only ever variables the page already reads. user_id NULL is a
+-- theme for everyone (an admin's, or anything imported with sign-in off);
+-- otherwise only its owner sees it. The built-in themes are files in
+-- public/themes and never rows here.
+CREATE TABLE IF NOT EXISTS themes (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  css        TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS themes_user ON themes(user_id);
+
 -- One-time migration flags (e.g. backfilling user_id onto pre-auth rows),
 -- so a backfill never accidentally reruns and clobbers real ownership later.
 CREATE TABLE IF NOT EXISTS meta (
@@ -349,7 +363,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a

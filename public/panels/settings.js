@@ -397,7 +397,6 @@ export async function loadConfig() {
   $('settings').classList.toggle('prefs-only', readOnly);
   $('myInstructionsGroup').hidden = !mine.includes('instructions');
   $('myInstructions').value = whoami().instructions || '';
-  $('themeGroup').hidden = readOnly && !mine.includes('theme');
   // Local accounts only; behind a gateway (SSO) there is no password here to change.
   const ownPassword = Boolean(whoami().hasPassword);
   $('passwordGroup').hidden = !ownPassword;

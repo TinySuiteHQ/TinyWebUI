@@ -59,6 +59,7 @@ export interface Config {
   llmCompaction: boolean;
   compactionMaxTokens: number;
   timezone: string;
+  theme: string;
   toolApproval: ToolApproval;
   confirmTools: string[];
   autoApproveTools: string[];
@@ -248,6 +249,10 @@ export const DEFAULTS: Omit<Config, 'access'> = {
   // IANA zone the model is told the date in (and uses for automations). Empty
   // means the server's own zone.
   timezone: '',
+  // The theme everyone sees unless their role may pick their own
+  // (access.customize 'theme'): '' for the plain look, a built-in's id from
+  // public/themes/manifest.json, or the id of a theme imported for everyone.
+  theme: '',
   // Which tool calls wait for the user (see src/config/approval.js).
   //   'writes'  ask before any call not declared read-only (default)
   //   'all'     ask before every call
@@ -709,7 +714,7 @@ export function configProblems(raw: Record<string, any>): string[] {
 export const WRITABLE = new Set([
   'model', 'systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'askUserTimeoutSeconds',
   'cacheTtl', 'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars',
-  'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone',
+  'compactMinSaved', 'maxTurnChars', 'maxHistoryTokens', 'timezone', 'theme',
   'toolApproval', 'confirmTools', 'autoApproveTools', 'disabledTools',
   // The deployment's endpoints and catalog: only the sole user or an admin may
   // send these (see SECRET_PATCH_KEYS in policy.js); keys are write-only.
