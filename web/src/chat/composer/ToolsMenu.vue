@@ -5,13 +5,13 @@
  * server has already moved past.
  */
 import { computed, onMounted, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { FEATURE } from '../../../shared/features.ts';
-import { useSession } from '../stores/session.ts';
-import { useConfig } from '../stores/config.ts';
-import { useChat } from '../stores/chat.ts';
-import Icon from '../ui/Icon.vue';
-import Switch from './Switch.vue';
+import { api } from '../../core/api.ts';
+import { FEATURE } from '../../../../shared/features.ts';
+import { useSession } from '../../stores/session.ts';
+import { useConfig } from '../../stores/config.ts';
+import { useChat } from '../../stores/chat.ts';
+import Icon from '../../ui/Icon.vue';
+import Switch from '../../ui/Switch.vue';
 
 const emit = defineEmits<{ close: [], pickFiles: [], library: [], manage: [] }>();
 const session = useSession();

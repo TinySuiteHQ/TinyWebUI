@@ -5,11 +5,11 @@
  * only stages it; the copy into this chat is made when the message is sent.
  */
 import { computed, onMounted, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { useAttachments } from '../stores/attachments.ts';
-import { useChat } from '../stores/chat.ts';
-import type { Doc } from './turn-model.ts';
-import Modal from '../ui/Modal.vue';
+import { api } from '../../core/api.ts';
+import { useAttachments } from '../../stores/attachments.ts';
+import { useChat } from '../../stores/chat.ts';
+import type { Doc } from '../../model/turn-model.ts';
+import Modal from '../../ui/Modal.vue';
 
 const emit = defineEmits<{ close: [] }>();
 const attachments = useAttachments();

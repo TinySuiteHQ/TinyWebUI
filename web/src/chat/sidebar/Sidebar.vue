@@ -5,15 +5,15 @@
  * width, and on a phone the drawer it lives in.
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { FEATURE } from '../../../shared/features.ts';
-import { markSnippet } from '../core/md.ts';
-import { useSession } from '../stores/session.ts';
-import { useChats, type ChatRow } from '../stores/chats.ts';
-import { useChat } from '../stores/chat.ts';
-import { usePanels, PANEL, type PanelName } from '../stores/panels.ts';
-import { useUi } from '../stores/ui.ts';
-import { useAdmin } from '../stores/admin.ts';
-import Icon from '../ui/Icon.vue';
+import { FEATURE } from '../../../../shared/features.ts';
+import { markSnippet } from '../../core/md.ts';
+import { useSession } from '../../stores/session.ts';
+import { useChats, type ChatRow } from '../../stores/chats.ts';
+import { useChat } from '../../stores/chat.ts';
+import { usePanels, PANEL, type PanelName } from '../../stores/panels.ts';
+import { useUi } from '../../stores/ui.ts';
+import { useAdmin } from '../../stores/admin.ts';
+import Icon from '../../ui/Icon.vue';
 import ChatItem from './ChatItem.vue';
 import OrganizeDialog from './OrganizeDialog.vue';
 import NewFolderDialog from './NewFolderDialog.vue';

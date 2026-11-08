@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /** Every document and image attached to the open chat, oldest first, pinned beside the transcript. */
 import { computed, ref, watch } from 'vue';
-import { useAttachments } from '../stores/attachments.ts';
-import { useChat } from '../stores/chat.ts';
-import Icon from '../ui/Icon.vue';
+import { useAttachments } from '../../stores/attachments.ts';
+import { useChat } from '../../stores/chat.ts';
+import Icon from '../../ui/Icon.vue';
 
 const PREVIEW = 3;
 const attachments = useAttachments();

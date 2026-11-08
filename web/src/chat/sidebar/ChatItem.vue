@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { ChatRow } from '../stores/chats.ts';
-import Icon from '../ui/Icon.vue';
+import type { ChatRow } from '../../stores/chats.ts';
+import Icon from '../../ui/Icon.vue';
 
 defineProps<{ chat: ChatRow, active: boolean }>();
 const emit = defineEmits<{ open: [], organize: [] }>();

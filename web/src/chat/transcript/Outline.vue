@@ -5,7 +5,7 @@
  * click jumps the transcript there.
  */
 import { computed } from 'vue';
-import { useChat } from '../stores/chat.ts';
+import { useChat } from '../../stores/chat.ts';
 
 const chat = useChat();
 const questions = computed(() => chat.model.items.flatMap((i) => (i.kind === 'user'

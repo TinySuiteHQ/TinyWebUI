@@ -5,20 +5,20 @@
  * without the settings feature sees only what an admin lets them personalise.
  */
 import { computed, ref, watch } from 'vue';
-import { api } from '../core/api.ts';
-import { useSession } from '../stores/session.ts';
-import { useConfig } from '../stores/config.ts';
-import { useChat } from '../stores/chat.ts';
-import { useTheme } from '../stores/theme.ts';
-import { PANEL } from '../stores/panels.ts';
-import { usePanel } from './usePanel.ts';
+import { api } from '../../core/api.ts';
+import { useSession } from '../../stores/session.ts';
+import { useConfig } from '../../stores/config.ts';
+import { useChat } from '../../stores/chat.ts';
+import { useTheme } from '../../stores/theme.ts';
+import { PANEL } from '../../stores/panels.ts';
+import { usePanel } from '../usePanel.ts';
 import {
   CACHE_MODES, CACHE_TTLS, REASONING_REPLAY, buildPatch, connectorDraft, fromConfig, modelDraft,
   type ConnectorDraft, type Draft, type ModelDraft
-} from './settings/draft.ts';
-import SettingsHome from './settings/SettingsHome.vue';
-import ConnectorEditor from './settings/ConnectorEditor.vue';
-import ModelEditor from './settings/ModelEditor.vue';
+} from './draft.ts';
+import SettingsHome from './SettingsHome.vue';
+import ConnectorEditor from './ConnectorEditor.vue';
+import ModelEditor from './ModelEditor.vue';
 
 type View = 'home' | 'endpoint' | 'connector' | 'model' | 'defaults' | 'conversation' | 'prefs';
 const TITLES: Record<View, string> = {

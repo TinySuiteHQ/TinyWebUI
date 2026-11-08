@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /** One tool call in the activity: its name and what it was on; the arguments and result unfold on demand. */
 import { computed, ref } from 'vue';
-import type { ToolStep } from './turn-model.ts';
-import Icon from '../ui/Icon.vue';
+import type { ToolStep } from '../../model/turn-model.ts';
+import Icon from '../../ui/Icon.vue';
 
 const props = defineProps<{ step: ToolStep }>();
 const open = ref(false);

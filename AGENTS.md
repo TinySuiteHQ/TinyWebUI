@@ -42,17 +42,22 @@ bin/tinywebui.ts the CLI entry
 shared/          imported by the server and the page (events, features, usage, origins,
                  attachment_note); imports nothing
 web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
-  src/main.ts    creates the app; App.vue picks sign-in, waiting room or AppShell.vue,
-                 which is the only wiring (it starts the stores)
+  src/main.ts    creates the app
+  src/app/       App.vue picks sign-in, waiting room or AppShell.vue, which is the only
+                 wiring (it starts the stores)
   src/core/      api.ts (every JSON call), sse.ts (stream frames), md.ts (the only HTML
                  from outside text), id.ts
+  src/model/     turn-model.ts: the transcript as data, a pure reducer over stream events
+                 (history replays through it too); no Vue, no DOM
   src/stores/    Pinia: session (who, can()), config, chats (sidebar), chat (the open chat,
                  its run, queue, held input), attachments, panels (PANEL), ui, theme, admin
-  src/chat/      turn-model.ts (the transcript as data: a pure reducer over stream events,
-                 history replays through it too) and the chat components
-  src/panels/    one component per panel; settings/ holds the settings draft and editors
+  src/chat/      ChatView.vue (the chat screen), Markdown.vue (also used by panels), and
+                 sidebar/ (chat list, folders), transcript/ (turns, activity, approvals,
+                 questions, outline), composer/ (input, menus, queue, attachments, tasks)
+  src/panels/    one folder per panel (<name>/<Name>Panel.vue plus its parts);
+                 usePanel.ts; settings/ also holds the settings draft and editors
   src/auth/      sign-in and the waiting room
-  src/ui/        Icon, Modal
+  src/ui/        app-agnostic widgets: Icon, Modal, Popover, Switch
   src/styles/    base.css (tokens, layout, panels), chat.css (the transcript)
   public/        copied into dist/ as is: favicon, icons, themes/ (see its README)
 test/            node:test suites; evals/ model-behaviour evals (costs API calls)
@@ -66,9 +71,9 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New secret setting** (a key, not shape): add it to `SECRET_KEYS` in `access/policy.ts` as well, so it is kept in the secrets file, redacted and fingerprinted only as set/unset.
 - **New setting:** its default in `DEFAULTS` and its type in `Config` (`config/config.ts`); DEFAULTS is typed against Config, so the two cannot drift, and `node bin/tinywebui.ts schema > docs/config.schema.json` regenerates the schema (a test compares them).
 - **New built-in tool:** a file in `src/tools/` exporting `xToolDef(): ToolDef` and `callX(args, deps)` (the contract is `tools/types.ts`), registered in `connectHub()` in `server.ts`, and its name added to `RESERVED` in `mcp.ts`.
-- **New stream event:** add it to `shared/events.ts` and handle it in `HANDLERS` in `web/src/chat/turn-model.ts` (typed against every event, so it will not compile until handled), with a case in `test/turn-model.test.ts` if it changes what is drawn. A stored history must replay to the same model as the live stream (`historyToEvents`).
-- **New page code:** state that more than one component reads goes in a store (`web/src/stores/`), loaded by an action; components read the store and call its actions. Imports go one way: `panels/` → `chat/` → `stores/` → `core/` → `shared/`, `ui/` imports nothing of the app, and `chat/turn-model.ts` imports only `shared/` (no Vue, no DOM). Stores do nothing on import: their `init()` is called from `AppShell.vue`. `test/page-structure.test.js` enforces this.
-- **New panel:** a component in `web/src/panels/` whose root is `<section :id="name" :class="{ open: isOpen }">`, using `usePanel(PANEL.X, hooks)`; add the name to `PANEL` in `stores/panels.ts`, the component to `AppShell.vue` and its nav item to `chat/Sidebar.vue`. Open or close it only through the panels store.
+- **New stream event:** add it to `shared/events.ts` and handle it in `HANDLERS` in `web/src/model/turn-model.ts` (typed against every event, so it will not compile until handled), with a case in `test/turn-model.test.ts` if it changes what is drawn. A stored history must replay to the same model as the live stream (`historyToEvents`).
+- **New page code:** state that more than one component reads goes in a store (`web/src/stores/`), loaded by an action; components read the store and call its actions. Imports go one way: `app/` → `panels/` → `chat/` → `stores/` → `model/`, `core/` → `shared/`, `ui/` imports nothing of the app, and `model/` (the transcript reducer) imports only `shared/` (no Vue, no DOM). Stores do nothing on import: their `init()` is called from `app/AppShell.vue`. `test/page-structure.test.js` enforces this.
+- **New panel:** a folder `web/src/panels/<name>/` whose `<Name>Panel.vue` root is `<section :id="name" :class="{ open: isOpen }">`, using `usePanel(PANEL.X, hooks)`; add the name to `PANEL` in `stores/panels.ts`, the component to `app/AppShell.vue` and its nav item to `chat/sidebar/Sidebar.vue`. Open or close it only through the panels store.
 - **New API call from the page:** `api.get/post/patch/del` from `web/src/core/api.ts`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly (`stores/chat.ts`).
 - **New feature flag:** `shared/features.ts`; the page asks `useSession().can(FEATURE.X)`.
 - **New searchable corpus:** implement the `Corpus` adapter in `retrieval/retrieval.ts`, add its name to `CORPUS` in `store/embeddings.ts`, and `register()` it.

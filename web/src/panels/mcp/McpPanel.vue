@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /** MCP servers: the raw config file, and every tool they offer. */
 import { computed, ref, watch } from 'vue';
-import { api } from '../core/api.ts';
-import { useConfig } from '../stores/config.ts';
-import { PANEL } from '../stores/panels.ts';
-import { usePanel } from './usePanel.ts';
+import { api } from '../../core/api.ts';
+import { useConfig } from '../../stores/config.ts';
+import { PANEL } from '../../stores/panels.ts';
+import { usePanel } from '../usePanel.ts';
 import ToolList from './ToolList.vue';
 
 const config = useConfig();

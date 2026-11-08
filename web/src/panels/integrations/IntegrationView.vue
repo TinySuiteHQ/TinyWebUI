@@ -9,7 +9,7 @@
  * or script, only values, so a hostile one can at worst show odd text.
  */
 import { onMounted, reactive, ref, watch } from 'vue';
-import { api } from '../core/api.ts';
+import { api } from '../../core/api.ts';
 
 // A view manifest and its data, as the server relays them, read field by field.
 type Json = any;

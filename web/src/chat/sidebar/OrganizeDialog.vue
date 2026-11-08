@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /** The ⋯ dialog on a chat: move it into a folder, or delete it. */
 import { computed, onMounted, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { useChats, type ChatRow } from '../stores/chats.ts';
-import { useChat } from '../stores/chat.ts';
-import Modal from '../ui/Modal.vue';
+import { api } from '../../core/api.ts';
+import { useChats, type ChatRow } from '../../stores/chats.ts';
+import { useChat } from '../../stores/chat.ts';
+import Modal from '../../ui/Modal.vue';
 
 const props = defineProps<{ chat: ChatRow }>();
 const emit = defineEmits<{ close: [] }>();

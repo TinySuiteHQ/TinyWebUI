@@ -6,7 +6,7 @@
  * they go nowhere until their send is clicked.
  */
 import { ref } from 'vue';
-import { useChat } from '../stores/chat.ts';
+import { useChat } from '../../stores/chat.ts';
 
 const chat = useChat();
 const removing = ref(new Set<string>());

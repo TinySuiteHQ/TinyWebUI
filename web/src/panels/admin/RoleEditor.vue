@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /** What one role may use: features, models, and what its people may personalise. */
 import { computed, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { FEATURE } from '../../../shared/features.ts';
+import { api } from '../../core/api.ts';
+import { FEATURE } from '../../../../shared/features.ts';
 import { CUSTOMIZE_INFO, FEATURE_GROUPS, FEATURE_INFO, plural, roleLabel } from './admin-words.ts';
 
 // The role and the policy, from /api/admin/policy, read field by field.

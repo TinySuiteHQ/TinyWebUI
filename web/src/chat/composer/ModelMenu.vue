@@ -5,10 +5,10 @@
  * the deployment's model, for everyone.
  */
 import { computed, nextTick, onMounted, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { useSession } from '../stores/session.ts';
-import { useConfig } from '../stores/config.ts';
-import { useChat } from '../stores/chat.ts';
+import { api } from '../../core/api.ts';
+import { useSession } from '../../stores/session.ts';
+import { useConfig } from '../../stores/config.ts';
+import { useChat } from '../../stores/chat.ts';
 import { LEVEL_NAMES } from './levels.ts';
 
 const emit = defineEmits<{ close: [] }>();

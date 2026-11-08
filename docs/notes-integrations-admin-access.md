@@ -34,7 +34,7 @@ Branch `integrations-admin-access`, 2026-10-29.
   A shared connector is listed with no views. A user who is not approved has no
   connection to read (409).
 - Admin panel: **connectors** next to **chats** on each user. Nothing is read
-  until a view is picked. `web/src/panels/IntegrationView.vue` carries its own
+  until a view is picked. `web/src/panels/integrations/IntegrationView.vue` carries its own
   state, so both panels draw views with it.
 - Tests in `test/integrations.test.js`; docs in `mcp-management.md` and
   `multi-user-mcp.md`.

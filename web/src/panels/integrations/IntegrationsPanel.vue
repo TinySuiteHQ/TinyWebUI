@@ -5,9 +5,9 @@
  * use arrives with `available: false` and the reason, shown as is.
  */
 import { computed, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { PANEL } from '../stores/panels.ts';
-import { usePanel } from './usePanel.ts';
+import { api } from '../../core/api.ts';
+import { PANEL } from '../../stores/panels.ts';
+import { usePanel } from '../usePanel.ts';
 import IntegrationView from './IntegrationView.vue';
 
 // /api/integrations, read field by field.

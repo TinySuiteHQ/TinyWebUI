@@ -4,10 +4,10 @@
  * app. Nothing of the app is mounted (or fetched) before that is known.
  */
 import { onMounted, ref } from 'vue';
-import { useSession } from './stores/session.ts';
-import { useTheme } from './stores/theme.ts';
-import LoginView from './auth/LoginView.vue';
-import WaitingRoom from './auth/WaitingRoom.vue';
+import { useSession } from '../stores/session.ts';
+import { useTheme } from '../stores/theme.ts';
+import LoginView from '../auth/LoginView.vue';
+import WaitingRoom from '../auth/WaitingRoom.vue';
 import AppShell from './AppShell.vue';
 
 const session = useSession();

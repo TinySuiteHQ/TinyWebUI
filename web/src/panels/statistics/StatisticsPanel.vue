@@ -5,9 +5,9 @@
  * rows is cheap to carry but expensive to re-derive per click.
  */
 import { computed, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { PANEL } from '../stores/panels.ts';
-import { usePanel } from './usePanel.ts';
+import { api } from '../../core/api.ts';
+import { PANEL } from '../../stores/panels.ts';
+import { usePanel } from '../usePanel.ts';
 
 // /api/usage is a wide report read field by field.
 type Json = any;

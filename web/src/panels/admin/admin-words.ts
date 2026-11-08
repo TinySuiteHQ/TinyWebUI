@@ -1,5 +1,5 @@
 /** How the admin panel words roles, features and times. */
-import { FEATURE } from '../../../shared/features.ts';
+import { FEATURE } from '../../../../shared/features.ts';
 
 /** 'team-lead' -> 'Team lead': role names are handles, this is how they read. */
 export const roleLabel = (name: string) => {

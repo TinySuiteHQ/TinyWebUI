@@ -5,9 +5,9 @@
  * the chat to it. Removing an attachment while editing is local until saved.
  */
 import { computed, nextTick, ref } from 'vue';
-import type { UserItem, Img } from './turn-model.ts';
-import { useChat } from '../stores/chat.ts';
-import Icon from '../ui/Icon.vue';
+import type { UserItem, Img } from '../../model/turn-model.ts';
+import { useChat } from '../../stores/chat.ts';
+import Icon from '../../ui/Icon.vue';
 
 const props = defineProps<{ item: UserItem }>();
 const chat = useChat();

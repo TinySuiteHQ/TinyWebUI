@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = fileURLToPath(new URL('../', import.meta.url));
 const ROOT = join(REPO, 'web', 'src');
-// What each area may import besides itself. `shared` is the repo's shared/,
-// which the server imports too. The transcript model is pure and stands alone.
+// What each area may import besides itself: the first folder under web/src
+// (files at its top level are `app`). `shared` is the repo's shared/, which
+// the server imports too. The transcript model (model/) is pure and stands alone.
 const MAY_USE = {
   shared: [],
   model: ['shared'],
@@ -31,7 +32,6 @@ const source = Object.fromEntries(files.map((f) => [f, readFileSync(join(REPO, f
 
 function areaOf(f) {
   if (f.startsWith('shared/')) return 'shared';
-  if (f === 'web/src/chat/turn-model.ts') return 'model';
   const parts = f.replace('web/src/', '').split('/');
   return parts.length === 1 ? 'app' : parts[0];
 }

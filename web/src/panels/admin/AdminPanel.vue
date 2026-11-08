@@ -6,17 +6,17 @@
  * only, never on the person.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { FEATURE } from '../../../shared/features.ts';
-import { useSession } from '../stores/session.ts';
-import { useAdmin } from '../stores/admin.ts';
-import { PANEL } from '../stores/panels.ts';
-import { usePanel } from './usePanel.ts';
+import { api } from '../../core/api.ts';
+import { FEATURE } from '../../../../shared/features.ts';
+import { useSession } from '../../stores/session.ts';
+import { useAdmin } from '../../stores/admin.ts';
+import { PANEL } from '../../stores/panels.ts';
+import { usePanel } from '../usePanel.ts';
 import { featureName, plural, roleLabel, when } from './admin-words.ts';
 import PersonRow from './PersonRow.vue';
 import RoleEditor from './RoleEditor.vue';
-import IntegrationView from './IntegrationView.vue';
-import Markdown from '../chat/Markdown.vue';
+import IntegrationView from '../integrations/IntegrationView.vue';
+import Markdown from '../../chat/Markdown.vue';
 
 // /api/admin/* replies, read field by field.
 type Json = any;

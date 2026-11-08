@@ -5,13 +5,13 @@
  * folded into one row above it and the cost in a meta line under it.
  */
 import { computed, ref } from 'vue';
-import type { Turn, ToolStep } from './turn-model.ts';
+import type { Turn, ToolStep } from '../../model/turn-model.ts';
 import ActivityDrawer from './ActivityDrawer.vue';
 import ApprovalPrompt from './ApprovalPrompt.vue';
 import QuestionCard from './QuestionCard.vue';
-import Markdown from './Markdown.vue';
+import Markdown from '../Markdown.vue';
 import UsageLine from './UsageLine.vue';
-import Icon from '../ui/Icon.vue';
+import Icon from '../../ui/Icon.vue';
 
 const props = defineProps<{ turn: Turn }>();
 

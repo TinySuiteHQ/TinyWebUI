@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /** Prompts that run on a schedule and post their result into a chat. */
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { api } from '../core/api.ts';
-import { useChat } from '../stores/chat.ts';
-import { PANEL } from '../stores/panels.ts';
-import { usePanel } from './usePanel.ts';
+import { api } from '../../core/api.ts';
+import { useChat } from '../../stores/chat.ts';
+import { PANEL } from '../../stores/panels.ts';
+import { usePanel } from '../usePanel.ts';
 import { absolute, describeCron, relative } from './cron.ts';
 import AutomationForm from './AutomationForm.vue';
 import RunHistory from './RunHistory.vue';

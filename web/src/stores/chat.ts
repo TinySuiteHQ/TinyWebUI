@@ -12,7 +12,7 @@ import { newId } from '../core/id.ts';
 import {
   createModel, applyEvent, replay, finishTurn, beginTurn, addUser, addError as modelError,
   type Model, type StreamEvent, type StoredMessage, type Img, type QueueItem
-} from '../chat/turn-model.ts';
+} from '../model/turn-model.ts';
 import { EVENT } from '../../../shared/events.ts';
 import { useSession } from './session.ts';
 import { useChats } from './chats.ts';

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** A fresh chat: the mascot, a greeting, and the composer centred under it. */
 import { computed } from 'vue';
-import { useSession } from '../stores/session.ts';
+import { useSession } from '../../stores/session.ts';
 
 const session = useSession();
 const hour = new Date().getHours();

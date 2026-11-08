@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A composer menu. Opens below the composer in a new chat (where it is
+ * A menu anchored to its parent (the composer's). Opens below the composer in a new chat (where it is
  * centred) and, in a conversation, below if it fits and above otherwise, with
  * its height capped to that side's room so it never hangs off the viewport
  * (an open mobile keyboard). Menus fill in after a fetch and grow when a group

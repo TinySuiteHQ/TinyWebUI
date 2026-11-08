@@ -4,7 +4,7 @@
  * to its heading; the server drops it once the next question is asked.
  */
 import { computed } from 'vue';
-import { useChat } from '../stores/chat.ts';
+import { useChat } from '../../stores/chat.ts';
 
 const chat = useChat();
 const tasks = computed(() => chat.model.tasks || []);

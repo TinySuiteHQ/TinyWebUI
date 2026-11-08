@@ -4,22 +4,22 @@
  * only wiring: stores do nothing until this starts them.
  */
 import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
-import { FEATURE } from '../../shared/features.ts';
-import { useSession } from './stores/session.ts';
-import { useConfig } from './stores/config.ts';
-import { useChats } from './stores/chats.ts';
-import { useChat } from './stores/chat.ts';
-import { usePanels, PANEL } from './stores/panels.ts';
-import { useUi } from './stores/ui.ts';
-import Icon from './ui/Icon.vue';
-import Sidebar from './chat/Sidebar.vue';
-import ChatView from './chat/ChatView.vue';
-import SettingsPanel from './panels/SettingsPanel.vue';
-import McpPanel from './panels/McpPanel.vue';
-import IntegrationsPanel from './panels/IntegrationsPanel.vue';
-import StatisticsPanel from './panels/StatisticsPanel.vue';
-import AdminPanel from './panels/AdminPanel.vue';
-import AutomationsPanel from './panels/AutomationsPanel.vue';
+import { FEATURE } from '../../../shared/features.ts';
+import { useSession } from '../stores/session.ts';
+import { useConfig } from '../stores/config.ts';
+import { useChats } from '../stores/chats.ts';
+import { useChat } from '../stores/chat.ts';
+import { usePanels, PANEL } from '../stores/panels.ts';
+import { useUi } from '../stores/ui.ts';
+import Icon from '../ui/Icon.vue';
+import Sidebar from '../chat/sidebar/Sidebar.vue';
+import ChatView from '../chat/ChatView.vue';
+import SettingsPanel from '../panels/settings/SettingsPanel.vue';
+import McpPanel from '../panels/mcp/McpPanel.vue';
+import IntegrationsPanel from '../panels/integrations/IntegrationsPanel.vue';
+import StatisticsPanel from '../panels/statistics/StatisticsPanel.vue';
+import AdminPanel from '../panels/admin/AdminPanel.vue';
+import AutomationsPanel from '../panels/automations/AutomationsPanel.vue';
 
 const session = useSession();
 const config = useConfig();

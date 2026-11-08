@@ -7,9 +7,9 @@
  * server actually did.
  */
 import { computed } from 'vue';
-import { api } from '../core/api.ts';
-import { useConfig } from '../stores/config.ts';
-import { useChat } from '../stores/chat.ts';
+import { api } from '../../core/api.ts';
+import { useConfig } from '../../stores/config.ts';
+import { useChat } from '../../stores/chat.ts';
 import ToolRow from './ToolRow.vue';
 
 const config = useConfig();

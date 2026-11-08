@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { useChats } from '../stores/chats.ts';
-import Modal from '../ui/Modal.vue';
+import { useChats } from '../../stores/chats.ts';
+import Modal from '../../ui/Modal.vue';
 
 const emit = defineEmits<{ close: [] }>();
 const chats = useChats();

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** One round's usage, or a turn's total: tokens in and out, and what the cache did. */
 import { computed } from 'vue';
-import { tally, type RawUsage } from '../../../shared/usage.ts';
+import { tally, type RawUsage } from '../../../../shared/usage.ts';
 
 const props = defineProps<{ raws: RawUsage[], label?: string }>();
 const fmt = (n: number) => n.toLocaleString('en-US');

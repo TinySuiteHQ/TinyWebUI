@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
-import { useChat } from '../stores/chat.ts';
+import { useChat } from '../../stores/chat.ts';
 import { useStickToBottom } from './stick-to-bottom.ts';
 import UserMessage from './UserMessage.vue';
 import AutomationRun from './AutomationRun.vue';
 import AssistantTurn from './AssistantTurn.vue';
-import Icon from '../ui/Icon.vue';
+import Icon from '../../ui/Icon.vue';
 
 const chat = useChat();
 const log = ref<HTMLElement>();

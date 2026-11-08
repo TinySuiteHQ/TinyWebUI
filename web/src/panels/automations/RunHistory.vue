@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /** An automation's past runs, fetched on first open; each unfolds to what it produced, rendered as the chat would. */
 import { ref } from 'vue';
-import { api } from '../core/api.ts';
-import Markdown from '../chat/Markdown.vue';
+import { api } from '../../core/api.ts';
+import Markdown from '../../chat/Markdown.vue';
 import { absolute } from './cron.ts';
 import StatusPill from './StatusPill.vue';
 

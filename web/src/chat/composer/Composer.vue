@@ -5,15 +5,15 @@
  * Alt+Enter holds it for later).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { FEATURE } from '../../../shared/features.ts';
-import { useSession } from '../stores/session.ts';
-import { useConfig } from '../stores/config.ts';
-import { useChat } from '../stores/chat.ts';
-import { useAttachments } from '../stores/attachments.ts';
-import { usePanels, PANEL } from '../stores/panels.ts';
-import { useUi } from '../stores/ui.ts';
-import Icon from '../ui/Icon.vue';
-import Popover from './Popover.vue';
+import { FEATURE } from '../../../../shared/features.ts';
+import { useSession } from '../../stores/session.ts';
+import { useConfig } from '../../stores/config.ts';
+import { useChat } from '../../stores/chat.ts';
+import { useAttachments } from '../../stores/attachments.ts';
+import { usePanels, PANEL } from '../../stores/panels.ts';
+import { useUi } from '../../stores/ui.ts';
+import Icon from '../../ui/Icon.vue';
+import Popover from '../../ui/Popover.vue';
 import ToolsMenu from './ToolsMenu.vue';
 import ModelMenu from './ModelMenu.vue';
 import QueueBar from './QueueBar.vue';

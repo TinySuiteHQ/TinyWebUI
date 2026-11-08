@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** What is staged for the next message, as chips; removing one costs nothing, nothing has been uploaded. */
-import { useAttachments, stagedName } from '../stores/attachments.ts';
-import Icon from '../ui/Icon.vue';
+import { useAttachments, stagedName } from '../../stores/attachments.ts';
+import Icon from '../../ui/Icon.vue';
 
 const attachments = useAttachments();
 </script>

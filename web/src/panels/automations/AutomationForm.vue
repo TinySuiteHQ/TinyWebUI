@@ -4,8 +4,8 @@
  * (a preset, with raw cron as the escape hatch) and the instructions.
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { api } from '../core/api.ts';
-import { useChats } from '../stores/chats.ts';
+import { api } from '../../core/api.ts';
+import { useChats } from '../../stores/chats.ts';
 import { DAYS, WEEK, buildCron, parseCron } from './cron.ts';
 
 // An automation from /api/automations, read field by field.

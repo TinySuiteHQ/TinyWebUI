@@ -8,7 +8,7 @@ import { EVENT } from '../shared/events.ts';
 import {
   createModel, applyEvent, replay, finishTurn, beginTurn, statusOf,
   type Model, type StreamEvent, type StoredMessage
-} from '../web/src/chat/turn-model.ts';
+} from '../web/src/model/turn-model.ts';
 
 function live(events: StreamEvent[]): Model {
   const m = createModel();

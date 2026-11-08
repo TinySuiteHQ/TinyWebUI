@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { EVENT } from '../shared/events.ts';
 
 test('the page handles every stream event', () => {
-  const page = readFileSync(new URL('../web/src/chat/turn-model.ts', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../web/src/model/turn-model.ts', import.meta.url), 'utf8');
   for (const key of Object.keys(EVENT)) assert.ok(page.includes(`[EVENT.${key}]`), `turn-model.ts does not handle EVENT.${key}`);
 });
 
