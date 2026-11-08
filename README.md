@@ -31,7 +31,7 @@ Part of [TinySuite](https://tinysuite.dev). Comes with [TinySearch](https://gith
 
 ---
 
-TinyWebUI is the chat interface of [TinySuite](https://tinysuite.dev), a set of small, local-first tools for AI agents. Bring an endpoint (OpenRouter, OpenAI, Groq, Ollama, vLLM, LM Studio, or anything else that speaks the OpenAI API), pick a model and a system prompt, and start working. Chats, documents and tool output stay in one SQLite file on your machine. There is no hosted backend, no account to create, no build step and no frontend framework.
+TinyWebUI is the chat interface of [TinySuite](https://tinysuite.dev), a set of small, local-first tools for AI agents. Bring an endpoint (OpenRouter, OpenAI, Groq, Ollama, vLLM, LM Studio, or anything else that speaks the OpenAI API), pick a model and a system prompt, and start working. Chats, documents and tool output stay in one SQLite file on your machine. There is no hosted backend and no account to create, and `npx tinywebui` needs no build step: the page ships prebuilt.
 
 It comes pre-loaded with two TinySuite MCP servers, so a new install can already search the web and remember things:
 
@@ -49,7 +49,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
 - **Private by default.** The first account becomes the administrator; later local accounts come from a single-use invitation, or, with `access.allowRequests: true` (off by default), ask from the sign-in page and wait for an admin to approve them. Teams can alternatively put SSO in front.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
-- **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
+- **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](web/public/themes/README.md) to write your own.
 
 ## Quick start
 
@@ -123,11 +123,12 @@ In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container dep
 ## Development
 
 ```bash
-npm test        # type check, then the whole suite, about 10 seconds
-npm run dev     # restart on changes in src/ and bin/
+npm test        # type check (server and page), then the whole suite, about 15 seconds
+npm run dev     # the API on :7777, restarting on changes in src/, bin/ and shared/
+npm run dev:web # the page on :5173 with hot reload, proxying /api to :7777
 ```
 
-The server is TypeScript that Node runs directly, with no build step, so working from a clone needs Node.js 22.18 or later. The npm package ships JavaScript compiled from it (`npm run build`, which `npm pack` runs) and works from 22.13.
+The server is TypeScript that Node runs directly, with no build step, so working from a clone needs Node.js 22.18 or later. The page is Vue 3 and TypeScript in `web/`, built by Vite into `dist/`, which the server serves; `npm start` builds it first, and during development `npm run dev:web` serves it with hot reload instead. The npm package ships JavaScript compiled from the server and the built page (`npm run build`, which `npm pack` runs) and works from 22.13.
 
 [AGENTS.md](AGENTS.md) maps the codebase and says where new code goes. `npm run eval` runs model-behaviour evals from `evals/tasks/` and makes real API calls, so it costs money.
 

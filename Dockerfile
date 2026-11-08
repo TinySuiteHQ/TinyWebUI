@@ -9,6 +9,17 @@
 #
 # EMBEDDING_MODEL must match retrieval.model (default 'fast'). For the small
 # lexical-only image, build Dockerfile.lexical instead.
+# The page: Vite builds web/ into dist/. Its own stage, so the dev
+# dependencies it needs never reach the image. Not --omit=optional: Vite's
+# bundler ships its native binary as an optional dependency.
+FROM node:22.23.3-slim AS web
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY shared ./shared
+COPY web ./web
+RUN npm run build:web
+
 FROM node:22.23.3-slim AS build
 WORKDIR /app
 ENV NODE_ENV=production
@@ -21,7 +32,8 @@ RUN npm ci --omit=dev --ignore-scripts
 
 COPY bin ./bin
 COPY src ./src
-COPY public ./public
+COPY shared ./shared
+COPY --from=web /app/dist ./dist
 
 ARG EMBEDDING_MODEL=fast
 ARG EMBEDDING_SHA256=

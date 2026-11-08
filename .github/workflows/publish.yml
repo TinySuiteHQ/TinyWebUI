@@ -38,6 +38,10 @@ jobs:
             TINYWEBUI_RETRIEVAL_MODE=lexical npx tinywebui --port 7799 &
           for i in $(seq 30); do curl -fs http://127.0.0.1:7799/readyz && break; sleep 1; done
           curl -fs http://127.0.0.1:7799/readyz
+          # The page ships prebuilt: the index and the script it names must both be there.
+          page=$(curl -fs http://127.0.0.1:7799/)
+          script=$(echo "$page" | grep -o '/assets/[^"]*\.js' | head -1)
+          test -n "$script" && curl -fs -o /dev/null "http://127.0.0.1:7799$script"
           kill %1
       - run: npm publish --access public
 

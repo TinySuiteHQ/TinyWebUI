@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # The page is compiled by Vite; a template that does not build fails here.
+      - run: npm run build:web
       # Check the default install path and the model the server loads.
       - run: node bin/tinywebui.ts models ensure
       - run: node bin/tinywebui.ts models verify | tee verify.json

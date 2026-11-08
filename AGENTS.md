@@ -1,15 +1,17 @@
 # TinyWebUI
 
-A small, dependency-light chat UI for any OpenAI-compatible endpoint, with MCP tools. ES modules, no framework. The server is strict TypeScript that Node runs as is (Node ≥ 22.18 to develop), so there is no build step in development; only the npm package is compiled, to JS that runs on Node ≥ 22.13. The page is plain JS.
+A small, dependency-light chat UI for any OpenAI-compatible endpoint, with MCP tools. The server is strict TypeScript that Node runs as is (Node ≥ 22.18 to develop), so there is no build step for it in development; only the npm package is compiled, to JS that runs on Node ≥ 22.13. The page is Vue 3 + TypeScript in `web/`, compiled by Vite into `dist/`, which the server serves and the npm package ships prebuilt.
 
 ## Commands
 
-- `npm test` — type check (`tsc`), then the whole suite, ~10 s (`node --test`, 30 s limit per test). Run it after every change. `npm run typecheck` is the first half alone.
-- `npm start` — server on http://127.0.0.1:7777 with `tinywebui.config.json` and `tinywebui.db`. It first runs `models ensure`, which fetches the embedding model once; if that fails the server starts lexical (`TINYWEBUI_RETRIEVAL_MODE=lexical` skips it).
+- `npm test` — type check (`tsc` for the server, `vue-tsc` for the page via `web/typecheck.mjs`), then the whole suite, ~15 s (`node --test`, 30 s limit per test). Run it after every change. `npm run typecheck` is the first half alone.
+- `npm run dev` + `npm run dev:web` — the API on :7777 (restarts on `src/`, `bin/`, `shared/` changes) and the page on http://127.0.0.1:5173 with hot reload, proxying `/api` to :7777. The server's CSP applies only to the built page, so check a page change once with `npm run build:web` too.
+- `npm run build:web` — the page into `dist/` (gitignored). The server warns at startup, and `/` answers 503, while it is missing.
+- `npm start` — builds the page, then the server on http://127.0.0.1:7777 with `tinywebui.config.json` and `tinywebui.db`. It first runs `models ensure`, which fetches the embedding model once; if that fails the server starts lexical (`TINYWEBUI_RETRIEVAL_MODE=lexical` skips it).
 - `node bin/tinywebui.ts validate` — check the config; `--help` lists the other CLI commands.
 - Trying the server by hand: point it at a copy of the database, never the real one —
   `TINYWEBUI_DB=<copy>.db node bin/tinywebui.ts --port 7790`. Opening a database migrates it.
-- `npm run build` — the npm package's JS, emitted beside each `.ts` (`npm pack` runs it); `npm run clean` removes it. Never commit it.
+- `npm run build` — the npm package's JS, emitted beside each `.ts`, and the page (`npm pack` runs it); `npm run clean` removes the JS. Never commit either.
 
 ## Layout
 
@@ -37,13 +39,22 @@ src/
   mcp.ts         MCP client hub; mcp_serve.ts starts local servers over HTTP (serve);
                  log.ts; audit.ts; cli.ts
 bin/tinywebui.ts the CLI entry
-public/          the page (plain ES modules, no build); app.js is the entry and the only wiring
-  core/        api.js (every JSON call), dom, state, id, md (the only HTML from outside text), access
-  chat/        the conversation: chat, stream, transcript, composer, queue,
-               attachments, sidebar, outline, tasks
-  panels/      settings, MCP, automations, usage, admin; panels.js (PANEL, openPanel/closePanel)
-  shared/      imported by the server too (events, features, usage); imports nothing
-  themes/      optional themes, loaded by theme-loader.js
+shared/          imported by the server and the page (events, features, usage, origins,
+                 attachment_note); imports nothing
+web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
+  src/main.ts    creates the app; App.vue picks sign-in, waiting room or AppShell.vue,
+                 which is the only wiring (it starts the stores)
+  src/core/      api.ts (every JSON call), sse.ts (stream frames), md.ts (the only HTML
+                 from outside text), id.ts
+  src/stores/    Pinia: session (who, can()), config, chats (sidebar), chat (the open chat,
+                 its run, queue, held input), attachments, panels (PANEL), ui, theme, admin
+  src/chat/      turn-model.ts (the transcript as data: a pure reducer over stream events,
+                 history replays through it too) and the chat components
+  src/panels/    one component per panel; settings/ holds the settings draft and editors
+  src/auth/      sign-in and the waiting room
+  src/ui/        Icon, Modal
+  src/styles/    base.css (tokens, layout, panels), chat.css (the transcript)
+  public/        copied into dist/ as is: favicon, icons, themes/ (see its README)
 test/            node:test suites; evals/ model-behaviour evals (costs API calls)
 ```
 
@@ -55,22 +66,22 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New secret setting** (a key, not shape): add it to `SECRET_KEYS` in `access/policy.ts` as well, so it is kept in the secrets file, redacted and fingerprinted only as set/unset.
 - **New setting:** its default in `DEFAULTS` and its type in `Config` (`config/config.ts`); DEFAULTS is typed against Config, so the two cannot drift, and `node bin/tinywebui.ts schema > docs/config.schema.json` regenerates the schema (a test compares them).
 - **New built-in tool:** a file in `src/tools/` exporting `xToolDef(): ToolDef` and `callX(args, deps)` (the contract is `tools/types.ts`), registered in `connectHub()` in `server.ts`, and its name added to `RESERVED` in `mcp.ts`.
-- **New stream event:** add it to `public/shared/events.js` and handle it in `public/chat/stream.js` (a test enforces this).
-- **New page module:** in `core/`, `chat/` or `panels/`. Imports go one way: `panels/` → `chat/` → `core/`; `core/` imports only `shared/`. Nothing runs on import: listeners and timers go in an exported `init…()` called from `app.js`, and a call that would go against the arrows is passed in as a dependency there (`initSidebar({ openChat, newChat })`). `test/page-structure.test.js` enforces all of this.
-- **New panel:** add it to `PANEL` and to `initPanels()` in `app.js`; open or close it only with `openPanel`/`closePanel`.
-- **New API call from the page:** `api.get/post/patch/del` from `public/api.js`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly.
-- **New feature flag:** `public/shared/features.js`.
+- **New stream event:** add it to `shared/events.ts` and handle it in `HANDLERS` in `web/src/chat/turn-model.ts` (typed against every event, so it will not compile until handled), with a case in `test/turn-model.test.ts` if it changes what is drawn. A stored history must replay to the same model as the live stream (`historyToEvents`).
+- **New page code:** state that more than one component reads goes in a store (`web/src/stores/`), loaded by an action; components read the store and call its actions. Imports go one way: `panels/` → `chat/` → `stores/` → `core/` → `shared/`, `ui/` imports nothing of the app, and `chat/turn-model.ts` imports only `shared/` (no Vue, no DOM). Stores do nothing on import: their `init()` is called from `AppShell.vue`. `test/page-structure.test.js` enforces this.
+- **New panel:** a component in `web/src/panels/` whose root is `<section :id="name" :class="{ open: isOpen }">`, using `usePanel(PANEL.X, hooks)`; add the name to `PANEL` in `stores/panels.ts`, the component to `AppShell.vue` and its nav item to `chat/Sidebar.vue`. Open or close it only through the panels store.
+- **New API call from the page:** `api.get/post/patch/del` from `web/src/core/api.ts`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly (`stores/chat.ts`).
+- **New feature flag:** `shared/features.ts`; the page asks `useSession().can(FEATURE.X)`.
 - **New searchable corpus:** implement the `Corpus` adapter in `retrieval/retrieval.ts`, add its name to `CORPUS` in `store/embeddings.ts`, and `register()` it.
 
 ## Rules
 
 - SQL lives only in `src/store/`. Nothing else touches `store.db`.
-- `src/harness/` imports only its own files, `public/shared/` and `node:` (a test enforces it). What it needs from the app is passed in.
+- `src/harness/` imports only its own files, `shared/` and `node:` (a test enforces it). What it needs from the app is passed in.
 - The store imports nothing from the app (type-only imports of `harness/` wire shapes aside). Folder dependencies are one-way (e.g. `chat/` may use `tools/`, never the reverse); `server.ts` is the only place that wires everything.
 - Identifiers shared across files are constants: `EVENT`, `FEATURE`, `CORPUS`. Don't write them as bare strings.
 - Logs go through `logger(area)` from `log.ts` (`[tinywebui:<area>] ...`, level from `TINYWEBUI_LOG_LEVEL`). Security events go through `audit()` and are never filtered.
 - `tinywebui.config.json` is the deployment's shape and never holds a secret: keys are `${NAME}` references or live in `tinywebui.secrets.json` (`config/secrets.ts`). The secrets file and the database are owner-only (0600).
 - Every read of user-owned rows passes a scope (`Scope`: a user id, `null`, or `ALL_USERS`); `undefined` does not compile, and throws on purpose if it gets through anyway.
-- Model-written text reaches the page as text (`textContent`) or through `renderMarkdown`, which escapes first. No other `innerHTML` with outside content.
-- TS in, no build in dev: server code is `.ts` that Node strips and runs, so only erasable syntax (no `enum`, `namespace` or constructor parameter properties; `tsconfig.json` enforces it). Relative imports name the `.ts` file; type-only imports use `import type`. Types go on module boundaries: exports, factory parameters, row shapes. Outside JSON stays `unknown`/loose until it is checked; prefer narrowing to `!` and `as`, and say why when one is needed. `public/` stays JS (the browser loads it as is); `public/shared/`, which the server imports, carries JSDoc types and `// @ts-check`, so `tsc` checks it too.
+- Model-written text reaches the page as text (`{{ }}` interpolation) or through `chat/Markdown.vue`, whose `renderMarkdown` escapes first. `v-html` appears nowhere else (the sidebar's `markSnippet`, which escapes too, aside), and no `innerHTML` anywhere (a test enforces both).
+- TS in, no build in dev: server code is `.ts` that Node strips and runs, so only erasable syntax (no `enum`, `namespace` or constructor parameter properties; `tsconfig.json` enforces it). Relative imports name the `.ts` file; type-only imports use `import type`. Types go on module boundaries: exports, factory parameters, row shapes. Outside JSON stays `unknown`/loose until it is checked; prefer narrowing to `!` and `as`, and say why when one is needed. `shared/` is the same kind of `.ts`, imported by both sides. The page (`web/`) is TS that Vite strips, checked by `vue-tsc` (on TypeScript 6, since vue-tsc needs the classic compiler API that TypeScript 7 dropped); the same erasable-syntax rule holds there. The page must work under the server's CSP (`script-src 'self'`, `style-src 'self'`, no `unsafe-*`): no runtime template compiler, no inline scripts or `style` attributes in markup (Vue `:style` bindings are fine).
 - Comments explain why, not what.
