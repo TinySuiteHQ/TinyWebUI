@@ -31,6 +31,8 @@ const ICONS: Record<string, Shape[]> = {
   clock: [circle(12, 12, 9), p('M12 7v5l3 2')],
   doc: [p('M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z'), p('M14 3v5h5'), p('M9 13h6M9 17h4')],
   image: [rect(3, 4, 18, 16, 2), circle(9, 10, 2), p('m21 17-5-5-9 8')],
+  files: [p('M15 2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z'), p('M15 2v5h5'), p('M4 7v13a2 2 0 0 0 2 2h10')],
+  camera: [p('M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z'), circle(12, 13, 3.5)],
   arrowDown: [p('M12 5v14M5 12l7 7 7-7')],
   check: [p('M5 12.5 10 17 19 7')],
   x: [p('M6 6l12 12M18 6 6 18')],

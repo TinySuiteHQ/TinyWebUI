@@ -130,11 +130,11 @@ export class DocumentStore {
    * for picking a file again without uploading it. One entry per distinct file:
    * the same bytes in ten chats is one line, and it names the latest chat.
    */
-  library(userId: Scope, limit = 200): (DocumentSummary & { chatTitle: string })[] {
+  library(userId: Scope, limit = 200): (DocumentSummary & { chatId: string, chatTitle: string })[] {
     const s = scope(userId, 'c.user_id');
     const inner = scope(userId, 'c2.user_id'); // the "latest" must be the user's own copy, not someone else's
     return this.db.prepare(`
-      SELECT d.id, d.filename, d.mime, d.char_len, d.created_at, c.title AS chatTitle
+      SELECT d.id, d.filename, d.mime, d.char_len, d.created_at, d.chat_id AS chatId, c.title AS chatTitle
       FROM documents d JOIN chats c ON c.id = d.chat_id
       WHERE ${s.sql}
         AND d.id = (
@@ -144,7 +144,7 @@ export class DocumentStore {
         )
       ORDER BY d.created_at DESC
       LIMIT ?
-    `).all(...s.params, ...inner.params, limit) as unknown as (DocumentSummary & { chatTitle: string })[];
+    `).all(...s.params, ...inner.params, limit) as unknown as (DocumentSummary & { chatId: string, chatTitle: string })[];
   }
 
   /**

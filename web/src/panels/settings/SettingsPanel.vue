@@ -22,7 +22,7 @@ import ModelEditor from './ModelEditor.vue';
 
 type View = 'home' | 'endpoint' | 'connector' | 'model' | 'defaults' | 'conversation' | 'prefs';
 const TITLES: Record<View, string> = {
-  home: 'Settings', endpoint: 'Default endpoint', connector: 'Connector', model: 'Model',
+  home: 'General', endpoint: 'Default endpoint', connector: 'Connector', model: 'Model',
   defaults: 'Defaults for all models', conversation: 'Conversation', prefs: 'My preferences'
 };
 
@@ -200,7 +200,7 @@ watch(cfg, () => { if (!draft.value || snapshot() === saved) reset(); }, { immed
       <button v-if="view !== 'home' && !readOnly" type="button" class="set-back" aria-label="Back to settings" @click="back">‹ Back</button>
       <h2>{{ title }}</h2>
       <span class="usage">{{ saveMsg || baseMsg }}</span>
-      <button type="button" @click="close()">Close</button>
+      <!-- No Close of its own: the dialog's close asks this panel first (canClose), so unsaved edits still hold it. -->
       <button class="primary" type="button" :disabled="saveDisabled || !draft" @click="save">Save changes</button>
     </div>
     <div v-if="draft" ref="content" class="settings-content">

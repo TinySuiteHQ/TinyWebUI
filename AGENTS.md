@@ -44,7 +44,8 @@ shared/          imported by the server and the page (events, features, usage, o
 web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
   src/main.ts    creates the app
   src/app/       App.vue picks sign-in, waiting room or AppShell.vue, which is the only
-                 wiring (it starts the stores)
+                 wiring (it starts the stores); SettingsDialog.vue holds the settings
+                 sections (settings, automations, integrations, MCP, statistics, admin)
   src/core/      api.ts (every JSON call), sse.ts (stream frames), md.ts (the only HTML
                  from outside text), id.ts
   src/model/     turn_model.ts: the transcript as data, a pure reducer over stream events
@@ -52,7 +53,7 @@ web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
   src/stores/    Pinia: session (who, can()), config, chats (sidebar), chat (the open chat,
                  its run, queue, held input), attachments, panels (PANEL), ui, theme, admin
   src/chat/      ChatView.vue (the chat screen), Markdown.vue (also used by panels), and
-                 sidebar/ (chat list, folders), transcript/ (turns, activity, approvals,
+                 sidebar/ (chat list, folders, account menu), transcript/ (turns, activity, approvals,
                  questions, outline), composer/ (input, menus, queue, attachments, tasks)
   src/panels/    one folder per panel (<name>/<Name>Panel.vue plus its parts);
                  usePanel.ts; settings/ also holds the settings draft and editors
@@ -74,7 +75,7 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New built-in tool:** a file in `server/tools/` exporting `xToolDef(): ToolDef` and `callX(args, deps)` (the contract is `tools/types.ts`), registered in `connectHub()` in `server.ts`, and its name added to `RESERVED` in `mcp.ts`.
 - **New stream event:** add it to `shared/events.ts` and handle it in `HANDLERS` in `web/src/model/turn_model.ts` (typed against every event, so it will not compile until handled), with a case in `test/turn-model.test.ts` if it changes what is drawn. A stored history must replay to the same model as the live stream (`historyToEvents`).
 - **New page code:** state that more than one component reads goes in a store (`web/src/stores/`), loaded by an action; components read the store and call its actions. Imports go one way: `app/` → `panels/` → `chat/` → `stores/` → `model/`, `core/` → `shared/`, `ui/` imports nothing of the app, and `model/` (the transcript reducer) imports only `shared/` (no Vue, no DOM). Stores do nothing on import: their `init()` is called from `app/AppShell.vue`. `test/page-structure.test.js` enforces this.
-- **New panel:** a folder `web/src/panels/<name>/` whose `<Name>Panel.vue` root is `<section :id="name" :class="{ open: isOpen }">`, using `usePanel(PANEL.X, hooks)`; add the name to `PANEL` in `stores/panels.ts`, the component to `app/AppShell.vue` and its nav item to `chat/sidebar/Sidebar.vue`. Open or close it only through the panels store.
+- **New panel:** a folder `web/src/panels/<name>/` whose `<Name>Panel.vue` root is `<section :id="name" :class="{ open: isOpen }">`, using `usePanel(PANEL.X, hooks)`; add the name to `PANEL` in `stores/panels.ts`. Anything that configures the app is a settings section: add it to `SETTINGS_SECTIONS` there (that is its place in the dialog's rail) and the component to `app/SettingsDialog.vue`. Only a page about the person's own content (like Files) goes in the main column, in `app/AppShell.vue` with a nav item in `chat/sidebar/Sidebar.vue`; keep the sidebar about chats. Open or close a panel only through the panels store.
 - **New API call from the page:** `api.get/post/patch/del` from `web/src/core/api.ts`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly (`stores/chat.ts`).
 - **New feature flag:** `shared/features.ts`; the page asks `useSession().can(FEATURE.X)`.
 - **New searchable corpus:** implement the `Corpus` adapter in `retrieval/retrieval.ts`, add its name to `CORPUS` in `store/embeddings.ts`, and `register()` it.
@@ -91,4 +92,5 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - Model-written text reaches the page as text (`{{ }}` interpolation) or through `chat/Markdown.vue`, whose `renderMarkdown` escapes first. `v-html` appears nowhere else (the sidebar's `markSnippet`, which escapes too, aside), and no `innerHTML` anywhere (a test enforces both).
 - TS in, no build in dev: server code is `.ts` that Node strips and runs, so only erasable syntax (no `enum`, `namespace` or constructor parameter properties; `tsconfig.json` enforces it). Relative imports name the `.ts` file; type-only imports use `import type`. Types go on module boundaries: exports, factory parameters, row shapes. Outside JSON stays `unknown`/loose until it is checked; prefer narrowing to `!` and `as`, and say why when one is needed. `shared/` is the same kind of `.ts`, imported by both sides. The page (`web/`) is TS that Vite strips, checked by `vue-tsc` (on TypeScript 6, since vue-tsc needs the classic compiler API that TypeScript 7 dropped); the same erasable-syntax rule holds there. The page must work under the server's CSP (`script-src 'self'`, `style-src 'self'`, no `unsafe-*`): no runtime template compiler, no inline scripts or `style` attributes in markup (Vue `:style` bindings are fine).
 - File names: modules are snake_case (`tool_executor.ts`, `turn_model.ts`), Vue components PascalCase (`ChatView.vue`), and tests are named in kebab-case after what they check (`page-structure.test.js`).
+- The page's measured cost (download, DOM size, memory, streaming CPU) is in `docs/performance.md`, with the method. A change to how the transcript renders or streams is measured again that way, and the doc updated if the numbers move.
 - Comments explain why, not what.

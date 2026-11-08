@@ -9,7 +9,7 @@ import { FEATURE } from '../../../../shared/features.ts';
 import { useSession } from '../../stores/session.ts';
 import { useConfig } from '../../stores/config.ts';
 import { useChat } from '../../stores/chat.ts';
-import { useAttachments } from '../../stores/attachments.ts';
+import { useAttachments, DOC_ACCEPT } from '../../stores/attachments.ts';
 import { usePanels, PANEL } from '../../stores/panels.ts';
 import { useUi } from '../../stores/ui.ts';
 import Icon from '../../ui/Icon.vue';
@@ -18,6 +18,7 @@ import ToolsMenu from './ToolsMenu.vue';
 import ModelMenu from './ModelMenu.vue';
 import QueueBar from './QueueBar.vue';
 import LibraryDialog from './LibraryDialog.vue';
+import CameraDialog from './CameraDialog.vue';
 import { levelName } from './levels.ts';
 
 const session = useSession();
@@ -28,12 +29,15 @@ const panels = usePanels();
 const ui = useUi();
 
 const input = ref<HTMLTextAreaElement>();
-const files = ref<HTMLInputElement>();
+const docInput = ref<HTMLInputElement>();
+const imageInput = ref<HTMLInputElement>();
+const cameraInput = ref<HTMLInputElement>();
 const attachBtn = ref<HTMLButtonElement>();
 const modelBtn = ref<HTMLButtonElement>();
 const popover = ref<InstanceType<typeof Popover>>();
 const menu = ref<'tools' | 'model' | null>(null);
 const library = ref(false);
+const camera = ref(false);
 
 // A long paste becomes an attachment instead of a wall of text in the box.
 const PASTE_AS_FILE = 2000;
@@ -77,9 +81,16 @@ function onPaste(e: ClipboardEvent) {
   e.preventDefault();
   stageAll([new File([text], 'pasted.txt', { type: 'text/plain' })]);
 }
-function onPicked() {
-  stageAll(files.value?.files);
-  if (files.value) files.value.value = '';
+function onPicked(e: Event) {
+  const el = e.target as HTMLInputElement;
+  stageAll(el.files);
+  el.value = '';
+}
+// A phone's own camera app beats anything a page can draw, so a touch device
+// gets it through the capture input; elsewhere a webcam dialog takes the shot.
+function takePhoto() {
+  if (matchMedia('(pointer: coarse)').matches || !navigator.mediaDevices?.getUserMedia) cameraInput.value?.click();
+  else camera.value = true;
 }
 
 /* ---------- menus ---------- */
@@ -113,7 +124,9 @@ onBeforeUnmount(() => {
 
 <template>
   <form id="form" @submit.prevent="chat.send()" @dragover.prevent @dragenter.prevent @drop.prevent="stageAll($event.dataTransfer?.files)">
-    <input ref="files" type="file" multiple hidden @change="onPicked">
+    <input ref="docInput" type="file" multiple hidden :accept="DOC_ACCEPT" @change="onPicked">
+    <input ref="imageInput" type="file" multiple hidden accept="image/*" @change="onPicked">
+    <input ref="cameraInput" type="file" hidden accept="image/*" capture="environment" @change="onPicked">
     <QueueBar />
     <textarea id="input" ref="input" v-model="chat.draft" rows="1" aria-label="Message"
               :placeholder="chat.busy ? 'Add a message to this turn…' : 'Ask anything…'" @keydown="onKey" @paste="onPaste" />
@@ -138,10 +151,12 @@ onBeforeUnmount(() => {
       </button>
     </div>
     <Popover v-if="menu" ref="popover" :side="menu === 'tools' ? 'left' : 'right'" :centred="chat.empty">
-      <ToolsMenu v-if="menu === 'tools'" @pick-files="closeMenu(); files?.click()" @library="closeMenu(); library = true"
+      <ToolsMenu v-if="menu === 'tools'" @pick-docs="closeMenu(); docInput?.click()" @pick-images="closeMenu(); imageInput?.click()"
+                 @take-photo="closeMenu(); takePhoto()" @library="closeMenu(); library = true"
                  @manage="closeMenu(); panels.openPanel(PANEL.MCP)" @close="closeMenu()" />
       <ModelMenu v-else @close="closeMenu()" />
     </Popover>
     <LibraryDialog v-if="library" @close="library = false" />
+    <CameraDialog v-if="camera" @close="camera = false" @photo="stageAll([$event])" />
   </form>
 </template>

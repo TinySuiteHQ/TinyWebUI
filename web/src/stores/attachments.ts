@@ -36,6 +36,9 @@ const DOC_EXT = new Set([
   '.js', '.ts', '.jsx', '.tsx', '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h',
   '.css', '.html', '.xml', '.yaml', '.yml', '.sh', '.sql'
 ]);
+/** For the document picker's `accept`, so it offers what can be read and nothing else. */
+export const DOC_ACCEPT = [...DOC_EXT].join(',');
+
 function unsupportedReason(file: File): string | null {
   const i = file.name.lastIndexOf('.');
   const ext = i === -1 ? '' : file.name.slice(i).toLowerCase();

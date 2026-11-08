@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The signed-in app: the sidebar, the full-column panels, and the chat. The
- * only wiring: stores do nothing until this starts them.
+ * The signed-in app: the sidebar, the chat, the Files page over it, and the
+ * settings dialog. The only wiring: stores do nothing until this starts them.
  */
 import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
 import { FEATURE } from '../../../shared/features.ts';
@@ -14,12 +14,8 @@ import { useUi } from '../stores/ui.ts';
 import Icon from '../ui/Icon.vue';
 import Sidebar from '../chat/sidebar/Sidebar.vue';
 import ChatView from '../chat/ChatView.vue';
-import SettingsPanel from '../panels/settings/SettingsPanel.vue';
-import McpPanel from '../panels/mcp/McpPanel.vue';
-import IntegrationsPanel from '../panels/integrations/IntegrationsPanel.vue';
-import StatisticsPanel from '../panels/statistics/StatisticsPanel.vue';
-import AdminPanel from '../panels/admin/AdminPanel.vue';
-import AutomationsPanel from '../panels/automations/AutomationsPanel.vue';
+import FilesPanel from '../panels/files/FilesPanel.vue';
+import SettingsDialog from './SettingsDialog.vue';
 
 const session = useSession();
 const config = useConfig();
@@ -68,13 +64,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
               :aria-expanded="ui.narrow ? ui.drawerOpen : !ui.collapsed" @click="ui.toggleMenu()">
         <Icon name="sidebar" />
       </button>
-      <SettingsPanel />
-      <McpPanel />
-      <IntegrationsPanel />
-      <StatisticsPanel />
-      <AdminPanel />
-      <AutomationsPanel />
+      <FilesPanel />
       <ChatView />
     </main>
+    <SettingsDialog />
   </div>
 </template>

@@ -1,6 +1,5 @@
 import { json, readJson, UPLOAD_LIMIT } from '../http.ts';
 import { extractText, servingFor } from '../files/documents.ts';
-import { normalizeImage } from '../files/images.ts';
 import { logger } from '../log.ts';
 import { FEATURE } from '../../shared/features.ts';
 import { CORPUS } from '../store/index.ts';
@@ -10,21 +9,6 @@ import type { SignedIn } from '../access/auth_gate.ts';
 const log = logger('retrieval');
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-
-/** Decodes and normalizes one uploaded image; null on anything unusable. */
-export async function normalizeUpload(mimeRaw: unknown, dataBase64: unknown): Promise<{ mime: string; data: string } | null> {
-  const mime = String(mimeRaw || '');
-  if (!mime.startsWith('image/') && mime !== '') return null;
-  let buf;
-  try { buf = Buffer.from(String(dataBase64 || ''), 'base64'); } catch { return null; }
-  if (!buf.length || buf.length > MAX_FILE_BYTES) return null;
-  try {
-    const normalized = await normalizeImage(buf, mime);
-    return normalized && { mime: normalized.mime, data: normalized.data.toString('base64') };
-  } catch {
-    return null;
-  }
-}
 
 export function documentRoutes({ retrieval, store }: Pick<RouteDeps, 'retrieval' | 'store'>): Route[] {
   // Uploads and attaches land before the first message exists, so the chat is
@@ -118,18 +102,6 @@ export function documentRoutes({ retrieval, store }: Pick<RouteDeps, 'retrieval'
       const disposition = `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(doc.filename)}`;
       res.writeHead(200, { 'content-type': type, 'content-length': body.length, 'content-disposition': disposition });
       res.end(body);
-    } },
-
-    // Converts one staged image to a wire-safe format before it's ever sent,
-    // so the composer's own preview and the optimistic thumbnail in the
-    // transcript show the same bytes the model (and the store) end up with,
-    // instead of a HEIC/AVIF the browser can't decode until the turn ends
-    // and the chat reloads with what the server stored.
-    { method: 'POST', path: /^\/api\/images\/normalize$/, feature: FEATURE.IMAGES, handle: async ({ req, res }) => {
-      const { mime, dataBase64 } = await readJson(req, UPLOAD_LIMIT);
-      const normalized = await normalizeUpload(mime, dataBase64);
-      if (!normalized) return json(res, 400, { error: 'unrecognized or oversized image' });
-      return json(res, 200, normalized);
     } }
   ];
 }

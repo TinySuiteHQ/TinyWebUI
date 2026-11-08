@@ -1,16 +1,18 @@
 <script setup lang="ts">
 /**
- * The chat-history sidebar: navigation, the chronological list grouped by
- * folder and day, the full-text search that swaps in over it, a draggable
- * width, and on a phone the drawer it lives in.
+ * The chat-history sidebar: new chat, search and files, the chronological
+ * list grouped by folder and day, the full-text search that swaps in over it,
+ * the account button (settings, log out) pinned at the bottom, a draggable
+ * width, and on a phone the drawer it lives in. Everything that configures
+ * the app lives in the settings dialog, so the sidebar stays about chats.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { FEATURE } from '../../../../shared/features.ts';
 import { markSnippet } from '../../core/md.ts';
 import { useSession } from '../../stores/session.ts';
 import { useChats, type ChatRow } from '../../stores/chats.ts';
 import { useChat } from '../../stores/chat.ts';
-import { usePanels, PANEL, type PanelName } from '../../stores/panels.ts';
+import { usePanels, PANEL } from '../../stores/panels.ts';
 import { useUi } from '../../stores/ui.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import Icon from '../../ui/Icon.vue';
@@ -36,15 +38,36 @@ const folderDialog = ref(false);
 const openChat = (id: string) => { if (panels.closeAll()) chat.openChat(id); };
 const newChat = () => { if (panels.closeAll()) chat.newChat(); };
 
-const NAV: { panel: PanelName, label: string, icon: string, feature: string | null }[] = [
-  { panel: PANEL.AUTOMATIONS, label: 'Automations', icon: 'automations', feature: FEATURE.AUTOMATIONS },
-  { panel: PANEL.INTEGRATIONS, label: 'Integrations', icon: 'integrations', feature: FEATURE.INTEGRATIONS },
-  { panel: PANEL.MCP, label: 'MCP servers', icon: 'mcp', feature: FEATURE.MCP },
-  { panel: PANEL.SETTINGS, label: 'Settings', icon: 'settings', feature: null },
-  { panel: PANEL.STATISTICS, label: 'Statistics', icon: 'statistics', feature: FEATURE.STATISTICS },
-  { panel: PANEL.ADMIN, label: 'Admin', icon: 'admin', feature: FEATURE.ADMIN }
-];
-const nav = computed(() => NAV.filter((n) => (n.feature ? session.can(n.feature as never) : session.settingsVisible)));
+const showFiles = computed(() => session.can(FEATURE.ATTACHMENTS) || session.can(FEATURE.IMAGES));
+
+/* ---------- account ---------- */
+
+const accountEl = ref<HTMLElement>();
+const accountBtn = ref<HTMLButtonElement>();
+const accountOpen = ref(false);
+const user = computed(() => session.me.user);
+const accountName = computed(() => user.value?.name || user.value?.email || 'Settings');
+const initial = computed(() => (user.value?.name || user.value?.email || '?').trim().charAt(0).toUpperCase());
+const hasSettings = computed(() => panels.sections.length > 0);
+// With nothing but settings behind it, the button opens them straight away.
+const hasMenu = computed(() => session.canLogout);
+const showAccount = computed(() => hasSettings.value || hasMenu.value);
+
+function onAccount() {
+  if (hasMenu.value) accountOpen.value = !accountOpen.value;
+  else panels.openSettings();
+}
+function openSettings() { accountOpen.value = false; panels.openSettings(); }
+function closeAccount(refocus = false) {
+  accountOpen.value = false;
+  if (refocus) accountBtn.value?.focus();
+}
+function onDocPointer(e: PointerEvent) {
+  if (accountOpen.value && !accountEl.value?.contains(e.target as Node)) closeAccount();
+}
+function onDocKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && accountOpen.value) { e.preventDefault(); closeAccount(true); }
+}
 
 /* ---------- the list ---------- */
 
@@ -164,10 +187,17 @@ function resizeKey(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  document.addEventListener('pointerdown', onDocPointer);
+  document.addEventListener('keydown', onDocKey);
   try {
     const saved = Number(localStorage.getItem(SIDE_KEY));
     if (Number.isFinite(saved) && saved > 0) setSideWidth(saved);
   } catch { /* the stylesheet decides */ }
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocPointer);
+  document.removeEventListener('keydown', onDocKey);
 });
 
 // The drawer traps Tab while open; focus goes in with it and comes back out.
@@ -201,14 +231,9 @@ function rowKey(e: KeyboardEvent, go: () => void) {
                  autocomplete="off" spellcheck="false" @keydown="onSearchKey">
           <button v-if="chats.query" id="chatSearchClear" class="x" type="button" aria-label="Clear search" @click="clearSearch">×</button>
         </div>
-        <button v-for="n in nav" :id="`toggle-${n.panel}`" :key="n.panel" class="nav-item" type="button"
-                :class="{ active: panels.open === n.panel }" @click="panels.toggle(n.panel)">
-          <Icon :name="n.icon" /><span>{{ n.label }}</span>
-          <span v-if="n.panel === PANEL.ADMIN && admin.waiting" class="adm-badge"
-                :title="`${admin.waiting} waiting for approval`">{{ admin.waiting }}</span>
-        </button>
-        <button v-if="session.canLogout" id="logout" class="nav-item" type="button" @click="session.logout()">
-          <Icon name="logout" /><span>Log out</span>
+        <button v-if="showFiles" id="toggle-files" class="nav-item" type="button"
+                :class="{ active: panels.open === PANEL.FILES }" @click="panels.toggle(PANEL.FILES)">
+          <Icon name="files" /><span>Files</span>
         </button>
       </nav>
       <div class="side-label">
@@ -257,6 +282,31 @@ function rowKey(e: KeyboardEvent, go: () => void) {
           </template>
         </template>
       </div>
+    </div>
+    <div v-if="showAccount" ref="accountEl" class="side-foot">
+      <div v-if="accountOpen" class="popover account-menu" role="menu" aria-label="Account">
+        <div v-if="user" class="account-who">
+          <span class="account-who-name">{{ user.name || user.email }}</span>
+          <span v-if="user.name && user.email" class="account-who-sub">{{ user.email }}</span>
+        </div>
+        <button v-if="hasSettings" id="openSettings" type="button" class="pop-item" role="menuitem" @click="openSettings">
+          <Icon name="settings" /><span class="pop-name">Settings</span>
+          <span v-if="admin.waiting" class="adm-badge" :title="`${admin.waiting} waiting for approval`">{{ admin.waiting }}</span>
+        </button>
+        <hr v-if="hasSettings" class="pop-sep">
+        <button id="logout" type="button" class="pop-item" role="menuitem" @click="session.logout()">
+          <Icon name="logout" /><span class="pop-name">Log out</span>
+        </button>
+      </div>
+      <button id="account" ref="accountBtn" class="nav-item account-btn" type="button"
+              :class="{ active: accountOpen || (!hasMenu && panels.sections.some((s) => s.panel === panels.open)) }"
+              :aria-haspopup="hasMenu ? 'menu' : undefined" :aria-expanded="hasMenu ? accountOpen : undefined"
+              :aria-label="hasMenu ? `Account: ${accountName}` : 'Settings'" @click="onAccount">
+        <span v-if="user" class="account-avatar" aria-hidden="true">{{ initial }}</span>
+        <Icon v-else name="settings" />
+        <span class="account-name">{{ accountName }}</span>
+        <span v-if="admin.waiting" class="adm-badge" :title="`${admin.waiting} waiting for approval`">{{ admin.waiting }}</span>
+      </button>
     </div>
     <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize chat history"
          title="Drag to resize, double-click to reset" @pointerdown="startResize" @dblclick="resetSideWidth" @keydown="resizeKey" />

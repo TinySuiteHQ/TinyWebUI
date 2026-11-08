@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /**
- * The + menu: attach files, and switch tools and MCP servers on and off.
+ * The + menu: attach a document, attach or take an image (two kinds of file
+ * with their own paths: a document is read for its text, an image goes to the
+ * model as is), and switch tools and MCP servers on and off.
  * Re-read from the server every time it opens, so it never shows a state the
  * server has already moved past.
  */
@@ -13,7 +15,7 @@ import { useChat } from '../../stores/chat.ts';
 import Icon from '../../ui/Icon.vue';
 import Switch from '../../ui/Switch.vue';
 
-const emit = defineEmits<{ close: [], pickFiles: [], library: [], manage: [] }>();
+const emit = defineEmits<{ close: [], pickDocs: [], pickImages: [], takePhoto: [], library: [], manage: [] }>();
 const session = useSession();
 const config = useConfig();
 const chat = useChat();
@@ -49,8 +51,19 @@ onMounted(async () => {
 
 <template>
   <template v-if="canAttach">
-    <button type="button" class="pop-item" role="menuitem" @click="emit('pickFiles')"><Icon name="paperclip" /><span>Attach files</span></button>
-    <!-- Documents only: an image has no stored text to reuse. -->
+    <button v-if="session.can(FEATURE.ATTACHMENTS)" id="attachDoc" type="button" class="pop-item" role="menuitem" @click="emit('pickDocs')">
+      <Icon name="paperclip" /><span>Attach file</span>
+    </button>
+    <template v-if="session.can(FEATURE.IMAGES)">
+      <button id="attachImage" type="button" class="pop-item" role="menuitem" :disabled="!session.modelAcceptsImages" @click="emit('pickImages')">
+        <Icon name="image" /><span>Attach image</span>
+      </button>
+      <button id="takePhoto" type="button" class="pop-item" role="menuitem" :disabled="!session.modelAcceptsImages" @click="emit('takePhoto')">
+        <Icon name="camera" /><span>Take photo</span>
+      </button>
+      <div v-if="!session.modelAcceptsImages" class="pop-note">The current model does not take images.</div>
+    </template>
+    <!-- Documents only: an image has no stored text to reuse. Earlier images are under Files. -->
     <button v-if="session.can(FEATURE.ATTACHMENTS)" type="button" class="pop-item" role="menuitem" @click="emit('library')">
       <Icon name="history" /><span>Attach from earlier chats</span>
     </button>

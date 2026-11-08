@@ -4,7 +4,7 @@ import { hasEndpoint, findEntry, takesImages, THINKING_CHOICES } from '../config
 import { toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
-import { normalizeUpload } from './documents.ts';
+import { normalizeUpload } from '../files/images.ts';
 import { attachmentNote } from '../../shared/attachment_note.ts';
 import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
@@ -238,7 +238,9 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const imgs = [];
       for (const img of Array.isArray(images) ? images.slice(0, MAX_IMAGES) : []) {
         const normalized = await normalizeUpload(img?.mime, img?.dataBase64);
-        if (normalized) imgs.push(normalized);
+        // The name is kept only so the Files page can label the image.
+        const filename = typeof img?.filename === 'string' && img.filename ? img.filename.slice(0, 200) : null;
+        if (normalized) imgs.push(filename ? { ...normalized, filename } : normalized);
       }
 
       store.messages.add(chat.id, { role: 'user', content, ...(imgs.length ? { images: imgs } : {}) });

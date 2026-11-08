@@ -22,6 +22,10 @@ function ensureAvif() {
 
 /** Formats every OpenAI-compatible vision endpoint accepts on the wire. */
 const WIRE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+/** True for the raster types normalizing produces; never SVG, which would be a script on this origin. */
+export const isWireMime = (mime: string) => WIRE_MIMES.has(mime);
+
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Browser-reported mime for HEIC/AVIF is unreliable -- Chrome often reports
@@ -63,4 +67,19 @@ export async function normalizeImage(buf: Buffer, reportedMime: unknown): Promis
   if (kind === 'heic') return { mime: 'image/jpeg', data: await fromHeic(buf) };
   if (kind === 'avif') return { mime: 'image/jpeg', data: await fromAvif(buf) };
   return null;
+}
+
+/** Decodes and normalizes one uploaded image (base64 from a request body); null on anything unusable. */
+export async function normalizeUpload(mimeRaw: unknown, dataBase64: unknown): Promise<{ mime: string; data: string } | null> {
+  const mime = String(mimeRaw || '');
+  if (!mime.startsWith('image/') && mime !== '') return null;
+  let buf;
+  try { buf = Buffer.from(String(dataBase64 || ''), 'base64'); } catch { return null; }
+  if (!buf.length || buf.length > MAX_IMAGE_BYTES) return null;
+  try {
+    const normalized = await normalizeImage(buf, mime);
+    return normalized && { mime: normalized.mime, data: normalized.data.toString('base64') };
+  } catch {
+    return null;
+  }
 }

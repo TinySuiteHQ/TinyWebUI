@@ -4,7 +4,8 @@
  * the few callers that treat a particular code as fine.
  *
  * Streaming endpoints (/api/chat, /api/chats/:id/stream) are read as streams
- * and use fetch directly (core/sse.ts reads them).
+ * and use fetch directly (core/sse.ts reads them). `blob` is for the few
+ * binary reads (a stored image put back on the composer).
  */
 
 export type ApiError = Error & { status?: number };
@@ -29,5 +30,13 @@ export const api = {
   get: (url: string, opts?: Opts) => request('GET', url, undefined, opts),
   post: (url: string, body?: unknown, opts?: Opts) => request('POST', url, body, opts),
   patch: (url: string, body?: unknown, opts?: Opts) => request('PATCH', url, body, opts),
-  del: (url: string, opts?: Opts) => request('DELETE', url, undefined, opts)
+  del: (url: string, opts?: Opts) => request('DELETE', url, undefined, opts),
+  async blob(url: string, opts?: Opts): Promise<Blob> {
+    const res = await fetch(url, { signal: opts?.signal });
+    if (!res.ok) {
+      const out = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(out.error || String(res.status)), { status: res.status });
+    }
+    return res.blob();
+  }
 };
