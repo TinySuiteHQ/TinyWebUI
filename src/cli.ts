@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
 import { REASONING_REPLAY, LEGACY_TAGS, THINKING_CHOICES, THINKING_SEND } from './config/models.ts';
-import { CACHE_MODES, CACHE_TTLS } from '../shared/settings.ts';
+import { CACHE_MODES, CACHE_TTLS, TOOL_APPROVALS } from '../shared/settings.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass, passwordProblem,
   FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
@@ -464,7 +464,7 @@ export function configSchema() {
     };
   }
   properties.authMode = { enum: ['local', 'multiuser', 'trusted-header'], 'x-change': 'file-only' };
-  properties.toolApproval = { enum: ['writes', 'all', 'off'], 'x-change': 'editable (UI writes it back here)' };
+  properties.toolApproval = { enum: TOOL_APPROVALS, 'x-change': 'editable (UI writes it back here)' };
   properties.trustedProxyCidrs = { type: 'array', items: { type: 'string' }, 'x-change': 'file-only' };
   const featureList = { oneOf: [{ const: '*' }, { type: 'array', items: { enum: FEATURES }, uniqueItems: true }] };
   const role = {

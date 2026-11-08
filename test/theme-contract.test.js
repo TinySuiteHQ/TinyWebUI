@@ -13,7 +13,9 @@ const THEMES = join(REPO, 'web', 'public', 'themes');
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
   e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
 
-const page = [join(REPO, 'web', 'index.html'), ...walk(join(REPO, 'web', 'src'))]
+// Markup and scripts only: a rule in the app's own stylesheet does not make
+// an element exist, and a stale one would otherwise keep a dead name alive.
+const page = [join(REPO, 'web', 'index.html'), ...walk(join(REPO, 'web', 'src')).filter((f) => /\.(vue|ts)$/.test(f))]
   .map((f) => readFileSync(f, 'utf8')).join('\n');
 const themeJs = walk(THEMES).filter((f) => f.endsWith('.js')).map((f) => readFileSync(f, 'utf8')).join('\n');
 const present = (name, src) => new RegExp(`(?<![\\w-])${name.replace(/[-]/g, '\\-')}(?![\\w-])`).test(src);

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { RetrievalConfig } from '../config/config.ts';
 
@@ -312,18 +312,4 @@ export async function loadEmbedder(retrieval: ModelSettings, modelsDir: string):
     embedPassages,
     close: () => session.release?.()
   };
-}
-
-/** Files a preset bundle consists of, for `tinywebui models pull`. */
-export function bundleListing(dir: string): string[] {
-  const out: string[] = [];
-  const walk = (d: string, rel = '') => {
-    for (const name of readdirSync(d)) {
-      const p = join(d, name);
-      if (statSync(p).isDirectory()) walk(p, `${rel}${name}/`);
-      else out.push(`${rel}${name}`);
-    }
-  };
-  if (existsSync(dir)) walk(dir);
-  return out.sort();
 }

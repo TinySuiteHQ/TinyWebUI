@@ -5,13 +5,13 @@ import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } f
 import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, hasEndpoint, defaultModel, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
 import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
-import { CACHE_MODES, CACHE_TTLS, type CacheTtl } from '../../shared/settings.ts';
+import { CACHE_MODES, CACHE_TTLS, TOOL_APPROVALS, type CacheTtl, type ToolApproval } from '../../shared/settings.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
 import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
 import { serveProblems, type ServeSpec } from '../mcp_serve.ts';
 
 export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
-export type ToolApproval = 'writes' | 'all' | 'off';
+export type { ToolApproval };
 export type RetrievalMode = 'auto' | 'lexical' | 'dense' | 'hybrid';
 
 export interface RetrievalConfig {
@@ -634,7 +634,7 @@ const ENUMS: Record<string, readonly unknown[]> = {
   cacheTtl: CACHE_TTLS,
   cacheMode: CACHE_MODES,
   reasoningReplay: REASONING_REPLAY,
-  toolApproval: ['writes', 'all', 'off'],
+  toolApproval: TOOL_APPROVALS,
 };
 const kind = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
 

@@ -15,9 +15,13 @@ export const THINKING_CHOICES = Object.freeze(['provider', ...THINKING_LEVELS] a
 /** Which request field carries the level; see thinkingStyle in src/harness/provider.ts. */
 export const THINKING_SENDS = Object.freeze(['auto', 'effort', 'openrouter', 'anthropic', 'switch'] as const);
 
+/** When a tool call waits for the person's allow / deny; see src/config/approval.ts. */
+export const TOOL_APPROVALS = Object.freeze(['writes', 'all', 'off'] as const);
+
 export type CacheMode = typeof CACHE_MODES[number];
 export type CacheTtl = typeof CACHE_TTLS[number];
 export type ReasoningReplay = typeof REASONING_REPLAYS[number];
 export type ThinkingLevel = typeof THINKING_LEVELS[number];
 export type ThinkingChoice = typeof THINKING_CHOICES[number];
 export type ThinkingSend = typeof THINKING_SENDS[number];
+export type ToolApproval = typeof TOOL_APPROVALS[number];

@@ -25,6 +25,7 @@ export const REASONING_REPLAY = options(SETTING.REASONING_REPLAYS, {
   auto: 'Automatic', omit: 'Never', reasoning_content: 'reasoning_content', reasoning_details: 'reasoning_details'
 });
 export const LEVELS = options(SETTING.THINKING_CHOICES, LEVEL_NAMES);
+export const TOOL_APPROVALS = options(SETTING.TOOL_APPROVALS, { writes: 'MCP tools that write', all: 'Every MCP tool call', off: 'Never ask' });
 // How the level reaches the provider; 'auto' guesses from the endpoint (thinkingStyle in harness/provider.ts).
 export const SENDS = options(SETTING.THINKING_SENDS, {
   auto: 'Auto: guess from the endpoint',
@@ -64,10 +65,6 @@ export type ModelDraft = {
 
 /** The form fields, kept as the strings their inputs hold until a patch is built. */
 export type Form = Record<string, string>;
-export const FORM_KEYS = ['systemPrompt', 'model', 'temperature', 'maxTokens', 'timezone', 'maxToolRounds', 'askUserTimeoutSeconds', 'cacheTtl',
-  'cacheMode', 'compactThreshold', 'keepTurns', 'maxInlineChars', 'maxTurnChars', 'compactMinSaved',
-  'maxHistoryTokens', 'toolApproval', 'baseUrl', 'apiKey', 'llmCompaction', 'compactionMaxTokens', 'expandCharBudget',
-  'cache', 'reasoningReplay', 'extraBody'];
 
 export type Draft = {
   form: Form,

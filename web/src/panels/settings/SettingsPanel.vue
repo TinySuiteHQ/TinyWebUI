@@ -13,7 +13,7 @@ import { useTheme } from '../../stores/theme.ts';
 import { PANEL } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
 import {
-  CACHE_MODES, CACHE_TTLS, REASONING_REPLAY, buildPatch, connectorDraft, fromConfig, modelDraft,
+  CACHE_MODES, CACHE_TTLS, REASONING_REPLAY, TOOL_APPROVALS, buildPatch, connectorDraft, fromConfig, modelDraft,
   type ConnectorDraft, type Draft, type ModelDraft
 } from './draft.ts';
 import SettingsHome from './SettingsHome.vue';
@@ -303,7 +303,7 @@ watch(cfg, () => { if (!draft.value || snapshot() === saved) reset(); }, { immed
               <small>How long a question from the model waits before it continues on its own. 0: wait until answered.</small></div>
             <div><label for="toolApproval">Ask before running</label>
               <select id="toolApproval" v-model="draft.form.toolApproval" :disabled="locked('toolApproval')">
-                <option value="writes">MCP tools that write</option><option value="all">Every MCP tool call</option><option value="off">Never ask</option>
+                <option v-for="[v, l] in TOOL_APPROVALS" :key="v" :value="v">{{ l }}</option>
               </select>
               <small>Built-in tools never ask. Scheduled runs refuse calls that would.</small></div>
           </div>

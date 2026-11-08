@@ -40,8 +40,6 @@ import type { Embedder } from './embedding.ts';
  * reused by every query; only the query itself is embedded at search time.
  */
 
-export const RETRIEVAL_MODES = ['lexical', 'dense', 'hybrid'];
-
 export interface Unit { id: number; text: string }
 /** A ranked unit, with the scores that ranked it (null: that side did not score). */
 export interface ScoredHit { id: number; rank: number; dense: number | null; bm25: number | null }

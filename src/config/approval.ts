@@ -20,8 +20,6 @@
  * Per-tool overrides win over the mode: `confirmTools` always asks,
  * `autoApproveTools` never does.
  */
-export const APPROVAL_MODES = ['writes', 'all', 'off'];
-
 /** The part of the config approvals read. */
 export interface ApprovalConfig { toolApproval?: string; confirmTools?: string[]; autoApproveTools?: string[] }
 
