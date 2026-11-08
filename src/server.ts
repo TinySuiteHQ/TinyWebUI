@@ -14,7 +14,7 @@ import { applyAccessPolicy } from './access/auth.ts';
 import { audit } from './audit.ts';
 import { logger } from './log.ts';
 import { resolveAuth, isSignedIn, type Auth } from './access/auth_gate.ts';
-import { json, HttpError, SECURITY_HEADERS, crossSite, badHost, serveStatic } from './http.ts';
+import { json, HttpError, SECURITY_HEADERS, crossSite, badHost, serveStatic, pageBuilt } from './http.ts';
 import { expandToolDef, callExpand } from './tools/context_tool.ts';
 import { documentToolDef, callReadDocument } from './tools/document_tool.ts';
 import { askToolDef, callAskUser } from './tools/ask_tool.ts';
@@ -40,8 +40,8 @@ import { documentRoutes } from './routes/documents.ts';
 import { chatRoutes } from './routes/chats.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { integrationsRoutes } from './routes/integrations.ts';
-import { EVENT } from '../public/shared/events.js';
-import { FEATURE } from '../public/shared/features.js';
+import { EVENT } from '../shared/events.ts';
+import { FEATURE } from '../shared/features.ts';
 
 const log = logger('server');
 
@@ -370,6 +370,7 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     log.warn(`${entries.map(([name]) => name).join(', ')} off until ${entries[0][1].name} is installed: ${url}`);
   }
   log.info(`policy: ${fingerprint(app.cfg, source.loadMcpServers())} (fingerprint)`);
+  if (!pageBuilt()) log.warn('page:   not built, the API alone is up: run `npm run build:web` (or `npm run dev:web` for development)');
 
   const routes = routeTable(app);
 

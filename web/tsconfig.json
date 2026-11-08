@@ -1,0 +1,22 @@
+{
+  // The page: Vue single-file components and TS that Vite compiles. Checked by
+  // `vue-tsc` (part of `npm run typecheck`); Vite only strips types.
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "useUnknownInCatchVariables": false,
+    "noEmit": true,
+    "jsx": "preserve",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "../shared/**/*.ts"]
+}

@@ -1,10 +1,19 @@
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, normalize } from 'node:path';
+import { dirname, join, normalize, sep } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
-const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+// The page as Vite built it (`npm run build:web`, web/ -> dist/). The npm
+// package ships it prebuilt, so only a git checkout can be missing it.
+export const PAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+export const pageBuilt = (): boolean => existsSync(join(PAGE_DIR, 'index.html'));
+
+const TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml', '.json': 'application/json', '.map': 'application/json', '.woff2': 'font/woff2',
+  '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.md': 'text/markdown; charset=utf-8'
+};
 
 export function json(res: ServerResponse, code: number, payload: unknown): void {
   const body = JSON.stringify(payload);
@@ -108,14 +117,22 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse): Pr
   const pathname = (req.url ?? '/').split('?')[0];
   const rel = normalize(pathname === '/' ? 'index.html' : pathname)
     .replace(/^(\.\.[/\\])+/, '');
-  const file = join(PUBLIC_DIR, rel);
-  if (!file.startsWith(PUBLIC_DIR)) return json(res, 403, { error: 'forbidden' });
+  const file = join(PAGE_DIR, rel);
+  if (!file.startsWith(PAGE_DIR + sep)) return json(res, 403, { error: 'forbidden' });
   try {
     const data = await readFile(file);
     const ext = file.slice(file.lastIndexOf('.'));
-    res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream' });
+    res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': cacheFor(rel) });
     res.end(data);
   } catch {
+    if (rel === 'index.html' && !pageBuilt()) return json(res, 503, { error: 'the page is not built: run `npm run build:web`' });
     json(res, 404, { error: 'not found' });
   }
+}
+
+// Vite names everything under assets/ by its content hash, so a cached copy is
+// never stale. Everything else (index.html, themes) keeps its name across
+// releases and has to be revalidated.
+function cacheFor(rel: string): string {
+  return /^assets[/\\]/.test(rel) ? 'public, max-age=31536000, immutable' : 'no-cache';
 }

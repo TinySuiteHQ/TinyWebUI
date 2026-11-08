@@ -33,3 +33,7 @@ CLAUDE.md
 # (`npm run clean` removes them).
 src/**/*.js
 bin/*.js
+shared/*.js
+
+# The built page (`npm run build:web`): shipped in the npm package, never committed.
+dist/
