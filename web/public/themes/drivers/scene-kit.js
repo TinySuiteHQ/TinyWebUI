@@ -253,11 +253,11 @@ export function createScene(spec) {
 
   /* ============================================================ mode ==== */
 
+  // The app publishes its state on <html> for exactly this (README: "The modes").
   function readMode() {
-    const send = document.getElementById('send');
-    const wrap = document.getElementById('wrap');
-    if (send && send.classList.contains('stop')) return 'busy';
-    if (wrap && wrap.childElementCount === 0) return 'empty';
+    const state = document.documentElement.dataset;
+    if (state.busy === 'true') return 'busy';
+    if (state.empty === 'true') return 'empty';
     return 'idle';
   }
 
@@ -390,9 +390,8 @@ export function createScene(spec) {
   const invalidate = () => { wordCache = []; wordsAt = -1e4; };
   const mo = new MutationObserver(() => { invalidate(); syncMode(); if (ctx.reduced) renderOnce(); });
   const wrapEl = document.getElementById('wrap');
-  const sendEl = document.getElementById('send');
   if (wrapEl) mo.observe(wrapEl, { childList: true, subtree: true, characterData: true });
-  if (sendEl) mo.observe(sendEl, { attributes: true, attributeFilter: ['class'] });
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-busy', 'data-empty'] });
   const scroller = document.getElementById('log');
   if (scroller) scroller.addEventListener('scroll', invalidate, { passive: true });
 

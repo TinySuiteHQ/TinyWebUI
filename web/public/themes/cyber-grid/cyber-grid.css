@@ -41,7 +41,7 @@
 
 /* Panels and inputs get a hairline-only look; no shadows, no gradients. */
 :root[data-theme="cyber-grid"] .tool-group,
-:root[data-theme="cyber-grid"] .steps,
+:root[data-theme="cyber-grid"] .prompt-card,
 :root[data-theme="cyber-grid"] pre,
 :root[data-theme="cyber-grid"] textarea,
 :root[data-theme="cyber-grid"] input {

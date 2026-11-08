@@ -1,12 +1,13 @@
 # Themes
 
-A theme is a folder drop, not a patch. Nothing in `app.js` or `styles.css`
-knows any theme exists, and adding one never changes either file.
+A theme is a folder drop, not a patch. Nothing in the app (`web/src/`) knows
+any theme exists, and adding one never changes it. This folder is Vite's
+`public/`: it is copied into the build as is and served at `/themes/`, so a
+theme needs no build step either.
 
 ```
-public/themes/
+web/public/themes/
   manifest.json       the list. one line per theme
-  theme-loader.js     the only bridge to the app
   drivers/
     scene-kit.js      the runtime a moving theme is built on
   fall-fairy/
@@ -22,7 +23,8 @@ Drop a folder with a CSS file in it and add a line to `manifest.json`:
 { "id": "dusk", "name": "Dusk", "file": "dusk/dusk.css" }
 ```
 
-The file reassigns the variables `styles.css` already reads. That is the whole
+The file reassigns the variables the app's stylesheet (`web/src/styles/base.css`)
+already reads. That is the whole
 API:
 
 ```css
@@ -37,8 +39,9 @@ Anything past that is yours, on one condition: **scope every rule under
 `[data-theme="<id>"]`.** A theme that leaks outside its own attribute is a
 fork of the stylesheet wearing a theme's clothes.
 
-The picker in settings → appearance is built from the manifest, and the choice
-is remembered in `localStorage`. Removing a theme's files is a complete
+The picker in settings → my preferences is built from the manifest
+(`web/src/stores/theme.ts` loads it), and the choice is remembered in
+`localStorage`. Removing a theme's files is a complete
 uninstall.
 
 ## A theme that moves
@@ -111,15 +114,15 @@ the whole of `mount()`.
 
 ### The modes
 
-All four are read from markup the app already produces for its own reasons. No
-hook was added anywhere for a theme to read, and a theme never queries the app
-itself — that coupling lives in `scene-kit.js`, once, for every theme at once.
+All four come from two attributes the app keeps on `<html>` for themes to
+read. A theme never queries the app itself — that coupling lives in
+`scene-kit.js`, once, for every theme at once.
 
 | mode | what the app is doing | where it comes from |
 |---|---|---|
-| `empty` | a fresh chat, nothing asked yet | `#wrap` has no children |
-| `busy` | a turn is running | `#send` carries `.stop` |
-| `done` | an answer just landed (transient, ~2.4s) | `.stop` came off |
+| `empty` | a fresh chat, nothing asked yet | `<html data-empty="true">` |
+| `busy` | a turn is running | `<html data-busy="true">` |
+| `done` | an answer just landed (transient, ~2.4s) | `data-busy` went back to `false` |
 | `idle` | a transcript, sitting there | anything else |
 
 ### Words
@@ -176,3 +179,19 @@ and fairies that land on the words of your transcript and read them.
 It also re-voices the app: Grandstander for headings, Quicksand for everything
 you read, Space Mono for the machine's own voice, and Caveat for the one
 handwritten line in the clearing.
+
+## What a theme may rely on
+
+The app's markup is free to change, except for this, which is kept stable
+for themes:
+
+- the palette and scale variables in `web/src/styles/base.css` (`--bg`,
+  `--panel`, `--line`, `--fg`, `--muted`, `--faint`, `--accent`, `--tool`,
+  `--err`, `--raise`, `--mono`, `--sans`, the `--r-*` radii and `--fs-*` sizes)
+- `<html data-theme>`, `data-busy` and `data-empty`
+- the ids `#side`, `#log`, `#wrap`, `#input`, `#send`, `#status`
+- in the transcript: `.msg.user .body` (a question), `.turn` (an answer turn),
+  `.answer` / `.answer.final`, `.md` (rendered markdown), `.activity-row` and
+  `.status-line` (the work, folded), `.status-dot`, `.tool-step`,
+  `.prompt-card` (an approval or a question waiting for the person),
+  `main.empty-chat` and `#hello` (a fresh chat)

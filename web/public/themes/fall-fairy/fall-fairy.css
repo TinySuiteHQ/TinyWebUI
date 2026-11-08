@@ -103,7 +103,8 @@
 /* These sit on --panel, which is translucent now; a mono block over a tree is
    exactly the case the scrim above is not strong enough for. */
 [data-theme="fall-fairy"] .md pre,
-[data-theme="fall-fairy"] .step pre,
+[data-theme="fall-fairy"] .tool-step-body pre,
+[data-theme="fall-fairy"] .prompt-card,
 [data-theme="fall-fairy"] .tool .doc,
 [data-theme="fall-fairy"] .tool-group,
 [data-theme="fall-fairy"] .md th {
@@ -149,17 +150,16 @@
 /* The mono voice stays mono — Space Mono arrives through --mono above, which
    the base sheet already points at for every one of these. It runs wide, so
    the label-sized uses get their tracking wound back in. */
-[data-theme="fall-fairy"] .who,
 [data-theme="fall-fairy"] .hit-role,
-[data-theme="fall-fairy"] details.work > summary,
-[data-theme="fall-fairy"] details.think > summary,
+[data-theme="fall-fairy"] .activity-row,
+[data-theme="fall-fairy"] .thought > summary,
 [data-theme="fall-fairy"] button.linkish,
 [data-theme="fall-fairy"] #status {
   letter-spacing: .01em;
 }
 /* Space Mono's default weight is light for small caps on a scrim. */
 [data-theme="fall-fairy"] .usage,
-[data-theme="fall-fairy"] .step .ms,
+[data-theme="fall-fairy"] .tool-step .ms,
 [data-theme="fall-fairy"] #status { font-weight: 700; }
 
 /* The question keeps its accent rail, lit like a lantern. */
@@ -167,18 +167,17 @@
   box-shadow: -3px 0 10px -3px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 /* The answer landing is the payoff of the whole chase, so it gets the single
-   flourish in the transcript: the fairy who found it signs the line. */
-[data-theme="fall-fairy"] .msg.assistant.final .who::after {
+   flourish in the transcript: the fairy who found it signs the last line. */
+[data-theme="fall-fairy"] .answer.final .md > :last-child:not(pre, table)::after {
   content: " \2726";
   color: var(--ff-glow);
   text-shadow: 0 0 6px var(--ff-glow);
 }
 
-/* A step still running: the trailing ellipsis becomes her spark. */
-[data-theme="fall-fairy"] .work.live .act::after {
-  content: " \2726";
-  color: var(--ff-glow);
-  text-shadow: 0 0 6px var(--ff-glow);
+/* A turn still working: its status dot becomes her spark. */
+[data-theme="fall-fairy"] .status-dot {
+  background: var(--ff-glow);
+  box-shadow: 0 0 6px var(--ff-glow);
   animation: ff-twinkle 2s ease-in-out infinite;
 }
 @keyframes ff-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
@@ -193,15 +192,12 @@
 /* ---------------------------------------------------------- the clearing */
 
 /* A brand-new chat is the one moment the app leaves an empty stage, and it
-   says so in markup all by itself: #wrap with no children. The canvas reads
-   the same state and seats a fairy on her pumpkin down there; this is the
-   room made for her, and the line she is waiting on. */
-[data-theme="fall-fairy"] #wrap:empty {
-  min-height: min(30rem, 62vh);
-  align-items: center; justify-content: flex-end;
-  padding-bottom: min(15rem, 34vh);
-}
-[data-theme="fall-fairy"] #wrap:empty::after {
+   says so on <html data-empty="true">. The canvas reads the same state and
+   seats a fairy on her pumpkin; under the greeting is the line she is
+   waiting on. */
+[data-theme="fall-fairy"] main.empty-chat #hello p { display: none; }
+[data-theme="fall-fairy"] main.empty-chat #hello::after {
+  display: block; margin-top: .25rem;
   content: "ask, and we'll go find it";
   font-family: var(--ff-hand);
   font-size: 1.85rem; font-weight: 600;
@@ -216,6 +212,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-theme="fall-fairy"] .work.live .act::after,
-  [data-theme="fall-fairy"] #wrap:empty::after { animation: none; }
+  [data-theme="fall-fairy"] .status-dot,
+  [data-theme="fall-fairy"] main.empty-chat #hello::after { animation: none; }
 }
