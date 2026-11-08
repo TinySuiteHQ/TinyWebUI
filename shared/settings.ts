@@ -12,10 +12,10 @@ export const REASONING_REPLAYS = Object.freeze(['auto', 'omit', 'reasoning_conte
 export const THINKING_LEVELS = Object.freeze(['off', 'low', 'medium', 'high'] as const);
 /** A level, or `provider`: send nothing, so the provider's own default applies. */
 export const THINKING_CHOICES = Object.freeze(['provider', ...THINKING_LEVELS] as const);
-/** Which request field carries the level; see thinkingStyle in src/harness/provider.ts. */
+/** Which request field carries the level; see thinkingStyle in server/harness/provider.ts. */
 export const THINKING_SENDS = Object.freeze(['auto', 'effort', 'openrouter', 'anthropic', 'switch'] as const);
 
-/** When a tool call waits for the person's allow / deny; see src/config/approval.ts. */
+/** When a tool call waits for the person's allow / deny; see server/config/approval.ts. */
 export const TOOL_APPROVALS = Object.freeze(['writes', 'all', 'off'] as const);
 
 export type CacheMode = typeof CACHE_MODES[number];

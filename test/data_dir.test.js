@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { userDataDir, isInstalled } from '../src/config/data_dir.ts';
+import { userDataDir, isInstalled } from '../server/config/data_dir.ts';
 
 test('each platform gets its usual application data folder', () => {
   assert.equal(userDataDir({}, 'darwin', '/Users/a'), join('/Users/a', 'Library', 'Application Support', 'TinyWebUI'));

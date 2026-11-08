@@ -4,9 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { trustedServer } from './trusted-helpers.js';
-import { buildBody, thinkingStyle } from '../src/harness/provider.ts';
-import { configProblems } from '../src/config/config.ts';
-import { thinkingFor, thinkingView } from '../src/config/models.ts';
+import { buildBody, thinkingStyle } from '../server/harness/provider.ts';
+import { configProblems } from '../server/config/config.ts';
+import { thinkingFor, thinkingView } from '../server/config/models.ts';
 
 const plan = { turn: [{ role: 'user', content: 'hi' }], tools: [], lastCall: false, epochIndex: -1, chatId: 'c' };
 const body = (cfg) => buildBody({ systemPrompt: 'S', model: 'm', ...cfg }, plan, new Set());

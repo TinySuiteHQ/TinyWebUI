@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "bin/**/*.ts", "shared/**/*.ts"]
+  "include": ["server/**/*.ts", "bin/**/*.ts", "shared/**/*.ts"]
 }

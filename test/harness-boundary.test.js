@@ -1,4 +1,4 @@
-// src/harness/ is the model-facing core: request shape, the loop, history
+// server/harness/ is the model-facing core: request shape, the loop, history
 // validity. It must stay usable without the server, so it imports nothing
 // from the app -- no store, tools, MCP or config -- only its own files,
 // shared/ and node built-ins.
@@ -6,9 +6,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 
-const dir = new URL('../src/harness/', import.meta.url);
+const dir = new URL('../server/harness/', import.meta.url);
 
-test('src/harness imports only itself, shared/ and node built-ins', () => {
+test('server/harness imports only itself, shared/ and node built-ins', () => {
   const bad = [];
   for (const file of readdirSync(dir).filter((f) => /\.[jt]s$/.test(f))) {
     const src = readFileSync(new URL(file, dir), 'utf8');

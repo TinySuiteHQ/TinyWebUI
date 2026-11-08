@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 const API = process.env.TINYWEBUI_API || 'http://127.0.0.1:7777';
 
-// The page is built into ../dist, which the server serves (src/http.ts) and the
+// The page is built into ../dist, which the server serves (server/http.ts) and the
 // npm package ships. `web/public` (themes, icons) is copied over as is.
 export default defineConfig({
   root: here('.'),
@@ -20,7 +20,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // `npm run dev` runs the API on 7777. Its cross-site guard (src/http.ts)
+    // `npm run dev` runs the API on 7777. Its cross-site guard (server/http.ts)
     // refuses a POST whose Origin is not its own host, so the proxy presents
     // every request as coming from the API's own origin.
     proxy: {

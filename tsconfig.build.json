@@ -11,6 +11,6 @@
     "rootDir": ".",
     "outDir": "."
   },
-  "include": ["src/**/*.ts", "bin/**/*.ts", "shared/**/*.ts"],
+  "include": ["server/**/*.ts", "bin/**/*.ts", "shared/**/*.ts"],
   "exclude": ["node_modules"]
 }

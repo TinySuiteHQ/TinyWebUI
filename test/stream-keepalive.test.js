@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { createRuns, PING_MS } from '../src/chat/runs.ts';
+import { createRuns, PING_MS } from '../server/chat/runs.ts';
 import { events } from '../web/src/core/sse.ts';
 
 function fakeResponse() {

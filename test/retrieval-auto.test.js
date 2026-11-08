@@ -9,8 +9,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolveRetrieval, PRESETS } from '../src/retrieval/embedding.ts';
-import { DEFAULTS, configProblems, createConfigSource } from '../src/config/config.ts';
+import { resolveRetrieval, PRESETS } from '../server/retrieval/embedding.ts';
+import { DEFAULTS, configProblems, createConfigSource } from '../server/config/config.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-auto-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));

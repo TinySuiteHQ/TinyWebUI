@@ -1,7 +1,7 @@
 /**
  * The events a running turn streams to the browser, as `data: {"type": ...}`
  * lines. Shared by both sides: the server imports this file to emit them
- * (src/chat/runs.ts, llm.ts, tool_executor.ts, harness/agent.ts) and the page
+ * (server/chat/runs.ts, llm.ts, tool_executor.ts, harness/agent.ts) and the page
  * imports it to handle them (web/src/model/turn-model.ts, whose handler table
  * is typed against EventType, so a new event will not compile until handled).
  */

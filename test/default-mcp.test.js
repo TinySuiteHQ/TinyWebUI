@@ -5,9 +5,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createConfigSource } from '../src/config/config.ts';
-import { serversIdentityProblems } from '../src/access/mcp_identity.ts';
-import { serveProblems } from '../src/mcp_serve.ts';
+import { createConfigSource } from '../server/config/config.ts';
+import { serversIdentityProblems } from '../server/access/mcp_identity.ts';
+import { serveProblems } from '../server/mcp_serve.ts';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'twui-default-mcp-'));
 const valid = (servers) => [...serversIdentityProblems(servers), ...Object.entries(servers).flatMap(([n, s]) => serveProblems(n, s))];

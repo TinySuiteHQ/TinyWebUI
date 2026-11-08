@@ -2,8 +2,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { userDataDir, isInstalled } from '../src/config/data_dir.ts';
-import type { StartOptions } from '../src/server.ts';
+import { userDataDir, isInstalled } from '../server/config/data_dir.ts';
+import type { StartOptions } from '../server/server.ts';
 
 const args = process.argv.slice(2);
 const flag = <T = undefined>(name: string, fallback?: T): string | T => {
@@ -59,7 +59,7 @@ panel. See README for the rest.
   process.exit(0);
 }
 
-// Resolve the JS config before src/config/config.js is imported: that module fixes
+// Resolve the JS config before server/config/config.js is imported: that module fixes
 // its JSON path at load time from $TINYWEBUI_CONFIG, so a .js path there has
 // to be swapped for the JSON file beside it first.
 const envPath = process.env.TINYWEBUI_CONFIG && resolve(process.env.TINYWEBUI_CONFIG);
@@ -94,14 +94,14 @@ try {
   }
   const COMMANDS = ['validate', 'effective', 'fingerprint', 'users', 'schema', 'migrate', 'doctor', 'config', 'models'];
   if (COMMANDS.includes(args[0])) {
-    const { runCli } = await import('../src/cli.ts');
+    const { runCli } = await import('../server/cli.ts');
     process.exit(await runCli(args[0], args.slice(1), opts));
   }
   if (args[0] && !args[0].startsWith('--') && args[0] !== 'start') {
     console.error(`[tinywebui] unknown command "${args[0]}" (see --help)`);
     process.exit(1);
   }
-  const { start } = await import('../src/server.ts');
+  const { start } = await import('../server/server.ts');
   // Command-line flags beat the file; the file beats the built-in defaults.
   await start({
     ...opts,

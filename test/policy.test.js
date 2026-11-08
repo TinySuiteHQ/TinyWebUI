@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   validateConfig, featuresFor, modelsFor, customizeFor, roleNames, isRole, resolveAccess, fingerprint, keyClass, mergeAccess
-} from '../src/access/policy.ts';
-import { createConfigSource, LockedError } from '../src/config/config.ts';
+} from '../server/access/policy.ts';
+import { createConfigSource, LockedError } from '../server/config/config.ts';
 
 const tier3 = (access) => ({ authMode: 'trusted-header', trustedProxyCidrs: ['10.0.0.0/8'], access });
 

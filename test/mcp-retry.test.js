@@ -2,7 +2,7 @@
 // after a reboot, say -- is retried on its own and can be retried by hand.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { McpHub } from '../src/mcp.ts';
+import { McpHub } from '../server/mcp.ts';
 import { startMcpHttpServer } from './mcp-http-fixture.js';
 
 const local = { type: 'function', function: { name: 'local_tool', description: '', parameters: { type: 'object', properties: {} } } };

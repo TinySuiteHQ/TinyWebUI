@@ -1,4 +1,4 @@
-// Local MCP servers TinyWebUI starts over HTTP (src/mcp_serve.ts): one
+// Local MCP servers TinyWebUI starts over HTTP (server/mcp_serve.ts): one
 // process for everyone, a connection per user, and every request proven
 // with a token only TinyWebUI holds -- checked against a real child process.
 import test from 'node:test';
@@ -8,9 +8,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { McpHub } from '../src/mcp.ts';
-import { serveProblems } from '../src/mcp_serve.ts';
-import { identityProblems } from '../src/access/mcp_identity.ts';
+import { McpHub } from '../server/mcp.ts';
+import { serveProblems } from '../server/mcp_serve.ts';
+import { identityProblems } from '../server/access/mcp_identity.ts';
 
 const FIXTURE = fileURLToPath(new URL('./mcp-served-fixture.js', import.meta.url));
 const as = (userId) => ({ store: null, chatId: 'c', budget: 8000, unattended: false, askUser: null, userId });

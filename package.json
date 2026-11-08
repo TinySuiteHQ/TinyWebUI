@@ -13,10 +13,10 @@
   "bin": {
     "tinywebui": "bin/tinywebui.js"
   },
-  "main": "src/server.js",
+  "main": "server/server.js",
   "files": [
     "bin",
-    "src",
+    "server",
     "shared",
     "dist",
     "README.md",
@@ -36,7 +36,7 @@
     "prestart": "npm run build:web && node bin/tinywebui.ts models ensure",
     "start": "node bin/tinywebui.ts",
     "predev": "node bin/tinywebui.ts models ensure",
-    "dev": "node --watch-path=./src --watch-path=./bin --watch-path=./shared bin/tinywebui.ts",
+    "dev": "node --watch-path=./server --watch-path=./bin --watch-path=./shared bin/tinywebui.ts",
     "dev:web": "vite web",
     "stop": "pkill -f 'bin/tinywebui' || true",
     "typecheck": "tsc -p . && node web/typecheck.mjs -p web",

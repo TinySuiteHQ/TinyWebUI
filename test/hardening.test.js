@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { start } = await import('../src/server.ts');
+const { start } = await import('../server/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', configFile: false, mcpServers: {}, dbPath: ':memory:',
   config: { authMode: 'local', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' } });
 test.after(() => srv.shutdown());
@@ -49,7 +49,7 @@ test('a body that is not a JSON object, or fields of the wrong type, are refused
 });
 
 test('server-made ids are long random values', async () => {
-  const { Store, ALL_USERS } = await import('../src/store/index.ts');
+  const { Store, ALL_USERS } = await import('../server/store/index.ts');
   const store = new Store(':memory:');
   const chat = store.chats.create({}, ALL_USERS);
   assert.match(chat.id, /^[0-9a-f-]{36}$/);

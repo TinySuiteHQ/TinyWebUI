@@ -1,7 +1,7 @@
 /**
  * Every feature a role can be granted (access.roles.*.features). Shared by
- * both sides: the server checks them on each API route (src/routes/*,
- * src/access/policy.ts) and the page hides what the viewer cannot use
+ * both sides: the server checks them on each API route (server/routes/*,
+ * server/access/policy.ts) and the page hides what the viewer cannot use
  * (web/src/stores/session.ts and the components that ask it).
  */
 export const FEATURE = Object.freeze({

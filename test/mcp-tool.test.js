@@ -6,10 +6,10 @@ import { createServer } from 'node:http';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { callManageMcp, mcpToolDef, MANAGE_MCP } from '../src/tools/mcp_tool.ts';
-import { McpHub, uniqueName } from '../src/mcp.ts';
-import { expandRefs } from '../src/config/refs.ts';
-import { approvalFor } from '../src/config/approval.ts';
+import { callManageMcp, mcpToolDef, MANAGE_MCP } from '../server/tools/mcp_tool.ts';
+import { McpHub, uniqueName } from '../server/mcp.ts';
+import { expandRefs } from '../server/config/refs.ts';
+import { approvalFor } from '../server/config/approval.ts';
 
 const SECRET = 'sk-live-ABC123XYZ';
 
@@ -242,7 +242,7 @@ process.env.TINYWEBUI_DB = join(dir, 'chats.db');
 writeFileSync(process.env.TINYWEBUI_CONFIG, JSON.stringify({ toolApproval: 'off' }));
 writeFileSync(process.env.TINYWEBUI_MCP, JSON.stringify({ mcpServers: {} }));
 
-const { start } = await import('../src/server.ts');
+const { start } = await import('../server/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'local' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 test.after(async () => { await srv.shutdown(); fake.close(); });

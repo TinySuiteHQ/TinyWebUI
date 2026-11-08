@@ -27,7 +27,7 @@ export type Staged = {
 const IMAGE_EXT = /\.(heic|heif|avif|jpe?g|png|webp|gif)$/i;
 const isImageFile = (file: File) => file.type.startsWith('image/') || (!file.type && IMAGE_EXT.test(file.name));
 
-// Mirrors what src/files/documents.ts can extract. The server stays
+// Mirrors what server/files/documents.ts can extract. The server stays
 // authoritative; this only flags an obviously unusable file on its chip and
 // blocks sending, instead of finding out after the message went.
 const DOC_EXT = new Set([

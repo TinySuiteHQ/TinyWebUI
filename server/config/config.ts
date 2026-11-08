@@ -144,7 +144,7 @@ export const DEFAULTS: Omit<Config, 'access'> = {
   apiKey: '',
   // The default model: a catalog id, or with an empty catalog any model id.
   model: '',
-  // The model catalog (see src/config/models.js). Empty everywhere: any model
+  // The model catalog (see server/config/models.js). Empty everywhere: any model
   // id goes. Listed: only these can be picked, `model` names one by id, and
   // people see each entry's label. An entry may set its own prompt, sampling
   // and caching; the top-level values below are what it inherits.
@@ -249,7 +249,7 @@ export const DEFAULTS: Omit<Config, 'access'> = {
   // IANA zone the model is told the date in (and uses for automations). Empty
   // means the server's own zone.
   timezone: '',
-  // Which tool calls wait for the user (see src/config/approval.js).
+  // Which tool calls wait for the user (see server/config/approval.js).
   //   'writes'  ask before any call not declared read-only (default)
   //   'all'     ask before every call
   //   'off'     never ask

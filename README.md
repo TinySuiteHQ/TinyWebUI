@@ -124,7 +124,7 @@ In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container dep
 
 ```bash
 npm test        # type check (server and page), then the whole suite, about 15 seconds
-npm run dev     # the API on :7777, restarting on changes in src/, bin/ and shared/
+npm run dev     # the API on :7777, restarting on changes in server/, bin/ and shared/
 npm run dev:web # the page on :5173 with hot reload, proxying /api to :7777
 ```
 

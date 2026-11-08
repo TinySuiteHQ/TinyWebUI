@@ -23,11 +23,11 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from '../src/config/config.ts';
-import { Store } from '../src/store/index.ts';
-import { runChat } from '../src/chat/llm.ts';
+import { loadConfig } from '../server/config/config.ts';
+import { Store } from '../server/store/index.ts';
+import { runChat } from '../server/chat/llm.ts';
 import { check } from './checks.js';
-import { askToolDef, callAskUser, ASK_USER } from '../src/tools/ask_tool.ts';
+import { askToolDef, callAskUser, ASK_USER } from '../server/tools/ask_tool.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TASKS = join(HERE, 'tasks');

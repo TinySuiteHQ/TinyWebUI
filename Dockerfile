@@ -31,7 +31,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
 COPY bin ./bin
-COPY src ./src
+COPY server ./server
 COPY shared ./shared
 COPY --from=web /app/dist ./dist
 
