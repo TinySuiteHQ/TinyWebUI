@@ -1,4 +1,4 @@
-import { EVENT } from '../../public/shared/events.js';
+import { EVENT } from '../../shared/events.ts';
 import type { ChatMessage, Emit, ToolCall } from './types.ts';
 
 export interface RoundContext { messages: ChatMessage[]; round: number; lastCall: boolean; signal?: AbortSignal }

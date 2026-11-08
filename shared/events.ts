@@ -1,10 +1,9 @@
-// @ts-check
 /**
  * The events a running turn streams to the browser, as `data: {"type": ...}`
  * lines. Shared by both sides: the server imports this file to emit them
- * (src/chat/runs.js, llm.js, tool_executor.js, agent.js) and the page imports
- * it to handle them (stream.js). It lives in public/shared/ because that is the one
-^ * place both can load. A test checks that stream.js handles every one.
+ * (src/chat/runs.ts, llm.ts, tool_executor.ts, harness/agent.ts) and the page
+ * imports it to handle them (web/src/chat/turn-model.ts, whose handler table
+ * is typed against EventType, so a new event will not compile until handled).
  */
 export const EVENT = Object.freeze({
   CHAT: 'chat',                     // the run's chat id and title, first on every stream
@@ -25,4 +24,6 @@ export const EVENT = Object.freeze({
   NOTICE: 'notice',                 // something worth telling the user, not an error
   ERROR: 'error',                   // the run failed or was stopped
   DONE: 'done'                      // the turn finished
-});
+} as const);
+
+export type EventType = typeof EVENT[keyof typeof EVENT];

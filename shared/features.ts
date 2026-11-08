@@ -1,9 +1,8 @@
-// @ts-check
 /**
  * Every feature a role can be granted (access.roles.*.features). Shared by
  * both sides: the server checks them on each API route (src/routes/*,
- * src/access/policy.js) and the page hides what the viewer cannot use
- * (core/access.js, chat/composer.js, app.js).
+ * src/access/policy.ts) and the page hides what the viewer cannot use
+ * (web/src/stores/session.ts and the components that ask it).
  */
 export const FEATURE = Object.freeze({
   CHAT: 'chat',
@@ -22,4 +21,6 @@ export const FEATURE = Object.freeze({
   INTEGRATIONS: 'integrations',
   ADMIN: 'admin',
   OVERSIGHT: 'oversight'
-});
+} as const);
+
+export type Feature = typeof FEATURE[keyof typeof FEATURE];

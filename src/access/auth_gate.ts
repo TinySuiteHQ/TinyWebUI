@@ -6,7 +6,7 @@ import type { Config } from '../config/config.ts';
 import { featuresFor } from './policy.ts';
 import { getSessionUser, resolveTrustedUser } from './auth.ts';
 import { audit } from '../audit.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 
 /** Historical owner row removed when an old installation claims its first account. */
 export const OWNER_ID = 'owner';

@@ -1,4 +1,4 @@
-import { inputTokens, outputTokens, cacheReads } from '../../public/shared/usage.js';
+import { inputTokens, outputTokens, cacheReads } from '../../shared/usage.ts';
 import type { Content, ReasoningDetail, RequestBody, ToolCall, Usage } from './types.ts';
 
 type Source = 'estimated' | 'provider';

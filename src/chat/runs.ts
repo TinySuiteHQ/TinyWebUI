@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.ts';
 import { effectiveConfig, findEntry, thinkingFor, usesTools } from '../config/models.ts';
 import { logger } from '../log.ts';
-import { EVENT } from '../../public/shared/events.js';
+import { EVENT } from '../../shared/events.ts';
 import { CORPUS, type Store } from '../store/index.ts';
 import type { ChatRow, QuestionStatus } from '../store/chats.ts';
 import type { Config } from '../config/config.ts';

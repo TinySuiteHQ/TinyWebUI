@@ -1,5 +1,5 @@
 /* The provider side of a turn: request shape, prompt caching, retries and the SSE stream. */
-import { EVENT } from '../../public/shared/events.js';
+import { EVENT } from '../../shared/events.ts';
 import type {
   CacheDirective, CacheMode, ChatMessage, Chunk, Emit, ProviderConfig, ReasoningReplay, RequestBody, RequestPlan,
   ThinkingLevel, ThinkingSend, WireMessage

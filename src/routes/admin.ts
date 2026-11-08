@@ -9,7 +9,7 @@ import { catalog, modelProblems } from '../config/models.ts';
 import { destroyUserSessions, hashPassword, hashToken } from '../access/auth.ts';
 import { normalizeEmail, validEmail } from '../access/email.ts';
 import { audit } from '../audit.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteContext, RouteDeps } from './types.ts';
 import type { SignedIn } from '../access/auth_gate.ts';
 import type { UserListing, UserRow } from '../store/users.ts';

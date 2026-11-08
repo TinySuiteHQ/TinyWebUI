@@ -88,7 +88,7 @@ test('only a PDF or plain text is shown inline; anything a browser would run is 
 });
 
 test('a stored message splits back into its text and the document ids its notes name', async () => {
-  const { attachmentNote, splitAttachmentNotes } = await import('../public/shared/attachment_note.js');
+  const { attachmentNote, splitAttachmentNotes } = await import('../shared/attachment_note.ts');
   const a = { id: 'aa11', filename: 'a "b" (1).pdf', char_len: 1743 };
   const b = { id: 'bb22', filename: 'b.txt', char_len: 12 };
   const stored = 'summarise these' + attachmentNote(a) + attachmentNote(b);

@@ -7,7 +7,7 @@ import {
 import { audit } from '../audit.ts';
 import { OWNER_ID } from '../access/auth_gate.ts';
 import { normalizeEmail, validEmail } from '../access/email.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 
 // Failed logins per client address: 5 misses locks that address out for 15 minutes.

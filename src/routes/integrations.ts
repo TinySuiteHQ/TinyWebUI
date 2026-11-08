@@ -28,7 +28,7 @@ import { json, readJson, HttpError } from '../http.ts';
 import { actor, type SignedIn } from '../access/auth_gate.ts';
 import { audit } from '../audit.ts';
 import { logger } from '../log.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import {
   parseManifest, publicView, viewUri, detailUri, actionArgs, shapeViewData, shapeDetail, ManifestError,
   type Manifest, type View

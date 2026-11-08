@@ -14,11 +14,8 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "rewriteRelativeImportExtensions": true,
-    // public/shared stays JS (the page loads it as is); its types are inferred.
-    "allowJs": true,
-    "checkJs": false,
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "bin/**/*.ts"]
+  "include": ["src/**/*.ts", "bin/**/*.ts", "shared/**/*.ts"]
 }

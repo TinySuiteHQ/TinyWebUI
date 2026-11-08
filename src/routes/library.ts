@@ -1,5 +1,5 @@
 import { json, readJson } from '../http.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 
 /** The sidebar's search, usage statistics, and folders. */

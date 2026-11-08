@@ -2,7 +2,7 @@ import { json, readJson, UPLOAD_LIMIT } from '../http.ts';
 import { extractText, servingFor } from '../files/documents.ts';
 import { normalizeImage } from '../files/images.ts';
 import { logger } from '../log.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import { CORPUS } from '../store/index.ts';
 import type { Route, RouteDeps } from './types.ts';
 import type { SignedIn } from '../access/auth_gate.ts';

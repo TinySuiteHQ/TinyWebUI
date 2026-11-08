@@ -3,7 +3,7 @@
  * definitions and calls, the request body and the streamed chunks. Types only;
  * the app imports them for its own rows and tools.
  */
-import type { EVENT } from '../../public/shared/events.js';
+import type { EVENT } from '../../shared/events.ts';
 
 export type Role = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -61,7 +61,7 @@ export interface WireMessage {
 
 /**
  * A provider's usage object. Nothing in it is standardised (see
- * public/shared/usage.js); these are the fields read directly.
+ * shared/usage.ts); these are the fields read directly.
  */
 export interface Usage {
   cost?: number;
@@ -156,7 +156,7 @@ export interface Chunk {
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];
 
-/** A stream event for the page; see public/shared/events.js. */
+/** A stream event for the page; see shared/events.ts. */
 export interface StreamEvent {
   type: EventType;
   [key: string]: unknown;

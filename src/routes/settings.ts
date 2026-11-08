@@ -4,7 +4,7 @@ import { modelsFor, SECRET_PATCH_KEYS } from '../access/policy.ts';
 import { audit } from '../audit.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 import type { McpHub } from '../mcp.ts';
 

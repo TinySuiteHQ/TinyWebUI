@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { UserRole, UserStatus } from '../store/users.ts';
 
 /**

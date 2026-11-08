@@ -15,7 +15,7 @@ import { repairToolHistory } from '../harness/history.ts';
 import { checkpointSource, checkpointSection, summarize } from '../harness/checkpoint.ts';
 import { harnessBlock, budgetFooter } from '../harness/prompt.ts';
 import { isOpenRouter, post, streamChunks, retryDelay, sleep, STREAM_RETRIES, StreamError } from '../harness/provider.ts';
-import { EVENT } from '../../public/shared/events.js';
+import { EVENT } from '../../shared/events.ts';
 import {
   digest, planEpoch, applyEpoch, planWindow, windowRows, estimateTokens, estimateToolTokens
 } from './compact.ts';

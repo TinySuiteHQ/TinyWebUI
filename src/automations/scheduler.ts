@@ -1,5 +1,5 @@
 import { nextSchedule, runMessage } from './automation.ts';
-import { ORIGIN } from '../../public/shared/origins.js';
+import { ORIGIN } from '../../shared/origins.ts';
 import type { Store } from '../store/index.ts';
 import type { Automation } from '../store/automations.ts';
 import type { ChatRow } from '../store/chats.ts';

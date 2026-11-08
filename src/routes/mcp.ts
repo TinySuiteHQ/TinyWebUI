@@ -6,7 +6,7 @@ import { toolList } from './settings.ts';
 import { logger } from '../log.ts';
 import type { ServerResponse } from 'node:http';
 import type { Auth } from '../access/auth_gate.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 
 const log = logger('mcp');

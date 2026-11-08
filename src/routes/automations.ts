@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.ts';
 import { validateSchedule } from '../automations/automation.ts';
-import { FEATURE } from '../../public/shared/features.js';
+import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 import type { AutomationPatch } from '../store/automations.ts';
 

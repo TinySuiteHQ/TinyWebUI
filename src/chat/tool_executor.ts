@@ -7,7 +7,7 @@ import type { ChatMessage, Emit, ToolCall } from '../harness/types.ts';
 import type { McpHub } from '../mcp.ts';
 import type { AskOutcome, AskRequest, ToolArgs } from '../tools/types.ts';
 import { digest } from './compact.ts';
-import { EVENT } from '../../public/shared/events.js';
+import { EVENT } from '../../shared/events.ts';
 
 /** What a tool hook is handed (see the lifecycle hooks in harness/agent.js). */
 export interface CallContext { name: string; args: ToolArgs; call: ToolCall; round: number; signal?: AbortSignal }
