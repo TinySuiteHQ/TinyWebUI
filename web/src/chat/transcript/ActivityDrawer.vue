@@ -7,7 +7,7 @@
  * only while open.
  */
 import { computed, ref } from 'vue';
-import type { Turn } from '../../model/turn-model.ts';
+import type { Turn } from '../../model/turn_model.ts';
 import ToolStep from './ToolStep.vue';
 import UsageLine from './UsageLine.vue';
 import Markdown from '../Markdown.vue';

@@ -5,7 +5,7 @@
  * edit or retry: nobody typed it.
  */
 import { computed } from 'vue';
-import type { AutomationOrigin } from '../../model/turn-model.ts';
+import type { AutomationOrigin } from '../../model/turn_model.ts';
 import Icon from '../../ui/Icon.vue';
 
 const props = defineProps<{ origin: AutomationOrigin }>();

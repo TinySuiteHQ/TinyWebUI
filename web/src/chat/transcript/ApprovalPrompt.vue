@@ -6,7 +6,7 @@
  * settles together.
  */
 import { ref } from 'vue';
-import type { Approval, ToolStep } from '../../model/turn-model.ts';
+import type { Approval, ToolStep } from '../../model/turn_model.ts';
 import { useChat } from '../../stores/chat.ts';
 
 const props = defineProps<{ pending: Approval, step?: ToolStep }>();

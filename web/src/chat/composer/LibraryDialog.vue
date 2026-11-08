@@ -8,7 +8,7 @@ import { computed, onMounted, ref } from 'vue';
 import { api } from '../../core/api.ts';
 import { useAttachments } from '../../stores/attachments.ts';
 import { useChat } from '../../stores/chat.ts';
-import type { Doc } from '../../model/turn-model.ts';
+import type { Doc } from '../../model/turn_model.ts';
 import Modal from '../../ui/Modal.vue';
 
 const emit = defineEmits<{ close: [] }>();

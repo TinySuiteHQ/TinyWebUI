@@ -5,7 +5,7 @@
  * confirms (question_done), so every tab watching the run settles too.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { Question } from '../../model/turn-model.ts';
+import type { Question } from '../../model/turn_model.ts';
 import { useChat } from '../../stores/chat.ts';
 
 const props = defineProps<{ pending: Question }>();

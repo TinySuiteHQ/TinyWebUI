@@ -1,4 +1,4 @@
-// The transcript model (web/src/chat/turn-model.ts) draws a live stream and a
+// The transcript model (web/src/chat/turn_model.ts) draws a live stream and a
 // reopened chat through one path. The invariant that matters: the turn a live
 // stream builds and the one replayed from the stored messages are the same,
 // timings aside.
@@ -8,7 +8,7 @@ import { EVENT } from '../shared/events.ts';
 import {
   createModel, applyEvent, replay, finishTurn, beginTurn, statusOf,
   type Model, type StreamEvent, type StoredMessage
-} from '../web/src/model/turn-model.ts';
+} from '../web/src/model/turn_model.ts';
 
 function live(events: StreamEvent[]): Model {
   const m = createModel();

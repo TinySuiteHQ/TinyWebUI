@@ -9,7 +9,7 @@ import { api } from '../core/api.ts';
 import { newId } from '../core/id.ts';
 import { FEATURE } from '../../../shared/features.ts';
 import { useSession } from './session.ts';
-import type { Doc, Img } from '../model/turn-model.ts';
+import type { Doc, Img } from '../model/turn_model.ts';
 
 export type Staged = {
   key: string,

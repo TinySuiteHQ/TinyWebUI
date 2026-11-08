@@ -12,7 +12,7 @@ import { useSession } from '../../stores/session.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import { PANEL } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
-import { featureName, plural, roleLabel, when } from './admin-words.ts';
+import { featureName, plural, roleLabel, when } from './admin_words.ts';
 import PersonRow from './PersonRow.vue';
 import RoleEditor from './RoleEditor.vue';
 import IntegrationView from '../integrations/IntegrationView.vue';

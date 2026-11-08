@@ -3,7 +3,7 @@
 import { computed, ref } from 'vue';
 import { api } from '../../core/api.ts';
 import { FEATURE } from '../../../../shared/features.ts';
-import { CUSTOMIZE_INFO, FEATURE_GROUPS, FEATURE_INFO, plural, roleLabel } from './admin-words.ts';
+import { CUSTOMIZE_INFO, FEATURE_GROUPS, FEATURE_INFO, plural, roleLabel } from './admin_words.ts';
 
 // The role and the policy, from /api/admin/policy, read field by field.
 type Json = any;

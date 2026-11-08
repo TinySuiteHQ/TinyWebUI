@@ -3,7 +3,7 @@
 import { computed, ref } from 'vue';
 import { api } from '../../core/api.ts';
 import { useSession } from '../../stores/session.ts';
-import { ago, plural, roleLabel } from './admin-words.ts';
+import { ago, plural, roleLabel } from './admin_words.ts';
 
 // A user from /api/admin/users, read field by field.
 type Json = any;

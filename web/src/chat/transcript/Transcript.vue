@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 import { useChat } from '../../stores/chat.ts';
-import { useStickToBottom } from './stick-to-bottom.ts';
+import { useStickToBottom } from './stick_to_bottom.ts';
 import UserMessage from './UserMessage.vue';
 import AutomationRun from './AutomationRun.vue';
 import AssistantTurn from './AssistantTurn.vue';
