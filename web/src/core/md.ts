@@ -1,32 +1,33 @@
-// The page's only producers of HTML from outside text. A small, dependency-free
+// The page's only producers of HTML from outside text, and the only HTML that
+// may reach v-html (chat/Markdown.vue, and the sidebar's search snippets). A small, dependency-free
 // Markdown renderer that covers what chat models actually emit -- headings,
 // emphasis, code, lists, tables, quotes, links -- and nothing else, plus the
 // search-snippet highlighter. Everything is HTML-escaped before any tag is
 // produced, so model output can never inject markup.
 
-const esc = (s) => s.replace(/[&<>"']/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => (
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]
 ));
 
 // A private-use character: stands in for a stashed span while the inline rules run.
 const MARK = '\uE000';
 
-function inline(src) {
+function inline(src: string): string {
   // A MARK typed into the text would otherwise read as a reference to a stash slot.
   let out = esc(src).replaceAll(MARK, '');
-  const spans = [];
-  const stash = (html) => `${MARK}${spans.push(html) - 1}${MARK}`;
+  const spans: string[] = [];
+  const stash = (html: string) => `${MARK}${spans.push(html) - 1}${MARK}`;
 
   // Code spans first: nothing inside them should be interpreted further.
-  out = out.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${code}</code>`));
+  out = out.replace(/`([^`\n]+)`/g, (_, code: string) => stash(`<code>${code}</code>`));
 
   // Only http(s)/mailto/anchor/same-site links become anchors; anything else
   // (javascript:, data:, a protocol-relative //host) degrades to its link text.
-  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_, text, href) =>
+  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_, text: string, href: string) =>
     /^(https?:|mailto:|#|\/(?!\/))/i.test(href)
       ? stash(`<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`)
       : text);
-  out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, href) =>
+  out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre: string, href: string) =>
     pre + stash(`<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>`));
 
   out = out
@@ -36,18 +37,18 @@ function inline(src) {
     .replace(/(^|\W)_([^_\n]+)_(?=\W|$)/g, '$1<em>$2</em>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>');
 
-  return out.replace(new RegExp(`${MARK}(\\d+)${MARK}`, 'g'), (_, i) => spans[i]);
+  return out.replace(new RegExp(`${MARK}(\\d+)${MARK}`, 'g'), (_, i: string) => spans[Number(i)]);
 }
 
-const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+const cells = (line: string) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
 
-export function renderMarkdown(src) {
+export function renderMarkdown(src: unknown): string {
   const lines = String(src).replace(/\r\n/g, '\n').split('\n');
-  const html = [];
+  const html: string[] = [];
   let i = 0;
 
-  const listBlock = (ordered) => {
-    const items = [];
+  const listBlock = (ordered: boolean) => {
+    const items: string[] = [];
     const marker = ordered ? /^\s*\d+[.)]\s+(.*)$/ : /^\s*[-*+]\s+(.*)$/;
     while (i < lines.length) {
       const m = lines[i].match(marker);
@@ -69,7 +70,7 @@ export function renderMarkdown(src) {
 
     if (/^\s*```/.test(line)) {
       const lang = line.replace(/^\s*```/, '').trim();
-      const body = [];
+      const body: string[] = [];
       i++;
       while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
       i++; // closing fence, or the end of a stream still being written
@@ -89,7 +90,7 @@ export function renderMarkdown(src) {
     if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { html.push('<hr>'); i++; continue; }
 
     if (/^\s*>/.test(line)) {
-      const body = [];
+      const body: string[] = [];
       while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''));
       html.push(`<blockquote>${renderMarkdown(body.join('\n'))}</blockquote>`);
       continue;
@@ -101,7 +102,7 @@ export function renderMarkdown(src) {
     if (line.includes('|') && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1] || '')) {
       const head = cells(line);
       i += 2;
-      const rows = [];
+      const rows: string[][] = [];
       while (i < lines.length && lines[i].includes('|')) rows.push(cells(lines[i++]));
       html.push(
         `<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
@@ -110,7 +111,7 @@ export function renderMarkdown(src) {
       continue;
     }
 
-    const para = [];
+    const para: string[] = [];
     while (i < lines.length && lines[i].trim() && !/^\s*(#{1,6}\s|>|```|[-*+]\s|\d+[.)]\s)/.test(lines[i])) {
       para.push(lines[i++]);
     }
@@ -121,7 +122,7 @@ export function renderMarkdown(src) {
 }
 
 /** Turns the search index's ‹...› markers into <mark>, escaping everything else. */
-export function markSnippet(raw) {
+export function markSnippet(raw: unknown): string {
   return String(raw).split('‹').map((chunk, i) => {
     if (i === 0) return esc(chunk);
     const at = chunk.indexOf('›');

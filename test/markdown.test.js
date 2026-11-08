@@ -3,7 +3,7 @@
 // these are injection tests first and rendering tests second.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMarkdown, markSnippet } from '../public/core/md.js';
+import { renderMarkdown, markSnippet } from '../web/src/core/md.ts';
 
 // No tag the renderer does not make itself, and no attribute outside a quoted value.
 const OWN_TAGS = new Set(['p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
