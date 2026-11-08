@@ -1,68 +1,90 @@
-// The page's modules are wired in one place (public/app.js) and depend on each
-// other one way, so a reader -- or an agent -- can follow every call from its
-// imports. These checks keep it that way.
+// The page (web/src) depends on itself one way, so a reader -- or an agent --
+// can follow every call from its imports, and outside text only ever becomes
+// HTML through the renderers that escape it. These checks keep it that way.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = fileURLToPath(new URL('../public/', import.meta.url));
-const AREAS = ['core', 'chat', 'panels', 'shared'];
-// What each area may import besides itself.
-const MAY_USE = { core: ['shared'], chat: ['core', 'shared'], panels: ['chat', 'core', 'shared'], shared: [] };
+const REPO = fileURLToPath(new URL('../', import.meta.url));
+const ROOT = join(REPO, 'web', 'src');
+// What each area may import besides itself. `shared` is the repo's shared/,
+// which the server imports too. The transcript model is pure and stands alone.
+const MAY_USE = {
+  shared: [],
+  model: ['shared'],
+  core: ['shared'],
+  ui: [],
+  stores: ['core', 'shared', 'model'],
+  chat: ['stores', 'core', 'ui', 'shared', 'model'],
+  auth: ['stores', 'core', 'ui', 'shared'],
+  panels: ['chat', 'stores', 'core', 'ui', 'shared', 'model'],
+  app: ['auth', 'chat', 'panels', 'stores', 'core', 'ui', 'shared', 'model']
+};
 
-const rel = (abs) => relative(ROOT, abs).split(sep).join('/');
-const modules = [
-  'app.js',
-  ...AREAS.flatMap((area) => readdirSync(join(ROOT, area)).filter((f) => f.endsWith('.js')).map((f) => `${area}/${f}`))
-];
-const source = Object.fromEntries(modules.map((m) => [m, readFileSync(join(ROOT, m), 'utf8')]));
-const importsOf = (m) => [...source[m].matchAll(/\bfrom\s+['"](\.{1,2}\/[^'"]+)['"]/g)]
-  .map(([, spec]) => rel(join(ROOT, dirname(m), spec)));
-const areaOf = (m) => (m.includes('/') ? m.split('/')[0] : 'app');
+const rel = (abs) => relative(REPO, abs).split(sep).join('/');
+const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? walk(join(dir, e.name)) : /\.(ts|vue)$/.test(e.name) ? [join(dir, e.name)] : []);
+const files = walk(ROOT).map(rel);
+const source = Object.fromEntries(files.map((f) => [f, readFileSync(join(REPO, f), 'utf8')]));
 
-test('no page module is imported only for its side effects', () => {
-  for (const m of modules) {
-    const bare = source[m].match(/^import\s+['"][^'"]+['"]/m);
-    assert.equal(bare, null, `${m}: "${bare?.[0]}" -- export an init and call it from app.js`);
-  }
+function areaOf(f) {
+  if (f.startsWith('shared/')) return 'shared';
+  if (f === 'web/src/chat/turn-model.ts') return 'model';
+  const parts = f.replace('web/src/', '').split('/');
+  return parts.length === 1 ? 'app' : parts[0];
+}
+const importsOf = (f) => [...source[f].matchAll(/^\s*import\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm)]
+  .map(([, spec]) => rel(join(REPO, dirname(f), spec)));
+
+test('the page has modules to check', () => {
+  assert.ok(files.length > 30, `only ${files.length} files under web/src`);
 });
 
-test('only app.js wires listeners or timers at import time', () => {
-  // Top-level (unindented) statements that act on the page rather than define something.
-  const wiring = /^(\$\(|document\.|window\.|setInterval|setTimeout|\(function|[A-Za-z_$][\w$]*\.(addEventListener|on[a-z]+\s*=)|[A-Za-z_$][\w$]*\()/;
-  for (const m of modules.filter((x) => x !== 'app.js')) {
-    source[m].split(/\r?\n/).forEach((line, i) => {
-      assert.ok(!wiring.test(line), `${m}:${i + 1} runs on import: ${line.trim()} -- move it into the module's init`);
-    });
-  }
+test('every relative import resolves', () => {
+  for (const f of files) for (const target of importsOf(f)) assert.ok(existsSync(join(REPO, target)), `${f} imports missing ${target}`);
 });
 
-test('imports go one way: panels -> chat -> core -> shared', () => {
-  for (const m of modules.filter((x) => x !== 'app.js')) {
-    const from = areaOf(m);
-    for (const target of importsOf(m)) {
+test('imports go one way between areas', () => {
+  for (const f of files) {
+    const from = areaOf(f);
+    for (const target of importsOf(f)) {
+      if (target.endsWith('.css')) continue;
       const to = areaOf(target);
-      assert.ok(to === from || MAY_USE[from].includes(to), `${m} imports ${target}: ${from}/ may not use ${to}/`);
+      assert.ok(to === from || MAY_USE[from].includes(to), `${f} imports ${target}: ${from} may not use ${to}`);
     }
   }
 });
 
-test('the page has no import cycles', () => {
-  const state = new Map(); // module -> 'visiting' | 'done'
-  const visit = (m, path) => {
-    if (state.get(m) === 'done') return;
-    assert.notEqual(state.get(m), 'visiting', `import cycle: ${[...path, m].join(' -> ')}`);
-    state.set(m, 'visiting');
-    for (const next of importsOf(m)) if (source[next] !== undefined) visit(next, [...path, m]);
-    state.set(m, 'done');
-  };
-  for (const m of modules) visit(m, []);
+test('the transcript model and shared/ stay free of Vue and the DOM', () => {
+  for (const f of [...files.filter((x) => areaOf(x) === 'model'), ...readdirSync(join(REPO, 'shared')).map((n) => `shared/${n}`)]) {
+    const src = source[f] ?? readFileSync(join(REPO, f), 'utf8');
+    assert.doesNotMatch(src, /from\s+['"](vue|pinia)['"]/, `${f} imports Vue`);
+    assert.doesNotMatch(src, /\b(document|window)\./, `${f} touches the DOM`);
+  }
 });
 
-test('every relative import resolves to a page module', () => {
-  for (const m of modules) {
-    for (const target of importsOf(m)) assert.ok(target in source, `${m} imports missing ${target}`);
+test('the page has no import cycles', () => {
+  const state = new Map();
+  const visit = (f, path) => {
+    if (state.get(f) === 'done') return;
+    assert.notEqual(state.get(f), 'visiting', `import cycle: ${[...path, f].join(' -> ')}`);
+    state.set(f, 'visiting');
+    for (const next of importsOf(f)) if (source[next] !== undefined) visit(next, [...path, f]);
+    state.set(f, 'done');
+  };
+  for (const f of files) visit(f, []);
+});
+
+test('outside text becomes HTML only through the escaping renderers', () => {
+  // renderMarkdown (chat/Markdown.vue) and markSnippet are tested for
+  // injection in markdown.test.js; nothing else may produce HTML.
+  for (const f of files) {
+    assert.doesNotMatch(source[f], /\binnerHTML\b|outerHTML|insertAdjacentHTML/, `${f} writes HTML directly`);
+    for (const [, expr] of source[f].matchAll(/v-html="([^"]*)"/g)) {
+      const ok = (f === 'web/src/chat/Markdown.vue' && expr === 'html') || /^markSnippet\(/.test(expr);
+      assert.ok(ok, `${f}: v-html="${expr}" -- render through chat/Markdown.vue instead`);
+    }
   }
 });
