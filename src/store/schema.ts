@@ -421,6 +421,10 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   // scopeStart, model }; NULL when there is none. Only valid together with
   // window_seq, so the two are always written in one statement.
   ensureColumn(db, 'chats', 'checkpoint_json', 'TEXT');
+  // When an automation last finished a run in the chat that its owner has not
+  // opened since; NULL once read. Automations post into chats, so the
+  // sidebar is where their results are found.
+  ensureColumn(db, 'chats', 'unread_at', 'INTEGER');
   // The message seq a task was added at, so a rewind past it removes it. -1
   // for tasks from before this was tracked: no rewind reaches them.
   ensureColumn(db, 'tasks', 'created_seq', 'INTEGER NOT NULL DEFAULT -1');

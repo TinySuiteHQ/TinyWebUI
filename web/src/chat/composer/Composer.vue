@@ -18,7 +18,7 @@ import ToolsMenu from './ToolsMenu.vue';
 import ModelMenu from './ModelMenu.vue';
 import QueueBar from './QueueBar.vue';
 import LibraryDialog from './LibraryDialog.vue';
-import { LEVEL_NAMES } from './levels.ts';
+import { levelName } from './levels.ts';
 
 const session = useSession();
 const config = useConfig();
@@ -127,8 +127,8 @@ onBeforeUnmount(() => {
       <button id="modelBtn" ref="modelBtn" type="button" class="model-chip" :class="{ static: !picker }" :disabled="!picker"
               aria-haspopup="menu" :aria-expanded="menu === 'model'" title="Switch model" @click="toggleMenu('model')">
         <span id="status" role="status" aria-live="polite">{{ config.status }}</span>
-        <span v-if="thinkTag" class="think-tag" :class="{ off: thinkTag === 'off' }" :title="`Thinking: ${LEVEL_NAMES[thinkTag] || thinkTag}`">
-          {{ LEVEL_NAMES[thinkTag] || thinkTag }}
+        <span v-if="thinkTag" class="think-tag" :class="{ off: thinkTag === 'off' }" :title="`Thinking: ${levelName(thinkTag)}`">
+          {{ levelName(thinkTag) }}
         </span>
         <Icon class="chev" name="chevronDown" />
       </button>

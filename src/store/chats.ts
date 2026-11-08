@@ -18,9 +18,11 @@ export interface ChatRow {
   checkpoint_json: string | null;
   folder: string | null;
   tags_json: string;
+  /** An automation run finished here and the owner has not opened it since. */
+  unread_at: number | null;
 }
 
-export type ChatListing = Pick<ChatRow, 'id' | 'title' | 'updated_at' | 'epoch' | 'boundary_seq' | 'folder'>;
+export type ChatListing = Pick<ChatRow, 'id' | 'title' | 'updated_at' | 'epoch' | 'boundary_seq' | 'folder' | 'unread_at'>;
 export type ChatPatch = Partial<Pick<ChatRow, 'title' | 'epoch' | 'boundary_seq' | 'window_seq' | 'checkpoint_json'>>;
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -138,8 +140,19 @@ export class ChatStore {
   list(limit: number, userId: Scope): ChatListing[] {
     const s = scope(userId);
     return this.db.prepare(
-      `SELECT id, title, updated_at, epoch, boundary_seq, folder FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
+      `SELECT id, title, updated_at, epoch, boundary_seq, folder, unread_at FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
     ).all(...s.params, limit) as unknown as ChatListing[];
+  }
+
+  /** Unscoped: an automation run, which already holds the chat it ran in. */
+  markUnread(id: string, at = Date.now()): void {
+    this.db.prepare('UPDATE chats SET unread_at = ? WHERE id = ?').run(at, id);
+  }
+
+  /** The owner has seen it. False when the chat is not theirs (or gone). */
+  markRead(id: string, userId: Scope): boolean {
+    const s = scope(userId);
+    return this.db.prepare(`UPDATE chats SET unread_at = NULL WHERE id = ? AND ${s.sql}`).run(id, ...s.params).changes > 0;
   }
 
   organize(id: string, { folder = null, tags }: { folder?: unknown; tags?: unknown } = {}, userId: Scope): ChatRow | null {

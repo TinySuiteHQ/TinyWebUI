@@ -8,6 +8,7 @@ import type { McpHub } from '../mcp.ts';
 import type { AskOutcome, AskRequest, ToolArgs } from '../tools/types.ts';
 import { digest } from './compact.ts';
 import { EVENT } from '../../shared/events.ts';
+import { declinedResult } from '../../shared/declined.ts';
 
 /** What a tool hook is handed (see the lifecycle hooks in harness/agent.js). */
 export interface CallContext { name: string; args: ToolArgs; call: ToolCall; round: number; signal?: AbortSignal }
@@ -92,10 +93,7 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
       };
     }
     if (decision === 'deny') {
-      return {
-        block: `The user declined this call to "${name}", so it was not run. Do not retry it`
-          + ' unless they ask; continue without it, or ask them how they would like to proceed.'
-      };
+      return { block: declinedResult(name) };
     }
     return undefined;
   };

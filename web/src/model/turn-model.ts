@@ -16,6 +16,7 @@ import { EVENT, type EventType } from '../../../shared/events.ts';
 import { ORIGIN } from '../../../shared/origins.ts';
 import { splitAttachmentNotes } from '../../../shared/attachment_note.ts';
 import type { RawUsage } from '../../../shared/usage.ts';
+import { isDeclined } from '../../../shared/declined.ts';
 
 export type Doc = { id: string, filename: string, char_len: number };
 /** Freshly staged images carry `dataBase64`; replayed ones the stored `data`. */
@@ -154,8 +155,6 @@ function demote(m: Model, turn: Turn) {
   turn.answer = '';
 }
 
-// The result src/chat/tool_executor.ts gives a call the person declined.
-const DECLINED = /^The user declined this call to /;
 
 function step(turn: Turn, id: string): ToolStep | undefined {
   for (const e of turn.activity) if (e.kind === 'tool' && e.id === id) return e;
@@ -247,7 +246,7 @@ const HANDLERS: Record<EventType, Handler> = {
     s.compacted = Boolean(ev.compacted);
     // A declined call is recognised by the result the server writes for it, so
     // a reopened chat (which keeps no approval events) says so too.
-    if (DECLINED.test(s.result)) s.state = 'denied';
+    if (isDeclined(s.result)) s.state = 'denied';
     else if (s.state === 'running' || s.state === 'waiting' || s.state === 'denied') s.state = 'done';
     if (!m.replaying) s.endedAt = now;
     if (m.cur && !m.cur.answer) m.cur.status = 'Thinking…';

@@ -95,8 +95,7 @@
   backdrop-filter: blur(7px);
 }
 [data-theme="fall-fairy"] aside,
-[data-theme="fall-fairy"] #settings,
-[data-theme="fall-fairy"] .sec-bar {
+[data-theme="fall-fairy"] #settings {
   background: color-mix(in srgb, var(--panel) 95%, transparent);
   backdrop-filter: blur(12px);
 }

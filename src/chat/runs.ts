@@ -16,6 +16,10 @@ import type { ServerResponse } from 'node:http';
 const log = logger('retrieval');
 
 const RETAIN_MS = 5 * 60 * 1000;
+// A turn can go quiet for minutes (a call waiting on approval, a slow tool),
+// and proxies close a stream that idles past ~60 s. A comment line keeps it
+// open; the page reads only `data:` frames, so it never sees one.
+export const PING_MS = 20 * 1000;
 
 /** The ask_user question a run is waiting on. */
 export interface PendingQuestion {
@@ -237,8 +241,10 @@ ${instructions}` } : base;
     for (const ev of run.events.slice(from)) res.write(`data: ${JSON.stringify(ev)}\n\n`);
     if (run.done) return res.end();
     run.subs.add(res);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* closing */ } }, PING_MS);
+    ping.unref();
     // A viewer leaving is just a viewer leaving. The run keeps going.
-    res.on('close', () => run.subs.delete(res));
+    res.on('close', () => { clearInterval(ping); run.subs.delete(res); });
     return undefined;
   }
 

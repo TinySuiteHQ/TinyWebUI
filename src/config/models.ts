@@ -17,6 +17,7 @@
  * policy.js.
  */
 import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
+import { REASONING_REPLAYS, THINKING_CHOICES as SHARED_THINKING_CHOICES, THINKING_SENDS, type CacheTtl, type ThinkingChoice } from '../../shared/settings.ts';
 
 
 /**
@@ -32,7 +33,7 @@ export interface ThinkingSpec { default?: ThinkingChoice; choices?: ThinkingChoi
  * sends nothing so the provider's own default applies. Kept out of the
  * harness's ThinkingLevel: on the wire it is the absence of a level.
  */
-export type ThinkingChoice = 'provider' | ThinkingLevel;
+export type { ThinkingChoice };
 
 export interface ModelEntry {
   id: string;
@@ -52,7 +53,7 @@ export interface ModelEntry {
   maxTokens?: number | null;
   maxToolRounds?: number;
   cacheMode?: CacheMode;
-  cacheTtl?: '5m' | '1h';
+  cacheTtl?: CacheTtl;
   extraBody?: ExtraBody;
   reasoningReplay?: ReasoningReplay;
   thinking?: ThinkingSpec;
@@ -67,11 +68,11 @@ export interface CatalogConfig { model: string; models: ModelEntry[]; connectors
 /** Per-model settings that replace the global value for that model's turns. */
 export const MODEL_OVERRIDES: (keyof ModelEntry & string)[] = ['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'cacheMode', 'cacheTtl', 'extraBody', 'reasoningReplay'];
 
-/** Values of `reasoningReplay`; see reasoningReplay in harness/provider.js. */
-export const REASONING_REPLAY: ReasoningReplay[] = ['auto', 'omit', 'reasoning_content', 'reasoning_details'];
+/** Values of `reasoningReplay`; see reasoningReplay in harness/provider.ts. */
+export const REASONING_REPLAY: ReasoningReplay[] = [...REASONING_REPLAYS];
 
-export const THINKING_CHOICES: ThinkingChoice[] = ['provider', 'off', 'low', 'medium', 'high'];
-export const THINKING_SEND: ThinkingSend[] = ['auto', 'effort', 'openrouter', 'anthropic', 'switch'];
+export const THINKING_CHOICES: ThinkingChoice[] = [...SHARED_THINKING_CHOICES];
+export const THINKING_SEND: ThinkingSend[] = [...THINKING_SENDS];
 
 /** The older `tags` values, accepted so configs that list them still load. */
 export const LEGACY_TAGS = ['vision', 'reasoning', 'tools'];

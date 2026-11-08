@@ -40,7 +40,7 @@ src/
                  log.ts; audit.ts; cli.ts
 bin/tinywebui.ts the CLI entry
 shared/          imported by the server and the page (events, features, usage, origins,
-                 attachment_note); imports nothing
+                 settings value lists, attachment_note, declined); imports nothing
 web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
   src/main.ts    creates the app
   src/app/       App.vue picks sign-in, waiting room or AppShell.vue, which is the only
@@ -69,7 +69,8 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New query:** a method on the matching `src/store/<area>.ts`, called as `store.<area>.<method>()`, returning the area's row type (node:sqlite rows are untyped, so the result is cast once, there). An area that must touch another area's data calls that area (it is handed in by `store/index.ts`), never its tables.
 - **New table or column:** `store/schema.ts` — add to `SCHEMA` or the `migrate()` steps, and bump `SCHEMA_VERSION` when an existing database needs changing. Add the column to the area's row type.
 - **New secret setting** (a key, not shape): add it to `SECRET_KEYS` in `access/policy.ts` as well, so it is kept in the secrets file, redacted and fingerprinted only as set/unset.
-- **New setting:** its default in `DEFAULTS` and its type in `Config` (`config/config.ts`); DEFAULTS is typed against Config, so the two cannot drift, and `node bin/tinywebui.ts schema > docs/config.schema.json` regenerates the schema (a test compares them).
+- **New setting:** its default in `DEFAULTS` and its type in `Config` (`config/config.ts`); DEFAULTS is typed against Config, so the two cannot drift, and `node bin/tinywebui.ts schema > docs/config.schema.json` regenerates the schema (a test compares them). A setting that is a choice from a fixed list keeps its values in `shared/settings.ts`; the page's settings editor must label each one (`Record<T, string>` in `panels/settings/draft.ts`), so a new value will not compile until it has a label.
+- **Text the server writes and the page recognises** (an attachment note, a declined call): one module in `shared/` that both writes and matches it, never a copy of the wording on either side.
 - **New built-in tool:** a file in `src/tools/` exporting `xToolDef(): ToolDef` and `callX(args, deps)` (the contract is `tools/types.ts`), registered in `connectHub()` in `server.ts`, and its name added to `RESERVED` in `mcp.ts`.
 - **New stream event:** add it to `shared/events.ts` and handle it in `HANDLERS` in `web/src/model/turn-model.ts` (typed against every event, so it will not compile until handled), with a case in `test/turn-model.test.ts` if it changes what is drawn. A stored history must replay to the same model as the live stream (`historyToEvents`).
 - **New page code:** state that more than one component reads goes in a store (`web/src/stores/`), loaded by an action; components read the store and call its actions. Imports go one way: `app/` → `panels/` → `chat/` → `stores/` → `model/`, `core/` → `shared/`, `ui/` imports nothing of the app, and `model/` (the transcript reducer) imports only `shared/` (no Vue, no DOM). Stores do nothing on import: their `init()` is called from `app/AppShell.vue`. `test/page-structure.test.js` enforces this.

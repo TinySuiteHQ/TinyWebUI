@@ -5,7 +5,7 @@
  * a run already in flight from the top of its event buffer.
  */
 import { defineStore } from 'pinia';
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { api, type ApiError } from '../core/api.ts';
 import { events } from '../core/sse.ts';
 import { newId } from '../core/id.ts';
@@ -21,6 +21,12 @@ import { useUi } from './ui.ts';
 
 // 409 on a reply means another tab settled it first; its done event updates this one.
 const unless409 = (err: ApiError) => { if (err.status !== 409) throw err; };
+
+// How a stream read ended. `lost`: it stopped before its turn did -- a dropped
+// connection, a proxy cutting it -- while the run goes on server-side.
+type Outcome = { next: boolean, lost: boolean };
+// Every finished turn ends its stream with one of these.
+const ENDS_TURN = new Set<string>([EVENT.DONE, EVENT.ERROR]);
 
 type Held = { id: string, content: string };
 
@@ -65,17 +71,24 @@ export const useChat = defineStore('chat', () => {
    * Folds a server event stream into `m`. Events are applied once per frame,
    * not per token: a fast stream would otherwise re-render the answer (and
    * re-parse its markdown) hundreds of times a second.
-   * Resolves to `{ next }`: true when a queued follow-up started a new run.
+   * `next`: a queued follow-up started a new run; `lost`: see Outcome.
    */
-  async function consume(res: Response, m: Model): Promise<{ next: boolean }> {
+  async function consume(res: Response, m: Model): Promise<Outcome> {
     m.nextRun = false;
     beginTurn(m);
-    const queue: StreamEvent[] = [];
+    // Each event keeps its arrival time: a hidden tab applies them late, and
+    // the activity's timings should say how long the work took, not when the
+    // tab came back.
+    const queue: [StreamEvent, number][] = [];
     let frame = 0;
+    let timer = 0;
+    let ended = false;
+    let aborted = false;
     const flush = () => {
       frame = 0;
-      for (const ev of queue.splice(0)) {
-        applyEvent(m, ev);
+      timer = 0;
+      for (const [ev, at] of queue.splice(0)) {
+        applyEvent(m, ev, at);
         // Every stream opens with the chat's id, which the server owns: the
         // address takes it, and a chat new to the sidebar shows up there.
         if (ev.type === EVENT.CHAT && model.value === m) {
@@ -86,20 +99,26 @@ export const useChat = defineStore('chat', () => {
     };
     try {
       for await (const ev of events(res)) {
-        queue.push(ev);
-        if (!frame) frame = requestAnimationFrame(flush);
+        queue.push([ev, Date.now()]);
+        if (ENDS_TURN.has(ev.type)) ended = true;
+        // Animation frames stop in a hidden tab; a timer still runs there
+        // (throttled to about once a second, which is plenty for nobody looking).
+        if (frame || timer) continue;
+        if (document.hidden) timer = window.setTimeout(flush, 250);
+        else frame = requestAnimationFrame(flush);
       }
     } catch (err) {
       // Aborted on purpose by a navigation away: the run goes on server-side,
       // and reopening the chat picks it back up.
-      if (err.name !== 'AbortError') queue.push({ type: EVENT.ERROR, error: err.message });
+      aborted = err instanceof Error && err.name === 'AbortError';
     } finally {
       cancelAnimationFrame(frame);
+      clearTimeout(timer);
       flush();
       // Whatever prose is still standing was the answer; the work folds behind it.
       finishTurn(m);
     }
-    return { next: m.nextRun };
+    return { next: m.nextRun, lost: !ended && !aborted };
   }
 
   /** Cancels whatever stream read the view on screen owns. */
@@ -115,12 +134,31 @@ export const useChat = defineStore('chat', () => {
     loading.value = null;
   }
 
-  /** After a stream ends: follow the run a follow-up started, or take back what never went. */
-  async function afterRun(outcome: { next: boolean } | undefined, id: string | null) {
+  /**
+   * After a stream ends: follow the run a follow-up started, pick a lost one
+   * back up, or take back what never went.
+   */
+  async function afterRun(outcome: Outcome | undefined, id: string | null) {
     if (!id || chatId.value !== id) return;
     if (outcome?.next) return rejoin(id);
+    if (outcome?.lost) return recover(id);
     await reclaimQueue();
     return undefined;
+  }
+
+  let recoveries = 0;
+  /**
+   * Picks a run back up after its stream was lost. The view already holds part
+   * of the turn, and the server can only replay a run from its start, so the
+   * chat is reloaded whole: the settled part from the store, the rest from the
+   * run (or, if it finished meanwhile, all of it from the store). Spaced out,
+   * so a proxy that drops every stream at once is not hammered.
+   */
+  async function recover(id: string) {
+    const wait = Math.min(1000 * 2 ** recoveries++, 15000);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    if (chatId.value !== id || busy.value || loading.value) return;
+    await openChat(id, { url: false, resume: true });
   }
 
   /** Follows a turn already in flight, from the top of its event buffer. */
@@ -129,10 +167,11 @@ export const useChat = defineStore('chat', () => {
     viewCtrl = ctrl;
     busy.value = true;
     const m = model.value;
-    let outcome;
+    let outcome: Outcome | undefined;
     try {
       const res = await fetch(`/api/chats/${encodeURIComponent(id)}/stream?from=0`, { signal: ctrl.signal });
       if (res.ok) outcome = await consume(res, m);
+      if (outcome && !outcome.lost) recoveries = 0;
     } catch {
       // Navigating away aborts this on purpose; anything else means the
       // transcript is in the store and reopening picks it up.
@@ -164,7 +203,11 @@ export const useChat = defineStore('chat', () => {
     focusTick.value++;
   }
 
-  async function openChat(id: string, { url = 'push' as 'push' | 'replace' | false } = {}) {
+  /**
+   * `resume`: the same chat reloaded in place to pick its run back up, so what
+   * the person is doing around it (a search, staged files, the drawer) stays.
+   */
+  async function openChat(id: string, { url = 'push' as 'push' | 'replace' | false, resume = false } = {}) {
     cancelLoad();
     const ctrl = new AbortController();
     loadCtrl = ctrl;
@@ -202,9 +245,12 @@ export const useChat = defineStore('chat', () => {
     const images = (found.messages || [])
       .filter((msg: StoredMessage) => msg.role === 'user' && msg.images?.length)
       .flatMap((msg: StoredMessage) => msg.images as Img[]);
-    useAttachments().reset(found.documents || [], images);
-    useChats().clearSearch();
-    useUi().closeDrawer();
+    if (resume) useAttachments().setChatFiles(found.documents || [], images);
+    else {
+      useAttachments().reset(found.documents || [], images);
+      useChats().clearSearch();
+      useUi().closeDrawer();
+    }
     if (url) setUrl(found.id, url);
     if (found.running) rejoin(found.id);
     else reclaimQueue();
@@ -250,7 +296,7 @@ export const useChat = defineStore('chat', () => {
     const message = text || (images.length ? '(attached image)' : '(attached document)');
     addUser(m, message, null, docs, images);
 
-    let outcome;
+    let outcome: Outcome | undefined;
     try {
       // Only the new turn goes up. The server replays the rest from its own
       // copy, so a page-sized tool result crosses the wire once, not every turn.
@@ -265,6 +311,7 @@ export const useChat = defineStore('chat', () => {
         throw new Error(out.error || `status ${res.status}`);
       }
       outcome = await consume(res, m);
+      if (!outcome.lost) recoveries = 0;
       useChats().load();
     } catch (err) {
       if (err.name !== 'AbortError') modelError(m, err.message);
@@ -381,14 +428,42 @@ export const useChat = defineStore('chat', () => {
   /* ---------- wiring ---------- */
 
   function init() {
-    // A run is the server's, so the dot in the sidebar can change without this
-    // tab doing anything. Poll only while there is something to watch.
+    // An automation's result counts as seen once its chat is on screen, with
+    // the tab in view and nothing still running into it -- whichever of those
+    // comes last (opening it, coming back to the tab, the run ending).
     const chats = useChats();
+    const visible = ref(!document.hidden);
+    addEventListener('visibilitychange', () => {
+      visible.value = !document.hidden;
+      // Back on the tab: whatever ran meanwhile shows at once, not at the next poll.
+      if (visible.value) chats.load();
+    });
+    watch(() => {
+      const id = chatId.value;
+      const unread = Boolean(id && chats.chats.some((c) => c.id === id && c.unread));
+      return [id, unread && visible.value && !busy.value && !loading.value] as const;
+    }, ([id, seen], [before]) => {
+      if (!id || !seen) return;
+      chats.markRead(id);
+      // Marked while already on screen: the run happened behind this view
+      // (between polls), so the transcript is reloaded to show it.
+      if (id === before) openChat(id, { url: false, resume: true });
+    });
+
+    // A run is the server's, so the dot in the sidebar can change without this
+    // tab doing anything: polled often while something runs, and now and then
+    // otherwise, since an automation starts (and leaves a result) on its own.
+    let idlePolls = 0;
     setInterval(async () => {
-      if (!busy.value && !chats.chats.some((c) => c.running)) return;
+      const watching = busy.value || chats.chats.some((c) => c.running);
+      if (!watching && (document.hidden || ++idlePolls < 8)) return;
+      idlePolls = 0;
       await chats.load();
       const id = chatId.value;
-      if (!busy.value && id && chats.chats.some((c) => c.id === id && c.running)) rejoin(id);
+      // Running, but this view is not following it: a turn started elsewhere
+      // (an automation, another tab), or a stream that ended without saying
+      // so. Reloaded rather than rejoined, as the view may hold part of it.
+      if (!busy.value && !loading.value && id && chats.chats.some((c) => c.id === id && c.running)) openChat(id, { url: false, resume: true });
     }, 4000);
     addEventListener('popstate', () => {
       const id = new URLSearchParams(location.search).get('chat');

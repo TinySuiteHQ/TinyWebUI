@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { PRESETS, resolveModel, findOnnxFile, sha256File, resolveRetrieval, defaultModelsDir } from './retrieval/embedding.ts';
 import { createConfigSource, DEFAULTS, WRITABLE, configProblems, type ConfigOptions, type McpServers } from './config/config.ts';
 import { REASONING_REPLAY, LEGACY_TAGS, THINKING_CHOICES, THINKING_SEND } from './config/models.ts';
+import { CACHE_MODES, CACHE_TTLS } from '../shared/settings.ts';
 import {
   validateConfig, fingerprint, featuresFor, modelsFor, resolveAccess, keyClass, passwordProblem,
   FEATURES, BUILTIN_ROLES, ROLE_NAME, roleNames, STATUSES, FILE_ONLY, SECRET_KEYS, CUSTOMIZABLE
@@ -503,8 +504,8 @@ export function configSchema() {
       temperature: num,
       maxTokens: num,
       maxToolRounds: { type: 'integer', minimum: 0 },
-      cacheMode: { enum: ['auto', 'implicit', 'explicit', 'rolling', 'off'] },
-      cacheTtl: { enum: ['5m', '1h'] },
+      cacheMode: { enum: CACHE_MODES },
+      cacheTtl: { enum: CACHE_TTLS },
       reasoningReplay: { enum: REASONING_REPLAY },
       thinking: {
         type: 'object', additionalProperties: false, description: 'How hard the model thinks; several choices let people switch from the model menu.',

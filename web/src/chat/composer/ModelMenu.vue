@@ -9,7 +9,7 @@ import { api } from '../../core/api.ts';
 import { useSession } from '../../stores/session.ts';
 import { useConfig } from '../../stores/config.ts';
 import { useChat } from '../../stores/chat.ts';
-import { LEVEL_NAMES } from './levels.ts';
+import { levelName } from './levels.ts';
 
 const emit = defineEmits<{ close: [] }>();
 const session = useSession();
@@ -85,11 +85,11 @@ onMounted(async () => {
 <template>
   <div v-if="thinking" class="pop-think">
     <div class="pop-label">Thinking</div>
-    <div v-if="thinking.choices.length < 2" class="pop-note">{{ LEVEL_NAMES[thinking.default] || thinking.default }} · {{ whoSets }}</div>
+    <div v-if="thinking.choices.length < 2" class="pop-note">{{ levelName(thinking.default) }} · {{ whoSets }}</div>
     <template v-else>
       <div class="think-seg" role="radiogroup" aria-label="Thinking level">
         <button v-for="level in thinking.choices" :key="level" type="button" role="radio" :aria-checked="level === session.thinkingPick"
-                @click="session.setThinkingPick(level)">{{ LEVEL_NAMES[level] || level }}</button>
+                @click="session.setThinkingPick(level)">{{ levelName(level) }}</button>
       </div>
       <div class="pop-note">Default leaves it to the provider. Deeper thinking answers harder questions better, and takes longer. Some models ignore it.</div>
     </template>

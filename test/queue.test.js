@@ -190,3 +190,22 @@ test('an automation run is stored with its origin, and the model still gets the 
   assert.match(sent.content, /summarise the inbox/);
   assert.ok(!('origin' in sent), 'origin never reaches the model');
 });
+
+test('an automation run leaves its chat unread until its owner marks it read', async () => {
+  const id = await begin('seed', [{ text: 'ok' }]);
+  await idle(id);
+  const unread = async () => (await api('/api/chats')).data.chats.find((c) => c.id === id).unread;
+  assert.equal(await unread(), false, 'a turn someone typed is not unread');
+  const auto = (await api('/api/automations', { method: 'POST', body: {
+    chatId: id, name: 'nightly', prompt: 'p', cron: '0 9 * * *', timezone: 'UTC'
+  } })).data.automation;
+  script = [{ text: 'report' }];
+  await api(`/api/automations/${auto.id}/trigger`, { method: 'POST' });
+  await idle(id);
+  assert.equal(await unread(), true);
+  assert.equal((await api(`/api/chats/${id}`)).status, 200);
+  assert.equal(await unread(), true, 'loading the chat is not reading it');
+  assert.equal((await api(`/api/chats/${id}/read`, { method: 'POST' })).status, 200);
+  assert.equal(await unread(), false);
+  assert.equal((await api('/api/chats/nope/read', { method: 'POST' })).status, 404);
+});

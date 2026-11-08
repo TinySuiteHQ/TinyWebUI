@@ -5,22 +5,34 @@
  * a blank key field means "keep it".
  */
 import { newId } from '../../core/id.ts';
+import * as SETTING from '../../../../shared/settings.ts';
+import { LEVEL_NAMES } from '../../chat/composer/levels.ts';
 
 // /api/config is a wide shape read field by field.
 type Json = any;
 
-export const CACHE_MODES: [string, string][] = [['auto', 'Automatic'], ['implicit', 'Stable prefix only'], ['explicit', 'Anthropic cache_control'], ['rolling', 'OpenRouter automatic'], ['off', 'Off']];
-export const CACHE_TTLS: [string, string][] = [['5m', '5 minutes'], ['1h', '1 hour']];
-export const REASONING_REPLAY: [string, string][] = [['auto', 'Automatic'], ['omit', 'Never'], ['reasoning_content', 'reasoning_content'], ['reasoning_details', 'reasoning_details']];
-export const LEVELS: [string, string][] = [['provider', 'Default'], ['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
+// The values come from shared/settings.ts, which the server validates
+// against; a label is required for each (Record<T, string>), so a value added
+// there does not compile here until it reads as something.
+const options = <T extends string>(values: readonly T[], labels: Record<T, string>): [string, string][] =>
+  values.map((v) => [v, labels[v]]);
+
+export const CACHE_MODES = options(SETTING.CACHE_MODES, {
+  auto: 'Automatic', implicit: 'Stable prefix only', explicit: 'Anthropic cache_control', rolling: 'OpenRouter automatic', off: 'Off'
+});
+export const CACHE_TTLS = options(SETTING.CACHE_TTLS, { '5m': '5 minutes', '1h': '1 hour' });
+export const REASONING_REPLAY = options(SETTING.REASONING_REPLAYS, {
+  auto: 'Automatic', omit: 'Never', reasoning_content: 'reasoning_content', reasoning_details: 'reasoning_details'
+});
+export const LEVELS = options(SETTING.THINKING_CHOICES, LEVEL_NAMES);
 // How the level reaches the provider; 'auto' guesses from the endpoint (thinkingStyle in harness/provider.ts).
-export const SENDS: [string, string][] = [
-  ['auto', 'Auto: guess from the endpoint'],
-  ['effort', 'reasoning_effort (OpenAI, Gemini, Ollama, vLLM)'],
-  ['openrouter', 'reasoning.effort (OpenRouter)'],
-  ['anthropic', 'thinking budget (Anthropic)'],
-  ['switch', 'enable_thinking on/off (Qwen-style local templates)']
-];
+export const SENDS = options(SETTING.THINKING_SENDS, {
+  auto: 'Auto: guess from the endpoint',
+  effort: 'reasoning_effort (OpenAI, Gemini, Ollama, vLLM)',
+  openrouter: 'reasoning.effort (OpenRouter)',
+  anthropic: 'thinking budget (Anthropic)',
+  switch: 'enable_thinking on/off (Qwen-style local templates)'
+});
 
 /**
  * The settings a model may override. Each inherits the global value of the

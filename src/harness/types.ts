@@ -85,12 +85,9 @@ export interface ExtraBody {
   [key: string]: unknown;
 }
 
-export type CacheMode = 'auto' | 'implicit' | 'explicit' | 'rolling' | 'off';
-export type ReasoningReplay = 'auto' | 'omit' | 'reasoning_content' | 'reasoning_details';
-/** How hard a model thinks before it answers, on one scale whatever the provider calls it. */
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
-/** Which request field carries the level; see thinkingStyle in provider.ts. */
-export type ThinkingSend = 'auto' | 'effort' | 'openrouter' | 'anthropic' | 'switch';
+// The value lists live in shared/, which the page's settings editor reads too.
+import type { CacheMode, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../../shared/settings.ts';
+export type { CacheMode, ReasoningReplay, ThinkingLevel, ThinkingSend };
 
 /** The part of the config a provider request reads. */
 export interface ProviderConfig {

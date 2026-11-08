@@ -68,9 +68,14 @@ export const useAttachments = defineStore('attachments', () => {
   /** A chat switch: nothing staged or carried belongs to the next one. */
   function reset(docs: Doc[] = [], images: Img[] = []) {
     pending.value = [];
+    setChatFiles(docs, images);
+    carried = { docs: [], images: [] };
+  }
+
+  /** What the chat holds, refreshed without touching what is staged. */
+  function setChatFiles(docs: Doc[], images: Img[]) {
     chatDocuments.value = docs;
     chatImages.value = images;
-    carried = { docs: [], images: [] };
   }
 
   const remove = (a: Staged) => { pending.value = pending.value.filter((x) => x.key !== a.key); };
@@ -171,5 +176,5 @@ export const useAttachments = defineStore('attachments', () => {
     return { docs, images, failed };
   }
 
-  return { pending, chatDocuments, chatImages, reset, remove, stage, stageExisting, invalid, commit };
+  return { pending, chatDocuments, chatImages, reset, setChatFiles, remove, stage, stageExisting, invalid, commit };
 });

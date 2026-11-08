@@ -5,6 +5,7 @@ import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } f
 import { modelProblems, connectorProblems, labelFor, flattenCatalog, nestCatalog, hasEndpoint, defaultModel, REASONING_REPLAY, type Connector, type ModelEntry } from './models.ts';
 import { logger } from '../log.ts';
 import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
+import { CACHE_MODES, CACHE_TTLS, type CacheTtl } from '../../shared/settings.ts';
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
 import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
 import { serveProblems, type ServeSpec } from '../mcp_serve.ts';
@@ -47,7 +48,7 @@ export interface Config {
   extraBody: ExtraBody;
   cache: boolean;
   cacheMode: CacheMode;
-  cacheTtl: '5m' | '1h';
+  cacheTtl: CacheTtl;
   reasoningReplay: ReasoningReplay;
   dbPath: string;
   compactThreshold: number;
@@ -630,8 +631,8 @@ export class ConfigError extends Error {}
 const EXTRA_KEYS = new Set(['access']);
 const ENUMS: Record<string, readonly unknown[]> = {
   authMode: ['local', 'multiuser', 'trusted-header'],
-  cacheTtl: ['5m', '1h'],
-  cacheMode: ['auto', 'implicit', 'explicit', 'rolling', 'off'],
+  cacheTtl: CACHE_TTLS,
+  cacheMode: CACHE_MODES,
   reasoningReplay: REASONING_REPLAY,
   toolApproval: ['writes', 'all', 'off'],
 };

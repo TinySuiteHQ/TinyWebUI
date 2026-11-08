@@ -732,6 +732,13 @@ button.usage-bar-row {
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .chat-item .dot { animation: none; } }
+/* An automation's result nobody has opened yet: still, unlike the working
+   dot, and the title steps up a weight, as unread mail does. */
+.chat-item .unread {
+  width: .4375rem; height: .4375rem; flex: none; border-radius: 50%;
+  background: var(--accent); margin-left: .375rem;
+}
+.chat-item.has-unread .t { color: var(--fg); font-weight: 600; }
 
 /* Send doubles as stop while a turn runs. */
 #send.stop { background: none; color: var(--err); border-color: var(--err); }

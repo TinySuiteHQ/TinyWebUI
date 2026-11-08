@@ -31,10 +31,18 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
 
   return [
     // `running` is what puts the dot in the sidebar: a turn belongs to the
-    // server, so a chat can be working while nothing is watching it.
+    // server, so a chat can be working while nothing is watching it. `unread`:
+    // an automation finished a run there that its owner has not opened yet.
     { method: 'GET', path: /^\/api\/chats$/, feature: F, handle: ({ res, auth }) => json(res, 200, {
-      chats: store.chats.list(200, auth.userId).map((c) => ({ ...c, running: runs.isRunning(c.id) }))
+      chats: store.chats.list(200, auth.userId).map(({ unread_at, ...c }) => ({ ...c, running: runs.isRunning(c.id), unread: unread_at != null }))
     }) },
+
+    // Separate from GET /api/chats/:id, which reads a chat without meaning
+    // its owner looked at it (a page reloading a chat to pick a run back up).
+    { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/read$/, feature: F, handle: ({ res, auth, params: [id] }) => {
+      if (!store.chats.markRead(id, auth.userId)) return noChat(res);
+      return json(res, 200, { ok: true });
+    } },
 
     { method: 'GET', path: /^\/api\/chats\/([\w.-]+)$/, feature: F, handle: ({ res, auth, params: [id] }) => {
       const found = store.chats.get(id, auth.userId);

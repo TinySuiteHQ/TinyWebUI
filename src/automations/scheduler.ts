@@ -68,6 +68,8 @@ export function createScheduler(app: SchedulerApp) {
       historyFromSeq: firstSeq,
       unattended: true,
       onFinish: ({ ok, error, result }) => {
+        // Failed runs too: a result nobody asked to watch is found in the sidebar.
+        store.chats.markUnread(chat.id);
         store.automations.updateRun(runId, {
           status: ok ? 'completed' : 'failed', finishedAt: Date.now(),
           result: String(result || '').slice(0, 200000), error: error ? String(error).slice(0, 1000) : null
