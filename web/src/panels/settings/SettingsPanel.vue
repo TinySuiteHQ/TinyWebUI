@@ -17,6 +17,7 @@ import {
   type ConnectorDraft, type Draft, type ModelDraft
 } from './draft.ts';
 import SettingsHome from './SettingsHome.vue';
+import AppearanceSection from './AppearanceSection.vue';
 import ConnectorEditor from './ConnectorEditor.vue';
 import ModelEditor from './ModelEditor.vue';
 
@@ -178,7 +179,8 @@ const { isOpen, close } = usePanel(PANEL.SETTINGS, {
     // A stale "saved" would read as this visit's.
     saveMsg.value = '';
     show(readOnly.value ? 'prefs' : 'home');
-    await config.load();
+    // Themes too: an admin may have added or removed one since.
+    await Promise.all([config.load(), theme.load()]);
     reset();
     show(readOnly.value ? 'prefs' : 'home');
   },
@@ -346,15 +348,7 @@ watch(cfg, () => { if (!draft.value || snapshot() === saved) reset(); }, { immed
           <div class="pw-actions"><button class="primary" type="submit" :disabled="pwBusy">Change password</button>
             <span class="pw-msg" :class="{ ok: pwOk }" role="status">{{ pwMsg }}</span></div>
         </form>
-        <section v-if="!readOnly || mine.includes('theme')" class="set-group mine">
-          <header><h3>Appearance</h3></header>
-          <div class="set-grid">
-            <div><label for="theme">Theme</label>
-              <select id="theme" :value="theme.current" @change="theme.set(($event.target as HTMLSelectElement).value)">
-                <option value="">Default</option><option v-for="t in theme.themes" :key="t.id" :value="t.id">{{ t.name }}</option>
-              </select></div>
-          </div>
-        </section>
+        <AppearanceSection />
         <p v-if="readOnly && !mine.length && !ownPassword" class="empty">Settings are managed by your administrator.</p>
       </template>
     </div>

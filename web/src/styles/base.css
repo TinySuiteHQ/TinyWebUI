@@ -316,6 +316,14 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .pw-actions { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.75rem; }
 .pw-msg { font-size:var(--fs-meta); color:var(--err); }
 .pw-msg.ok { color:var(--tool); }
+/* Appearance: the template is a download link drawn as a button beside the real ones. */
+.theme-actions { display:flex; align-items:center; gap:.5rem .75rem; flex-wrap:wrap; margin-top:.75rem; }
+.theme-actions .btn {
+  display:inline-flex; align-items:center; min-height:var(--tap); padding:.375rem .75rem; border-radius:var(--r-sm);
+  border:1px solid var(--line); background:var(--raise); color:var(--fg); font-size:var(--fs-ui); line-height:1.2; text-decoration:none;
+}
+.theme-actions .btn:hover { border-color:var(--faint); }
+.theme-share { display:inline-flex; align-items:center; gap:.375rem; font-size:var(--fs-ui); color:var(--muted); }
 
 /* Admin: People and Roles tabs. */
 .adm-tabs { display:flex; gap:.25rem; margin-left:.5rem; }

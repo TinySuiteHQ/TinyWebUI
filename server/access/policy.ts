@@ -69,10 +69,11 @@ export const FILE_ONLY = new Set([
 ]);
 
 /**
- * Writable, but where credentials and routing live: in a multi-user
- * deployment only an admin may send these, whatever features a role has.
+ * Writable, but where credentials and routing live, or what everyone else
+ * sees (the default theme): in a multi-user deployment only an admin may send
+ * these, whatever features a role has.
  */
-export const SECRET_PATCH_KEYS = new Set(['baseUrl', 'apiKey', 'models', 'connectors']);
+export const SECRET_PATCH_KEYS = new Set(['baseUrl', 'apiKey', 'models', 'connectors', 'theme']);
 
 // Never logged, never fingerprinted as values, never sent to a browser.
 export const SECRET_KEYS = new Set(['apiKey', 'authPassword', 'sessionSecret', 'googleClientSecret']);

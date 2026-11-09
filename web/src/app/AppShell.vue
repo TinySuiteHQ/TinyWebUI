@@ -11,6 +11,7 @@ import { useChats } from '../stores/chats.ts';
 import { useChat } from '../stores/chat.ts';
 import { usePanels, PANEL } from '../stores/panels.ts';
 import { useUi } from '../stores/ui.ts';
+import { useTheme } from '../stores/theme.ts';
 import Icon from '../ui/Icon.vue';
 import Sidebar from '../chat/sidebar/Sidebar.vue';
 import ChatView from '../chat/ChatView.vue';
@@ -42,6 +43,8 @@ onMounted(() => {
   chat.init();
   chat.start();
   useChats().load();
+  // The theme the server says, over the one App painted from last visit.
+  useTheme().load();
   // Tools render read-only for non-admins, so they wait on the config.
   config.load().then(() => {
     if (config.setupNeeded) panels.openPanel(PANEL.SETTINGS);

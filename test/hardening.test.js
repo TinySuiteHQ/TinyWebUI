@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const { start } = await import('../server/server.ts');
+const { pageBuilt } = await import('../server/http.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', configFile: false, mcpServers: {}, dbPath: ':memory:',
   config: { authMode: 'local', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' } });
 test.after(() => srv.shutdown());
@@ -14,6 +15,23 @@ test('every response carries the security headers', async () => {
     assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  }
+});
+
+test('page files are revalidated by ETag, so an unchanged file costs a 304', { skip: !pageBuilt() && 'the page is not built' }, async () => {
+  for (const path of ['/', '/themes/manifest.json']) {
+    const res = await fetch(base + path);
+    await res.arrayBuffer();
+    assert.equal(res.headers.get('cache-control'), 'no-cache', path);
+    const etag = res.headers.get('etag');
+    assert.match(etag, /^"[\w-]+"$/, path);
+    // What a cache asks with; a compressing proxy weakens the tag.
+    for (const tag of [etag, `W/${etag}`, `"other", ${etag}`]) {
+      assert.equal((await fetch(base + path, { headers: { 'if-none-match': tag } })).status, 304, `${path} ${tag}`);
+    }
+    const changed = await fetch(base + path, { headers: { 'if-none-match': '"something-older"' } });
+    assert.equal(changed.status, 200, path);
+    await changed.arrayBuffer();
   }
 });
 

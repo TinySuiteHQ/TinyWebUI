@@ -41,5 +41,5 @@ export const FEATURE_GROUPS: [string, string[]][] = [
   ['Their own space', [FEATURE.AUTOMATIONS, FEATURE.STATISTICS, FEATURE.INTEGRATIONS]],
   ['Running the place', [FEATURE.SETTINGS, FEATURE.MCP, FEATURE.OVERSIGHT]]
 ];
-export const CUSTOMIZE_INFO: Record<string, [string, string]> = { theme: ['Theme', 'Pick their own look'], instructions: ['Personal instructions', 'Add their own instructions for the model'] };
+export const CUSTOMIZE_INFO: Record<string, [string, string]> = { theme: ['Theme', 'Pick or import their own look instead of the default'], instructions: ['Personal instructions', 'Add their own instructions for the model'] };
 export const featureName = (f: string) => FEATURE_INFO[f]?.[0] || f;

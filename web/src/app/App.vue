@@ -14,6 +14,7 @@ const session = useSession();
 const phase = ref<'booting' | 'login' | 'gate' | 'ready'>('booting');
 
 onMounted(async () => {
+  // Last visit's theme straight away, sign-in page included; AppShell corrects it.
   useTheme().init();
   const me = await session.loadAccess();
   if (me.user && me.user.status !== 'approved') phase.value = 'gate';

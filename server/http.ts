@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, sep } from 'node:path';
@@ -122,7 +123,17 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse): Pr
   try {
     const data = await readFile(file);
     const ext = file.slice(file.lastIndexOf('.'));
-    res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': cacheFor(rel) });
+    // no-cache alone still lets a cache keep the file; the ETag turns every
+    // revalidation of an unchanged file into a 304 instead of a full download.
+    const etag = `"${createHash('sha1').update(data).digest('base64url')}"`;
+    const headers = { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': cacheFor(rel), etag };
+    // A proxy that compresses (Cloudflare does) sends it back weakened, W/"...".
+    const asked = String(req.headers['if-none-match'] || '').split(/\s*,\s*/).map((t) => t.replace(/^W\//, ''));
+    if (asked.includes(etag)) {
+      res.writeHead(304, headers);
+      return void res.end();
+    }
+    res.writeHead(200, headers);
     res.end(data);
   } catch {
     if (rel === 'index.html' && !pageBuilt()) return json(res, 503, { error: 'the page is not built: run `npm run build:web`' });

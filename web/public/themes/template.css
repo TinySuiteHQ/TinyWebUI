@@ -1,0 +1,61 @@
+/* TinyWebUI theme: My theme
+ *
+ * Change the name on the line above, then the values below, and import this
+ * file under Settings -> My preferences -> Appearance.
+ *
+ * Every rule stays under :root[data-theme="custom"]; the page sets that while
+ * your theme is on. A theme can't @import other files or load anything with
+ * url() except data: URLs.
+ *
+ * As written, this is exactly the default look, light and dark.
+ */
+
+/* Light, and the base for dark. */
+:root[data-theme="custom"] {
+  --bg: #ffffff;      /* the page */
+  --panel: #f7f7f8;   /* sidebar, cards, code blocks */
+  --raise: #ffffff;   /* what sits above the page: the composer, dialogs */
+  --line: #e7e7ea;    /* borders and dividers */
+  --fg: #18181b;      /* text */
+  --muted: #5f5f68;   /* secondary text */
+  --faint: #75757e;   /* timestamps, hints */
+  --accent: #18181b;  /* primary buttons, links, the send button */
+  --accent-soft: color-mix(in srgb, var(--fg) 6%, transparent); /* hover and selected rows */
+  --tool: #0f6e66;    /* tool calls in the transcript */
+  --err: #b3261e;     /* errors */
+  --focus: #3b6fe0;   /* the keyboard focus ring */
+
+  /* Fonts. Only ones already on the viewer's computer: a theme can't load fonts. */
+  --sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, monospace;
+
+  /* Corner rounding, smallest to largest. */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 20px;
+  --r-bubble: 18px;
+  --r-composer: 24px;
+}
+
+/* Dark: used when the viewer's system or browser is set to dark. Delete this
+   block for a theme that looks the same either way. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="custom"] {
+    --bg: #161618;
+    --panel: #1e1e21;
+    --raise: #232327;
+    --line: #2e2e33;
+    --fg: #ececef;
+    --muted: #a6a6ae;
+    --faint: #8c8c95;
+    --accent: #ececef;
+    --tool: #5fd4c4;
+    --err: #f4a19a;
+    --focus: #86a8ff;
+  }
+}
+
+/* Anything past the variables is yours too, as long as it stays scoped:
+:root[data-theme="custom"] body { letter-spacing: .01em; }
+*/
