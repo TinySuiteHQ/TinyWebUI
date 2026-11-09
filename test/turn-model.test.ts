@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EVENT } from '../shared/events.ts';
 import {
-  createModel, applyEvent, replay, finishTurn, beginTurn, statusOf,
+  createModel, applyEvent, replay, finishTurn, beginTurn, statusOf, tally, questionSeqs, adoptSeqs,
   type Model, type StreamEvent, type StoredMessage
 } from '../web/src/model/turn_model.ts';
 
@@ -232,4 +232,39 @@ test('narration demoted after its round\'s usage goes back where it was spoken',
   ]);
   const turn = m.items[1];
   assert.deepEqual(turn?.kind === 'turn' && turn.activity.map((e) => e.kind), ['reasoning', 'note', 'usage', 'tool']);
+});
+
+/* ---------- history actions ---------- */
+
+const twoRounds: StoredMessage[] = [
+  { role: 'user', seq: 0, content: 'one', images: [{ mime: 'image/png', data: 'AA==' }] },
+  { role: 'assistant', seq: 1, content: '', tool_calls: [{ id: 'c1', function: { name: 'search', arguments: '{}' } }] },
+  { role: 'tool', seq: 2, tool_call_id: 'c1', content: 'found' },
+  { role: 'assistant', seq: 3, content: 'first answer' },
+  { role: 'user', seq: 4, content: 'two' },
+  { role: 'assistant', seq: 5, content: 'second answer' }
+];
+
+test('a stretch of the transcript is counted as questions, answers, tool calls and files', () => {
+  const m = replayed(twoRounds);
+  assert.deepEqual(tally(m.items), { questions: 2, answers: 2, toolCalls: 1, documents: 0, images: 1 });
+  assert.deepEqual(tally(m.items.slice(2)), { questions: 1, answers: 1, toolCalls: 0, documents: 0, images: 0 });
+});
+
+test('each answer is tied to the stored question above it', () => {
+  const m = replayed(twoRounds);
+  const seqs = questionSeqs(m);
+  assert.deepEqual(m.items.map((it) => seqs.get(it.id)), [0, 0, 4, 4]);
+});
+
+test('a live view takes the stored seqs afterwards, unless it disagrees on how many questions there are', () => {
+  const m = live([
+    { type: EVENT.USER, content: 'one' }, { type: EVENT.TEXT, delta: 'a' }, { type: EVENT.DONE },
+    { type: EVENT.USER, content: 'two' }, { type: EVENT.TEXT, delta: 'b' }, { type: EVENT.DONE }
+  ]);
+  assert.deepEqual([...questionSeqs(m).values()], [null, null, null, null]);
+  assert.equal(adoptSeqs(m, [0, 3, 6]), false);
+  assert.deepEqual([...questionSeqs(m).values()], [null, null, null, null], 'nothing changed');
+  assert.equal(adoptSeqs(m, [0, 3]), true);
+  assert.deepEqual([...questionSeqs(m).values()], [0, 0, 3, 3]);
 });

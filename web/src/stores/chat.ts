@@ -10,7 +10,7 @@ import { api, type ApiError } from '../core/api.ts';
 import { events } from '../core/sse.ts';
 import { newId } from '../core/id.ts';
 import {
-  createModel, applyEvent, replay, finishTurn, beginTurn, addUser, addError as modelError,
+  createModel, applyEvent, replay, finishTurn, beginTurn, addUser, addError as modelError, adoptSeqs,
   type Model, type StreamEvent, type StoredMessage, type Img, type QueueItem
 } from '../model/turn_model.ts';
 import { EVENT } from '../../../shared/events.ts';
@@ -29,6 +29,19 @@ type Outcome = { next: boolean, lost: boolean };
 const ENDS_TURN = new Set<string>([EVENT.DONE, EVENT.ERROR]);
 
 type Held = { id: string, content: string };
+
+/**
+ * A change to the history the person asked for, waiting on the dialog that
+ * says what it will do. `itemId` is the transcript item it was asked on (the
+ * question, or the answer's turn); `seq` is that question's stored seq.
+ */
+export type HistoryAction =
+  | { kind: 'edit-question', itemId: string, seq: number, payload: Record<string, unknown> }
+  | { kind: 'retry', itemId: string, seq: number, payload: Record<string, unknown> }
+  | { kind: 'delete-question', itemId: string, seq: number }
+  | { kind: 'delete-answer', itemId: string, seq: number }
+  | { kind: 'edit-answer', itemId: string, seq: number, content: string }
+  | { kind: 'fork', itemId: string, seq: number, at: 'question' | 'answer' };
 
 export const useChat = defineStore('chat', () => {
   const model = ref<Model>(createModel());
@@ -143,7 +156,23 @@ export const useChat = defineStore('chat', () => {
     if (outcome?.next) return rejoin(id);
     if (outcome?.lost) return recover(id);
     await reclaimQueue();
+    await syncSeqs(id);
     return undefined;
+  }
+
+  /**
+   * A view drawn from a live stream knows no stored seqs, and editing,
+   * deleting or forking needs them. Fetched once the turn is over (just the
+   * seqs, not the transcript); a view that disagrees with the store on how
+   * many questions there are is redrawn from it instead.
+   */
+  async function syncSeqs(id: string) {
+    const m = model.value;
+    if (busy.value || m.chat.id !== id) return;
+    let seqs: number[];
+    try { seqs = (await api.get(`/api/chats/${encodeURIComponent(id)}/questions`)).seqs || []; } catch { return; }
+    if (busy.value || model.value !== m) return;
+    if (!adoptSeqs(m, seqs)) await openChat(id, { url: false, resume: true });
   }
 
   let recoveries = 0;
@@ -193,6 +222,7 @@ export const useChat = defineStore('chat', () => {
     cancelLoad();
     leaveView();
     model.value = createModel();
+    editing.value = null;
     useAttachments().reset();
     // Starting fresh is a clear signal that browsing is done; a lingering
     // search would still sit over the sidebar, and on a phone the drawer over
@@ -241,6 +271,7 @@ export const useChat = defineStore('chat', () => {
     m.queue = found.queued || [];
     m.tasks = found.tasks || [];
     model.value = m;
+    editing.value = null;
     // No images endpoint: every image rides on the user message that attached it.
     const images = (found.messages || [])
       .filter((msg: StoredMessage) => msg.role === 'user' && msg.images?.length)
@@ -425,6 +456,70 @@ export const useChat = defineStore('chat', () => {
     await openChat(id, { url: false });
   }
 
+  /* ---------- changing the history: asked, confirmed, then done ---------- */
+
+  /** The question being edited in place (its item id): one at a time, as they share one staging lane. */
+  const editing = ref<string | null>(null);
+  function beginEdit(itemId: string | null) {
+    editing.value = itemId;
+    useAttachments().clearEdit();
+  }
+
+  /** The change the confirmation dialog is showing, if any. */
+  const action = ref<HistoryAction | null>(null);
+  let settle: ((confirmed: boolean) => void) | null = null;
+
+  /** Shows the dialog for a change; true once the person confirmed it (and it is under way), false if they backed out. */
+  function askAction(a: HistoryAction): Promise<boolean> {
+    if (busy.value || !chatId.value) return Promise.resolve(false);
+    settle?.(false);
+    action.value = a;
+    return new Promise((resolve) => { settle = resolve; });
+  }
+
+  function cancelAction() {
+    action.value = null;
+    settle?.(false);
+    settle = null;
+  }
+
+  async function confirmAction({ withFiles = false } = {}) {
+    const a = action.value;
+    const id = chatId.value;
+    action.value = null;
+    settle?.(true);
+    settle = null;
+    if (!a || !id || busy.value) return;
+    const base = `/api/chats/${encodeURIComponent(id)}/questions/${a.seq}`;
+    try {
+      if (a.kind === 'edit-question') {
+        // Files added while editing are uploaded only now, the edit being certain.
+        const attachments = useAttachments();
+        const added = await attachments.commit(id, addError, 'edit');
+        if (added.failed.length) return;
+        const payload = a.payload as { documentIds?: string[], images?: unknown[] };
+        await rewind({
+          ...a.payload,
+          documentIds: [...(payload.documentIds || []), ...added.docs.map((d) => d.id)],
+          images: [...(payload.images || []), ...added.images.map((i) => ({ mime: i.mime, data: i.dataBase64 }))]
+        });
+        return;
+      }
+      if (a.kind === 'retry') { await rewind(a.payload); return; }
+      if (a.kind === 'fork') {
+        const out = await api.post(`${base}/fork`, { at: a.at, withFiles });
+        await useChats().load();
+        await openChat(out.chat.id);
+        return;
+      }
+      if (a.kind === 'delete-question') await api.del(base);
+      else if (a.kind === 'delete-answer') await api.del(`${base}/answer`);
+      else await api.patch(`${base}/answer`, { content: a.content });
+    } catch (err) { addError(err.message); return; }
+    await openChat(id, { url: false, resume: true });
+    useChats().load();
+  }
+
   /* ---------- wiring ---------- */
 
   function init() {
@@ -482,6 +577,7 @@ export const useChat = defineStore('chat', () => {
   return {
     model, busy, loading, draft, focusTick, chatId, empty, heldHere,
     addError, newChat, openChat, send, stop, queueInput, holdInput, dropHeld, sendHeld, removeQueued,
-    approve, answer, rewind, init, start
+    approve, answer, rewind, init, start,
+    action, askAction, cancelAction, confirmAction, editing, beginEdit
   };
 });

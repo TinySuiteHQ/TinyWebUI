@@ -45,6 +45,8 @@ const ICONS: Record<string, Shape[]> = {
   edit: [p('M12 20h9'), p('M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z')],
   retry: [p('M21 12a9 9 0 1 1-3-6.7L21 8'), p('M21 3v5h-5')],
   copy: [rect(9, 9, 12, 12, 2), p('M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1')],
+  fork: [circle(6, 5, 2), circle(6, 19, 2), circle(18, 7, 2), p('M6 7v10'), p('M18 9a6 6 0 0 1-6 6H8.5')],
+  trash: [p('M3 6h18'), p('M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'), p('M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6'), p('M10 11v6M14 11v6')],
   sparkle: [p('M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z')],
   more: [circle(5, 12, 1), circle(12, 12, 1), circle(19, 12, 1)]
 };

@@ -68,7 +68,7 @@ export type Turn = {
 export type UserItem = { kind: 'user', id: string, seq: number | null, text: string, docs: Doc[], images: Img[] };
 export type Item =
   | UserItem
-  | { kind: 'automation', id: string, origin: AutomationOrigin }
+  | { kind: 'automation', id: string, seq: number | null, origin: AutomationOrigin }
   | Turn
   | { kind: 'error', id: string, text: string };
 
@@ -205,7 +205,7 @@ const HANDLERS: Record<EventType, Handler> = {
     // (a follow-up): the turn so far closes above it. A replayed history
     // carries the stored message's own seq, documents and images.
     finishTurn(m, now);
-    if (ev.origin?.type === ORIGIN.AUTOMATION) m.items.push({ kind: 'automation', id: nextId(m, 'a'), origin: ev.origin });
+    if (ev.origin?.type === ORIGIN.AUTOMATION) m.items.push({ kind: 'automation', id: nextId(m, 'a'), seq: ev.seq ?? null, origin: ev.origin });
     else addUser(m, String(ev.content ?? ''), ev.seq ?? null, ev.docs ?? [], ev.images ?? []);
   },
   [EVENT.QUEUE]: (m, ev) => { m.queue = ev.items || []; },
@@ -336,7 +336,7 @@ export function historyToEvents(messages: StoredMessage[], documents: Doc[] = []
   const out: StreamEvent[] = [];
   for (const msg of messages) {
     if (msg.role === 'user') {
-      if (msg.origin?.type === ORIGIN.AUTOMATION) { out.push({ type: EVENT.USER, origin: msg.origin }); continue; }
+      if (msg.origin?.type === ORIGIN.AUTOMATION) { out.push({ type: EVENT.USER, origin: msg.origin, seq: msg.seq ?? null }); continue; }
       // The stored text carries the model's "[Attached document ...]" notes;
       // the page shows them as chips, and edit needs them as such to drop one.
       const { text, ids } = splitAttachmentNotes(msg.content);
@@ -370,4 +370,55 @@ export function replay(m: Model, messages: StoredMessage[], documents: Doc[] = [
   for (const ev of historyToEvents(messages, documents)) applyEvent(m, ev);
   finishTurn(m);
   m.replaying = false;
+}
+
+/* ---------- history actions: what they touch, and the handles they need ---------- */
+
+/** What a stretch of the transcript holds, for saying what an action would remove or copy. */
+export type Tally = { questions: number, answers: number, toolCalls: number, documents: number, images: number };
+
+export function tally(items: readonly Item[]): Tally {
+  const out: Tally = { questions: 0, answers: 0, toolCalls: 0, documents: 0, images: 0 };
+  const docs = new Set<string>();
+  for (const it of items) {
+    if (it.kind === 'user') {
+      out.questions++;
+      for (const d of it.docs) docs.add(d.id);
+      out.images += it.images.length;
+    } else if (it.kind === 'automation') out.questions++;
+    else if (it.kind === 'turn') {
+      if (it.answer) out.answers++;
+      out.toolCalls += it.activity.filter((e) => e.kind === 'tool').length;
+    }
+  }
+  out.documents = docs.size;
+  return out;
+}
+
+/**
+ * The stored seq of the question each item belongs to, by item id: a question
+ * is its own, a turn answers the question above it. Null where it is not yet
+ * known (drawn from a live stream, before adoptSeqs).
+ */
+export function questionSeqs(m: Model): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  let current: number | null = null;
+  for (const it of m.items) {
+    if (it.kind === 'user' || it.kind === 'automation') current = it.seq;
+    out.set(it.id, current);
+  }
+  return out;
+}
+
+/**
+ * Gives a view drawn from a live stream the seqs its questions were stored
+ * at (GET /api/chats/:id/questions), in order. False, changing nothing, when
+ * the two disagree on how many there are: the view should then be redrawn
+ * from the store instead.
+ */
+export function adoptSeqs(m: Model, seqs: readonly number[]): boolean {
+  const asked = m.items.filter((it): it is Extract<Item, { kind: 'user' | 'automation' }> => it.kind === 'user' || it.kind === 'automation');
+  if (asked.length !== seqs.length) return false;
+  asked.forEach((it, i) => { it.seq = seqs[i]; });
+  return true;
 }

@@ -1,22 +1,28 @@
 <script setup lang="ts">
 /**
  * A question the person asked: a bubble, with its attachments. One that is in
- * the store (it has a seq) can be edited in place or retried; either rewinds
- * the chat to it. Removing an attachment while editing is local until saved.
+ * the store (it has a seq) can be copied, edited, asked again, forked or
+ * deleted; each change says what it will do first (HistoryDialog). Editing
+ * opens a small composer in place, with the + and the model chip: files kept,
+ * dropped or added there go along only when it is resubmitted.
  */
 import { computed, nextTick, ref } from 'vue';
 import type { UserItem, Img } from '../../model/turn_model.ts';
 import { useChat } from '../../stores/chat.ts';
 import Icon from '../../ui/Icon.vue';
+import ComposerBar from '../composer/ComposerBar.vue';
+import AttachmentTray from '../composer/AttachmentTray.vue';
 
 const props = defineProps<{ item: UserItem }>();
 const chat = useChat();
 
-const editing = ref(false);
+const editing = computed(() => chat.editing === props.item.id);
 const text = ref('');
 const keptDocs = ref(new Set<string>());
 const keptImages = ref(new Set<number>());
 const area = ref<HTMLTextAreaElement>();
+const bar = ref<InstanceType<typeof ComposerBar>>();
+const copied = ref(false);
 
 const src = (img: Img) => `data:${img.mime};base64,${img.dataBase64 ?? img.data}`;
 const rows = computed(() => Math.min(12, text.value.split('\n').length + 1));
@@ -27,37 +33,50 @@ function beginEdit() {
   text.value = props.item.text;
   keptDocs.value = new Set(props.item.docs.map((d) => d.id));
   keptImages.value = new Set(props.item.images.map((_, i) => i));
-  editing.value = true;
+  chat.beginEdit(props.item.id);
   nextTick(() => { area.value?.focus(); area.value?.setSelectionRange(text.value.length, text.value.length); });
 }
+const cancel = () => chat.beginEdit(null);
 
 function toggle<T>(set: Set<T>, v: T) { if (set.has(v)) set.delete(v); else set.add(v); }
 
-function save() {
+async function save() {
   const next = text.value.trim();
-  if (!next) return;
   const { docs, images, seq } = props.item;
-  const docsChanged = keptDocs.value.size !== docs.length;
-  const imagesChanged = keptImages.value.size !== images.length;
-  if (next === props.item.text && !docsChanged && !imagesChanged) { editing.value = false; return; }
-  chat.rewind({
-    seq,
-    message: next,
-    documentIds: docs.filter((d) => keptDocs.value.has(d.id)).map((d) => d.id),
-    removeDocumentIds: docs.filter((d) => !keptDocs.value.has(d.id)).map((d) => d.id),
-    images: images.filter((_, i) => keptImages.value.has(i)).map(wire)
+  if (!next || seq == null) return;
+  const confirmed = await chat.askAction({
+    kind: 'edit-question', itemId: props.item.id, seq,
+    payload: {
+      seq,
+      message: next,
+      documentIds: docs.filter((d) => keptDocs.value.has(d.id)).map((d) => d.id),
+      removeDocumentIds: docs.filter((d) => !keptDocs.value.has(d.id)).map((d) => d.id),
+      images: images.filter((_, i) => keptImages.value.has(i)).map(wire)
+    }
   });
+  if (confirmed) chat.beginEdit(null);
 }
 
 // Retry means "this question again", with every attachment it was asked with.
 function retry() {
   const { seq, text: message, docs, images } = props.item;
-  chat.rewind({ seq, message, documentIds: docs.map((d) => d.id), images: images.map(wire) });
+  if (seq == null) return;
+  chat.askAction({ kind: 'retry', itemId: props.item.id, seq, payload: { seq, message, documentIds: docs.map((d) => d.id), images: images.map(wire) } });
+}
+function fork() { if (props.item.seq != null) chat.askAction({ kind: 'fork', itemId: props.item.id, seq: props.item.seq, at: 'question' }); }
+function remove() { if (props.item.seq != null) chat.askAction({ kind: 'delete-question', itemId: props.item.id, seq: props.item.seq }); }
+
+async function copy() {
+  try {
+    await navigator.clipboard.writeText(props.item.text);
+    copied.value = true;
+    setTimeout(() => { copied.value = false; }, 1500);
+  } catch { /* clipboard blocked: nothing to say */ }
 }
 
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); editing.value = false; }
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); save(); }
 }
 </script>
 
@@ -70,7 +89,8 @@ function onKey(e: KeyboardEvent) {
     <div v-if="!editing && item.images.length" class="msg-images">
       <img v-for="(img, i) in item.images" :key="i" class="msg-image-thumb" :src="src(img)" :alt="img.filename || 'attached image'">
     </div>
-    <div v-if="editing" class="edit-box">
+    <form v-if="editing" class="composer composer-inline" @submit.prevent="save" @dragover.prevent @dragenter.prevent
+          @drop.prevent="bar?.stageAll($event.dataTransfer?.files)">
       <div v-if="item.docs.length || item.images.length" class="edit-artifacts">
         <button v-for="d in item.docs" :key="d.id" type="button" class="attachment-chip removable" :class="{ removed: !keptDocs.has(d.id) }"
                 title="Click to drop this document from the resubmitted message" @click="toggle(keptDocs, d.id)">{{ d.filename }}</button>
@@ -79,18 +99,27 @@ function onKey(e: KeyboardEvent) {
           <img class="attachment-thumb" :src="src(img)" :alt="img.filename || 'attached image'">
         </button>
       </div>
-      <textarea ref="area" v-model="text" :rows="rows" aria-label="Edit question" @keydown="onKey" />
-      <div class="edit-actions">
-        <button type="button" class="primary" @click="save">Save &amp; resubmit</button>
-        <button type="button" @click="editing = false">Cancel</button>
-      </div>
-    </div>
+      <AttachmentTray lane="edit" />
+      <textarea ref="area" v-model="text" class="composer-input" :rows="rows" aria-label="Edit question" @keydown="onKey" />
+      <ComposerBar ref="bar" lane="edit">
+        <button type="button" class="edit-cancel" @click="cancel">Cancel</button>
+        <button type="submit" class="primary composer-send" :disabled="!text.trim()" aria-label="Resubmit" title="Resubmit (Enter)">
+          <Icon name="send" />
+        </button>
+      </ComposerBar>
+    </form>
     <!-- One that has not been saved yet (the one being sent right now) gets no controls. -->
     <div v-if="item.seq != null && !editing" class="msg-tools">
+      <button type="button" class="icon-btn" :title="copied ? 'Copied' : 'Copy question'" aria-label="Copy question" @click="copy">
+        <Icon :name="copied ? 'check' : 'copy'" size="1rem" /></button>
       <button type="button" class="icon-btn" title="Edit: rewrite this question and answer it again" aria-label="Edit question"
               :disabled="chat.busy" @click="beginEdit"><Icon name="edit" size="1rem" /></button>
       <button type="button" class="icon-btn" title="Retry: answer this question again from scratch" aria-label="Retry question"
               :disabled="chat.busy" @click="retry"><Icon name="retry" size="1rem" /></button>
+      <button type="button" class="icon-btn" title="Fork: a new chat from here, listed under this one" aria-label="Fork from this question"
+              :disabled="chat.busy" @click="fork"><Icon name="fork" size="1rem" /></button>
+      <button type="button" class="icon-btn" title="Delete this question and everything after it" aria-label="Delete question"
+              :disabled="chat.busy" @click="remove"><Icon name="trash" size="1rem" /></button>
     </div>
   </div>
 </template>

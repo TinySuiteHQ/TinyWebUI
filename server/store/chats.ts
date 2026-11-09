@@ -2,9 +2,10 @@ import { ALL_USERS, scope, ownerOf, type Scope } from './scope.ts';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { CORPUS, type EmbeddingStore } from './embeddings.ts';
-import type { MessageStore } from './messages.ts';
+import type { MessageRow, MessageStore } from './messages.ts';
 import type { AutomationStore } from './automations.ts';
-import type { DocumentStore } from './documents.ts';
+import type { DocumentStore, PassageSettings } from './documents.ts';
+import { attachmentNote, splitAttachmentNotes } from '../../shared/attachment_note.ts';
 
 export interface ChatRow {
   id: string;
@@ -20,9 +21,12 @@ export interface ChatRow {
   tags_json: string;
   /** An automation run finished here and the owner has not opened it since. */
   unread_at: number | null;
+  /** A fork: the chat it was branched from (which may since be gone), and the last seq it copied. */
+  parent_id: string | null;
+  fork_seq: number | null;
 }
 
-export type ChatListing = Pick<ChatRow, 'id' | 'title' | 'updated_at' | 'epoch' | 'boundary_seq' | 'folder' | 'unread_at'>;
+export type ChatListing = Pick<ChatRow, 'id' | 'title' | 'updated_at' | 'epoch' | 'boundary_seq' | 'folder' | 'unread_at' | 'parent_id' | 'fork_seq'>;
 export type ChatPatch = Partial<Pick<ChatRow, 'title' | 'epoch' | 'boundary_seq' | 'window_seq' | 'checkpoint_json'>>;
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -140,7 +144,7 @@ export class ChatStore {
   list(limit: number, userId: Scope): ChatListing[] {
     const s = scope(userId);
     return this.db.prepare(
-      `SELECT id, title, updated_at, epoch, boundary_seq, folder, unread_at FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
+      `SELECT id, title, updated_at, epoch, boundary_seq, folder, unread_at, parent_id, fork_seq FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
     ).all(...s.params, limit) as unknown as ChatListing[];
   }
 
@@ -288,6 +292,100 @@ export class ChatStore {
       if (chat && chat.window_seq >= seq) this.touch(chatId, { window_seq: -1, checkpoint_json: null });
       this.db.exec('COMMIT');
       return removed;
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
+  /**
+   * The rows a question got in reply: everything after it up to the next
+   * question. Null when `questionSeq` is not a question of this chat.
+   */
+  replyTo(chatId: string, questionSeq: number): MessageRow[] | null {
+    const rows = this.messages.list(chatId);
+    const at = rows.findIndex((r) => r.seq === questionSeq);
+    if (at < 0 || rows[at].role !== 'user') return null;
+    const next = rows.findIndex((r, i) => i > at && r.role === 'user');
+    return rows.slice(at + 1, next < 0 ? rows.length : next);
+  }
+
+  /**
+   * The answer a question finally got, as the transcript shows it: the last
+   * row of its reply, when that is the model speaking with no call after it.
+   * A reply that ended on a tool call (or an error) has none to edit.
+   */
+  answerTo(chatId: string, questionSeq: number): MessageRow | null {
+    const last = this.replyTo(chatId, questionSeq)?.at(-1);
+    return last && last.role === 'assistant' && !last.tool_calls_json && last.content?.trim() ? last : null;
+  }
+
+  /**
+   * Branches a chat into a new one of the same owner: every message up to and
+   * including `throughSeq`, with the tool output behind them. `withFiles`
+   * also copies the documents and images those messages attached; without
+   * them the fork's questions keep their text but not the files, and the
+   * model is not told of documents it could not open. The fork is listed
+   * under its original (parent_id). Null when the chat is not theirs.
+   */
+  fork(chatId: string, throughSeq: number, { userId, withFiles, passageSettings }: { userId: Scope; withFiles: boolean; passageSettings?: PassageSettings }):
+    { chat: ChatRow; documentIds: string[] } | null {
+    const src = this.get(chatId, userId);
+    if (!src) return null;
+    const rows = this.messages.list(chatId).filter((r) => r.seq <= throughSeq);
+    const id = randomUUID();
+    this.db.exec('BEGIN');
+    try {
+      this.create({ id, title: `${src.title} (fork)` }, userId);
+      this.db.prepare('UPDATE chats SET parent_id = ?, fork_seq = ?, folder = ? WHERE id = ?').run(chatId, throughSeq, src.folder, id);
+      // Tool rows point at artifacts by id; each gets its own copy in the fork.
+      const artifacts = new Map<string, string | null>();
+      for (const r of rows) {
+        let artifactId: string | null = null;
+        if (r.artifact_id) {
+          if (!artifacts.has(r.artifact_id)) artifacts.set(r.artifact_id, this.messages.copyArtifact(r.artifact_id, chatId, id));
+          artifactId = artifacts.get(r.artifact_id) ?? null;
+        }
+        const content = r.role === 'user' && !withFiles && r.content != null ? splitAttachmentNotes(r.content).text : r.content;
+        this.messages.copyInto(id, r, { content, images: withFiles ? r.images_json : null, artifactId });
+      }
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+
+    const copied = new Map<string, { id: string; filename: string; char_len: number }>();
+    if (withFiles) {
+      // Documents copy in transactions of their own, so a failure here takes
+      // the half-made fork away rather than leave it pointing at the original's.
+      try {
+        for (const r of rows) {
+          if (r.role !== 'user') continue;
+          const { text, ids } = splitAttachmentNotes(r.content);
+          if (!ids.length) continue;
+          for (const old of ids) {
+            if (copied.has(old)) continue;
+            const doc = this.documents.copyToChat(old, id, userId, passageSettings);
+            if (doc) copied.set(old, doc);
+          }
+          // The notes name the fork's own copies, so read_document opens those.
+          this.messages.setContent(id, r.seq, text + ids.filter((i) => copied.has(i)).map((i) => attachmentNote(copied.get(i)!)).join(''));
+        }
+      } catch (err) { this.delete(id, userId); throw err; }
+    }
+    return { chat: this.byId(id)!, documentIds: [...copied.values()].map((d) => d.id) };
+  }
+
+  /** Rewrites a question's answer in place. False when it has none. */
+  editAnswer(chatId: string, questionSeq: number, content: string): boolean {
+    const answer = this.answerTo(chatId, questionSeq);
+    if (!answer) return false;
+    this.db.exec('BEGIN');
+    try {
+      this.messages.setContent(chatId, answer.seq, content);
+      // The model is resent the edited text from now on. A cache breakpoint
+      // pinned at or past it no longer matches what is sent; a checkpoint that
+      // summarised it describes the old text.
+      const chat = this.byId(chatId);
+      if (chat && chat.boundary_seq >= answer.seq) this.touch(chatId, { boundary_seq: -1 });
+      if (chat && chat.window_seq > answer.seq) this.touch(chatId, { window_seq: -1, checkpoint_json: null });
+      this.db.exec('COMMIT');
+      return true;
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 

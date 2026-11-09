@@ -55,8 +55,11 @@ web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
   src/stores/    Pinia: session (who, can()), config, chats (sidebar), chat (the open chat,
                  its run, queue, held input), attachments, panels (PANEL), ui, theme, admin
   src/chat/      ChatView.vue (the chat screen), Markdown.vue (also used by panels), and
-                 sidebar/ (chat list, folders, account menu), transcript/ (turns, activity, approvals,
-                 questions, outline), composer/ (input, menus, queue, attachments, tasks)
+                 sidebar/ (chat list with forks under their originals, folders, account menu),
+                 transcript/ (turns, activity, approvals, questions, outline, HistoryDialog: what an
+                 edit, delete or fork will do, counted, before it is done),
+                 composer/ (input, ComposerBar: the + and model menus, shared with a question edited
+                 in place; queue, attachments in two lanes, tasks)
   src/panels/    one folder per panel (<name>/<Name>Panel.vue plus its parts);
                  usePanel.ts; settings/ holds the settings draft (draft.ts) and its store
                  (draft_store.ts), shared by models/, Model defaults and Chat behaviour

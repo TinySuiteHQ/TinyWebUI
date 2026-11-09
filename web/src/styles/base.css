@@ -749,7 +749,7 @@ button.usage-bar-row {
 .chat-item.has-unread .t { color: var(--fg); font-weight: 600; }
 
 /* Send doubles as stop while a turn runs. */
-#send.stop { background: none; color: var(--err); border-color: var(--err); }
+.composer-send.stop, .composer-send.stop:hover { background: none; color: var(--err); border-color: var(--err); }
 
 /* Controls on a question. Kept out of the way until the question is hovered
    or focused, so the transcript still reads as a transcript. */
@@ -814,27 +814,27 @@ button.usage-bar-row {
 /* The composer: one raised card holding attach, input and send, rather than
    three loose controls on a ruled strip. The page's one shadow lives here. */
 footer { padding: .5rem .875rem 1rem; flex-shrink: 0; }
-#form {
+.composer {
   max-width: var(--measure); margin: 0 auto;
   display: flex; gap: .5rem; align-items: flex-end;
 }
-#form {
+.composer {
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-lg);
   padding: .4375rem; box-shadow: 0 6px 24px -12px color-mix(in srgb, var(--fg) 35%, transparent);
   transition: border-color .12s, box-shadow .12s;
 }
-#form:focus-within { border-color: var(--accent); }
-#input {
+.composer:focus-within { border-color: var(--accent); }
+.composer-input {
   max-height: 13rem; font-size: var(--fs-body); resize: none;
   border: 0; background: none; box-shadow: none; padding: .4375rem .25rem;
 }
-#input:focus { box-shadow: none; }
-#send { min-width: 4.5rem; border-radius: var(--r-md); }
-#attach {
+.composer-input:focus { box-shadow: none; }
+.composer-send { min-width: 4.5rem; border-radius: var(--r-md); }
+.composer-attach {
   flex: 0 0 auto; min-width: var(--tap); padding: 0; border-radius: var(--r-md);
   background: none; border: 0; color: var(--muted);
 }
-#attach:hover { background: var(--panel); color: var(--fg); }
+.composer-attach:hover { background: var(--panel); color: var(--fg); }
 .attachments {
   max-width: var(--measure); margin: 0 auto .5rem; display: flex; flex-wrap: wrap; gap: .4rem;
 }
@@ -1086,10 +1086,10 @@ footer::before {
 
 /* Composer row: attach, input and send share one height so a single-line
    message sits on one centre line; a growing message keeps them at the bottom. */
-#form { --row: 2.5rem; }
-#form > button { height: var(--row); min-height: var(--row); display: inline-flex; align-items: center; justify-content: center; }
-#input { min-height: var(--row); line-height: 1.5; padding: calc((var(--row) - 1.5em) / 2) .25rem; }
-#attach svg { display: block; }
+.composer { --row: 2.5rem; }
+.composer > button { height: var(--row); min-height: var(--row); display: inline-flex; align-items: center; justify-content: center; }
+.composer-input { min-height: var(--row); line-height: 1.5; padding: calc((var(--row) - 1.5em) / 2) .25rem; }
+.composer-attach svg { display: block; }
 
 /* ==== Layout v2: floating sidebar, no top bar, centred first message ====
    Neutral greys; the send button's ink is the only strong mark on the page. */
@@ -1205,30 +1205,30 @@ main { border-radius: var(--r-lg); }
 
 /* Composer: text on top, a tool bar under it. */
 footer { padding: .25rem 1rem 1rem; }
-#form {
+.composer {
   flex-direction: column; align-items: stretch; gap: .25rem;
   border-radius: var(--r-composer); padding: .625rem .625rem .5rem;
   background: var(--panel); border-color: var(--line);
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 30px -18px rgb(0 0 0 / 25%);
 }
-#form:focus-within { border-color: color-mix(in srgb, var(--fg) 22%, transparent); }
-#input { min-height: 2.75rem; padding: .375rem .5rem; line-height: 1.5; }
+.composer:focus-within { border-color: color-mix(in srgb, var(--fg) 22%, transparent); }
+.composer-input { min-height: 2.75rem; padding: .375rem .5rem; line-height: 1.5; }
 .composer-bar { display: flex; align-items: center; gap: .5rem; }
 .composer-bar .grow { flex: 1; }
-#form .composer-bar > button { height: 2.125rem; min-height: 0; }
-#attach {
+.composer .composer-bar > button { height: 2.125rem; min-height: 0; }
+.composer-attach {
   width: 2.125rem; min-width: 0; border-radius: var(--r-pill);
   background: var(--raise); border: 1px solid var(--line); color: var(--fg);
 }
-#attach:hover { background: var(--accent-soft); }
-#modelBtn.model-chip {
+.composer-attach:hover { background: var(--accent-soft); }
+.composer-model.model-chip {
   max-width: 22rem; padding: .25rem .625rem; border: 1px solid var(--line); border-radius: var(--r-pill);
   background: var(--raise); color: var(--fg); font: 500 var(--fs-meta)/1.4 var(--sans);
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0;
 }
 .model-chip:empty { display: none; }
-#send { width: 2.125rem; min-width: 0; padding: 0; border-radius: var(--r-pill); }
-#send.stop { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.composer-send { width: 2.125rem; min-width: 0; padding: 0; border-radius: var(--r-pill); }
+.composer-send.stop, .composer-send.stop:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 footer::before { display: none; }
 
 /* Empty chat: greeting and composer sit together in the middle of the page. */
@@ -1241,7 +1241,7 @@ main.empty-chat .right-rail,
 main.empty-chat .outline-rail { display: none; }
 main.empty-chat #hello { display: block; animation: fade var(--t-med) ease; }
 main.empty-chat footer { padding-top: 0; }
-main.empty-chat #form { max-width: 48rem; }
+main.empty-chat .composer { max-width: 48rem; }
 
 /* Panels open inside main, so they take its rounded corners too. */
 .set-panel, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
@@ -1259,35 +1259,35 @@ main.empty-chat #form { max-width: 48rem; }
 
 /* Icon-only buttons centre their glyph on both axes; a block SVG in a plain
    button otherwise sits at the left edge. */
-#send, #attach, .icon-btn {
+.composer-send, .composer-attach, .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0; line-height: 0; flex-shrink: 0;
 }
-#send .ic { width: 1.125rem; height: 1.125rem; }
+.composer-send .ic { width: 1.125rem; height: 1.125rem; }
 .composer-bar { min-height: 2.125rem; }
 .nav-item > span { line-height: 1.2; }
 
 /* ---- composer menus ---- */
-#form { position: relative; }
-#modelBtn.model-chip {
+.composer { position: relative; }
+.composer-model.model-chip {
   display: inline-flex; align-items: center; gap: .25rem; height: 2rem; min-height: 0;
   padding: 0 .5rem 0 .75rem; cursor: pointer; line-height: 1.2;
 }
-#modelBtn:hover, #modelBtn[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--line); }
-#modelBtn #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-#modelBtn .think-tag { flex: none; padding: 0 .4rem; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: .75rem; font-weight: 550; }
-#modelBtn .think-tag.off { background: none; color: var(--faint); }
-#modelBtn .think-tag[hidden] { display: none; }
+.composer-model:hover, .composer-model[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--line); }
+.composer-model .composer-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.composer-model .think-tag { flex: none; padding: 0 .4rem; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: .75rem; font-weight: 550; }
+.composer-model .think-tag.off { background: none; color: var(--faint); }
+.composer-model .think-tag[hidden] { display: none; }
 .pop-think { padding-bottom: .125rem; }
 .think-seg { display: flex; gap: 2px; margin: 0 .5rem; padding: 2px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); }
 .think-seg button { flex: 1; min-height: 1.875rem; padding: .125rem .25rem; border: 0; border-radius: calc(var(--r-sm) - 2px); background: none; color: var(--muted); font-size: var(--fs-meta); }
 .think-seg button[aria-checked="true"] { background: var(--raise); color: var(--fg); font-weight: 550; box-shadow: 0 1px 2px rgb(0 0 0 / 10%); }
 .pop-think .pop-note { padding-top: .375rem; }
-#modelBtn .chev { width: .875rem; height: .875rem; color: var(--muted); transition: transform var(--t-fast); }
-#modelBtn[aria-expanded="true"] .chev { transform: rotate(180deg); }
-#attach[aria-expanded="true"] { background: var(--accent-soft); }
-#attach .ic { transition: transform var(--t-fast); }
-#attach[aria-expanded="true"] .ic { transform: rotate(45deg); }
+.composer-model .chev { width: .875rem; height: .875rem; color: var(--muted); transition: transform var(--t-fast); }
+.composer-model[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.composer-attach[aria-expanded="true"] { background: var(--accent-soft); }
+.composer-attach .ic { transition: transform var(--t-fast); }
+.composer-attach[aria-expanded="true"] .ic { transform: rotate(45deg); }
 
 .popover {
   position: absolute; bottom: calc(100% + .5rem); z-index: 30;
@@ -1470,8 +1470,8 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
   border-color: var(--danger, #c0392b); color: var(--danger, #c0392b);
 }
 
-#modelBtn.static { cursor: default; }
-#modelBtn.static .chev { display: none; }
+.composer-model.static { cursor: default; }
+.composer-model.static .chev { display: none; }
 [hidden] { display: none !important; }
 
 /* Saved request attribution */
@@ -1694,3 +1694,36 @@ dialog#cameraDialog::backdrop { background: rgba(0, 0, 0, .62); }
 }
 .camera-frame video, .camera-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .camera-live { transform: scaleX(-1); }
+
+/* ---- Forks: listed one step in under the chat they came from ---- */
+.chat-item.fork { padding-left: calc(.625rem + var(--depth, 1) * .875rem); }
+.chat-item .fork-mark { flex: none; color: var(--faint); }
+.chat-item.active .fork-mark { color: var(--muted); }
+
+/* ---- A question edited in place: the composer, small, inside the bubble ---- */
+.msg.user.editing { width: min(85%, var(--measure)); }
+.composer.composer-inline { max-width: none; width: 100%; margin: .25rem 0 0; box-shadow: none; }
+.composer-inline .attachments { margin: 0 0 .25rem; }
+.composer-inline .composer-input { min-height: 2.5rem; max-height: 16rem; }
+.composer-inline .edit-artifacts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.composer-inline .edit-cancel { height: 2rem; min-height: 0; padding: 0 .75rem; border-radius: var(--r-pill); font-size: var(--fs-meta); }
+
+/* ---- An answer edited in place: its markdown, as written ---- */
+.answer-edit { padding-left: 0; }
+.answer-edit textarea { width: 100%; font-family: var(--mono); font-size: var(--fs-ui); line-height: 1.55; }
+.answer-edit .usage { margin-left: auto; }
+
+/* ---- What a change to the history will do, before it is done ---- */
+dialog#historyDialog {
+  width: min(28rem, calc(100vw - 2rem)); padding: 1.25rem;
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--raise); color: var(--fg);
+}
+dialog#historyDialog::backdrop { background: rgba(0, 0, 0, .62); }
+#historyForm { display: flex; flex-direction: column; gap: .5rem; }
+#historyForm h2 { margin: 0 0 .25rem; font-size: var(--fs-body); }
+#historyForm p { margin: 0; color: var(--muted); line-height: 1.5; }
+.history-files { margin: .25rem 0 0; padding: .625rem .75rem; border: 1px solid var(--line); border-radius: var(--r-sm); display: flex; flex-direction: column; gap: .375rem; }
+.history-files legend { padding: 0 .25rem; font-size: var(--fs-meta); color: var(--muted); }
+.history-note { font-size: var(--fs-meta); }
+button.primary.danger-solid, button.primary.danger-solid:hover { background: var(--err); border-color: var(--err); color: #fff; }

@@ -363,7 +363,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -439,6 +439,10 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   // opened since; NULL once read. Automations post into chats, so the
   // sidebar is where their results are found.
   ensureColumn(db, 'chats', 'unread_at', 'INTEGER');
+  // A fork: the chat it was branched from and the last message seq it copied.
+  // No foreign key: deleting the original leaves its forks standing on their own.
+  ensureColumn(db, 'chats', 'parent_id', 'TEXT');
+  ensureColumn(db, 'chats', 'fork_seq', 'INTEGER');
   // The message seq a task was added at, so a rewind past it removes it. -1
   // for tasks from before this was tracked: no rewind reaches them.
   ensureColumn(db, 'tasks', 'created_seq', 'INTEGER NOT NULL DEFAULT -1');

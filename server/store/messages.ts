@@ -127,9 +127,52 @@ export class MessageStore {
     ).all(chatId) as unknown as MessageRow[];
   }
 
+  /** The seq of every question in a chat (automation runs included), in order: no content, so it is cheap. */
+  questionSeqs(chatId: string): number[] {
+    return this.db.prepare("SELECT seq FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY seq")
+      .all(chatId).map((r) => r.seq as number);
+  }
+
   /**
-   * Writes a stub onto an already-stored tool message. This is the ONE place
-   * history is rewritten, and it happens only at an epoch boundary. `content`
+   * Copies one stored row into another chat at the same seq: a fork. Usage is
+   * left behind, since the fork cost nothing and Usage must not count a round
+   * twice. `content` and `images` are what the fork's copy holds.
+   */
+  copyInto(chatId: string, row: MessageRow, { content, images, artifactId }: { content: string | null; images: string | null; artifactId: string | null }): void {
+    this.db.prepare(`
+      INSERT INTO messages
+        (chat_id, seq, role, content, tool_call_id, tool_calls_json,
+         reasoning, reasoning_details_json, artifact_id, stub_text, usage_json,
+         model, created_at, images_json, origin_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+    `).run(
+      chatId, row.seq, row.role, content, row.tool_call_id, row.tool_calls_json,
+      row.reasoning, row.reasoning_details_json, artifactId, row.stub_text,
+      row.model, row.created_at, images, row.origin_json
+    );
+  }
+
+  /** A copy of one artifact in another chat, under a new id. */
+  copyArtifact(id: string, fromChat: string, toChat: string): string | null {
+    const a = this.getArtifact(id, fromChat);
+    if (!a) return null;
+    const copy = randomBytes(12).toString('hex');
+    this.db.prepare(`
+      INSERT INTO artifacts (id, chat_id, tool_name, args_json, content, char_len, created_at, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(copy, toChat, a.tool_name, a.args_json, a.content, a.char_len, a.created_at, a.user_id);
+    return copy;
+  }
+
+  /** Rewrites one message's text: the person editing an answer. Everything else on the row stays. */
+  setContent(chatId: string, seq: number, content: string): void {
+    this.db.prepare('UPDATE messages SET content = ? WHERE chat_id = ? AND seq = ?').run(content, chatId, seq);
+  }
+
+  /**
+   * Writes a stub onto an already-stored tool message. Apart from a person
+   * editing an answer (setContent), this is the one place history is
+   * rewritten, and it happens only at an epoch boundary. `content`
    * is left untouched so the human transcript keeps the full output -- only
    * what goes to the model shrinks.
    */

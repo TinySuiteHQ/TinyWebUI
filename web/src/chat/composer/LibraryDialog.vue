@@ -6,11 +6,12 @@
  */
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../../core/api.ts';
-import { useAttachments } from '../../stores/attachments.ts';
+import { useAttachments, type Lane } from '../../stores/attachments.ts';
 import { useChat } from '../../stores/chat.ts';
 import type { Doc } from '../../model/turn_model.ts';
 import Modal from '../../ui/Modal.vue';
 
+const props = withDefaults(defineProps<{ lane?: Lane }>(), { lane: 'compose' });
 const emit = defineEmits<{ close: [] }>();
 const attachments = useAttachments();
 const chat = useChat();
@@ -28,7 +29,7 @@ const shown = computed(() => {
 
 function toggle(id: string, on: boolean) { if (on) picked.value.add(id); else picked.value.delete(id); }
 function attach() {
-  for (const d of docs.value || []) if (picked.value.has(d.id)) attachments.stageExisting(d);
+  for (const d of docs.value || []) if (picked.value.has(d.id)) attachments.stageExisting(d, props.lane);
   emit('close');
 }
 

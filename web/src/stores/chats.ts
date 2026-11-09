@@ -6,7 +6,11 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '../core/api.ts';
 
-export type ChatRow = { id: string, title: string, folder?: string | null, updated_at: number, running?: boolean, unread?: boolean };
+export type ChatRow = {
+  id: string, title: string, folder?: string | null, updated_at: number, running?: boolean, unread?: boolean,
+  /** A fork: the chat it was branched from; the sidebar lists it under that one. */
+  parent_id?: string | null
+};
 export type SearchHit = { chatId: string, chatTitle: string, role: string, snippet: string };
 
 export const useChats = defineStore('chats', () => {

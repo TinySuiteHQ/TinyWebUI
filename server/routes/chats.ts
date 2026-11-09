@@ -1,7 +1,7 @@
 import { json, readJson, oneOf, TURN_LIMIT } from '../http.ts';
 import { LockedError } from '../config/config.ts';
 import { hasEndpoint, findEntry, takesImages, THINKING_CHOICES } from '../config/models.ts';
-import { toView } from '../store/index.ts';
+import { CORPUS, toView } from '../store/index.ts';
 import { setOverride } from '../config/approval.ts';
 import { actor } from '../access/auth_gate.ts';
 import { normalizeUpload } from '../files/images.ts';
@@ -10,6 +10,7 @@ import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 import type { ServerResponse } from 'node:http';
 import type { Auth } from '../access/auth_gate.ts';
+import type { Scope } from '../store/scope.ts';
 
 const MAX_IMAGES = 8;
 
@@ -26,10 +27,76 @@ function refusedFeature(auth: Auth, { images, documentIds }: { images?: unknown;
   return null;
 }
 
-export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig, store, toolsFor }: Pick<RouteDeps, 'config' | 'instructionsFor' | 'modelFor' | 'runs' | 'saveConfig' | 'store' | 'toolsFor'>): Route[] {
+export function chatRoutes({ config, instructionsFor, modelFor, retrieval, runs, saveConfig, store, toolsFor }: Pick<RouteDeps, 'config' | 'instructionsFor' | 'modelFor' | 'retrieval' | 'runs' | 'saveConfig' | 'store' | 'toolsFor'>): Route[] {
   const noChat = (res: ServerResponse) => json(res, 404, { error: 'no such chat' });
+  const BUSY = 'that chat is still working; stop it first';
+
+  /** The chat and the question a history change names, or the answer that refuses it. */
+  function question(res: ServerResponse, userId: Scope, id: string, seq: string): { ok: true } | { ok: false } {
+    if (!store.chats.get(id, userId)) { noChat(res); return { ok: false }; }
+    // Rewriting history under a turn that is still reading it would leave the
+    // run answering from a transcript that no longer exists.
+    if (runs.isRunning(id)) { json(res, 409, { error: BUSY }); return { ok: false }; }
+    if (!store.chats.replyTo(id, Number(seq))) { json(res, 404, { error: 'no such question in this chat' }); return { ok: false }; }
+    return { ok: true };
+  }
+  // Search reads turns live, so a removed one is gone from it at once; an
+  // edited one has its vector redone in the background.
+  const reindex = (id: string) => { retrieval.ingest(CORPUS.CHATS, id).catch(() => {}); };
 
   return [
+    // Each question's seq, so a view drawn from a live stream (which has none)
+    // can edit and delete without reloading the whole transcript.
+    { method: 'GET', path: /^\/api\/chats\/([\w.-]+)\/questions$/, feature: F, handle: ({ res, auth, params: [id] }) => {
+      if (!store.chats.get(id, auth.userId)) return noChat(res);
+      return json(res, 200, { seqs: store.messages.questionSeqs(id) });
+    } },
+
+    // A question goes with everything after it: the chat ends just before it.
+    { method: 'DELETE', path: /^\/api\/chats\/([\w.-]+)\/questions\/(\d+)$/, feature: F, handle: ({ res, auth, params: [id, seq] }) => {
+      if (!question(res, auth.userId, id, seq).ok) return;
+      store.chats.truncateFrom(id, Number(seq));
+      reindex(id);
+      return json(res, 200, { ok: true });
+    } },
+
+    // An answer goes with everything after it; the question stays, to be retried.
+    { method: 'DELETE', path: /^\/api\/chats\/([\w.-]+)\/questions\/(\d+)\/answer$/, feature: F, handle: ({ res, auth, params: [id, seq] }) => {
+      if (!question(res, auth.userId, id, seq).ok) return;
+      const reply = store.chats.replyTo(id, Number(seq)) || [];
+      if (!reply.length) return json(res, 404, { error: 'that question has no answer yet' });
+      store.chats.truncateFrom(id, reply[0].seq);
+      reindex(id);
+      return json(res, 200, { ok: true });
+    } },
+
+    // A new chat branched from this one, listed under it. `at: 'question'`
+    // ends the fork on the question (unanswered, to be asked again there);
+    // 'answer' takes its answer too. `withFiles` copies the attached
+    // documents and images as well.
+    { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/questions\/(\d+)\/fork$/, feature: F, handle: async ({ req, res, auth, params: [id, seq] }) => {
+      const { at, withFiles } = await readJson(req);
+      if (!oneOf(at, ['question', 'answer'] as const)) return json(res, 400, { error: "at must be 'question' or 'answer'" });
+      if (!question(res, auth.userId, id, seq).ok) return;
+      const reply = store.chats.replyTo(id, Number(seq)) || [];
+      const through = at === 'answer' && reply.length ? reply.at(-1)!.seq : Number(seq);
+      const out = store.chats.fork(id, through, { userId: auth.userId, withFiles: withFiles === true, passageSettings: retrieval.passageSettings() });
+      if (!out) return noChat(res);
+      for (const docId of out.documentIds) retrieval.ingest(CORPUS.DOCUMENTS, docId).catch(() => {});
+      reindex(out.chat.id);
+      return json(res, 201, { chat: { id: out.chat.id, title: out.chat.title, parent_id: out.chat.parent_id }, documents: out.documentIds.length });
+    } },
+
+    // The answer's text rewritten in place; nothing runs again.
+    { method: 'PATCH', path: /^\/api\/chats\/([\w.-]+)\/questions\/(\d+)\/answer$/, feature: F, handle: async ({ req, res, auth, params: [id, seq] }) => {
+      const { content } = await readJson(req, TURN_LIMIT);
+      if (typeof content !== 'string' || !content.trim()) return json(res, 400, { error: 'content is required' });
+      if (!question(res, auth.userId, id, seq).ok) return;
+      if (!store.chats.editAnswer(id, Number(seq), content)) return json(res, 404, { error: 'that question has no answer to edit' });
+      reindex(id);
+      return json(res, 200, { ok: true });
+    } },
+
     // `running` is what puts the dot in the sidebar: a turn belongs to the
     // server, so a chat can be working while nothing is watching it. `unread`:
     // an automation finished a run there that its owner has not opened yet.

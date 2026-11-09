@@ -85,7 +85,7 @@ function bucketOf(updatedAt: number, now: number) {
   return d.toLocaleDateString('en-US', sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
 }
 
-type Row = { kind: 'heading', key: string, label: string } | { kind: 'chat', key: string, chat: ChatRow } | { kind: 'draft', key: string };
+type Row = { kind: 'heading', key: string, label: string } | { kind: 'chat', key: string, chat: ChatRow, depth: number } | { kind: 'draft', key: string };
 type Group = { folder: string | null, rows: Row[], count: number };
 
 // The draft in progress is not a chat on the server yet: it gets a row only so
@@ -93,11 +93,49 @@ type Group = { folder: string | null, rows: Row[], count: number };
 // the moment it becomes a real chat or is abandoned.
 const isDraft = computed(() => !chat.chatId && !chat.loading);
 
+/**
+ * Forks are listed under the chat they were branched from, wherever that one
+ * is, and a fork of a fork under its own parent. One whose original is gone
+ * (or not in the list) stands on its own. A family is placed by its latest
+ * activity, so a fresh fork does not hide under an old original.
+ */
+const family = computed(() => {
+  const listed = new Set(chats.chats.map((c) => c.id));
+  const forks = new Map<string, ChatRow[]>();
+  for (const c of chats.chats) {
+    if (!c.parent_id || c.parent_id === c.id || !listed.has(c.parent_id)) continue;
+    if (!forks.has(c.parent_id)) forks.set(c.parent_id, []);
+    forks.get(c.parent_id)!.push(c); // set on the line above
+  }
+  const latest = new Map<string, number>();
+  const visit = (c: ChatRow, seen: Set<string>): number => {
+    if (latest.has(c.id)) return latest.get(c.id)!;
+    if (seen.has(c.id)) return c.updated_at; // a cycle in hand-edited data: stop
+    seen.add(c.id);
+    const t = Math.max(c.updated_at, ...(forks.get(c.id) || []).map((f) => visit(f, seen)));
+    latest.set(c.id, t);
+    return t;
+  };
+  for (const c of chats.chats) visit(c, new Set());
+  const roots = chats.chats.filter((c) => !c.parent_id || c.parent_id === c.id || !listed.has(c.parent_id))
+    .sort((a, b) => latest.get(b.id)! - latest.get(a.id)!);
+  return { forks, latest, roots };
+});
+
+/** A chat's row, then its forks' rows (newest first) one level in. */
+function withForks(c: ChatRow, depth: number, out: Row[], seen: Set<string>) {
+  if (seen.has(c.id)) return;
+  seen.add(c.id);
+  out.push({ kind: 'chat', key: c.id, chat: c, depth });
+  const kids = [...(family.value.forks.get(c.id) || [])].sort((a, b) => family.value.latest.get(b.id)! - family.value.latest.get(a.id)!);
+  for (const k of kids) withForks(k, depth + 1, out, seen);
+}
+
 const groups = computed<Group[]>(() => {
   const byFolder = new Map<string | null, (ChatRow | null)[]>();
   // A folder just created and not yet moved into is still a real folder.
   for (const name of chats.folders) byFolder.set(name, []);
-  for (const c of chats.chats) {
+  for (const c of family.value.roots) {
     const folder = (c.folder || '').trim() || null;
     if (!byFolder.has(folder)) byFolder.set(folder, []);
     byFolder.get(folder)!.push(c); // set on the line above
@@ -112,12 +150,16 @@ const groups = computed<Group[]>(() => {
     const list = byFolder.get(folder) || [];
     const rows: Row[] = [];
     let last = '';
+    let count = 0;
+    const seen = new Set<string>();
     for (const c of list) {
-      const bucket = c ? bucketOf(c.updated_at, now) : 'Today';
+      const bucket = c ? bucketOf(family.value.latest.get(c.id) ?? c.updated_at, now) : 'Today';
       if (bucket !== last) { last = bucket; rows.push({ kind: 'heading', key: `h:${folder}:${bucket}`, label: bucket }); }
-      rows.push(c ? { kind: 'chat', key: c.id, chat: c } : { kind: 'draft', key: 'draft' });
+      const before = rows.length;
+      if (c) withForks(c, 0, rows, seen); else rows.push({ kind: 'draft', key: 'draft' });
+      count += rows.length - before;
     }
-    return { folder, rows, count: list.length };
+    return { folder, rows, count };
   });
 });
 
@@ -269,7 +311,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
               <div class="chat-folder-content">
                 <template v-for="row in g.rows" :key="row.key">
                   <div v-if="row.kind === 'heading'" class="chat-date-heading">{{ row.label }}</div>
-                  <ChatItem v-else-if="row.kind === 'chat'" :chat="row.chat" :active="row.chat.id === currentId"
+                  <ChatItem v-else-if="row.kind === 'chat'" :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
                             @open="openChat(row.chat.id)" @organize="organizing = row.chat" />
                 </template>
               </div>
@@ -280,7 +322,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
                 <div v-else-if="row.kind === 'draft'" class="chat-item active draft" tabindex="0" role="button" aria-current="true">
                   <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
                 </div>
-                <ChatItem v-else :chat="row.chat" :active="row.chat.id === currentId"
+                <ChatItem v-else :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
                           @open="openChat(row.chat.id)" @organize="organizing = row.chat" />
               </template>
             </template>

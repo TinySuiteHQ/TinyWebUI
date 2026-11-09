@@ -2,6 +2,8 @@
  * Attachments: files picked, dropped or pasted are only staged in the page --
  * nothing is uploaded, extracted or written to the store until the message is
  * actually sent. Removing one before then just drops it from the list.
+ * Two lanes: the composer's, and the question being edited in place, so a
+ * file added to one never rides along with the other.
  */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
@@ -10,6 +12,9 @@ import { newId } from '../core/id.ts';
 import { FEATURE } from '../../../shared/features.ts';
 import { useSession } from './session.ts';
 import type { Doc, Img } from '../model/turn_model.ts';
+
+/** Which box a file is staged for: the composer, or the question being edited. */
+export type Lane = 'compose' | 'edit';
 
 export type Staged = {
   key: string,
@@ -60,6 +65,8 @@ export const stagedName = (a: Staged) => a.existing?.filename ?? a.file?.name ??
 
 export const useAttachments = defineStore('attachments', () => {
   const pending = ref<Staged[]>([]);
+  const editing = ref<Staged[]>([]);
+  const lane = (l: Lane) => (l === 'edit' ? editing : pending);
   /** Every document ever attached to the open chat, for the artifacts rail. */
   const chatDocuments = ref<Doc[]>([]);
   /** Every image ever attached to the open chat, derived from its history. */
@@ -71,6 +78,7 @@ export const useAttachments = defineStore('attachments', () => {
   /** A chat switch: nothing staged or carried belongs to the next one. */
   function reset(docs: Doc[] = [], images: Img[] = []) {
     pending.value = [];
+    editing.value = [];
     setChatFiles(docs, images);
     carried = { docs: [], images: [] };
   }
@@ -81,7 +89,9 @@ export const useAttachments = defineStore('attachments', () => {
     chatImages.value = images;
   }
 
-  const remove = (a: Staged) => { pending.value = pending.value.filter((x) => x.key !== a.key); };
+  const remove = (a: Staged, l: Lane = 'compose') => { lane(l).value = lane(l).value.filter((x) => x.key !== a.key); };
+  /** Leaving an edit: whatever was staged for it goes. */
+  const clearEdit = () => { editing.value = []; };
 
   /**
    * Queues a file client-side; no network yet, except that an image is
@@ -89,7 +99,7 @@ export const useAttachments = defineStore('attachments', () => {
    * real, decodable bytes instead of a HEIC/AVIF the browser cannot render.
    * Returns an error to show, if the file cannot go.
    */
-  function stage(file: File): string | null {
+  function stage(file: File, l: Lane = 'compose'): string | null {
     const session = useSession();
     const image = isImageFile(file);
     // Dropped and pasted files arrive here too, not only through the + menu.
@@ -111,20 +121,20 @@ export const useAttachments = defineStore('attachments', () => {
       entry.error = unsupportedReason(file);
       if (entry.error) problem = `attach "${file.name}": ${entry.error}`;
     }
-    pending.value.push(entry);
+    lane(l).value.push(entry);
     return problem;
   }
 
   /** Queues a document uploaded in an earlier chat; the server copies it in on send. */
-  function stageExisting(doc: Doc) {
-    if (pending.value.some((e) => e.existing?.id === doc.id)) return;
-    pending.value.push({ key: newId(), existing: doc });
+  function stageExisting(doc: Doc, l: Lane = 'compose') {
+    if (lane(l).value.some((e) => e.existing?.id === doc.id)) return;
+    lane(l).value.push({ key: newId(), existing: doc });
   }
 
   /** Staged entries that cannot be sent, once in-flight image normalizing has settled. */
-  async function invalid(): Promise<Staged[]> {
-    await Promise.all(pending.value.map((e) => e.ready));
-    return pending.value.filter((e) => e.error);
+  async function invalid(l: Lane = 'compose'): Promise<Staged[]> {
+    await Promise.all(lane(l).value.map((e) => e.ready));
+    return lane(l).value.filter((e) => e.error);
   }
 
   /**
@@ -136,12 +146,15 @@ export const useAttachments = defineStore('attachments', () => {
    * straight into the message as base64 instead of going through the
    * documents endpoint first.
    */
-  async function commit(chatId: string, onError: (text: string) => void) {
-    const staged = pending.value;
-    pending.value = [];
-    const docs = [...carried.docs];
-    const images = [...carried.images];
-    carried = { docs: [], images: [] };
+  async function commit(chatId: string, onError: (text: string) => void, l: Lane = 'compose') {
+    const staged = lane(l).value;
+    lane(l).value = [];
+    // Only the composer carries uploads over a failed send; an edit that
+    // fails is redone whole, from the files still staged on it.
+    const compose = l === 'compose';
+    const docs = compose ? [...carried.docs] : [];
+    const images = compose ? [...carried.images] : [];
+    if (compose) carried = { docs: [], images: [] };
     const failed: Staged[] = [];
     for (const entry of staged) {
       const name = stagedName(entry);
@@ -169,8 +182,8 @@ export const useAttachments = defineStore('attachments', () => {
       }
     }
     if (failed.length) {
-      carried = { docs, images };
-      pending.value = failed;
+      if (compose) carried = { docs, images };
+      lane(l).value = failed;
       return { docs: [] as Doc[], images: [] as Img[], failed };
     }
     // A file the chat already had comes back as its existing document.
@@ -179,5 +192,5 @@ export const useAttachments = defineStore('attachments', () => {
     return { docs, images, failed };
   }
 
-  return { pending, chatDocuments, chatImages, reset, setChatFiles, remove, stage, stageExisting, invalid, commit };
+  return { pending, editing, chatDocuments, chatImages, reset, setChatFiles, remove, clearEdit, stage, stageExisting, invalid, commit };
 });
