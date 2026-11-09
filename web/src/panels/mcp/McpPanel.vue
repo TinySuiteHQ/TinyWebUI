@@ -183,7 +183,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
     <div class="mcp-content">
       <!-- ---------- the config file ---------- -->
       <div v-if="page.kind === 'config'" class="sec">
-        <div class="sec-h">config file <span id="mcpPath" class="usage">{{ where }}</span></div>
+        <div class="sec-h">Config file <span id="mcpPath" class="usage">{{ where }}</span></div>
         <textarea id="mcpText" v-model="text" rows="16" spellcheck="false" :readonly="fileLocked" aria-label="MCP config" />
         <div class="row">
           <div class="usage">{{ msg }}</div>

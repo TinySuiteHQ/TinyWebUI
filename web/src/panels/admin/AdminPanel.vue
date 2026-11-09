@@ -266,9 +266,9 @@ onBeforeUnmount(stopPoll);
 </script>
 
 <template>
-  <section id="admin" :class="{ open: isOpen }" aria-label="Admin">
+  <section id="admin" :class="{ open: isOpen }" aria-label="People and roles">
     <div class="automation-head">
-      <h2>Admin</h2>
+      <h2>People &amp; roles</h2>
       <div class="adm-tabs" role="tablist" aria-label="Admin sections">
         <button type="button" role="tab" :aria-selected="tab === 'people' && !view" :class="{ active: tab === 'people' && !view }"
                 @click="tab = 'people'; view = null; stopPoll()">

@@ -56,7 +56,7 @@ function addModel() {
         <div v-if="connector.hasApiKey" class="span-2">
           <label class="inline-check"><input v-model="connector.clearKey" type="checkbox" :disabled="locked"> remove stored key</label>
         </div>
-        <div class="cfg-actions span-2"><button type="button" :disabled="locked" @click="test">Test connection</button><span class="usage">{{ msg }}</span></div>
+        <div class="cfg-actions span-2"><button type="button" :disabled="locked" @click="test">Test connection</button><span class="head-status">{{ msg }}</span></div>
       </div>
     </section>
     <div class="set-foot">

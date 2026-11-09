@@ -8,6 +8,7 @@ import { usePanel } from '../usePanel.ts';
 import { CACHE_MODES, CACHE_TTLS, REASONING_REPLAY } from './draft.ts';
 import { useSettingsDraft } from './draft_store.ts';
 import SettingsHead from './SettingsHead.vue';
+import SaveBar from './SaveBar.vue';
 
 const store = useSettingsDraft();
 const draft = computed(() => store.draft);
@@ -31,15 +32,10 @@ const { isOpen } = usePanel(PANEL.MODEL_DEFAULTS, {
         <textarea id="systemPrompt" v-model="draft.form.systemPrompt" rows="10" aria-label="System prompt" :disabled="locked('systemPrompt')" :title="why('systemPrompt')" />
       </section>
       <section class="set-group">
-        <header><h3>Sampling</h3></header>
+        <header><h3>Generation</h3></header>
         <div class="set-grid">
-          <div><label for="temperature">Temperature</label><input id="temperature" v-model="draft.form.temperature" type="number" step="0.1" min="0" max="2" placeholder="Provider default" :disabled="locked('temperature')"></div>
-          <div><label for="maxTokens">Max output tokens</label><input id="maxTokens" v-model="draft.form.maxTokens" type="number" min="1" placeholder="No limit" :disabled="locked('maxTokens')"></div>
-        </div>
-      </section>
-      <section class="set-group">
-        <header><h3>Tools</h3></header>
-        <div class="set-grid">
+          <div><label for="temperature">Temperature</label><input id="temperature" v-model="draft.form.temperature" type="number" step="0.1" min="0" max="2" placeholder="Provider default" :disabled="locked('temperature')"><small>0 to 2. Blank leaves it to the provider.</small></div>
+          <div><label for="maxTokens">Max output tokens</label><input id="maxTokens" v-model="draft.form.maxTokens" type="number" min="1" placeholder="No limit" :disabled="locked('maxTokens')"><small>Per model request. Blank: no limit.</small></div>
           <div><label for="maxToolRounds">Max tool turns</label><input id="maxToolRounds" v-model="draft.form.maxToolRounds" type="number" min="1" max="50" :disabled="locked('maxToolRounds')"><small>Tool calls allowed per reply.</small></div>
         </div>
       </section>
@@ -57,7 +53,7 @@ const { isOpen } = usePanel(PANEL.MODEL_DEFAULTS, {
         </div>
       </section>
       <section v-if="store.admin" class="set-group">
-        <header><h3>Advanced</h3><p>Rarely changed.</p></header>
+        <header><h3>Advanced</h3></header>
         <div class="set-grid">
           <div><label for="reasoningReplay">Replay past reasoning</label>
             <select id="reasoningReplay" v-model="draft.form.reasoningReplay" :disabled="locked('reasoningReplay')"><option v-for="[v, l] in REASONING_REPLAY" :key="v" :value="v">{{ l }}</option></select></div>
@@ -67,5 +63,6 @@ const { isOpen } = usePanel(PANEL.MODEL_DEFAULTS, {
         </div>
       </section>
     </div>
+    <SaveBar />
   </section>
 </template>

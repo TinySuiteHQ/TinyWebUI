@@ -63,14 +63,14 @@ export const useSettingsDraft = defineStore('settingsDraft', () => {
     const d = draft.value;
     if (!d) return;
     let patch;
-    try { patch = buildPatch(d, { admin: admin.value, lockedKeys: config.lockedKeys }); } catch (err) { saveMsg.value = `save failed (${err.message})`; return; }
-    try { await api.post('/api/config', patch); } catch (err) { saveMsg.value = `save failed (${err.message})`; return; }
+    try { patch = buildPatch(d, { admin: admin.value, lockedKeys: config.lockedKeys }); } catch (err) { saveMsg.value = `Couldn't save: ${err.message}`; return; }
+    try { await api.post('/api/config', patch); } catch (err) { saveMsg.value = `Couldn't save: ${err.message}`; return; }
     await config.load();
     await session.loadAccess(); // a changed model changes what it can take
     await config.loadTools(); // the per-tool "default" labels follow the global settings
     reset();
     // Stays open: the next section is one click away in the rail.
-    saveMsg.value = 'saved';
+    saveMsg.value = 'Saved';
   }
 
   /** Leaving the draft pages with edits asks, and on yes goes back to what is saved. */

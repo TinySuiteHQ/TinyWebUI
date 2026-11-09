@@ -73,7 +73,7 @@ export const useTheme = defineStore('theme', () => {
   /** The manifest read, which load() waits on: a pick of a built-in means nothing until it is known. */
   let builtIns: Promise<void> | null = null;
   const readBuiltIns = () => (builtIns ??= (async () => {
-    await readBuiltIns();
+    try { themes.value = (await (await fetch('/themes/manifest.json')).json()).themes || []; } catch { /* no built-ins this session */ }
   })());
 
   function themeOf(id: string): Applied | null {
@@ -144,7 +144,7 @@ export const useTheme = defineStore('theme', () => {
     if (last && typeof last.id === 'string' && typeof last.href === 'string' && THEME_HREF.test(last.href)) {
       apply({ id: last.id, href: last.href, js: typeof last.js === 'string' ? last.js : null, scope: typeof last.scope === 'string' ? last.scope : last.id });
     }
-    try { themes.value = (await (await fetch('/themes/manifest.json')).json()).themes || []; } catch { /* no built-ins this session */ }
+    await readBuiltIns();
   }
 
   /** Reads who may pick what from the server and puts the right theme on the page. */

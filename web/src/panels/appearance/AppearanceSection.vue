@@ -93,7 +93,7 @@ async function onDelete() {
 
 <template>
   <section v-if="s && (canChoose || setsDefault)" class="set-group mine">
-    <header><h3>Appearance</h3><p>Themes change as you pick them; no need to save.</p></header>
+    <header><h3>Theme</h3><p>Applies as you pick it; there is nothing to save.</p></header>
     <div class="set-grid">
       <div v-if="canChoose"><label for="theme">Theme</label>
         <select id="theme" :value="pickValue" @change="onPick">

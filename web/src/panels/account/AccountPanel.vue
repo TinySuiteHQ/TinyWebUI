@@ -89,7 +89,7 @@ const { isOpen } = usePanel(PANEL.ACCOUNT, {
         <!-- Tells password managers whose password this is; without it they guess, and fill the chat search. -->
         <input type="text" autocomplete="username" :value="session.me.user?.email || ''" hidden>
         <div class="set-grid">
-          <div class="span-2"><label for="pwCurrent">Current password</label><input id="pwCurrent" v-model="pw.current" type="password" autocomplete="current-password" required></div>
+          <div><label for="pwCurrent">Current password</label><input id="pwCurrent" v-model="pw.current" type="password" autocomplete="current-password" required></div>
           <div><label for="pwNew">New password</label><input id="pwNew" v-model="pw.next" type="password" autocomplete="new-password" :minlength="session.me.passwordMin || 0" required></div>
           <div><label for="pwConfirm">Confirm new password</label><input id="pwConfirm" v-model="pw.confirm" type="password" autocomplete="new-password" required></div>
         </div>
