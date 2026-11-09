@@ -13,6 +13,7 @@ import { useSession } from '../../stores/session.ts';
 import { useChat } from '../../stores/chat.ts';
 import { useAttachments } from '../../stores/attachments.ts';
 import { usePanels, PANEL } from '../../stores/panels.ts';
+import { useViewer } from '../../stores/viewer.ts';
 import type { Doc } from '../../model/turn_model.ts';
 import Icon from '../../ui/Icon.vue';
 import { usePanel } from '../usePanel.ts';
@@ -65,8 +66,10 @@ const imageUrl = (i: ImageRow) => `/api/images/${i.messageId}/${i.index}`;
 // Images sent before names were kept go by the chat they were sent in.
 const imageName = (i: ImageRow) => i.filename || i.chatTitle;
 
-function openDoc(d: DocRow) { window.open(`/api/documents/${d.id}/original`, '_blank', 'noopener'); }
-function openImage(i: ImageRow) { window.open(imageUrl(i), '_blank', 'noopener'); }
+// In the app's viewer, not a new tab.
+const viewer = useViewer();
+function openDoc(d: DocRow) { viewer.show([{ kind: 'document', name: d.filename, id: d.id }]); }
+function openImage(i: ImageRow) { viewer.show([{ kind: 'image', name: imageName(i), src: imageUrl(i) }]); }
 function goToChat(chatId: string) { if (panels.closeAll()) chat.openChat(chatId); }
 
 // Reusing puts the file on the composer of the chat that is open, the same
@@ -90,7 +93,7 @@ async function useImage(i: ImageRow) {
 
 <template>
   <section id="files" :class="{ open: isOpen }" aria-label="Files">
-    <div class="automation-head">
+    <div class="panel-head">
       <h2>Files</h2>
       <div v-if="canDocs && canImages" class="files-tabs" role="tablist" aria-label="Kind of file">
         <button type="button" role="tab" :aria-selected="tab === 'documents'" :class="{ active: tab === 'documents' }" @click="tab = 'documents'">

@@ -190,7 +190,7 @@ main.empty-chat #hello { display: block; }
 .chat-item.active { font-weight: 550; }
 
 /* A long transcript needs breathing room under the floating menu button. */
-.automation-head > .set-back:first-child { margin-left: -.375rem; }
+.panel-head > .set-back:first-child { margin-left: -.375rem; }
 
 @media (max-width: 720px) {
   .jump-latest { bottom: 7.5rem; }

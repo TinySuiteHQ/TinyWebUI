@@ -80,6 +80,16 @@ export const SECURITY_HEADERS = {
 };
 
 /**
+ * The two framing headers, loosened for a file the page itself frames (a PDF
+ * in the file viewer): its own origin may embed it, nobody else. Set over
+ * SECURITY_HEADERS on that one response only.
+ */
+export const FRAMEABLE_HEADERS = {
+  'content-security-policy': SECURITY_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
+  'x-frame-options': 'SAMEORIGIN'
+};
+
+/**
  * Cross-site request forgery guard for anything that changes state. Browsers
  * send Origin on cross-origin POSTs (and Sec-Fetch-Site on all modern ones),
  * so a page elsewhere cannot drive this one with the user's cookies, the

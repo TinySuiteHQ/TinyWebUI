@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The signed-in app: the sidebar, the chat, the Files and MCP pages over it, and the
- * settings dialog. The only wiring: stores do nothing until this starts them.
+ * The signed-in app: the sidebar, the chat, the Files and MCP pages over it, the
+ * settings dialog, and the file viewer over everything. The only wiring: stores do nothing until this starts them.
  */
 import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
 import { FEATURE } from '../../../shared/features.ts';
@@ -18,12 +18,15 @@ import ChatView from '../chat/ChatView.vue';
 import FilesPanel from '../panels/files/FilesPanel.vue';
 import McpPanel from '../panels/mcp/McpPanel.vue';
 import SettingsDialog from './SettingsDialog.vue';
+import FileViewer from '../chat/viewer/FileViewer.vue';
+import { useViewer } from '../stores/viewer.ts';
 
 const session = useSession();
 const config = useConfig();
 const chat = useChat();
 const panels = usePanels();
 const ui = useUi();
+const viewer = useViewer();
 
 // What themes may read (web/public/themes/README.md): the app's state as
 // attributes on <html>, never its internals.
@@ -73,5 +76,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
       <ChatView />
     </main>
     <SettingsDialog />
+    <FileViewer v-if="viewer.current" />
   </div>
 </template>

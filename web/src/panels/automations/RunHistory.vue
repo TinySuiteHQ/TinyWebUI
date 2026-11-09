@@ -5,12 +5,11 @@ import { api } from '../../core/api.ts';
 import Markdown from '../../chat/Markdown.vue';
 import { absolute } from './cron.ts';
 import StatusPill from './StatusPill.vue';
+import type { AutomationRunView } from '../../../../shared/api.ts';
 
 const props = defineProps<{ automationId: string }>();
 const emit = defineEmits<{ openChat: [] }>();
-// Runs from /api/automations/:id/runs, read field by field.
-type Json = any;
-const runs = ref<Json[] | null>(null);
+const runs = ref<AutomationRunView[] | null>(null);
 const error = ref('');
 
 async function onToggle(e: Event) {
@@ -21,7 +20,7 @@ async function onToggle(e: Event) {
     error.value = `Couldn't load runs (${err.message}).`;
   }
 }
-const took = (r: Json) => `${Math.max(1, Math.round((r.finished_at - r.started_at) / 1000))}s`;
+const took = (r: AutomationRunView) => `${Math.max(1, Math.round(((r.finished_at ?? 0) - (r.started_at ?? 0)) / 1000))}s`;
 </script>
 
 <template>

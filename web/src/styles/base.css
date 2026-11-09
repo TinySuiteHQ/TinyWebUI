@@ -435,16 +435,16 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .admin-msg-body pre { white-space:pre-wrap; }
 .admin-msg details { font-size:var(--fs-meta); }
 .admin-msg details pre { max-height:20rem; overflow:auto; white-space:pre-wrap; }
-.statistics-content { overflow:auto; padding:1rem; }
-.statistics-block { width:min(52rem,100%); margin:0 auto 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
-.statistics-block .sec-h { margin-bottom:.75rem; }
-.automation-head { height: var(--bar); flex: 0 0 auto; padding: 0 1rem; display:flex; align-items:center; gap:.75rem; border-bottom:1px solid var(--line); }
-.automation-head h2 { margin:0; font-size:var(--fs-ui); }
-.automation-head button { margin-left:auto; }
-.automation-head button + button { margin-left:0; }
-.automation-head button[hidden] + button { margin-left:auto; }
+.panel-scroll { overflow:auto; padding:1rem; }
+.panel-card { width:min(52rem,100%); margin:0 auto 1.5rem; padding:1rem; border:1px solid var(--line); border-radius:var(--r-md); background:var(--raise); }
+.panel-card .sec-h { margin-bottom:.75rem; }
+.panel-head { height: var(--bar); flex: 0 0 auto; padding: 0 1rem; display:flex; align-items:center; gap:.75rem; border-bottom:1px solid var(--line); }
+.panel-head h2 { margin:0; font-size:var(--fs-ui); }
+.panel-head button { margin-left:auto; }
+.panel-head button + button { margin-left:0; }
+.panel-head button[hidden] + button { margin-left:auto; }
 /* A panel's header: title, then a status or a filter pushed to the right. */
-.automation-head select { width:auto; max-width:min(16rem, 45%); margin-left:auto; }
+.panel-head select { width:auto; max-width:min(16rem, 45%); margin-left:auto; }
 .head-status { margin-left:auto; color:var(--muted); font-size:var(--fs-meta); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cfg-actions .head-status { margin-left:0; white-space:normal; }
 .set-lede { width:min(46rem, 100%); margin:.75rem 0 1rem; color:var(--muted); font-size:var(--fs-meta); }
@@ -1079,7 +1079,7 @@ button { transition: background var(--t-fast), border-color var(--t-fast), color
 
 /* Softer structure: dividers recede to half strength so the content, not the
    grid, carries the page. */
-header, #side .head, .search-row, .automation-head, .sec + .sec {
+header, #side .head, .search-row, .panel-head, .sec + .sec {
   border-color: color-mix(in srgb, var(--line) 55%, transparent);
 }
 header { background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(8px); }
@@ -1211,7 +1211,7 @@ button.nav-item:active:not(:disabled) { transform: none; }
    so every header in the column leaves room for it. */
 #menu { position: absolute; top: .25rem; left: .25rem; z-index: 11; display: inline-flex; }
 #shell.side-collapsed #side { display: none; }
-.automation-head { padding-left: 3rem; }
+.panel-head { padding-left: 3rem; }
 #log { padding-top: 2.75rem; }
 
 /* Full-column panels clip themselves to this frame. Keeping main overflow
@@ -1463,8 +1463,8 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .set-divider p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
 /* A person without the settings feature sees only what an admin lets them customise. */
 .set-divider.set-first { margin-top: 0; padding-top: 0; border-top: 0; }
-.automation-head .set-back { margin-left: -.375rem; }
-.automation-head .set-back + h2 { margin-right: auto; }
+.panel-head .set-back { margin-left: -.375rem; }
+.panel-head .set-back + h2 { margin-right: auto; }
 
 /* Home: one card per endpoint with its models under it: a list of things, so cards. */
 .set-group.ep-card { margin: 0 0 .75rem; padding: 1rem 1.25rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise); }
@@ -1715,7 +1715,7 @@ dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
 .settings-rail-group:first-child { padding-top: .25rem; }
 .settings-body { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 /* No sidebar toggle over these headers here, so they need no room for one. */
-#settingsDialog .automation-head { padding-left: 1rem; }
+#settingsDialog .panel-head { padding-left: 1rem; }
 @media (max-width: 720px) {
   dialog#settingsDialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
   .settings-frame { flex-direction: column; }
@@ -1810,3 +1810,46 @@ dialog.modal-card::backdrop { background: rgb(0 0 0 / 45%); backdrop-filter: blu
 .chat-folder-heading:hover .folder-options, .chat-folder-heading:focus-within .folder-options { opacity: 1; }
 .chat-folder-heading .folder-options:hover, .chat-folder-heading .folder-options:focus-visible { color: var(--fg); }
 @media (hover: none) { .chat-folder-heading .folder-options { opacity: 1; } }
+
+/* ---- File viewer: an image or file over the app, never a new tab ---- */
+dialog.viewer {
+  width: min(72rem, calc(100vw - 2rem)); height: min(56rem, calc(100dvh - 2rem));
+  max-width: none; max-height: none; padding: 0; overflow: hidden;
+  border: 1px solid var(--line); background: var(--raise); color: var(--fg);
+}
+dialog.viewer::backdrop { background: rgb(0 0 0 / 70%); }
+.viewer-frame { position: relative; display: flex; flex-direction: column; height: 100%; outline: none; }
+.viewer-head { flex: none; display: flex; align-items: center; gap: .625rem; padding: .5rem .5rem .5rem 1rem; border-bottom: 1px solid var(--line); }
+.viewer-head > .ic { flex: none; color: var(--muted); }
+.viewer-head h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-ui); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-count { flex: none; color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.viewer-download {
+  flex: none; display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 .75rem;
+  border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--fg); font-size: var(--fs-small); text-decoration: none;
+}
+.viewer-download:hover { border-color: var(--faint); }
+.viewer-body { flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
+.viewer-body.is-image { display: grid; place-items: center; padding: 1rem; background: color-mix(in srgb, var(--fg) 6%, var(--bg)); }
+.viewer-body.is-image img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-xs); }
+.viewer-body.is-pdf { overflow: hidden; }
+.viewer-body iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.viewer-doc { max-width: var(--measure); margin: 0 auto; padding: 1.5rem; }
+.viewer-text { margin: 0; padding: 1.25rem 1.5rem; font-family: var(--mono); font-size: var(--fs-small); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.viewer-note { margin: 0; padding: .625rem 1.5rem; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-meta); background: var(--raise); }
+.viewer-msg { margin: 0; padding: 2rem 1.5rem; color: var(--muted); font-size: var(--fs-ui); }
+.viewer-msg[role="alert"] { color: var(--err); }
+/* Previous and next sit over the body's edges, clear of the header. */
+.viewer-nav {
+  position: absolute; top: 50%; translate: 0 -50%; width: 2.5rem; height: 3.5rem; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: color-mix(in srgb, var(--raise) 88%, transparent);
+  color: var(--fg); font-size: 1.75rem; line-height: 1;
+}
+.viewer-nav.prev { left: .75rem; }
+.viewer-nav.next { right: .75rem; }
+@media (max-width: 720px) {
+  dialog.viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  .viewer-nav { top: auto; bottom: .75rem; translate: none; }
+}
+/* A thumbnail in a message is a button that opens the viewer. */
+.msg-image-btn { padding: 0; border: 0; background: none; border-radius: var(--r-sm); cursor: zoom-in; min-height: 0; }
+.msg-image-btn:active:not(:disabled) { transform: none; }

@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, chmodSync, renameSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { FILE_ONLY, mergeAccess, keyClass, validateConfig, type AccessConfig } from '../access/policy.ts';
@@ -122,6 +122,24 @@ export interface ConfigOptions {
 }
 
 const log = logger('config');
+
+/**
+ * Replaces a file whole or not at all: written beside it, then renamed over
+ * it, so a crash or a full disk mid-write leaves the old file rather than half
+ * a new one (a truncated config would stop the server from starting). Owner
+ * only (0600), like every file here that can hold a key.
+ */
+export function writeAtomic(path: string, text: string): void {
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text, { mode: 0o600 });
+    if (process.platform !== 'win32') chmodSync(tmp, 0o600);
+    renameSync(tmp, path);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
+}
 
 const CONFIG_FILE = process.env.TINYWEBUI_CONFIG
   ? resolve(process.env.TINYWEBUI_CONFIG)
@@ -439,8 +457,7 @@ export function createConfigSource(opts: ConfigOptions = {}) {
   };
   const writeFile = (obj: Record<string, any>) => {
     if (!file) { memory = obj; return; }
-    if (existsSync(file) && process.platform !== 'win32') chmodSync(file, 0o600);
-    writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
+    writeAtomic(file, JSON.stringify(obj, null, 2) + '\n');
   };
   const readSecrets = (): Secrets => {
     if (!secretsFile) return structuredClone(memorySecrets);
@@ -453,8 +470,7 @@ export function createConfigSource(opts: ConfigOptions = {}) {
   };
   const writeSecrets = (secrets: Secrets) => {
     if (!secretsFile) { memorySecrets = secrets; return; }
-    if (existsSync(secretsFile) && process.platform !== 'win32') chmodSync(secretsFile, 0o600);
-    writeFileSync(secretsFile, JSON.stringify(secrets, null, 2) + '\n', { mode: 0o600 });
+    writeAtomic(secretsFile, JSON.stringify(secrets, null, 2) + '\n');
   };
 
   // Not validated here: startup, reload and save check the result with configProblems().
@@ -618,8 +634,7 @@ export function createConfigSource(opts: ConfigOptions = {}) {
       const identity = [...serversIdentityProblems(servers), ...Object.entries(servers).flatMap(([n, s]) => serveProblems(n, s))];
       if (identity.length) throw new Error(identity.join('; '));
       // Headers and env here can hold tokens: owner-only, like the config.
-      if (existsSync(mcpFile) && process.platform !== 'win32') chmodSync(mcpFile, 0o600);
-      writeFileSync(mcpFile, text.endsWith('\n') ? text : text + '\n', { mode: 0o600 });
+      writeAtomic(mcpFile, text.endsWith('\n') ? text : text + '\n');
       return servers;
     },
   };

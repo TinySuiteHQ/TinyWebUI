@@ -15,7 +15,7 @@ const { isOpen } = usePanel(PANEL.APPEARANCE, { onOpen: () => theme.load() });
 
 <template>
   <section :id="PANEL.APPEARANCE" class="set-panel" :class="{ open: isOpen }" aria-label="Appearance">
-    <div class="automation-head"><h2>Appearance</h2></div>
+    <div class="panel-head"><h2>Appearance</h2></div>
     <div class="settings-content">
       <AppearanceSection />
       <p v-if="!shown" class="empty">Your administrator sets the theme.</p>

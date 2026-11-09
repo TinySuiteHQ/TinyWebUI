@@ -75,7 +75,7 @@ const { isOpen } = usePanel(PANEL.ACCOUNT, {
 
 <template>
   <section :id="PANEL.ACCOUNT" class="set-panel" :class="{ open: isOpen }" aria-label="Account">
-    <div class="automation-head"><h2>Account</h2></div>
+    <div class="panel-head"><h2>Account</h2></div>
     <div class="settings-content">
       <form v-if="canInstruct" class="set-group mine" @submit.prevent="saveInstructions">
         <header><h3>My instructions</h3><p>Added after the system prompt on your chats only.</p></header>

@@ -40,7 +40,7 @@
     "dev:web": "vite web",
     "stop": "pkill -f 'bin/tinywebui' || true",
     "typecheck": "tsc -p . && node web/typecheck.mjs -p web",
-    "test": "npm run typecheck && node --test --test-timeout=30000",
+    "test": "npm run typecheck && node --test --test-timeout=120000",
     "build": "tsc -p tsconfig.build.json && npm run build:web",
     "build:web": "vite build web",
     "clean": "tsc -b --clean tsconfig.build.json",

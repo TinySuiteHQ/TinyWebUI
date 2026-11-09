@@ -1,4 +1,4 @@
-import { json, readJson, UPLOAD_LIMIT } from '../http.ts';
+import { json, readJson, UPLOAD_LIMIT, FRAMEABLE_HEADERS } from '../http.ts';
 import { extractText, servingFor } from '../files/documents.ts';
 import { logger } from '../log.ts';
 import { FEATURE } from '../../shared/features.ts';
@@ -90,7 +90,7 @@ export function documentRoutes({ retrieval, store }: Pick<RouteDeps, 'retrieval'
       return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
     } },
 
-    // What the "artifacts" rail opens: the file as uploaded. Documents stored
+    // What the file viewer opens: the file as uploaded. Documents stored
     // before originals were kept fall back to their extracted text.
     { method: 'GET', path: /^\/api\/documents\/([\w.-]+)\/original$/, feature: FEATURE.ATTACHMENTS, handle: ({ res, auth, params: [id] }) => {
       const doc = store.documents.get(id, auth.userId);
@@ -100,6 +100,8 @@ export function documentRoutes({ retrieval, store }: Pick<RouteDeps, 'retrieval'
       const body = original || Buffer.from(doc.content, 'utf8');
       // The name is percent-encoded (RFC 5987) so it cannot break out of the header.
       const disposition = `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(doc.filename)}`;
+      // The page's file viewer frames a PDF; every other response may not be framed at all.
+      if (inline) for (const [k, v] of Object.entries(FRAMEABLE_HEADERS)) res.setHeader(k, v);
       res.writeHead(200, { 'content-type': type, 'content-length': body.length, 'content-disposition': disposition });
       res.end(body);
     } }

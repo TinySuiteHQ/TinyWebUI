@@ -1,6 +1,7 @@
 import { scope, ownerOf, type Scope } from './scope.ts';
 import { randomBytes } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
+import type { AutomationRunView, AutomationView } from '../../shared/api.ts';
 
 interface AutomationRow {
   id: string; user_id: string | null; chat_id: string; chat_title: string;
@@ -26,7 +27,7 @@ export interface RunPatch { status?: string; startedAt?: number; finishedAt?: nu
 // One area of the Store; see index.js.
 
 // Takes the row as node:sqlite returns it, so callers can map query results straight through.
-function automationView(r: unknown) {
+function automationView(r: unknown): AutomationView {
   const row = r as AutomationRow;
   return {
     id: row.id, userId: row.user_id, chatId: row.chat_id, chatTitle: row.chat_title,
@@ -134,11 +135,11 @@ export class AutomationStore {
     }, owner);
   }
 
-  listRuns(automationId: string, userId: Scope, limit = 10): Omit<RunRow, 'automation_id'>[] | null {
+  listRuns(automationId: string, userId: Scope, limit = 10): AutomationRunView[] | null {
     const owned = this.get(automationId,userId);
     if (!owned) return null;
     return this.db.prepare('SELECT id,scheduled_at,started_at,finished_at,status,trigger_type,result,error FROM automation_runs WHERE automation_id=? ORDER BY scheduled_at DESC LIMIT ?')
-      .all(automationId,Math.min(50,Math.max(1,limit))) as unknown as Omit<RunRow, 'automation_id'>[];
+      .all(automationId,Math.min(50,Math.max(1,limit))) as unknown as AutomationRunView[];
   }
 
   recoverRuns(now = Date.now()) {

@@ -166,7 +166,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
 
 <template>
   <section :id="PANEL.MCP" :class="{ open: isOpen }" aria-label="MCP">
-    <div class="automation-head">
+    <div class="panel-head">
       <button v-if="page.kind !== 'list'" type="button" class="set-back" @click="back">‹ All</button>
       <h2>{{ title }}</h2>
       <template v-if="manages && page.kind === 'list'">
@@ -210,7 +210,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
         <p v-if="error" class="int-error">{{ error }}</p>
         <p v-if="manages && config.toolsError" class="int-error">{{ config.toolsError }}</p>
 
-        <section v-if="builtins.length" class="statistics-block int-card">
+        <section v-if="builtins.length" class="panel-card int-card">
           <div class="int-head">
             <span class="int-icon">{{ ICON.tool }}</span>
             <div class="int-name"><h3>Built-in tools</h3><span class="usage">part of TinyWebUI · never ask before running</span></div>
@@ -227,7 +227,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
         <p v-if="loading && !cards.length" class="empty">Loading…</p>
         <p v-else-if="!cards.length" class="empty">No MCP servers are connected.{{ manages ? ' Add one in the config file.' : '' }}</p>
 
-        <section v-for="c in cards" :key="c.name" class="statistics-block int-card">
+        <section v-for="c in cards" :key="c.name" class="panel-card int-card">
           <div class="int-head">
             <img v-if="logo(c.info?.manifest)" class="int-icon int-logo" :src="logo(c.info?.manifest) ?? undefined" alt="">
             <span v-else class="int-icon">{{ ICON[c.info?.manifest?.icon] || ICON.plug }}</span>

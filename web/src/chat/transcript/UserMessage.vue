@@ -9,6 +9,7 @@
 import { computed, nextTick, ref } from 'vue';
 import type { UserItem, Img } from '../../model/turn_model.ts';
 import { useChat } from '../../stores/chat.ts';
+import { useViewer, type ViewItem } from '../../stores/viewer.ts';
 import Icon from '../../ui/Icon.vue';
 import ComposerBar from '../composer/ComposerBar.vue';
 import AttachmentTray from '../composer/AttachmentTray.vue';
@@ -27,6 +28,15 @@ const copied = ref(false);
 const src = (img: Img) => `data:${img.mime};base64,${img.dataBase64 ?? img.data}`;
 const rows = computed(() => Math.min(12, text.value.split('\n').length + 1));
 const wire = (img: Img) => ({ mime: img.mime, data: img.data ?? img.dataBase64 });
+// Opens in the app's viewer, stepping through this message's other files.
+const viewer = useViewer();
+function view(kind: 'doc' | 'image', i: number) {
+  const list: ViewItem[] = [
+    ...props.item.docs.map((d): ViewItem => ({ kind: 'document', name: d.filename, id: d.id })),
+    ...props.item.images.map((img, j): ViewItem => ({ kind: 'image', name: img.filename || `image ${j + 1}`, src: src(img) }))
+  ];
+  viewer.show(list, kind === 'doc' ? i : props.item.docs.length + i);
+}
 
 function beginEdit() {
   if (chat.busy) return;
@@ -84,10 +94,12 @@ function onKey(e: KeyboardEvent) {
   <div class="msg user" :class="{ editing }" :data-item="item.id">
     <div v-if="!editing" class="body">{{ item.text }}</div>
     <div v-if="!editing && item.docs.length" class="msg-attachments">
-      <span v-for="d in item.docs" :key="d.id" class="attachment-chip"><Icon name="doc" size=".9rem" />{{ d.filename }}</span>
+      <button v-for="(d, i) in item.docs" :key="d.id" type="button" class="attachment-chip" :title="`Open ${d.filename}`" @click="view('doc', i)"><Icon name="doc" size=".9rem" />{{ d.filename }}</button>
     </div>
     <div v-if="!editing && item.images.length" class="msg-images">
-      <img v-for="(img, i) in item.images" :key="i" class="msg-image-thumb" :src="src(img)" :alt="img.filename || 'attached image'">
+      <button v-for="(img, i) in item.images" :key="i" type="button" class="msg-image-btn" :title="`Open ${img.filename || 'image'}`" @click="view('image', i)">
+        <img class="msg-image-thumb" :src="src(img)" :alt="img.filename || 'attached image'">
+      </button>
     </div>
     <form v-if="editing" class="composer composer-inline" @submit.prevent="save" @dragover.prevent @dragenter.prevent
           @drop.prevent="bar?.stageAll($event.dataTransfer?.files)">

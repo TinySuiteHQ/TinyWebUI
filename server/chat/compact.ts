@@ -1,5 +1,5 @@
 import { textMap, EXPAND_CONTEXT } from '../tools/context_tool.ts';
-import type { Store } from '../store/index.ts';
+import { parseColumn, type Store } from '../store/index.ts';
 import type { ChatRow } from '../store/chats.ts';
 import type { MessageRow } from '../store/messages.ts';
 import type { ChatMessage, Content, ToolCall, ToolDef } from '../harness/types.ts';
@@ -178,7 +178,7 @@ export function applyEpoch(store: Store, chat: ChatRow, plan: EpochPlan, { minSa
   for (const row of plan.targets) {
     if (row.role !== 'tool') {
       drops.push(row.id);
-      saved += JSON.parse(row.images_json!).length * IMAGE_CHARS;
+      saved += (parseColumn(row.images_json, 'array')?.length || 0) * IMAGE_CHARS;
       continue;
     }
     const artifact = store.messages.getArtifact(row.artifact_id!, chat.id);

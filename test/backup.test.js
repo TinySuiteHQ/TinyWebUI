@@ -136,3 +136,30 @@ test('a file that is not a valid backup is refused whole, writing nothing', asyn
   assert.match(r.data.error, /out of order/);
   assert.equal((await bob('/api/chats')).data.chats.length, before, 'the valid chat before it was not written either');
 });
+
+test('tool calls the provider could not be sent back are refused; usage is cleaned, its attribution kept', async () => {
+  const bad = structuredClone(backup);
+  bad.chats = [bad.chats.find((c) => c.id === 'c-tools')];
+  bad.chats[0].id = 'shape-1';
+  bad.chats[0].messages[1].toolCalls = [{ oops: true }];
+  const refused = await bob('/api/import', { method: 'POST', body: bad });
+  assert.equal(refused.status, 400);
+  assert.match(refused.data.error, /toolCalls/);
+
+  const odd = structuredClone(backup);
+  odd.chats = [odd.chats.find((c) => c.id === 'c-tools')];
+  odd.chats[0].id = 'shape-2';
+  odd.chats[0].title = 'Odd usage';
+  odd.automations = [];
+  const attribution = { version: 1, estimator: 'chars/4', cached: null,
+    input: { total: 50, source: 'provider', buckets: [{ category: 'operator', source: 'estimated', tokens: 40 }, { category: 'bad', tokens: 'x' }] },
+    output: { total: 8, source: 'provider', buckets: [] } };
+  odd.chats[0].messages[3].usage = { prompt_tokens: 50, completion_tokens: 'eight', note: { deep: { deeper: 1 } }, attribution };
+  const r = await carol('/api/import', { method: 'POST', body: odd });
+  assert.equal(r.status, 200);
+  const id = (await carol('/api/chats')).data.chats.find((c) => c.title === 'Odd usage').id;
+  const usage = (await carol(`/api/chats/${id}`)).data.messages[3].usage;
+  assert.equal(usage.prompt_tokens, 50);
+  assert.equal(usage.completion_tokens, undefined, 'not a number, so not kept');
+  assert.deepEqual(usage.attribution.input.buckets, [{ category: 'operator', source: 'estimated', tokens: 40 }]);
+});

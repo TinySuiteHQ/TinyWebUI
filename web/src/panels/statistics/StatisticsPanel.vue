@@ -250,7 +250,7 @@ const { isOpen } = usePanel(PANEL.STATISTICS, { onOpen: load });
 
 <template>
   <section id="statistics" :class="{ open: isOpen }" aria-label="Usage">
-    <div class="automation-head">
+    <div class="panel-head">
       <h2>Usage</h2>
       <select v-if="filterOptions.length > 1" id="statisticsFilter" v-model="selected" aria-label="Show usage for" @change="load">
         <option v-for="o in filterOptions" :key="o.value" :value="o.value">{{ o.text }}</option>

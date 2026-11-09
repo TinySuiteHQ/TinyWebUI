@@ -2,9 +2,10 @@
 
 A small, dependency-light chat UI for any OpenAI-compatible endpoint, with MCP tools. The server is strict TypeScript that Node runs as is (Node ≥ 22.18 to develop), so there is no build step for it in development; only the npm package is compiled, to JS that runs on Node ≥ 22.13. The page is Vue 3 + TypeScript in `web/`, compiled by Vite into `dist/`, which the server serves and the npm package ships prebuilt.
 
+[docs/architecture.md](docs/architecture.md) explains how the pieces fit, what the app survives, and why the pages look the way they do.
 ## Commands
 
-- `npm test` — type check (`tsc` for the server, `vue-tsc` for the page via `web/typecheck.mjs`), then the whole suite, ~15 s (`node --test`, 30 s limit per test). Run it after every change. `npm run typecheck` is the first half alone.
+- `npm test` — type check (`tsc` for the server, `vue-tsc` for the page via `web/typecheck.mjs`), then the whole suite, ~15 s on a fast disk (`node --test`, 120 s limit per test, which counts a whole file run in its own process: the files that start servers can need it on a slow disk such as WSL's `/mnt/c`). Run it after every change. `npm run typecheck` is the first half alone.
 - `npm run dev` + `npm run dev:web` — the API on :7777 (restarts on `server/`, `bin/`, `shared/` changes) and the page on http://127.0.0.1:5173 with hot reload, proxying `/api` to :7777. The server's CSP applies only to the built page, so check a page change once with `npm run build:web` too.
 - `npm run build:web` — the page into `dist/` (gitignored). The server warns at startup, and `/` answers 503, while it is missing.
 - `npm start` — builds the page, then the server on http://127.0.0.1:7777 with `tinywebui.config.json` and `tinywebui.db`. It first runs `models ensure`, which fetches the embedding model once; if that fails the server starts lexical (`TINYWEBUI_RETRIEVAL_MODE=lexical` skips it).
@@ -36,34 +37,40 @@ server/
                  tool-approval rules
   automations/   scheduled runs: automation.ts (tool + cron), scheduler.ts
   files/         turning uploads into text or wire-safe images
+  transfer/      export and import: backup.ts (the backup file, its checks, import that
+                 never overwrites), markdown.ts (a chat as a readable transcript)
   mcp.ts         MCP client hub; mcp_serve.ts starts local servers over HTTP (serve);
                  log.ts; audit.ts; cli.ts
 bin/tinywebui.ts the CLI entry
 shared/          imported by the server and the page (events, features, usage, origins,
-                 settings value lists, attachment_note, declined); imports nothing
+                 settings value lists, attachment_note, declined, api: typed reply shapes);
+                 imports nothing
 web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
   src/main.ts    creates the app
   src/app/       App.vue picks sign-in, waiting room or AppShell.vue, which is the only
                  wiring (it starts the stores, and holds the Files and MCP pages);
                  SettingsDialog.vue holds the settings sections, grouped: You (account,
-                 appearance, automations, usage) and Workspace (models, model defaults,
+                 appearance, automations, usage, data) and Workspace (models, model defaults,
                  chat behaviour, people & roles)
   src/core/      api.ts (every JSON call), sse.ts (stream frames), md.ts (the only HTML
                  from outside text), id.ts
   src/model/     turn_model.ts: the transcript as data, a pure reducer over stream events
                  (history replays through it too); no Vue, no DOM
   src/stores/    Pinia: session (who, can()), config, chats (sidebar), chat (the open chat,
-                 its run, queue, held input), attachments, panels (PANEL), ui, theme, admin
+                 its run, queue, held input), attachments, panels (PANEL), ui, theme, admin,
+                 viewer (the file open in the in-app viewer)
   src/chat/      ChatView.vue (the chat screen), Markdown.vue (also used by panels), and
                  sidebar/ (chat list with forks under their originals, folders and their
                  instructions (FolderDialog), account menu),
                  transcript/ (turns, activity, approvals, questions, outline, HistoryDialog: what an
                  edit, delete or fork will do, counted, before it is done),
                  composer/ (input, ComposerBar: the + and model menus, shared with a question edited
-                 in place; queue, attachments in two lanes, tasks)
+                 in place; queue, attachments in two lanes, tasks),
+                 viewer/ (FileViewer: images and files over the app, never a new tab)
   src/panels/    one folder per panel (<name>/<Name>Panel.vue plus its parts);
                  usePanel.ts; settings/ holds the settings draft (draft.ts) and its store
-                 (draft_store.ts), shared by models/, Model defaults and Chat behaviour
+                 (draft_store.ts), shared by models/, Model defaults and Chat behaviour;
+                 SettingsHead (title, status) and SaveBar (the one Save, shown while unsaved)
   src/auth/      sign-in and the waiting room
   src/ui/        app-agnostic widgets: Icon, Modal (given a title, the small dialogs' card),
                  Popover, Switch
@@ -85,13 +92,28 @@ test/            node:test suites; evals/ model-behaviour evals (costs API calls
 - **New stream event:** add it to `shared/events.ts` and handle it in `HANDLERS` in `web/src/model/turn_model.ts` (typed against every event, so it will not compile until handled), with a case in `test/turn-model.test.ts` if it changes what is drawn. A stored history must replay to the same model as the live stream (`historyToEvents`).
 - **New page code:** state that more than one component reads goes in a store (`web/src/stores/`), loaded by an action; components read the store and call its actions. Imports go one way: `app/` → `panels/` → `chat/` → `stores/` → `model/`, `core/` → `shared/`, `ui/` imports nothing of the app, and `model/` (the transcript reducer) imports only `shared/` (no Vue, no DOM). Stores do nothing on import: their `init()` is called from `app/AppShell.vue`. `test/page-structure.test.js` enforces this. The one store outside `stores/` is the settings draft's (`panels/settings/draft_store.ts`): it is built on `draft.ts`, which `stores/` may not import.
 - **New panel:** a folder `web/src/panels/<name>/` whose `<Name>Panel.vue` root is `<section :id="name" :class="{ open: isOpen }">`, using `usePanel(PANEL.X, hooks)`; add the name to `PANEL` in `stores/panels.ts`. Anything that configures the app is a settings section: add it to `SETTINGS_SECTIONS` there, with its group (`you` for what is the person's own, `workspace` for what runs the place) and when it is visible; that is its place in the dialog's rail. Add the component to `app/SettingsDialog.vue`, with `class="set-panel"` on its root. A page edits the shared settings draft through `useSettingsDraft()` (and joins `DRAFT_PANELS`) or saves on its own; never both for the same key. Only a page about the person's own content or their connected tools (Files, MCP) goes in the main column, in `app/AppShell.vue` with a nav item in `chat/sidebar/Sidebar.vue`; keep the sidebar otherwise about chats. Open or close a panel only through the panels store.
-- **New API call from the page:** `api.get/post/patch/del` from `web/src/core/api.ts`; it throws on non-2xx with the server's `error` text and `.status`. Only the streaming endpoints use `fetch` directly (`stores/chat.ts`).
+- **New API call from the page:** `api.get/post/patch/del` from `web/src/core/api.ts`; it throws on non-2xx with the server's `error` text and `.status`; `api.download` saves a file the server sends. Only the streaming endpoints use `fetch` directly (`stores/chat.ts`). A reply both sides read gets its shape in `shared/api.ts`: the route builds it `satisfies` that type and the page reads it typed, so a renamed field fails to compile instead of showing blank. Areas not yet moved there read loose JSON (`type Json = any`); move an area's replies there when you next work on it.
+- **Opening a file or image:** `useViewer().show(items, index)` (`stores/viewer.ts`); never `window.open` or a new tab.
 - **New feature flag:** `shared/features.ts`; the page asks `useSession().can(FEATURE.X)`.
 - **New searchable corpus:** implement the `Corpus` adapter in `retrieval/retrieval.ts`, add its name to `CORPUS` in `store/embeddings.ts`, and `register()` it.
+
+## Page design
+
+See [docs/architecture.md](docs/architecture.md#page-design) for the why; the rules:
+
+- **A settings page is a column of rows, one setting per row:** inside a `.set-group` (a plain section with an `<h3>` and at most one line of `<p>` under it, split from the next by a rule, never a card of its own), each `.set-grid > div` is `<label for>` (what it is), the control, then `<small>` (what it does, its unit or its range). CSS puts label and help on the left and the control on the right, and stacks them on a phone. Give it `span-2` only when the control needs the width (a prompt, JSON, a row of checkboxes). Units go in the label (`Question timeout (seconds)`), not in a placeholder.
+- **Group by what people come to change**, most-changed first; a group of one setting belongs in a neighbouring group. Rarely changed settings go last, in their own group.
+- **Save appears only when there is something to save:** draft pages use `SaveBar` at the foot (Discard, Save changes); the header (`SettingsHead`) shows only status. A page that saves on its own (Account, Appearance, Data) puts its button under the fields it saves. A Save sends only the keys that changed (`changedPatch` in `draft.ts`) and names a clash before overwriting someone else's change.
+- **Every panel has one header:** `.panel-head` (title left, one filter or primary action right). Report pages (Usage) use `.page-body` > `.page-section`, a `.kpis` row for totals, `.data-table` for numbers (right-aligned, tabular figures) and `.kv` for label/value lists; diagnostics go in a collapsed `<details class="page-section page-details">`.
+- **Words:** sentence case everywhere, no capitals or monospace for headings; a title matches its rail entry; money reads like money (`$0.0012`, not `$0.001200`); a missing value is `—` with the reason once in a note, not on every tile.
+- **Charts use `--chart-1..8`** in that fixed order (a colour-blind-checked palette), never `--accent` or `--err`.
 
 ## Rules
 
 - SQL lives only in `server/store/`. Nothing else touches `store.db`.
+- A JSON column is read with `parseColumn()` (`store/wire.ts`), never a bare `JSON.parse`: a damaged value is left off instead of breaking its chat. Data from outside (a backup) is checked field by field before it is stored (`transfer/backup.ts`).
+- The config, secrets and MCP files are written with `writeAtomic()` (`config/config.ts`): to a temporary file, then renamed over the old one.
+- A model request is given up after `streamStallMs()` of silence (`harness/provider.ts`, `$TINYWEBUI_STREAM_STALL_MS`, 5 minutes by default), before its reply starts or within it.
 - `server/harness/` imports only its own files, `shared/` and `node:` (a test enforces it). What it needs from the app is passed in.
 - The store imports nothing from the app (type-only imports of `harness/` wire shapes aside). Folder dependencies are one-way (e.g. `chat/` may use `tools/`, never the reverse); `server.ts` is the only place that wires everything.
 - Identifiers shared across files are constants: `EVENT`, `FEATURE`, `CORPUS`. Don't write them as bare strings.

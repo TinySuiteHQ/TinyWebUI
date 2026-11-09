@@ -11,7 +11,7 @@ import { api } from '../../core/api.ts';
 import { useConfig } from '../../stores/config.ts';
 import { useSession } from '../../stores/session.ts';
 import { PANEL, type PanelName } from '../../stores/panels.ts';
-import { buildPatch, fromConfig, type Draft } from './draft.ts';
+import { buildPatch, changedPatch, fromConfig, keyWords, type Draft } from './draft.ts';
 
 /** The pages that edit the draft: switching between them is not leaving it. */
 export const DRAFT_PANELS = new Set<PanelName>([PANEL.MODELS, PANEL.MODEL_DEFAULTS, PANEL.CHAT]);
@@ -59,12 +59,31 @@ export const useSettingsDraft = defineStore('settingsDraft', () => {
     if (!dirty.value) reset();
   }
 
+  // The clashes the person was already told about: saving again with the same ones overwrites them.
+  let acknowledged = '';
+
   async function save() {
     const d = draft.value;
     if (!d) return;
-    let patch;
-    try { patch = buildPatch(d, { admin: admin.value, lockedKeys: config.lockedKeys }); } catch (err) { saveMsg.value = `Couldn't save: ${err.message}`; return; }
-    try { await api.post('/api/config', patch); } catch (err) { saveMsg.value = `Couldn't save: ${err.message}`; return; }
+    const opts = () => ({ admin: admin.value, lockedKeys: config.lockedKeys });
+    let next;
+    try { next = buildPatch(d, opts()); } catch (err) { saveMsg.value = `Couldn't save: ${err.message}`; return; }
+    // The config as it is now, which may have moved since the page opened.
+    // The draft is dirty, so this reload leaves it alone (see the watch below).
+    try { await config.load(); } catch { /* compare against what we have */ }
+    let patch = next;
+    if (saved.value && saved.value !== 'invalid' && config.cfg) {
+      const changed = changedPatch(next, JSON.parse(saved.value), buildPatch(fromConfig(config.cfg), opts()));
+      const clash = changed.clashes.join(',');
+      if (clash && clash !== acknowledged) {
+        acknowledged = clash;
+        saveMsg.value = `Changed elsewhere since this page opened: ${changed.clashes.map(keyWords).join(', ')}. Save again to replace those with yours, or Discard to see the current values.`;
+        return;
+      }
+      patch = changed.patch;
+    }
+    acknowledged = '';
+    try { if (Object.keys(patch).length) await api.post('/api/config', patch); } catch (err) { saveMsg.value = `Couldn't save: ${err.message}`; return; }
     await config.load();
     await session.loadAccess(); // a changed model changes what it can take
     await config.loadTools(); // the per-tool "default" labels follow the global settings

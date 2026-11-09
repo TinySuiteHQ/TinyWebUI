@@ -244,3 +244,28 @@ export function connectorChoices(d: Draft, current: string): { value: string, la
     ...[...new Set([...ids, ...(current && !ids.includes(current) ? [current] : [])])].map((id) => ({ value: id, label: id }))
   ];
 }
+
+/**
+ * What a Save sends: only the keys this draft changed since its page opened
+ * (`base`, the patch the config made then). Sending the whole form would put
+ * back every key someone else changed meanwhile, in another tab, as another
+ * admin, or in the config file. `latest` is the config as it is now: a key
+ * both sides changed, to different values, is a clash, which the caller shows
+ * before overwriting it.
+ */
+export function changedPatch(next: Json, base: Json, latest: Json): { patch: Json, clashes: string[] } {
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const patch: Json = {};
+  const clashes: string[] = [];
+  // Only keys the draft sends: one it leaves out (an API key never typed, the
+  // endpoint while its card is hidden) means "keep", as it always did.
+  for (const key of Object.keys(next)) {
+    if (same(next[key], base[key])) continue;
+    if (!same(latest[key], base[key]) && !same(latest[key], next[key])) clashes.push(key);
+    patch[key] = next[key];
+  }
+  return { patch, clashes };
+}
+
+/** A config key as words, for a message that names it: compactThreshold -> "compact threshold". */
+export const keyWords = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();

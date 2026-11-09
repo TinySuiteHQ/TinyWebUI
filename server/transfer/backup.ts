@@ -166,11 +166,52 @@ const time = (v: unknown, fallback: number): number => (int(v, 0) ? v : fallback
 /** A JSON column: stored again exactly as it was written, or null. */
 const column = (v: unknown): string | null => (v == null ? null : JSON.stringify(v));
 
+/** What the harness sends back to the provider, so nothing else gets past. */
+const isToolCall = (c: unknown): boolean => isObj(c) && typeof c.id === 'string' && c.id.length <= 200
+  && isObj(c.function) && typeof c.function.name === 'string' && typeof c.function.arguments === 'string';
+
+/** A token attribution snapshot (harness/attribution.ts) as the Usage page sums it, or null when it is not one. */
+function attribution(v: unknown): Obj | null {
+  if (!isObj(v)) return null;
+  const side = (s: unknown) => {
+    if (!isObj(s) || !Array.isArray(s.buckets)) return null;
+    const buckets = s.buckets.filter((b): b is Obj => isObj(b) && typeof b.category === 'string' && typeof b.source === 'string'
+      && typeof b.tokens === 'number' && Number.isFinite(b.tokens) && (b.capability === undefined || typeof b.capability === 'string'));
+    return { total: typeof s.total === 'number' ? s.total : null, source: s.source === 'provider' ? 'provider' : 'unreported', buckets };
+  };
+  const input = side(v.input);
+  const output = side(v.output);
+  if (!input || !output) return null;
+  return { version: 1, estimator: typeof v.estimator === 'string' ? v.estimator : '', input, output, cached: typeof v.cached === 'number' ? v.cached : null };
+}
+
+/**
+ * Usage feeds the Usage page's sums: numbers, short text (provider names, the
+ * cost's source) and one level of token details, plus the attribution snapshot
+ * checked field by field, so a stray value cannot turn a total into NaN.
+ */
+const COUNTED = /tokens|cost|count|total|requests/i;
+function usageColumn(v: unknown): string | null {
+  if (!isObj(v)) return null;
+  const clean = (o: Obj, depth: number): Obj => Object.fromEntries(Object.entries(o).flatMap(([k, x]): [string, unknown][] => {
+    if (depth === 0 && k === 'attribution') { const a = attribution(x); return a ? [[k, a]] : []; }
+    if (typeof x === 'number' && Number.isFinite(x)) return [[k, x]];
+    if (typeof x === 'boolean' || x === null) return [[k, x]];
+    if (depth === 0 && isObj(x)) return [[k, clean(x, 1)]];
+    // Text is for names (a provider, where a cost came from); a count or a cost is a number or nothing.
+    if (typeof x === 'string' && x.length <= 200 && !COUNTED.test(k)) return [[k, x]];
+    return [];
+  }));
+  return JSON.stringify(clean(v, 0));
+}
+
 function readMessage(v: unknown, where: string): RestoredMessage {
   if (!isObj(v)) throw new BackupError(`${where} is not a message`);
   if (!int(v.seq, 0)) throw new BackupError(`${where} has no valid seq`);
   if (!ROLES.includes(v.role as Role)) throw new BackupError(`${where} has an unknown role`);
-  if (v.toolCalls != null && !Array.isArray(v.toolCalls)) throw new BackupError(`${where}: toolCalls must be a list`);
+  if (v.toolCalls != null && !(Array.isArray(v.toolCalls) && v.toolCalls.every(isToolCall))) {
+    throw new BackupError(`${where}: toolCalls must be a list of calls, each with an id, a function name and its arguments as text`);
+  }
   let artifact: RestoredMessage['artifact'] = null;
   if (v.artifact != null) {
     const a = v.artifact;
@@ -187,7 +228,7 @@ function readMessage(v: unknown, where: string): RestoredMessage {
     toolCallId: text(v.toolCallId, `${where}: toolCallId`, 200), toolCallsJson: column(v.toolCalls),
     reasoning: text(v.reasoning, `${where}: reasoning`), reasoningDetailsJson: column(v.reasoningDetails),
     artifact, stubText: text(v.stubText, `${where}: stub`),
-    usageJson: isObj(v.usage) ? column(v.usage) : null, model: text(v.model, `${where}: model`, 200),
+    usageJson: usageColumn(v.usage), model: text(v.model, `${where}: model`, 200),
     createdAt: int(v.createdAt, 0) ? v.createdAt : null, originJson: isObj(v.origin) ? column(v.origin) : null
   };
 }
@@ -214,7 +255,7 @@ function readChat(v: unknown, i: number): ReadChat {
   }));
   // A summary is only valid with the window it summarised, so the two travel together or not at all.
   const windowSeq = int(v.windowSeq, -1) ? v.windowSeq : -1;
-  const checkpointJson = windowSeq >= 0 && isObj(v.checkpoint) ? column(v.checkpoint) : null;
+  const checkpointJson = windowSeq >= 0 && isObj(v.checkpoint) && typeof v.checkpoint.summary === 'string' ? column(v.checkpoint) : null;
   return {
     originalId: v.id, title: requiredText(v.title, `${where}: title`, 500).slice(0, 200), createdAt, updatedAt: time(v.updatedAt, createdAt),
     folder: text(v.folder, `${where}: folder`, 200)?.trim().slice(0, 40) || null, tagsJson: JSON.stringify(tags),

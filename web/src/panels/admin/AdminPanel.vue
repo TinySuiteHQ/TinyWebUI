@@ -10,6 +10,7 @@ import { api } from '../../core/api.ts';
 import { FEATURE } from '../../../../shared/features.ts';
 import { useSession } from '../../stores/session.ts';
 import { useAdmin } from '../../stores/admin.ts';
+import { useViewer } from '../../stores/viewer.ts';
 import { PANEL } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
 import { featureName, plural, roleLabel, roleSettingsSummary, when } from './admin_words.ts';
@@ -214,8 +215,8 @@ function back() {
 async function openDocument(id: string) {
   try {
     const d = await api.get(`/api/admin/documents/${enc(id)}`);
-    const w = window.open('', '_blank');
-    if (w) { w.document.title = d.filename; w.document.body.appendChild(Object.assign(w.document.createElement('pre'), { textContent: d.content })); }
+    // The text the admin route returns (each read is audited), in the app's viewer.
+    useViewer().show([{ kind: 'text', name: d.filename, text: String(d.content ?? '') }]);
   } catch (err) { viewError.value = err.message; }
 }
 const viewTitle = computed(() => {
@@ -267,7 +268,7 @@ onBeforeUnmount(stopPoll);
 
 <template>
   <section id="admin" :class="{ open: isOpen }" aria-label="People and roles">
-    <div class="automation-head">
+    <div class="panel-head">
       <h2>People &amp; roles</h2>
       <div class="adm-tabs" role="tablist" aria-label="Admin sections">
         <button type="button" role="tab" :aria-selected="tab === 'people' && !view" :class="{ active: tab === 'people' && !view }"
@@ -278,8 +279,8 @@ onBeforeUnmount(stopPoll);
                 @click="tab = 'roles'; view = null; stopPoll()">Roles</button>
       </div>
     </div>
-    <div class="statistics-content">
-      <section v-if="view" class="statistics-block">
+    <div class="panel-scroll">
+      <section v-if="view" class="panel-card">
         <div class="sec-h"><button type="button" @click="back">← back</button> <span>{{ viewTitle }}</span><span class="usage">{{ viewMeta }}</span></div>
         <div class="usage admin-note">Read-only admin view. Every view is recorded in the audit log.</div>
         <template v-if="view.kind === 'chats' && view.data">

@@ -16,7 +16,7 @@ import { ThemeStore } from './themes.ts';
 export { SCHEMA_VERSION } from './schema.ts';
 export { ALL_USERS } from './scope.ts';
 export { PASSAGE_SIZE, PASSAGE_OVERLAP } from './documents.ts';
-export { toWire, toView } from './wire.ts';
+export { toWire, toView, parseColumn } from './wire.ts';
 export { CORPUS } from './embeddings.ts';
 export { AUX_KIND } from './usage.ts';
 

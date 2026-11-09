@@ -12,8 +12,8 @@ import { useChats } from '../../stores/chats.ts';
 import { useTheme } from '../../stores/theme.ts';
 import { PANEL } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
+import type { ImportReply } from '../../../../shared/api.ts';
 
-type ImportResult = { chats: number, skipped: number, folders: number, automations: number, instructions: 'set' | 'kept' | null, theme: string | null, notes: string[] };
 
 const session = useSession();
 const included = computed(() => [
@@ -36,7 +36,7 @@ async function exportAll() {
 const fileInput = ref<HTMLInputElement>();
 const importing = ref(false);
 const importErr = ref('');
-const result = ref<ImportResult | null>(null);
+const result = ref<ImportReply | null>(null);
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const summary = computed(() => {
@@ -62,7 +62,7 @@ async function onFile() {
   try {
     let doc: unknown;
     try { doc = JSON.parse(await file.text()); } catch { throw new Error('that file is not JSON; pick a TinyWebUI backup (.json)'); }
-    const r: ImportResult = await api.post('/api/import', doc);
+    const r: ImportReply = await api.post('/api/import', doc);
     result.value = r;
     await useChats().load();
     if (r.instructions === 'set') await session.loadAccess();
@@ -82,7 +82,7 @@ const { isOpen } = usePanel(PANEL.DATA, { onOpen: () => { exportMsg.value = ''; 
 
 <template>
   <section :id="PANEL.DATA" class="set-panel" :class="{ open: isOpen }" aria-label="Data">
-    <div class="automation-head"><h2>Data</h2></div>
+    <div class="panel-head"><h2>Data</h2></div>
     <div class="settings-content">
       <section class="set-group">
         <header><h3>Export</h3><p>One file you can keep, or import here or on another TinyWebUI.</p></header>

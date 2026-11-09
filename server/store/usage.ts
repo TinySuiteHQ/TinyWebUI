@@ -1,3 +1,4 @@
+import { parseColumn } from './wire.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { scope, type Scope } from './scope.ts';
 import type { Attribution, Bucket } from '../harness/attribution.ts';
@@ -146,7 +147,7 @@ export class UsageStore {
   /** Usage of one chat's auxiliary requests, oldest first. */
   auxiliaryFor(chatId: string): StoredUsage[] {
     return this.db.prepare('SELECT usage_json FROM aux_usage WHERE chat_id = ? ORDER BY id').all(chatId)
-      .map((r) => JSON.parse(r.usage_json as string));
+      .map((r) => (parseColumn(r.usage_json as string, 'object') ?? {}) as StoredUsage);
   }
 
   /**

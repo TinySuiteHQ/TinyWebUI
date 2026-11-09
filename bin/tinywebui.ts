@@ -102,6 +102,14 @@ try {
     process.exit(1);
   }
   const { start } = await import('../server/server.ts');
+  // A promise somebody forgot to await, rejecting, would otherwise end the
+  // process (Node's default) and every turn and stream with it. It is a bug
+  // to fix, so it is logged loudly, but not one worth the whole server.
+  const log = (await import('../server/log.ts')).logger('server');
+  process.on('unhandledRejection', (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    log.error(`unhandled rejection (kept running): ${err.stack || err.message}`);
+  });
   // Command-line flags beat the file; the file beats the built-in defaults.
   await start({
     ...opts,

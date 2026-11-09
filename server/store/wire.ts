@@ -15,13 +15,39 @@ export interface ViewMessage extends ChatMessage {
   images?: MessageImage[];
 }
 
+/**
+ * A JSON column read back, or undefined when it does not parse or is not the
+ * shape asked for. One damaged row must not take its whole chat down with it
+ * (no transcript, no model call): the field is left off instead, and what the
+ * history needs to stay valid (an orphaned tool result, say) is repaired
+ * downstream, by harness/history.ts, as it is for a turn cut short.
+ */
+export function parseColumn(text: string | null | undefined, shape: 'array'): unknown[] | undefined;
+export function parseColumn(text: string | null | undefined, shape: 'object'): Record<string, unknown> | undefined;
+export function parseColumn(text: string | null | undefined, shape: 'array' | 'object'): unknown {
+  if (!text) return undefined;
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return undefined; }
+  if (shape === 'array') return Array.isArray(value) ? value : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
+}
+
+/** A tool call the provider can be sent: the shape the harness relies on. */
+const isToolCall = (c: unknown): boolean => {
+  const call = c as { id?: unknown, function?: { name?: unknown, arguments?: unknown } } | null;
+  return Boolean(call && typeof call.id === 'string' && typeof call.function?.name === 'string' && typeof call.function.arguments === 'string');
+};
+
 function base(row: WireRow): ChatMessage & { images?: MessageImage[] } {
   // content is set by each caller, after these, so the key order stays as it was.
   const msg = { role: row.role } as ChatMessage & { images?: MessageImage[] };
   if (row.tool_call_id) msg.tool_call_id = row.tool_call_id;
-  if (row.tool_calls_json) msg.tool_calls = JSON.parse(row.tool_calls_json);
-  if (row.reasoning_details_json) msg.reasoning_details = JSON.parse(row.reasoning_details_json) as ReasoningDetail[];
-  if (row.images_json) msg.images = JSON.parse(row.images_json);
+  const calls = parseColumn(row.tool_calls_json, 'array')?.filter(isToolCall);
+  if (calls?.length) msg.tool_calls = calls as ChatMessage['tool_calls'];
+  const details = parseColumn(row.reasoning_details_json, 'array');
+  if (details) msg.reasoning_details = details as ReasoningDetail[];
+  const images = parseColumn(row.images_json, 'array');
+  if (images) msg.images = images as MessageImage[];
   return msg;
 }
 
@@ -65,8 +91,10 @@ export function toView(row: MessageRow): ViewMessage {
   msg.seq = row.seq;
   msg.content = row.content ?? null;
   if (row.reasoning) msg.reasoning = row.reasoning;
-  if (row.usage_json) msg.usage = JSON.parse(row.usage_json);
+  const usage = parseColumn(row.usage_json, 'object');
+  if (usage) msg.usage = usage;
   if (row.stub_text) msg.compacted = true;
-  if (row.origin_json) msg.origin = JSON.parse(row.origin_json);
+  const origin = parseColumn(row.origin_json, 'object');
+  if (origin) msg.origin = origin;
   return msg;
 }

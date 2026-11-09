@@ -14,6 +14,7 @@ import { logger } from '../log.ts';
 import type { ServerResponse } from 'node:http';
 import type { SignedIn } from '../access/auth_gate.ts';
 import type { Route, RouteDeps } from './types.ts';
+import type { ImportReply } from '../../shared/api.ts';
 
 const log = logger('transfer');
 
@@ -86,7 +87,7 @@ export function transferRoutes({ config, multiUser, retrieval, store, version }:
       for (const id of result.chatIds) retrieval.ingest(CORPUS.CHATS, id).catch(() => {});
       log.info(`import: ${result.chats} chats, ${result.skipped} already here`);
       const { chatIds, ...summary } = result;
-      return json(res, 200, summary);
+      return json(res, 200, summary satisfies ImportReply);
     } }
   ];
 }

@@ -403,10 +403,14 @@ export async function post(cfg: ProviderConfig, plan: RequestPlan, signal: Abort
     let res;
     const body = buildBody(cfg, { ...plan, relax: relaxed }, disabled);
     plan.onRequest?.(body);
+    // Waiting for the reply to start has the same limit as a silence inside
+    // it; the timer stops once headers arrive, so it never cuts a long stream.
+    const waiting = new AbortController();
+    const waitTimer = setTimeout(() => waiting.abort(new StallError(`the model did not answer for ${Math.round(streamStallMs() / 1000)} s`)), streamStallMs());
     try {
       res = await fetch(`${cfg.baseUrl}/chat/completions`, {
         method: 'POST',
-        signal,
+        signal: signal ? AbortSignal.any([signal, waiting.signal]) : waiting.signal,
         // Local runtimes are usually keyless, and the ranking headers are
         // OpenRouter's own -- neither belongs on a request to someone else.
         headers: {
@@ -425,8 +429,11 @@ export async function post(cfg: ProviderConfig, plan: RequestPlan, signal: Abort
       // A dropped connection looks like nothing at all, so it is judged here
       // rather than by a status code. A stop is not a failure to retry.
       if (signal?.aborted) throw err;
-      if (await backOff(null, `Network error (${err.message})`)) continue;
-      throw err;
+      const why = waiting.signal.aborted ? (waiting.signal.reason as Error).message : `Network error (${err.message})`;
+      if (await backOff(null, why)) continue;
+      throw waiting.signal.aborted ? waiting.signal.reason : err;
+    } finally {
+      clearTimeout(waitTimer);
     }
 
     if (res.ok && res.body) return res;
@@ -464,12 +471,39 @@ export async function post(cfg: ProviderConfig, plan: RequestPlan, signal: Abort
   }
 }
 
+/**
+ * How long a provider may send nothing at all, before its reply starts or
+ * between two pieces of it, before the request is given up. Generous, since a
+ * local model can think over a long prompt for minutes before its first byte;
+ * without any limit, a provider that stalls holds the chat busy until someone
+ * presses Stop, and an automation nobody watches forever.
+ * $TINYWEBUI_STREAM_STALL_MS overrides it (the tests make it short).
+ */
+export const streamStallMs = () => Number(process.env.TINYWEBUI_STREAM_STALL_MS) || 300_000;
+
+export class StallError extends Error {}
+
+/** One read of the stream, or a StallError once it has been silent for `ms`. */
+async function readOrStall(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StallError(`the model sent nothing for ${Math.round(ms / 1000)} s, so the request was given up`)), ms);
+  });
+  try { return await Promise.race([reader.read(), stalled]); } finally { clearTimeout(timer); }
+}
+
 export async function* streamChunks(res: Response): AsyncGenerator<Chunk> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
+  const stallMs = streamStallMs();
   let buf = '';
   while (true) {
-    const { done, value } = await reader.read();
+    let read;
+    try { read = await readOrStall(reader, stallMs); } catch (err) {
+      reader.cancel().catch(() => { /* the connection is being dropped anyway */ });
+      throw err;
+    }
+    const { done, value } = read;
     if (done) break;
     buf += decoder.decode(value, { stream: true });
     let idx;

@@ -11,7 +11,7 @@ const status = computed(() => (store.dirty ? '' : store.saveMsg || store.baseMsg
 </script>
 
 <template>
-  <div class="automation-head">
+  <div class="panel-head">
     <button v-if="back" type="button" class="set-back" aria-label="Back" @click="emit('back')">‹ Back</button>
     <h2>{{ title }}</h2>
     <span class="head-status" role="status">{{ status }}</span>

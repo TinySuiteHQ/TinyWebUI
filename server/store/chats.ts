@@ -6,6 +6,7 @@ import type { MessageRow, MessageStore, RestoredMessage } from './messages.ts';
 import type { AutomationStore } from './automations.ts';
 import type { DocumentStore, PassageSettings } from './documents.ts';
 import { attachmentNote, splitAttachmentNotes } from '../../shared/attachment_note.ts';
+import { parseColumn } from './wire.ts';
 
 export interface ChatRow {
   id: string;
@@ -351,7 +352,7 @@ export class ChatStore {
       answer: string | null; created_at: number; deadline: number | null; settled_at: number | null;
     } | undefined;
     return row && {
-      id: row.id, chatId: row.chat_id, question: row.question, choices: JSON.parse(row.choices_json),
+      id: row.id, chatId: row.chat_id, question: row.question, choices: (parseColumn(row.choices_json, 'array') ?? []).filter((c): c is string => typeof c === 'string'),
       allowFreeText: Boolean(row.allow_free_text), status: row.status, answer: row.answer,
       createdAt: row.created_at, deadline: row.deadline, settledAt: row.settled_at
     };

@@ -3,6 +3,7 @@
 import { computed, ref, watch } from 'vue';
 import { useAttachments } from '../../stores/attachments.ts';
 import { useChat } from '../../stores/chat.ts';
+import { useViewer, type ViewItem } from '../../stores/viewer.ts';
 import Icon from '../../ui/Icon.vue';
 
 const PREVIEW = 3;
@@ -17,10 +18,13 @@ const items = computed(() => [
 ]);
 const shown = computed(() => (expanded.value ? items.value : items.value.slice(0, PREVIEW)));
 
+const viewer = useViewer();
+// Opened in the app's viewer, with every other artifact of the chat a step away.
 function open(a: (typeof items.value)[number]) {
-  // A document opens as uploaded (a PDF in the viewer, a .docx downloads); an image full size.
-  if (a.kind === 'doc') window.open(`/api/documents/${a.id}/original`, '_blank', 'noopener');
-  else if (a.img) window.open(`data:${a.img.mime};base64,${a.img.data}`, '_blank');
+  const list: ViewItem[] = items.value.map((x) => (x.kind === 'doc'
+    ? { kind: 'document', name: x.name, id: x.id }
+    : { kind: 'image', name: x.name, src: `data:${x.img!.mime};base64,${x.img!.data}` }));
+  viewer.show(list, items.value.indexOf(a));
 }
 </script>
 

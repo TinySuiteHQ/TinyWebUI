@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { attributeRequest, completeAttribution, markFinal, type InputEstimate, type SystemPart } from '../harness/attribution.ts';
-import { toWire, AUX_KIND, ALL_USERS, type Store } from '../store/index.ts';
+import { toWire, parseColumn, AUX_KIND, ALL_USERS, type Store } from '../store/index.ts';
 import type { MessageRow, NewMessage } from '../store/messages.ts';
 import type { PrefixFingerprint, StoredUsage } from '../store/usage.ts';
 import type { Config } from '../config/config.ts';
@@ -37,7 +37,7 @@ export interface AssistantMessage extends ChatMessage { content: string | null; 
 
 function historyTokens(rows: MessageRow[], cfg: Config, tools: ToolDef[]) {
   const last = rows.findLastIndex((r) => r.usage_json);
-  const reported = last >= 0 ? JSON.parse(rows[last].usage_json!).prompt_tokens : 0;
+  const reported = last >= 0 ? Number(parseColumn(rows[last]!.usage_json, 'object')?.prompt_tokens) || 0 : 0;
   // Providers disagree about reporting usage and some report none at all, so
   // fall back to a size estimate rather than never compacting.
   if (!reported) return estimateTokens(rows.map(toWire));
@@ -122,8 +122,9 @@ export async function runChat({
   // not see, so it only counts when the boundary matches.
   const checkpoint = () => {
     const raw = store.chats.byId(chatId)!.checkpoint_json;
-    const cp = raw ? JSON.parse(raw) : null;
-    return cp && cp.scopeStart === scopeStart ? cp : null;
+    const cp = parseColumn(raw, 'object');
+    // A summary that is not text is no summary: the window falls back to sending what it has.
+    return cp && typeof cp.summary === 'string' && cp.scopeStart === scopeStart ? cp as { summary: string, scopeStart: unknown } : null;
   };
   const load = () => windowRows(scoped(), store.chats.byId(chatId)!.window_seq, { summarized: Boolean(checkpoint()) });
   let rows = load();
@@ -460,7 +461,7 @@ async function summarizeDropped({ cfg, store, chatId, emit, signal, previous, dr
       // and the artifact ids a stub would hide.
       source: checkpointSource({ previous: previous?.summary, rows: dropped.map((r) => ({
         role: r.role, content: r.content, artifact_id: r.artifact_id,
-        tool_calls: r.tool_calls_json ? JSON.parse(r.tool_calls_json) : undefined
+        tool_calls: parseColumn(r.tool_calls_json, 'array') as ToolCall[] | undefined
       })) }),
       onUsage: (usage) => usage && store.usage.addAuxiliary(chatId, { kind: AUX_KIND.CHECKPOINT, model: cfg.model, usage })
     });

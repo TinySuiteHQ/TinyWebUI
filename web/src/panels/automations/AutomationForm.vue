@@ -7,17 +7,16 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { api } from '../../core/api.ts';
 import { useChats } from '../../stores/chats.ts';
 import { DAYS, WEEK, buildCron, parseCron } from './cron.ts';
+import type { AutomationView } from '../../../../shared/api.ts';
 
-// An automation from /api/automations, read field by field.
-type Json = any;
-const props = defineProps<{ existing: Json | null, chats: { id: string, title?: string }[] }>();
+const props = defineProps<{ existing: AutomationView | null, chats: { id: string, title?: string }[] }>();
 const emit = defineEmits<{ done: [], cancel: [] }>();
 
 const NEW_CHAT = '__new__';
 const ZONES = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [];
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
-const initial = props.existing || {};
+const initial: Partial<AutomationView> = props.existing || {};
 const parsed = parseCron(initial.cron || '0 9 * * 1-5');
 let presetValue: string = parsed.preset;
 if (parsed.preset === 'days') {
@@ -67,7 +66,7 @@ watch(prompt, () => nextTick(autosize));
 async function submit() {
   error.value = '';
   saving.value = true;
-  const data: Json = { name: name.value.trim(), cron: cron.value.trim(), timezone: zone.value.trim(), prompt: prompt.value, enabled: enabled.value };
+  const data: Record<string, unknown> = { name: name.value.trim(), cron: cron.value.trim(), timezone: zone.value.trim(), prompt: prompt.value, enabled: enabled.value };
   if (chatId.value === NEW_CHAT) data.newChatTitle = newChatName.value.trim();
   else data.chatId = chatId.value;
   try {

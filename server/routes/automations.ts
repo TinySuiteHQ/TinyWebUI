@@ -3,6 +3,7 @@ import { validateSchedule } from '../automations/automation.ts';
 import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 import type { AutomationPatch } from '../store/automations.ts';
+import type { AutomationRunView, AutomationsReply } from '../../shared/api.ts';
 
 /** `newChatTitle` on an automation request: undefined when absent, false when
  * present but unusable, otherwise the trimmed title. */
@@ -18,7 +19,7 @@ export function automationRoutes({ scheduler, store }: Pick<RouteDeps, 'schedule
   const F = FEATURE.AUTOMATIONS;
   return [
     { method: 'GET', path: /^\/api\/automations$/, feature: F, handle: ({ res, auth }) =>
-      json(res, 200, { automations: store.automations.list(auth.userId), chats: store.chats.list(200, auth.userId) }) },
+      json(res, 200, { automations: store.automations.list(auth.userId), chats: store.chats.list(200, auth.userId) } satisfies AutomationsReply) },
 
     { method: 'POST', path: /^\/api\/automations$/, feature: F, handle: async ({ req, res, auth }) => {
       const body = await readJson(req);
@@ -41,7 +42,7 @@ export function automationRoutes({ scheduler, store }: Pick<RouteDeps, 'schedule
 
     { method: 'GET', path: /^\/api\/automations\/([\w.-]+)\/runs$/, feature: F, handle: ({ res, auth, params: [id] }) => {
       const runs = store.automations.listRuns(id, auth.userId);
-      return runs ? json(res, 200, { runs }) : json(res, 404, { error: 'no such automation' });
+      return runs ? json(res, 200, { runs } satisfies { runs: AutomationRunView[] }) : json(res, 404, { error: 'no such automation' });
     } },
 
     { method: 'POST', path: /^\/api\/automations\/([\w.-]+)\/trigger$/, feature: F, handle: async ({ res, auth, params: [id] }) => {

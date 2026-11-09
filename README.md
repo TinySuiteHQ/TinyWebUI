@@ -124,12 +124,12 @@ The full reference lives at **[tinysuite.dev/docs/tinywebui](https://tinysuite.d
 | [CLI](https://tinysuite.dev/docs/tinywebui/#cli) | Every command |
 | [Security and limits](https://tinysuite.dev/docs/tinywebui/#security-and-limits) | Exposure, MCP trust, what isn't included |
 
-In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, [docs/mcp-management.md](docs/mcp-management.md) is the contract any MCP server can implement to get a page on the MCP page, [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`), and [docs/performance.md](docs/performance.md) is what the page costs a browser, with the method to measure it again.
+In this repository: [docs/architecture.md](docs/architecture.md) is how the pieces fit, what the app survives and how its pages are laid out, [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, [docs/mcp-management.md](docs/mcp-management.md) is the contract any MCP server can implement to get a page on the MCP page, [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`), and [docs/performance.md](docs/performance.md) is what the page costs a browser, with the method to measure it again.
 
 ## Development
 
 ```bash
-npm test        # type check (server and page), then the whole suite, about 15 seconds
+npm test        # type check (server and page), then the whole suite, about 15 seconds on a fast disk
 npm run dev     # the API on :7777, restarting on changes in server/, bin/ and shared/
 npm run dev:web # the page on :5173 with hot reload, proxying /api to :7777
 ```
