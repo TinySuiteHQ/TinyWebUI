@@ -124,7 +124,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       // rewound transcript and then attaches, the same path a reload takes,
       // rather than reading a stream through a response it also has to
       // redraw behind.
-      runs.start({ chat: found, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body) });
+      runs.start({ chat: found, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body), role: auth.role });
       return json(res, 200, { ok: true, running: true });
     } },
 
@@ -251,7 +251,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, runs, saveConfig
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body) });
+        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body), role: auth.role });
       return runs.attach(run, res, 0);
     } }
   ];

@@ -3,7 +3,7 @@ import { json, readJson, oneOf } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.ts';
 import {
   validateConfig, fingerprint, resolveAccess, roleNames, passwordProblem, FEATURES, CUSTOMIZABLE, BUILTIN_ROLES, ROLE_NAME, STATUSES,
-  type AccessConfig, type Feature, type RoleSpec
+  type AccessConfig, type Feature, type RoleSettings, type RoleSpec
 } from '../access/policy.ts';
 import { catalog, modelProblems } from '../config/models.ts';
 import { destroyUserSessions, hashPassword, hashToken } from '../access/auth.ts';
@@ -56,19 +56,25 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
 
   /** Writes what a role grants into the file: a new role, or the fields sent for an existing one. */
   const saveRole = (name: string, body: Record<string, unknown>, auth: AdminContext['auth'], res: AdminContext['res'], created: boolean) => {
-    const { features, models, customize } = body;
+    const { features, models, customize, settings } = body;
     const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
     if (features !== undefined && !strings(features)) return json(res, 400, { error: 'features must be a list' });
     if (models !== undefined && models !== '*' && !strings(models)) return json(res, 400, { error: "models must be '*' or a list" });
     if (customize !== undefined && !strings(customize)) return json(res, 400, { error: 'customize must be a list' });
+    if (settings !== undefined && (!settings || typeof settings !== 'object' || Array.isArray(settings))) return json(res, 400, { error: 'settings must be an object' });
+    // A blank value inherits, so it is left out rather than stored. Each kept
+    // value is checked by validateConfig before anything is written.
+    const kept = settings ? Object.fromEntries(Object.entries(settings).filter(([, v]) => v !== null && v !== '')) as RoleSettings : null;
     let spec: RoleSpec = {};
     const refused = writeAccess((access) => {
+      const { settings: _previous, ...rest } = access.roles?.[name] || {};
       spec = {
-        ...(access.roles?.[name] || {}),
+        ...(kept ? rest : access.roles?.[name] || {}),
         // Names only so far: validateConfig rejects any that is not a feature before anything is written.
         ...(features !== undefined ? { features: features as Feature[] } : {}),
         ...(models !== undefined ? { models } : {}),
-        ...(customize !== undefined ? { customize } : {})
+        ...(customize !== undefined ? { customize } : {}),
+        ...(kept && Object.keys(kept).length ? { settings: kept } : {})
       };
       return { ...access, roles: { ...(access.roles || {}), [name]: spec } };
     });
@@ -84,7 +90,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     return Object.entries(roles).map(([name, spec]) => ({
       name, builtin: BUILTIN_ROLES.includes(name), fixed: name === 'admin',
       features: spec.features === '*' ? FEATURES : spec.features,
-      models: spec.models, customize: spec.customize, users: counts[name] || 0
+      models: spec.models, customize: spec.customize, settings: spec.settings, users: counts[name] || 0
     }));
   };
 
@@ -179,12 +185,12 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
 
     // Someone locked out (there is no email reset) gets a new password from an
     // admin. Same rule as everywhere; every session of theirs ends. Your own
-    // goes through My preferences, which asks for the current one.
+    // goes through Settings → Account, which asks for the current one.
     { method: 'POST', path: /^\/api\/admin\/users\/([\w-]+)\/password$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth, params: [id] }) => {
       if (config().authMode !== 'multiuser') return json(res, 404, { error: 'passwords belong to the sign-in gateway here' });
       const target = store.users.get(id);
       if (!target) return json(res, 404, { error: 'no such user' });
-      if (target.id === auth.userId) return json(res, 400, { error: 'change your own password under My preferences' });
+      if (target.id === auth.userId) return json(res, 400, { error: 'change your own password under Settings → Account' });
       if (!target.password_hash) return json(res, 400, { error: 'this account signs in another way and has no password' });
       const { password } = await readJson(req);
       const problem = passwordProblem(password);
@@ -228,9 +234,11 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
 
     // Only the fields sent change.
     { method: 'PATCH', path: /^\/api\/admin\/roles\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth, params: [name] }) => {
-      if (name === 'admin') return json(res, 400, { error: 'the admin role always has everything' });
       if (!roleNames(config()).includes(name)) return json(res, 404, { error: 'no such role' });
-      return saveRole(name, await readJson(req), auth, res, false);
+      const body = await readJson(req);
+      // Admins always have everything; what their chats run with is still the admin's to set.
+      if (name === 'admin' && Object.keys(body).some((k) => k !== 'settings')) return json(res, 400, { error: 'the admin role always has everything; only its settings can change' });
+      return saveRole(name, body, auth, res, false);
     }) },
 
     // A custom role's people fall back to the user role, in the file and the database.

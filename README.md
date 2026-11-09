@@ -59,7 +59,7 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel, where requests for access from the sign-in page also wait for approval. Settings then opens on its first step: add a connector (any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connector. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
+Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from Settings → People & roles, where requests for access from the sign-in page also wait for approval. Settings then opens on Models: add a connection (`connectors` in the config: any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connection. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
 
 ```json
 {
@@ -75,6 +75,12 @@ Open <http://127.0.0.1:7777> and create the first account with a password of at 
 
 A connector that needs a key takes `"apiKey": "${NAME}"`, filled in from the environment, or the key typed into Settings.
 
+With accounts, a role decides what its people may use (features, models, what they may personalise) and, under Settings → People & roles, what their chats run with: its own prompt (which replaces the system prompt), default model, temperature, token and tool-turn limits, question timeout and tool approval. A value left blank keeps the global one. In the file this is `access.roles.<name>.settings`:
+
+```json
+{ "access": { "roles": { "student": { "features": ["chat"], "models": ["fast"], "settings": { "systemPrompt": "Explain step by step.", "model": "fast", "toolApproval": "all" } } } } }
+```
+
 `tinywebui.config.json` describes the deployment (endpoints, connectors, models, policy) and holds no secrets. A key is either a `${NAME}` reference, filled in from the environment, or kept in `tinywebui.secrets.json` beside it: what the Settings panel saves, and the generated session-signing secret. A key written straight into the config file moves there the next time the server starts. Accounts, password hashes and conversations live in `tinywebui.db`. TinyWebUI keeps the secrets file and the database readable by their owner only; keep them private and backed up.
 
 `npx tinywebui` keeps the config, keys, database and embedding models in one folder per user: `~/Library/Application Support/TinyWebUI` on macOS, `%LOCALAPPDATA%\TinyWebUI` on Windows and `~/.local/share/tinywebui` (or `$XDG_DATA_HOME/tinywebui`) on Linux. Run it in a folder that has its own `tinywebui.config.json`, or pass `--config`, to use that instead. It uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
@@ -88,7 +94,7 @@ docker compose up -d
 
 The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes.
 
-Since no mail is sent, there is no emailed reset. People change their own password under Settings → My preferences, and an admin can set a new one for anyone from the Admin panel. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
+Since no mail is sent, there is no emailed reset. People change their own password under Settings → Account, and an admin can set a new one for anyone from Settings → People & roles. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
 
 ```bash
 node bin/tinywebui.ts users password owner@example.com                          # from a clone
@@ -118,7 +124,7 @@ The full reference lives at **[tinysuite.dev/docs/tinywebui](https://tinysuite.d
 | [CLI](https://tinysuite.dev/docs/tinywebui/#cli) | Every command |
 | [Security and limits](https://tinysuite.dev/docs/tinywebui/#security-and-limits) | Exposure, MCP trust, what isn't included |
 
-In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, [docs/mcp-management.md](docs/mcp-management.md) is the contract any MCP server can implement to get a page in the Integrations panel, [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`), and [docs/performance.md](docs/performance.md) is what the page costs a browser, with the method to measure it again.
+In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, [docs/mcp-management.md](docs/mcp-management.md) is the contract any MCP server can implement to get a page on the MCP page, [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`), and [docs/performance.md](docs/performance.md) is what the page costs a browser, with the method to measure it again.
 
 ## Development
 

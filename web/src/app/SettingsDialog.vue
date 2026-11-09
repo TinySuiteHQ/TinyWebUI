@@ -1,21 +1,23 @@
 <script setup lang="ts">
 /**
- * Settings as one dialog: a rail of sections (settings, automations,
- * integrations, MCP, usage, admin) beside whichever is open. The sections are
- * the panels, mounted for good so their hooks are registered before the first
- * open; the dialog follows the panels store, it never decides on its own.
+ * Settings as one dialog: a rail of sections, grouped into what is yours and
+ * what runs the place, beside whichever is open. The sections are the panels,
+ * mounted for good so their hooks are registered before the first open; the
+ * dialog follows the panels store, it never decides on its own.
  */
 import { onMounted, ref, watch } from 'vue';
 import { usePanels, inSettings, type PanelName } from '../stores/panels.ts';
 import { useAdmin } from '../stores/admin.ts';
 import { PANEL } from '../stores/panels.ts';
 import Icon from '../ui/Icon.vue';
-import SettingsPanel from '../panels/settings/SettingsPanel.vue';
-import McpPanel from '../panels/mcp/McpPanel.vue';
-import IntegrationsPanel from '../panels/integrations/IntegrationsPanel.vue';
-import StatisticsPanel from '../panels/statistics/StatisticsPanel.vue';
-import AdminPanel from '../panels/admin/AdminPanel.vue';
+import AccountPanel from '../panels/account/AccountPanel.vue';
+import AppearancePanel from '../panels/appearance/AppearancePanel.vue';
 import AutomationsPanel from '../panels/automations/AutomationsPanel.vue';
+import StatisticsPanel from '../panels/statistics/StatisticsPanel.vue';
+import ModelsPanel from '../panels/models/ModelsPanel.vue';
+import ModelDefaultsPanel from '../panels/settings/ModelDefaultsPanel.vue';
+import ChatBehaviourPanel from '../panels/settings/ChatBehaviourPanel.vue';
+import AdminPanel from '../panels/admin/AdminPanel.vue';
 
 const panels = usePanels();
 const admin = useAdmin();
@@ -54,21 +56,26 @@ function onClick(e: MouseEvent) { if (e.target === el.value) panels.closeAll(); 
           </button>
         </div>
         <div class="settings-rail-items">
-          <button v-for="s in panels.sections" :id="`toggle-${s.panel}`" :key="s.panel" class="nav-item" type="button"
-                  :class="{ active: panels.open === s.panel }" :aria-current="panels.open === s.panel ? 'page' : undefined"
-                  @click="panels.openPanel(s.panel)">
-            <Icon :name="s.icon" /><span>{{ s.label }}</span>
-            <span v-if="s.panel === PANEL.ADMIN && admin.waiting" class="adm-badge"
-                  :title="`${admin.waiting} waiting for approval`">{{ admin.waiting }}</span>
-          </button>
+          <template v-for="g in panels.sectionGroups" :key="g.group">
+            <div v-if="g.title" class="settings-rail-group" role="presentation">{{ g.title }}</div>
+            <button v-for="s in g.items" :id="`toggle-${s.panel}`" :key="s.panel" class="nav-item" type="button"
+                    :class="{ active: panels.open === s.panel }" :aria-current="panels.open === s.panel ? 'page' : undefined"
+                    @click="panels.openPanel(s.panel)">
+              <Icon :name="s.icon" /><span>{{ s.label }}</span>
+              <span v-if="s.panel === PANEL.ADMIN && admin.waiting" class="adm-badge"
+                    :title="`${admin.waiting} waiting for approval`">{{ admin.waiting }}</span>
+            </button>
+          </template>
         </div>
       </nav>
       <div class="settings-body">
-        <SettingsPanel />
+        <AccountPanel />
+        <AppearancePanel />
         <AutomationsPanel />
-        <IntegrationsPanel />
-        <McpPanel />
         <StatisticsPanel />
+        <ModelsPanel />
+        <ModelDefaultsPanel />
+        <ChatBehaviourPanel />
         <AdminPanel />
       </div>
     </div>

@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
- * My preferences → Appearance: the theme on the page, the admin's default for
- * everyone, and themes people import. Changes apply as they are picked, apart
- * from the settings draft and its Save.
+ * Appearance: the theme on the page, the admin's default for everyone, and
+ * themes people import. Changes apply as they are picked; there is no Save.
  */
 import { computed, ref } from 'vue';
 import { useConfig } from '../../stores/config.ts';

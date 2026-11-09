@@ -50,7 +50,7 @@ export function approvalFor(cfg: ApprovalConfig, hub: ToolFacts | null | undefin
   return hub?.isReadOnly?.(name, args) ? 'auto' : 'ask';
 }
 
-/** The per-tool override the settings panel shows: 'ask', 'auto' or 'default'. */
+/** The per-tool override the MCP page shows: 'ask', 'auto' or 'default'. */
 export function overrideFor(cfg: ApprovalConfig, name: string): 'ask' | 'auto' | 'default' {
   if ((cfg.confirmTools || []).includes(name)) return 'ask';
   if ((cfg.autoApproveTools || []).includes(name)) return 'auto';

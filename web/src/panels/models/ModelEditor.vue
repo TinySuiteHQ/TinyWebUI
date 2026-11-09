@@ -5,7 +5,7 @@
  * defaults for all models, and say what they would inherit.
  */
 import { computed } from 'vue';
-import { CACHE_MODES, CACHE_TTLS, LEVELS, OVERRIDES, REASONING_REPLAY, SECTIONS, SENDS, connectorChoices, pickedLevels, type Draft, type ModelDraft, type OverrideSpec } from './draft.ts';
+import { CACHE_MODES, CACHE_TTLS, LEVELS, OVERRIDES, REASONING_REPLAY, SECTIONS, SENDS, connectorChoices, pickedLevels, type Draft, type ModelDraft, type OverrideSpec } from '../settings/draft.ts';
 
 const props = defineProps<{ draft: Draft, model: ModelDraft, locked: boolean }>();
 const emit = defineEmits<{ remove: [] }>();
@@ -63,7 +63,7 @@ function togglePick(v: string, on: boolean) {
         <div class="span-2"><label>Description</label><input v-model="model.description" placeholder="Everyday questions" spellcheck="false" :disabled="locked"></div>
         <div><label>Provider model id</label><input v-model="model.model" placeholder="vendor/model-id" spellcheck="false" :disabled="locked"><small>Blank: the id above.</small></div>
         <div>
-          <label>Connector</label>
+          <label>Connection</label>
           <select v-model="model.connector" :disabled="locked"><option v-for="c in choices" :key="c.value" :value="c.value">{{ c.label }}</option></select>
         </div>
         <div>

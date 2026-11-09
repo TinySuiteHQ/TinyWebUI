@@ -12,10 +12,10 @@ import { useSession } from '../../stores/session.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import { PANEL } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
-import { featureName, plural, roleLabel, when } from './admin_words.ts';
+import { featureName, plural, roleLabel, roleSettingsSummary, when } from './admin_words.ts';
 import PersonRow from './PersonRow.vue';
 import RoleEditor from './RoleEditor.vue';
-import IntegrationView from '../integrations/IntegrationView.vue';
+import IntegrationView from '../mcp/IntegrationView.vue';
 import Markdown from '../../chat/Markdown.vue';
 
 // /api/admin/* replies, read field by field.
@@ -158,7 +158,7 @@ async function createRole() {
   const name = newRole.value.trim().toLowerCase();
   const base = policy.value?.roles.find((r: Json) => r.name === newRoleFrom.value);
   const body = base
-    ? { name, features: base.features.filter((f: string) => f !== FEATURE.ADMIN), customize: base.customize, ...(policy.value.models.length ? { models: base.models } : {}) }
+    ? { name, features: base.features.filter((f: string) => f !== FEATURE.ADMIN), customize: base.customize, ...(base.settings ? { settings: base.settings } : {}), ...(policy.value.models.length ? { models: base.models } : {}) }
     : { name, features: [], customize: [] };
   try {
     const out = await api.post('/api/admin/roles', body);
@@ -392,12 +392,13 @@ onBeforeUnmount(stopPoll);
               <div class="adm-role-h">
                 <div class="adm-role-title"><h3>{{ roleLabel(r.name) }}</h3><span class="chip">{{ r.builtin ? 'built in' : 'custom' }}</span></div>
                 <button type="button" class="adm-link" :disabled="!r.users" @click="showPeopleOf(r)">{{ plural(r.users, 'person', 'people') }}</button>
-                <button v-if="!r.fixed && openRole !== r.name" type="button" class="adm-small" :disabled="policy.locked" @click="openRole = r.name">Edit</button>
+                <button v-if="openRole !== r.name" type="button" class="adm-small" :disabled="policy.locked" @click="openRole = r.name">{{ r.fixed ? 'Settings' : 'Edit' }}</button>
               </div>
               <RoleEditor v-if="openRole === r.name" :role="r" :policy="policy" @saved="roleSaved" @deleted="roleDeleted" @cancel="openRole = null" />
               <template v-else>
                 <p class="adm-role-sum">{{ roleSummary(r) }}</p>
                 <p v-if="!r.fixed && policy.models.length" class="adm-meta">{{ r.models === '*' ? 'Any model' : r.models.length ? `Models: ${r.models.join(', ')}` : 'No models' }}</p>
+                <p v-if="roleSettingsSummary(r.settings)" class="adm-meta">Chats: {{ roleSettingsSummary(r.settings) }}</p>
               </template>
             </article>
           </div>

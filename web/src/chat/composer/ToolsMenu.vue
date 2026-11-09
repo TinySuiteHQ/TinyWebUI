@@ -108,9 +108,9 @@ onMounted(async () => {
             <div v-else-if="!s.tools.length" class="pop-note">No tools</div>
           </div>
         </details>
-        <div v-if="!data.servers.length" class="pop-note">No MCP servers yet. Add them under MCP servers.</div>
+        <div v-if="!data.servers.length" class="pop-note">No MCP servers yet. Add them on the MCP page.</div>
       </template>
     </div>
-    <button v-if="session.can(FEATURE.MCP)" type="button" class="pop-item pop-foot" @click="emit('manage')">Manage MCP servers</button>
+    <button v-if="session.can(FEATURE.MCP)" type="button" class="pop-item pop-foot" @click="emit('manage')">Manage MCP</button>
   </template>
 </template>

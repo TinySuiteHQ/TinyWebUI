@@ -1,6 +1,7 @@
 /**
- * The settings draft: every page of the Settings panel edits this one object,
- * so moving between pages loses nothing and one Save writes it all. Built from
+ * The settings draft: the Models, Model defaults and Chat behaviour pages all
+ * edit this one object, so moving between them loses nothing and one Save
+ * writes it all. Built from
  * /api/config, turned back into a config patch on save. Keys are write-only:
  * a blank key field means "keep it".
  */
@@ -37,7 +38,7 @@ export const SENDS = options(SETTING.THINKING_SENDS, {
 
 /**
  * The settings a model may override. Each inherits the global value of the
- * same key (on "Defaults for all models") while blank.
+ * same key (on "Model defaults") while blank.
  */
 export type OverrideSpec = { key: string, section: string, label: string, type: 'textarea' | 'number' | 'select' | 'json', note?: string, attrs?: Record<string, number>, options?: [string, string][] };
 export const OVERRIDES: OverrideSpec[] = [
@@ -70,7 +71,6 @@ export type Draft = {
   form: Form,
   connectors: ConnectorDraft[],
   models: ModelDraft[],
-  myInstructions: string,
   /** Whether the top-level endpoint serves anything (set in code or the environment). */
   defaultEndpoint: boolean,
   defaultKey: { set: boolean, hint: string }
@@ -103,7 +103,7 @@ export function modelDraft(m: Json = {}): ModelDraft {
   };
 }
 
-export function fromConfig(cfg: Json, me: Json): Draft {
+export function fromConfig(cfg: Json): Draft {
   const form: Form = {
     systemPrompt: str(cfg.systemPrompt),
     model: str(cfg.model),
@@ -120,7 +120,6 @@ export function fromConfig(cfg: Json, me: Json): Draft {
     maxHistoryTokens: str(cfg.maxHistoryTokens, '0'),
     cacheMode: str(cfg.cacheMode, 'auto'),
     timezone: str(cfg.timezone),
-    toolApproval: str(cfg.toolApproval, 'writes'),
     baseUrl: str(cfg.baseUrl),
     apiKey: '',
     llmCompaction: String(cfg.llmCompaction !== false),
@@ -134,13 +133,14 @@ export function fromConfig(cfg: Json, me: Json): Draft {
     form,
     connectors: (cfg.connectors || []).map(connectorDraft),
     models: (cfg.models || []).map(modelDraft),
-    myInstructions: me.instructions || '',
     defaultEndpoint: Boolean(cfg.usesDefaultEndpoint),
     defaultKey: { set: Boolean(cfg.hasApiKey), hint: cfg.keyHint || '' }
   };
 }
 
-const num = (v: string) => (v.trim() === '' ? null : Number(v));
+// A number input's v-model holds a number once typed in, a string before: read both.
+const text = (v: unknown) => (v == null ? '' : String(v));
+const num = (v: unknown) => (text(v).trim() === '' ? null : Number(v));
 
 function readConnector(c: ConnectorDraft) {
   return {
@@ -175,7 +175,7 @@ function readModel(m: ModelDraft) {
   if (!m.tools) out.tools = false;
   if (!m.enabled) out.enabled = false;
   for (const spec of OVERRIDES) {
-    const raw = (m.overrides[spec.key] || '').trim();
+    const raw = text(m.overrides[spec.key]).trim();
     if (raw === '') continue;
     if (spec.type === 'number') out[spec.key] = Number(raw);
     else if (spec.type === 'json') {
@@ -196,8 +196,8 @@ export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lo
   const patch: Json = {
     systemPrompt: f.systemPrompt,
     model: (f.model || '').trim(),
-    temperature: num(f.temperature || ''),
-    maxTokens: num(f.maxTokens || ''),
+    temperature: num(f.temperature),
+    maxTokens: num(f.maxTokens),
     maxToolRounds: Number(f.maxToolRounds) || 12,
     askUserTimeoutSeconds: Math.max(0, Math.round(Number(f.askUserTimeoutSeconds) || 0)),
     cacheTtl: f.cacheTtl,
@@ -208,8 +208,9 @@ export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lo
     compactMinSaved: Number(f.compactMinSaved) || 0,
     maxHistoryTokens: Number(f.maxHistoryTokens) || 0,
     cacheMode: f.cacheMode,
-    timezone: f.timezone,
-    toolApproval: f.toolApproval
+    // toolApproval is not here: the MCP page saves it as it changes, and a
+    // stale copy in the draft would undo that on the next Save.
+    timezone: f.timezone
   };
   if (admin) {
     const catalog = { connectors: d.connectors.map(readConnector), models: d.models.map(readModel) };
@@ -234,12 +235,12 @@ export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lo
   return patch;
 }
 
-/** What a model's connector select offers: the connectors, the default endpoint when it serves, and its own value. */
+/** What a model's connection select offers: the connectors, the default endpoint when it serves, and its own value. */
 export function connectorChoices(d: Draft, current: string): { value: string, label: string }[] {
   const ids = d.connectors.map((c) => c.id.trim()).filter(Boolean);
   const keepDefault = d.defaultEndpoint || (current === '' && !ids.length);
   return [
-    ...(keepDefault ? [{ value: '', label: 'Default endpoint' }] : []),
+    ...(keepDefault ? [{ value: '', label: 'Default connection' }] : []),
     ...[...new Set([...ids, ...(current && !ids.includes(current) ? [current] : [])])].map((id) => ({ value: id, label: id }))
   ];
 }

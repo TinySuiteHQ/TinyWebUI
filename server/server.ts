@@ -9,7 +9,7 @@ import { McpHub, missingCommand, type Principal } from './mcp.ts';
 import { serversIdentityProblems, claimValue, LOCAL_PRINCIPAL } from './access/mcp_identity.ts';
 import { isClosed, findEntry, effectiveConfig } from './config/models.ts';
 import { Store, SCHEMA_VERSION } from './store/index.ts';
-import { fingerprint, featuresFor, modelsFor, customizeFor } from './access/policy.ts';
+import { fingerprint, featuresFor, modelsFor, customizeFor, roleSettingsFor } from './access/policy.ts';
 import { applyAccessPolicy } from './access/auth.ts';
 import { audit } from './audit.ts';
 import { logger } from './log.ts';
@@ -218,8 +218,8 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
 
     /**
      * The model a person's turns use. Tiers 1-2: the configured model. Tier 3:
-     * their own pick if their role still allows it, else the configured model
-     * if allowed, else the first model their role allows.
+     * their own pick if their role still allows it, else their role's default,
+     * else the configured model if allowed, else the first model their role allows.
      */
     modelFor(userId, role) {
       const { cfg } = app;
@@ -232,6 +232,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
       const ok = (m: string | null | undefined): m is string => Boolean(m && (allowed === '*' || allowed.includes(m)));
       const pref = known(store.users.getPrefs(userId).model);
       if (ok(pref)) return pref;
+      // A disabled entry is not known, so a role's parked default falls through.
+      const roleDefault = known(roleSettingsFor(cfg, role).model);
+      if (ok(roleDefault)) return roleDefault;
       if (ok(fallback)) return fallback;
       // Every model allowed and none set up yet: there is nothing to pick.
       if (allowed === '*') return fallback;

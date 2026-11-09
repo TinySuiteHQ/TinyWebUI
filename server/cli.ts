@@ -269,7 +269,7 @@ const commands: Record<string, Command> = {
         store.users.deleteUserSessions(user.id);
         audit('auth.password_changed', { userId: user.id, by: 'cli' });
         out(args.includes('--stdin') ? `password set for ${user.email}` : `new password for ${user.email}: ${password}`);
-        out('Every session of this account was signed out. Sign in, then change it under Settings > My preferences.');
+        out('Every session of this account was signed out. Sign in, then change it under Settings > Account.');
         if (user.status !== 'approved') out(`note: this account is ${user.status}; it cannot sign in until it is approved.`);
         return 0;
       } finally { store.close(); }
@@ -471,7 +471,20 @@ export function configSchema() {
     type: 'object', additionalProperties: false,
     properties: {
       features: featureList, models: { oneOf: [{ const: '*' }, { type: 'array', items: { type: 'string' } }] },
-      customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What this role may personalise; defaults to access.customize.' }
+      customize: { type: 'array', items: { enum: CUSTOMIZABLE }, uniqueItems: true, description: 'What this role may personalise; defaults to access.customize.' },
+      settings: {
+        type: 'object', additionalProperties: false,
+        description: "What this role's people get over the global and per-model values; a key left out inherits.",
+        properties: {
+          systemPrompt: { type: 'string', description: 'Replaces the system prompt (and a model\'s own) for this role.' },
+          model: { type: 'string', description: "The model new chats start with: one of this role's models. A person's own pick still wins." },
+          temperature: { type: 'number', minimum: 0, maximum: 2 },
+          maxTokens: { type: 'integer', minimum: 1 },
+          maxToolRounds: { type: 'integer', minimum: 1, maximum: 50 },
+          askUserTimeoutSeconds: { type: 'integer', minimum: 0, maximum: 86400 },
+          toolApproval: { enum: TOOL_APPROVALS }
+        }
+      }
     }
   };
   properties.retrieval = {

@@ -39,6 +39,7 @@ const openChat = (id: string) => { if (panels.closeAll()) chat.openChat(id); };
 const newChat = () => { if (panels.closeAll()) chat.newChat(); };
 
 const showFiles = computed(() => session.can(FEATURE.ATTACHMENTS) || session.can(FEATURE.IMAGES));
+const showMcp = computed(() => session.can(FEATURE.MCP) || session.can(FEATURE.INTEGRATIONS));
 
 /* ---------- account ---------- */
 
@@ -234,6 +235,10 @@ function rowKey(e: KeyboardEvent, go: () => void) {
         <button v-if="showFiles" id="toggle-files" class="nav-item" type="button"
                 :class="{ active: panels.open === PANEL.FILES }" @click="panels.toggle(PANEL.FILES)">
           <Icon name="files" /><span>Files</span>
+        </button>
+        <button v-if="showMcp" id="toggle-mcp" class="nav-item" type="button"
+                :class="{ active: panels.open === PANEL.MCP }" @click="panels.toggle(PANEL.MCP)">
+          <Icon name="mcp" /><span>MCP</span>
         </button>
       </nav>
       <div class="side-label">

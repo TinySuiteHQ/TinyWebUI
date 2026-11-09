@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ModelDraft } from './draft.ts';
+import type { ModelDraft } from '../settings/draft.ts';
 
 defineProps<{ model: ModelDraft, isDefault: boolean }>();
 const emit = defineEmits<{ open: [] }>();

@@ -96,7 +96,7 @@ export function missingCommand(spec: McpServerSpec): { message: string; install:
   }
   const install = INSTALL[cmd] || null;
   if (install) {
-    return { message: `"${cmd}" was not found. This server runs through ${install.name}: install it from ${install.url}, then retry this server in the tools panel.`, install };
+    return { message: `"${cmd}" was not found. This server runs through ${install.name}: install it from ${install.url}, then retry this server on the MCP page.`, install };
   }
   return { message: `"${cmd}" was not found on PATH`, install: null };
 }
@@ -691,7 +691,7 @@ export class McpHub {
   }
 
   /**
-   * A structured view for the settings panel: which tools are ours, which came
+   * A structured view for the MCP page: which tools are ours, which came
    * from which server, and that server's health -- connected, disabled, or
    * failed to connect and why. Disabling here is advisory only, a flag drawn
    * from `disabledNames`; `activeTools` is what actually enforces it.

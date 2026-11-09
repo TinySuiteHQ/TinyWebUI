@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The signed-in app: the sidebar, the chat, the Files page over it, and the
+ * The signed-in app: the sidebar, the chat, the Files and MCP pages over it, and the
  * settings dialog. The only wiring: stores do nothing until this starts them.
  */
 import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
@@ -16,6 +16,7 @@ import Icon from '../ui/Icon.vue';
 import Sidebar from '../chat/sidebar/Sidebar.vue';
 import ChatView from '../chat/ChatView.vue';
 import FilesPanel from '../panels/files/FilesPanel.vue';
+import McpPanel from '../panels/mcp/McpPanel.vue';
 import SettingsDialog from './SettingsDialog.vue';
 
 const session = useSession();
@@ -47,7 +48,7 @@ onMounted(() => {
   useTheme().load();
   // Tools render read-only for non-admins, so they wait on the config.
   config.load().then(() => {
-    if (config.setupNeeded) panels.openPanel(PANEL.SETTINGS);
+    if (config.setupNeeded) panels.openPanel(PANEL.MODELS);
     if (session.can(FEATURE.TOOLS)) config.loadTools();
   });
   if (session.can(FEATURE.MCP)) config.loadMcp();
@@ -68,6 +69,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
         <Icon name="sidebar" />
       </button>
       <FilesPanel />
+      <McpPanel />
       <ChatView />
     </main>
     <SettingsDialog />

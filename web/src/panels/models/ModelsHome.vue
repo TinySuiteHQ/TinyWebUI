@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * The settings home for an admin: one card per connector with the models it
+ * The Models page for an admin: one card per connection with the models it
  * serves, and the top-level endpoint first only while it serves anything.
  * With none of them it is the first step of setting up: connect an endpoint,
  * then add its models. Drawn from the draft, so it shows unsaved edits.
  */
 import { computed } from 'vue';
-import type { ConnectorDraft, Draft, ModelDraft } from './draft.ts';
+import type { ConnectorDraft, Draft, ModelDraft } from '../settings/draft.ts';
 import ModelLink from './ModelLink.vue';
 
 const props = defineProps<{ draft: Draft, catalogLocked: boolean, modelLocked: boolean }>();
@@ -26,7 +26,7 @@ const baseUrl = computed(() => (props.draft.form.baseUrl || '').trim());
   <div>
     <section v-if="draft.defaultEndpoint" class="set-group ep-card">
       <div class="ep-head">
-        <div><h3>Default endpoint</h3><p>{{ baseUrl ? host(baseUrl) : 'no URL set' }} · {{ draft.defaultKey.set ? `key …${draft.defaultKey.hint}` : 'no key' }}</p></div>
+        <div><h3>Default connection</h3><p>{{ baseUrl ? host(baseUrl) : 'no URL set' }} · {{ draft.defaultKey.set ? `key …${draft.defaultKey.hint}` : 'no key' }}</p></div>
         <button type="button" @click="emit('endpoint')">Edit</button>
       </div>
       <div v-if="under('').length" class="model-list">
@@ -44,7 +44,7 @@ const baseUrl = computed(() => (props.draft.form.baseUrl || '').trim());
 
     <section v-for="c in draft.connectors" :key="c.key" class="set-group ep-card">
       <div class="ep-head">
-        <div><h3>{{ c.label || c.id || 'New connector' }}</h3>
+        <div><h3>{{ c.label || c.id || 'New connection' }}</h3>
           <p>{{ c.id ? `${c.id} · ` : '' }}{{ c.baseUrl ? host(c.baseUrl) : 'no URL set' }} · {{ c.apiKey || (c.hasApiKey && !c.clearKey) ? 'key set' : 'no key' }}</p></div>
         <button type="button" @click="emit('connector', c)">Edit</button>
       </div>
@@ -56,7 +56,7 @@ const baseUrl = computed(() => (props.draft.form.baseUrl || '').trim());
     </section>
 
     <section v-if="orphans.length" class="set-group ep-card">
-      <div class="ep-head"><div><h3>Unknown connector</h3><p>These models name a connector that is not defined.</p></div></div>
+      <div class="ep-head"><div><h3>Unknown connection</h3><p>These models name a connection that is not defined.</p></div></div>
       <div class="model-list">
         <button v-for="m in orphans" :key="m.key" type="button" class="model-link" @click="emit('model', m)">
           <span class="model-text"><span class="model-name">{{ m.label || m.id || 'Untitled model' }}</span><span class="model-sub">{{ m.connector }}</span></span>
@@ -66,11 +66,11 @@ const baseUrl = computed(() => (props.draft.form.baseUrl || '').trim());
     </section>
 
     <section v-if="empty" class="set-group ep-card ep-setup">
-      <h3>Connect a model endpoint</h3>
+      <h3>Connect a model API</h3>
       <p>Any OpenAI-compatible API: its URL, and an API key if it needs one. Then add the models people can pick from it.</p>
-      <button v-if="!catalogLocked" type="button" class="primary" @click="emit('addConnector')">Add a connector</button>
+      <button v-if="!catalogLocked" type="button" class="primary" @click="emit('addConnector')">Add a connection</button>
     </section>
     <!-- The setup card has its own button; a second one under it would only repeat it. -->
-    <div v-else-if="!catalogLocked" class="set-add"><button type="button" @click="emit('addConnector')">+ Add connector</button></div>
+    <div v-else-if="!catalogLocked" class="set-add"><button type="button" @click="emit('addConnector')">+ Add connection</button></div>
   </div>
 </template>

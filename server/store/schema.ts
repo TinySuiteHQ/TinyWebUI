@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS invitations (
 );
 CREATE INDEX IF NOT EXISTS invitations_active ON invitations(expires_at) WHERE used_at IS NULL;
 
--- Themes people imported (Settings -> My preferences -> Appearance): one CSS
+-- Themes people imported (Settings -> Appearance): one CSS
 -- file each, only ever variables the page already reads. user_id NULL is a
 -- theme for everyone (an admin's, or anything imported with sign-in off);
 -- otherwise only its owner sees it. The built-in themes are files in

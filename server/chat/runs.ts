@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { runChat } from './llm.ts';
 import { effectiveConfig, findEntry, thinkingFor, usesTools } from '../config/models.ts';
+import { roleSettingsFor } from '../access/policy.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../shared/events.ts';
 import { CORPUS, type Store } from '../store/index.ts';
 import type { ChatRow, QuestionStatus } from '../store/chats.ts';
+import type { UserRole } from '../store/users.ts';
 import type { Config } from '../config/config.ts';
 import type { McpHub } from '../mcp.ts';
 import type { Retrieval } from '../retrieval/retrieval.ts';
@@ -52,6 +54,8 @@ export interface RunOptions {
   model?: string | null;
   lead?: string | null;
   instructions?: string | null;
+  /** The role of the person the turn is for: its settings apply over the global and per-model ones. */
+  role?: UserRole | null;
   /** The thinking level the person asked for; the model's own settings decide whether it applies. */
   thinking?: string | null;
 }
@@ -101,7 +105,7 @@ export function createRuns(app: RunsApp) {
    * `lead` is a queued follow-up that starts this run: stored after baseCount
    * and sent as an event, so a live view and a reload each show it once.
    */
-  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null, thinking = null }: RunOptions): Run {
+  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null, thinking = null, role = null }: RunOptions): Run {
     const run: Run = {
       events: [],
       subs: new Set(),
@@ -142,7 +146,7 @@ export function createRuns(app: RunsApp) {
       // settled; this is the guard should that ever change.
       if (run.question) return Promise.resolve({ answered: false, reason: 'busy' });
       const id = randomUUID();
-      const seconds = Math.max(0, Number(app.cfg.askUserTimeoutSeconds) || 0);
+      const seconds = Math.max(0, Number(roleSettingsFor(app.cfg, role).askUserTimeoutSeconds ?? app.cfg.askUserTimeoutSeconds) || 0);
       const deadline = seconds ? Date.now() + seconds * 1000 : null;
       store.chats.addQuestion(chat.id, { id, question, choices, allowFreeText, deadline });
       return new Promise((resolve) => {
@@ -190,7 +194,7 @@ export function createRuns(app: RunsApp) {
         // answers as usual; one that rejects it has the field dropped for the
         // rest of this turn (post() in provider.ts). Nothing is remembered.
         const think = thinkingFor(app.cfg, model, thinking);
-        const base = { ...effectiveConfig(app.cfg, model), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
+        const base = { ...effectiveConfig(app.cfg, model, roleSettingsFor(app.cfg, role)), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
         const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}
 
 The user's own instructions:
@@ -212,7 +216,7 @@ ${instructions}` } : base;
         const next = ok && !unattended ? store.chats.takeQueued(chat.id, { first: true })[0] : null;
         if (next) {
           emit({ type: EVENT.NEXT_RUN });
-          start({ chat, tools, model, lead: next.content, instructions, thinking });
+          start({ chat, tools, model, lead: next.content, instructions, thinking, role });
         }
         try { onFinish?.({
           ok,

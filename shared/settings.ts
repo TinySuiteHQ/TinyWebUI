@@ -18,6 +18,14 @@ export const THINKING_SENDS = Object.freeze(['auto', 'effort', 'openrouter', 'an
 /** When a tool call waits for the person's allow / deny; see server/config/approval.ts. */
 export const TOOL_APPROVALS = Object.freeze(['writes', 'all', 'off'] as const);
 
+/**
+ * What a role may set for its own people (access.roles.<name>.settings), over
+ * the global value and a model's own. Blank inherits. The server validates
+ * these (access/policy.ts) and the role editor labels each one.
+ */
+export const ROLE_SETTINGS = Object.freeze(['systemPrompt', 'model', 'temperature', 'maxTokens', 'maxToolRounds', 'askUserTimeoutSeconds', 'toolApproval'] as const);
+export type RoleSettingKey = typeof ROLE_SETTINGS[number];
+
 export type CacheMode = typeof CACHE_MODES[number];
 export type CacheTtl = typeof CACHE_TTLS[number];
 export type ReasoningReplay = typeof REASONING_REPLAYS[number];

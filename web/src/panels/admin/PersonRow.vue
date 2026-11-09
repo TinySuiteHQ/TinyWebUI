@@ -96,7 +96,7 @@ async function setPassword() {
         </select>
         <button type="button" class="adm-small" @click="emit('chats')">Chats</button>
         <button type="button" class="adm-small" @click="emit('connectors')">Connectors</button>
-        <!-- Local accounts only: a gateway (SSO) account has no password here. Your own is under My preferences. -->
+        <!-- Local accounts only: a gateway (SSO) account has no password here. Your own is under Settings → Account. -->
         <button v-if="user.hasPassword && !self" type="button" class="adm-small" @click="pwOpen = !pwOpen">Set password</button>
         <button type="button" class="adm-small adm-quiet" :disabled="locked || busy" @click="disable">Disable</button>
       </template>

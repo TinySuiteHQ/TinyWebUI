@@ -13,7 +13,7 @@ export interface SchedulerApp {
   runs: {
     isRunning(chatId: string): boolean;
     start(opts: {
-      chat: ChatRow; model: string; tools: ToolDef[]; historyFromSeq: number; unattended: boolean;
+      chat: ChatRow; model: string; role?: UserRole | null; tools: ToolDef[]; historyFromSeq: number; unattended: boolean;
       onFinish: (outcome: { ok: boolean; error?: unknown; result?: unknown }) => void;
     }): unknown;
   };
@@ -64,6 +64,7 @@ export function createScheduler(app: SchedulerApp) {
     runs.start({
       chat,
       model: app.modelFor(automation.userId, role),
+      role,
       tools: app.toolsFor(app.ownerFeatures(automation.userId)),
       historyFromSeq: firstSeq,
       unattended: true,

@@ -17,6 +17,7 @@
  * policy.js.
  */
 import type { CacheMode, ExtraBody, ReasoningReplay, ThinkingLevel, ThinkingSend } from '../harness/types.ts';
+import type { RoleSettings } from '../access/policy.ts';
 import { REASONING_REPLAYS, THINKING_CHOICES as SHARED_THINKING_CHOICES, THINKING_SENDS, type CacheTtl, type ThinkingChoice } from '../../shared/settings.ts';
 
 
@@ -200,11 +201,29 @@ export function thinkingFor(cfg: Partial<CatalogConfig>, key: string | null | un
 }
 
 /**
- * The config one turn runs with: the entry's overrides over the global
- * settings and its provider id as `model`. extraBody merges, so an entry can
- * add a reasoning knob without restating the gateway's routing.
+ * What a role's settings replace in a turn's config, last of all: a role is
+ * the admin's word for those people, over the global value and a model's own.
+ * `model` (picked before the turn, in modelFor) and the question timeout (read
+ * when a question is asked) are applied where they are used instead.
  */
-export function effectiveConfig<C extends CatalogConfig & { baseUrl: string; apiKey: string; extraBody: ExtraBody }>(cfg: C, key?: string | null): C {
+const ROLE_OVERRIDES = ['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'toolApproval'] as const satisfies readonly (keyof RoleSettings)[];
+
+/**
+ * The config one turn runs with: the entry's overrides over the global
+ * settings and its provider id as `model`, then the person's role's settings
+ * over both. extraBody merges, so an entry can add a reasoning knob without
+ * restating the gateway's routing.
+ */
+export function effectiveConfig<C extends CatalogConfig & { baseUrl: string; apiKey: string; extraBody: ExtraBody }>(cfg: C, key?: string | null, role: RoleSettings = {}): C {
+  const out = entryConfig(cfg, key);
+  const set = ROLE_OVERRIDES.filter((k) => role[k] !== undefined);
+  if (!set.length) return out;
+  const withRole = { ...out };
+  for (const k of set) (withRole as Record<string, unknown>)[k] = role[k];
+  return withRole;
+}
+
+function entryConfig<C extends CatalogConfig & { baseUrl: string; apiKey: string; extraBody: ExtraBody }>(cfg: C, key?: string | null): C {
   const e = findEntry(cfg, key ?? cfg.model);
   if (!e) return key && key !== cfg.model ? { ...cfg, model: key } : cfg;
   const out = { ...cfg };
@@ -312,6 +331,10 @@ export function modelProblems(cfg: Record<string, any>): string[] {
   for (const [role, spec] of Object.entries<any>(cfg.access?.roles || {})) {
     if (!Array.isArray(spec?.models)) continue;
     for (const m of spec.models) if (!ids.has(m)) out.push(`access.roles.${role}.models: "${m}" is not a models catalog id`);
+  }
+  for (const [role, spec] of Object.entries<any>(cfg.access?.roles || {})) {
+    const m = spec?.settings?.model;
+    if (typeof m === 'string' && m && !ids.has(m)) out.push(`access.roles.${role}.settings.model: "${m}" is not a models catalog id`);
   }
   return out;
 }

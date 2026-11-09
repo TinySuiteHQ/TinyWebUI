@@ -1,5 +1,6 @@
 /** How the admin panel words roles, features and times. */
 import { FEATURE } from '../../../../shared/features.ts';
+import { ROLE_SETTINGS, type RoleSettingKey } from '../../../../shared/settings.ts';
 
 /** 'team-lead' -> 'Team lead': role names are handles, this is how they read. */
 export const roleLabel = (name: string) => {
@@ -30,10 +31,10 @@ export const FEATURE_INFO: Record<string, [string, string]> = {
   [FEATURE.MODEL_PICKER]: ['Pick a model', 'Choose among the models allowed below'],
   [FEATURE.TOOLS]: ['Tools menu', 'Turn tools on and off from the composer'],
   [FEATURE.AUTOMATIONS]: ['Automations', 'Schedule prompts that run on their own'],
-  [FEATURE.STATISTICS]: ['Statistics', 'See their own usage and cost'],
-  [FEATURE.INTEGRATIONS]: ['Integrations', 'Their own data in connected services'],
+  [FEATURE.STATISTICS]: ['Usage', 'See their own usage and cost'],
+  [FEATURE.INTEGRATIONS]: ['MCP pages', 'Use the management pages MCP servers offer: their own data in connected services'],
   [FEATURE.SETTINGS]: ['Settings', 'Change shared settings (never keys or endpoints)'],
-  [FEATURE.MCP]: ['MCP servers', 'Add and edit tool servers for everyone'],
+  [FEATURE.MCP]: ['Manage MCP servers', 'Add and edit tool servers and their tools for everyone'],
   [FEATURE.OVERSIGHT]: ['Oversight', "Read other people's chats; every look is audited"]
 };
 export const FEATURE_GROUPS: [string, string[]][] = [
@@ -43,3 +44,32 @@ export const FEATURE_GROUPS: [string, string[]][] = [
 ];
 export const CUSTOMIZE_INFO: Record<string, [string, string]> = { theme: ['Theme', 'Pick or import their own look instead of the default'], instructions: ['Personal instructions', 'Add their own instructions for the model'] };
 export const featureName = (f: string) => FEATURE_INFO[f]?.[0] || f;
+
+/**
+ * What a role may set for its people, in the words the role editor uses.
+ * Typed against ROLE_SETTINGS, so a key added there does not compile here
+ * until it reads as something.
+ */
+export const ROLE_SETTING_INFO: Record<RoleSettingKey, [string, string]> = {
+  systemPrompt: ['Prompt', "Replaces the system prompt (and any model's own) for this role. Blank: use the system prompt."],
+  model: ['Default model', "What new chats start with. A person's own pick still wins."],
+  temperature: ['Temperature', 'Over the global value and any model\'s own.'],
+  maxTokens: ['Max output tokens', 'Over the global value and any model\'s own.'],
+  maxToolRounds: ['Max tool turns', 'Tool calls allowed per reply.'],
+  askUserTimeoutSeconds: ['Question timeout (s)', 'How long a question from the model waits. 0: until answered.'],
+  toolApproval: ['Ask before running', 'Whether their MCP tool calls wait for approval.']
+};
+
+/** "custom prompt · default: fast · temperature 0.3": what a role sets, for its card. */
+export function roleSettingsSummary(settings: Partial<Record<RoleSettingKey, unknown>> | undefined): string {
+  if (!settings) return '';
+  const parts: string[] = [];
+  for (const k of ROLE_SETTINGS) {
+    const v = settings[k];
+    if (v === undefined || v === null || v === '') continue;
+    if (k === 'systemPrompt') parts.push('own prompt');
+    else if (k === 'model') parts.push(`default: ${v}`);
+    else parts.push(`${ROLE_SETTING_INFO[k][0].toLowerCase()}: ${v}`);
+  }
+  return parts.join(' · ');
+}

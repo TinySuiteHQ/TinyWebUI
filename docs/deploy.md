@@ -37,7 +37,7 @@ export default {
       roles: {
         user:  { features: ['chat', 'attachments', 'images', 'search', 'folders', 'model-picker'], models: ['fast', 'smart'] },
         admin: { features: '*' },
-        // Any other name is a custom role, assignable from the Admin panel.
+        // Any other name is a custom role, assignable from Settings → People & roles.
         reviewer: { features: ['chat', 'search', 'oversight'], models: ['smart'], customize: ['theme'] }
       }
     }

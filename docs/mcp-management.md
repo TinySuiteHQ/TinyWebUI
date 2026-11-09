@@ -1,6 +1,6 @@
 # Management pages for MCP servers (`tinysuite.manage/1`)
 
-TinyWebUI's **Integrations** panel lists every connected MCP server. A server
+TinyWebUI's **MCP** page lists every connected MCP server. A server
 can add a **Manage** page there: tables and stats about what it holds, plus
 buttons that run its own tools. TinySearch and TinyContext use this, and any
 other server can too. Implementing the contract below is enough: TinyWebUI
@@ -169,8 +169,8 @@ The manifest can only *narrow* access. It never grants anything.
 | `user` | shown | shown, read as the caller on their own connection | listed, unavailable ("shared by everyone") |
 | `instance` | shown | admins only, on the shared connection | admins only, on the shared connection |
 
-- The Integrations panel only ever shows the caller's own data. An admin
-  reaches another person's `user` views only from the Admin panel
+- The MCP page only ever shows the caller's own data. An admin
+  reaches another person's `user` views only from People & roles
   (**connectors** next to a user), on that person's own connection, so they
   see exactly what that person sees. It is read-only: no action is offered or
   accepted there. Every list, view and row opened is written to the audit log

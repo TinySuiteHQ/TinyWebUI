@@ -1,5 +1,5 @@
 /**
- * The Integrations panel's API: every connected MCP server, and for those
+ * The MCP page's management API: every connected MCP server, and for those
  * that offer one (management.ts), its management views and actions.
  *
  * Who may see what is decided here, never by the server's manifest:

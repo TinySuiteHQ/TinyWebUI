@@ -272,12 +272,12 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
 /* main column */
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 
-/* Settings takes the whole main column rather than squeezing the transcript. */
-#settings {
+/* The settings sections (Account, Models, ...) each fill the dialog's body. */
+.set-panel {
   display: none; position: absolute; inset: 0; z-index: 10; padding: 0;
   background: var(--bg); flex-direction: column; overflow: hidden;
 }
-#settings.open { display: flex; }
+.set-panel.open { display: flex; }
 .settings-content { overflow-y: auto; }
 #automations {
   display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
@@ -1019,13 +1019,13 @@ details.tool > summary select.approval {
 /* Full-column panels slide up and fade in instead of popping. They stay in
    layout (display:flex) and are hidden with visibility, which is what lets
    the transition run in both directions. */
-#settings, #automations, #statistics, #admin {
+.set-panel, #automations, #statistics, #admin {
   display: flex; visibility: hidden; opacity: 0; transform: translateY(8px);
   pointer-events: none;
   transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease),
               visibility 0s linear var(--t-med);
 }
-#settings.open, #automations.open, #statistics.open, #admin.open {
+.set-panel.open, #automations.open, #statistics.open, #admin.open {
   visibility: visible; opacity: 1; transform: none; pointer-events: auto;
   transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
 }
@@ -1244,7 +1244,7 @@ main.empty-chat footer { padding-top: 0; }
 main.empty-chat #form { max-width: 48rem; }
 
 /* Panels open inside main, so they take its rounded corners too. */
-#settings, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
+.set-panel, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
 
 @media (max-width: 720px) {
   #shell { padding: 0; gap: 0; }
@@ -1373,7 +1373,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
   border-right: 2px solid var(--fg); border-bottom: 2px solid var(--fg); transform: rotate(45deg) translate(-2px, -2px);
 }
 
-/* MCP servers: its own full-column panel, same behaviour as the others. */
+/* MCP: its own full-column page in main, like Files. */
 #mcp {
   position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
   display: flex; flex-direction: column; overflow: hidden;
@@ -1387,7 +1387,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
 
 /* Settings: one card per concern, a title and one line saying what it is
    for, fields laid out two to a row with their help text under them. */
-#settings .settings-content { padding: 1.25rem 1rem 2rem; }
+.set-panel .settings-content { padding: 1.25rem 1rem 2rem; }
 .set-group {
   width: min(46rem, 100%); margin: 0 auto 1rem; padding: 1.125rem 1.25rem 1.25rem;
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-md);
@@ -1517,12 +1517,16 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
   overflow-wrap: anywhere; min-width: 0;
 }
 
-/* Integrations: connected MCP servers and their management views. */
-#integrations {
-  display: none; position: absolute; inset: 0; z-index: 9; background: var(--bg);
-  flex-direction: column; overflow: hidden;
-}
-#integrations.open { display: flex; }
+/* MCP: connected servers, their tools and their management views. */
+.mcp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
+.mcp-mode { display: flex; align-items: center; gap: .5rem; margin: 0 0 0 auto; font-size: var(--fs-meta); color: var(--muted); }
+.mcp-mode select { width: auto; max-width: 14rem; }
+.int-tools { width: 100%; }
+.int-tools > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-meta); padding: .25rem 0; }
+.int-tools > summary:hover { color: var(--fg); }
+.int-tools .tool-list, .int-tools .tool-group { margin-top: .5rem; }
+/* Already inside the server's card: a second border would only box it twice. */
+.int-tools .tool-group { border: 0; background: none; padding: 0; }
 
 .int-card { display: flex; flex-direction: column; gap: .6rem; align-items: flex-start; }
 .int-head { display: flex; gap: .75rem; align-items: center; width: 100%; }
@@ -1658,6 +1662,11 @@ dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
 .settings-rail-head h2 { margin: 0; font-size: var(--fs-body); }
 .settings-rail-items { display: flex; flex-direction: column; gap: 1px; }
 .settings-rail .adm-badge { margin-left: auto; }
+.settings-rail-group {
+  padding: .75rem .625rem .25rem; color: var(--faint); font-size: var(--fs-meta);
+  font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+}
+.settings-rail-group:first-child { padding-top: .25rem; }
 .settings-body { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 /* No sidebar toggle over these headers here, so they need no room for one. */
 #settingsDialog .automation-head { padding-left: 1rem; }
@@ -1667,6 +1676,9 @@ dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
   .settings-rail { flex: none; flex-direction: column; gap: .25rem; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .settings-rail-items { flex-direction: row; overflow-x: auto; scrollbar-width: none; margin: 0 -.5rem; padding: 0 .5rem; }
   .settings-rail-items .nav-item { width: auto; flex: none; white-space: nowrap; }
+  /* One scrolling row: a divider between the groups instead of their titles. */
+  .settings-rail-group { flex: none; align-self: stretch; width: 1px; margin: .375rem .25rem; padding: 0; overflow: hidden; color: transparent; background: var(--line); }
+  .settings-rail-group:first-child { display: none; }
 }
 
 /* ---- Camera: a webcam shot for the composer ---- */

@@ -2,7 +2,7 @@
 /** One connector: an OpenAI-compatible API, its URL and a key if it needs one. Its models are added under it. */
 import { ref } from 'vue';
 import { api } from '../../core/api.ts';
-import type { ConnectorDraft, Draft } from './draft.ts';
+import type { ConnectorDraft, Draft } from '../settings/draft.ts';
 
 const props = defineProps<{ draft: Draft, connector: ConnectorDraft, locked: boolean }>();
 const emit = defineEmits<{ remove: [], addModel: [connectorId: string] }>();
@@ -28,7 +28,7 @@ async function test() {
 // The second step of setting one up: the models people pick from it.
 function addModel() {
   const id = props.connector.id.trim();
-  if (!id) { msg.value = 'give the connector an id first'; idEl.value?.focus(); return; }
+  if (!id) { msg.value = 'give the connection an id first'; idEl.value?.focus(); return; }
   emit('addModel', id);
 }
 </script>
@@ -36,13 +36,13 @@ function addModel() {
 <template>
   <div>
     <section class="set-group">
-      <header><h3>Connector</h3><p>An OpenAI-compatible API: its URL, and a key if it needs one. Its models are added under it.</p></header>
+      <header><h3>Connection</h3><p>An OpenAI-compatible API: its URL, and a key if it needs one. Its models are added under it.</p></header>
       <div class="set-grid">
         <div>
           <label>Id</label>
           <!-- An id is what models name; renaming a saved one would orphan them. -->
           <input ref="idEl" v-model="connector.id" placeholder="local" spellcheck="false" :readonly="Boolean(connector.savedId)" :disabled="locked" @change="renamed">
-          <small>What a model names in its connector field.</small>
+          <small>What a model names as its connection.</small>
         </div>
         <div><label>Label</label><input v-model="connector.label" placeholder="Local models" spellcheck="false" :disabled="locked"></div>
         <div class="span-2"><label>API URL</label><input v-model="connector.baseUrl" placeholder="http://localhost:11434/v1" spellcheck="false" :disabled="locked"></div>
@@ -60,7 +60,7 @@ function addModel() {
       </div>
     </section>
     <div class="set-foot">
-      <button type="button" class="danger" :disabled="locked" @click="emit('remove')">Remove connector</button>
+      <button type="button" class="danger" :disabled="locked" @click="emit('remove')">Remove connection</button>
       <button type="button" class="primary" :disabled="locked" @click="addModel">Add a model →</button>
     </div>
   </div>
