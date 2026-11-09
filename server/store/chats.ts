@@ -2,7 +2,7 @@ import { ALL_USERS, scope, ownerOf, type Scope } from './scope.ts';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { CORPUS, type EmbeddingStore } from './embeddings.ts';
-import type { MessageRow, MessageStore } from './messages.ts';
+import type { MessageRow, MessageStore, RestoredMessage } from './messages.ts';
 import type { AutomationStore } from './automations.ts';
 import type { DocumentStore, PassageSettings } from './documents.ts';
 import { attachmentNote, splitAttachmentNotes } from '../../shared/attachment_note.ts';
@@ -31,6 +31,29 @@ export type ChatPatch = Partial<Pick<ChatRow, 'title' | 'epoch' | 'boundary_seq'
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
 export interface Task { id: string; title: string; status: TaskStatus; created_at: number; updated_at: number }
+
+/** A task as a backup carries it: with the seq that a rewind compares against. */
+export interface TaskRecord extends Task { created_seq: number }
+
+/**
+ * A chat as it comes back from a backup (server/transfer/backup.ts), already
+ * checked: restore() writes it as given. Its id is free, and its folder exists.
+ */
+export interface RestoredChat {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  folder: string | null;
+  tagsJson: string;
+  parentId: string | null;
+  forkSeq: number | null;
+  epoch: number;
+  windowSeq: number;
+  checkpointJson: string | null;
+  tasks: { title: string; status: TaskStatus; createdAt: number; updatedAt: number; createdSeq: number }[];
+  messages: RestoredMessage[];
+}
 
 export type QueueKind = 'steer' | 'followup';
 export interface QueuedItem { id: string; kind: QueueKind; content: string }
@@ -127,6 +150,42 @@ export class ChatStore {
   claimUnowned(userId: string): void {
     this.db.prepare('UPDATE chats SET user_id = ? WHERE user_id IS NULL').run(userId);
     this.db.prepare('UPDATE folders SET user_id = ? WHERE user_id IS NULL').run(userId);
+  }
+
+  /** Every chat of one owner, oldest first: what a backup takes. */
+  allFor(userId: Scope): ChatRow[] {
+    const s = scope(userId);
+    return this.db.prepare(`SELECT * FROM chats WHERE ${s.sql} ORDER BY created_at, rowid`).all(...s.params) as unknown as ChatRow[];
+  }
+
+  /** The tasks with the seq each was added at, which listTasks leaves out. */
+  taskRecords(chatId: string): TaskRecord[] {
+    return this.db.prepare('SELECT id, title, status, created_at, updated_at, created_seq FROM tasks WHERE chat_id = ? ORDER BY created_at, rowid')
+      .all(chatId) as unknown as TaskRecord[];
+  }
+
+  /**
+   * Writes a chat from a backup in one transaction: the row, its messages with
+   * the tool output they point at, and its tasks. Nothing half-written is left
+   * if any of it fails. The prompt-cache breakpoint is not carried over: it
+   * named a cache on whatever server the chat came from.
+   */
+  restore(chat: RestoredChat, userId: Scope): ChatRow {
+    const owner = ownerOf(userId);
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare(`INSERT INTO chats (id, title, created_at, updated_at, user_id, folder, tags_json, parent_id, fork_seq, epoch, window_seq, checkpoint_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(chat.id, chat.title, chat.createdAt, chat.updatedAt, owner, chat.folder, chat.tagsJson,
+        chat.parentId, chat.forkSeq, chat.epoch, chat.windowSeq, chat.checkpointJson);
+      for (const m of chat.messages) {
+        const artifactId = m.artifact ? this.messages.restoreArtifact(chat.id, m.artifact, owner) : null;
+        this.messages.restore(chat.id, m, artifactId);
+      }
+      const addTask = this.db.prepare('INSERT INTO tasks (id, chat_id, title, status, created_at, updated_at, created_seq) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const t of chat.tasks) addTask.run(randomUUID(), chat.id, t.title, t.status, t.createdAt, t.updatedAt, t.createdSeq);
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+    return this.byId(chat.id)!;
   }
 
   /** Scoped lookup for anything reached from a request. See scope(). */

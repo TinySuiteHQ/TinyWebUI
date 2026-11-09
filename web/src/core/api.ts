@@ -5,7 +5,8 @@
  *
  * Streaming endpoints (/api/chat, /api/chats/:id/stream) are read as streams
  * and use fetch directly (core/sse.ts reads them). `blob` is for the few
- * binary reads (a stored image put back on the composer).
+ * binary reads (a stored image put back on the composer), `download` for
+ * the exports that are saved as files.
  */
 
 export type ApiError = Error & { status?: number };
@@ -38,5 +39,25 @@ export const api = {
       throw Object.assign(new Error(out.error || String(res.status)), { status: res.status });
     }
     return res.blob();
+  },
+  /**
+   * Saves what a GET answers as a file, under the name the server gives it.
+   * Fetched rather than linked so a refusal shows as an error here instead of
+   * downloading the error's JSON.
+   */
+  async download(url: string, fallbackName: string): Promise<void> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const out = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(out.error || String(res.status)), { status: res.status });
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const name = star ? decodeURIComponent(star[1] as string) : fallbackName;
+    const href = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement('a'), { href, download: name });
+    a.click();
+    // Revoked a moment later: some browsers start the save after click() returns.
+    setTimeout(() => URL.revokeObjectURL(href), 10000);
   }
 };

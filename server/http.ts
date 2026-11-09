@@ -33,6 +33,7 @@ export class HttpError extends Error {
 export const BODY_LIMIT = 1024 * 1024;
 export const UPLOAD_LIMIT = 8 * 1024 * 1024;       // one 5 MB file, base64
 export const TURN_LIMIT = 60 * 1024 * 1024;        // up to 8 images of 5 MB, base64
+export const BACKUP_LIMIT = 100 * 1024 * 1024;     // a backup is text (no files), but tool output adds up over years
 
 /** A request body: a JSON object whose fields are whatever the client sent, until a route checks them. */
 export type Body = Record<string, unknown>;

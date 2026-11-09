@@ -37,6 +37,27 @@ export interface NewMessage extends Omit<ChatMessage, 'content'> {
   origin?: object;
 }
 
+/**
+ * A message as a backup carries it (server/transfer/backup.ts): every column
+ * but its images, with the tool output it points at inline. JSON columns stay
+ * the strings they were stored as.
+ */
+export interface RestoredMessage {
+  seq: number;
+  role: Role;
+  content: string | null;
+  toolCallId: string | null;
+  toolCallsJson: string | null;
+  reasoning: string | null;
+  reasoningDetailsJson: string | null;
+  artifact: { toolName: string; argsJson: string | null; content: string; createdAt: number } | null;
+  stubText: string | null;
+  usageJson: string | null;
+  model: string | null;
+  createdAt: number | null;
+  originJson: string | null;
+}
+
 /** One image the user attached, without its bytes: what the Files page lists. */
 export interface ImageSummary {
   messageId: number;
@@ -150,6 +171,31 @@ export class MessageStore {
       row.reasoning, row.reasoning_details_json, artifactId, row.stub_text,
       row.model, row.created_at, images, row.origin_json
     );
+  }
+
+  /** A message from a backup, at its own seq. Usage is kept, so restored history still counts in Usage. */
+  restore(chatId: string, m: RestoredMessage, artifactId: string | null): void {
+    this.db.prepare(`
+      INSERT INTO messages
+        (chat_id, seq, role, content, tool_call_id, tool_calls_json,
+         reasoning, reasoning_details_json, artifact_id, stub_text, usage_json,
+         model, created_at, images_json, origin_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+    `).run(
+      chatId, m.seq, m.role, m.content, m.toolCallId, m.toolCallsJson,
+      m.reasoning, m.reasoningDetailsJson, artifactId, m.stubText, m.usageJson,
+      m.model, m.createdAt, m.originJson
+    );
+  }
+
+  /** Tool output from a backup, under a new id in `chatId`. */
+  restoreArtifact(chatId: string, a: NonNullable<RestoredMessage['artifact']>, owner: string | null): string {
+    const id = randomBytes(12).toString('hex');
+    this.db.prepare(`
+      INSERT INTO artifacts (id, chat_id, tool_name, args_json, content, char_len, created_at, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, chatId, a.toolName, a.argsJson, a.content, a.content.length, a.createdAt, owner);
+    return id;
   }
 
   /** A copy of one artifact in another chat, under a new id. */

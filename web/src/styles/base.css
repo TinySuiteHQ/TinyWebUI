@@ -448,6 +448,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .head-status { margin-left:auto; color:var(--muted); font-size:var(--fs-meta); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cfg-actions .head-status { margin-left:0; white-space:normal; }
 .set-lede { width:min(46rem, 100%); margin:.75rem 0 1rem; color:var(--muted); font-size:var(--fs-meta); }
+/* Data: what a backup holds, and what an import did. */
+.data-list { margin:0; padding-left:1.25rem; font-size:var(--fs-small); line-height:1.6; }
+.data-note { margin:.5rem 0 0; color:var(--muted); font-size:var(--fs-meta); line-height:1.45; }
+.data-result { margin-top:.75rem; padding:.625rem .75rem .625rem 1.75rem; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--raise); }
 .set-grid > div.cfg-actions.span-2, .set-grid > div.cfg-actions { display:flex; }
 .automation-content { overflow:auto; padding:1rem; }
 .automation-content { display:flex; flex-direction:column; gap:.75rem; }
@@ -1792,6 +1796,7 @@ dialog.modal-card::backdrop { background: rgb(0 0 0 / 45%); backdrop-filter: blu
 .field-label { font-size: var(--fs-meta); font-weight: 600; color: var(--fg); }
 .field-optional { margin-left: .25rem; font-weight: 400; color: var(--faint); }
 .field-hint { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
+.field-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .field textarea { resize: vertical; min-height: 6rem; line-height: 1.5; }
 
 /* ---- Folders: settings on the heading, a mark when it has instructions ---- */

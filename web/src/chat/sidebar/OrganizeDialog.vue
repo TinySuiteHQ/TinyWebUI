@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** The ⋯ dialog on a chat: move it into a folder, or delete it. */
+/** The ⋯ dialog on a chat: move it into a folder, export it, or delete it. */
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../../core/api.ts';
 import { useChats, type ChatRow } from '../../stores/chats.ts';
@@ -37,6 +37,13 @@ async function save() {
   }
 }
 
+// Not part of Save: a download is done the moment it is asked for.
+async function exportAs(format: 'md' | 'json') {
+  error.value = '';
+  try { await api.download(`/api/chats/${props.chat.id}/export?format=${format}`, format === 'md' ? 'chat.md' : 'chat.tinywebui.json'); }
+  catch (err) { error.value = `Could not export chat: ${err.message}`; }
+}
+
 async function remove() {
   const id = props.chat.id;
   try { await api.del(`/api/chats/${id}`); } catch (err) { error.value = `Could not delete chat: ${err.message}`; return; }
@@ -61,6 +68,14 @@ onMounted(() => select.value?.focus());
           {{ chats.prompts[folder] ? 'Its instructions are added to every request here, and' : 'In a folder,' }}
           the model's search of earlier chats looks only at the other chats in it.
         </p>
+      </div>
+      <div class="field">
+        <span class="field-label">Export</span>
+        <div class="field-actions">
+          <button type="button" @click="exportAs('md')">Markdown</button>
+          <button type="button" @click="exportAs('json')">Backup file</button>
+        </div>
+        <p class="field-hint">Markdown is for reading. A backup file can be imported under Settings, Data. Attached files are not included.</p>
       </div>
       <div v-if="error" class="organize-error" role="alert">{{ error }}</div>
       <div class="dialog-actions">

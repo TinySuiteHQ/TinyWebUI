@@ -14,6 +14,7 @@ import AccountPanel from '../panels/account/AccountPanel.vue';
 import AppearancePanel from '../panels/appearance/AppearancePanel.vue';
 import AutomationsPanel from '../panels/automations/AutomationsPanel.vue';
 import StatisticsPanel from '../panels/statistics/StatisticsPanel.vue';
+import DataPanel from '../panels/data/DataPanel.vue';
 import ModelsPanel from '../panels/models/ModelsPanel.vue';
 import ModelDefaultsPanel from '../panels/settings/ModelDefaultsPanel.vue';
 import ChatBehaviourPanel from '../panels/settings/ChatBehaviourPanel.vue';
@@ -73,6 +74,7 @@ function onClick(e: MouseEvent) { if (e.target === el.value) panels.closeAll(); 
         <AppearancePanel />
         <AutomationsPanel />
         <StatisticsPanel />
+        <DataPanel />
         <ModelsPanel />
         <ModelDefaultsPanel />
         <ChatBehaviourPanel />

@@ -23,10 +23,10 @@ const MANIFESTS = [
   join(PAGE_DIR, 'themes', 'manifest.json'),
   join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'public', 'themes', 'manifest.json')
 ];
-const THEME_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const THEME_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** The ids of the themes shipped in web/public/themes, read per call so a dropped-in folder counts without a restart. */
-function builtInIds(): Set<string> {
+export function builtInIds(): Set<string> {
   for (const file of MANIFESTS) {
     try {
       const themes: unknown = JSON.parse(readFileSync(file, 'utf8')).themes;

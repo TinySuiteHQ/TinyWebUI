@@ -92,9 +92,9 @@ test('a stored message splits back into its text and the document ids its notes 
   const a = { id: 'aa11', filename: 'a "b" (1).pdf', char_len: 1743 };
   const b = { id: 'bb22', filename: 'b.txt', char_len: 12 };
   const stored = 'summarise these' + attachmentNote(a) + attachmentNote(b);
-  assert.deepEqual(splitAttachmentNotes(stored), { text: 'summarise these', ids: ['aa11', 'bb22'] });
-  assert.deepEqual(splitAttachmentNotes('no notes'), { text: 'no notes', ids: [] });
+  assert.deepEqual(splitAttachmentNotes(stored), { text: 'summarise these', ids: ['aa11', 'bb22'], names: ['a "b" (1).pdf', 'b.txt'] });
+  assert.deepEqual(splitAttachmentNotes('no notes'), { text: 'no notes', ids: [], names: [] });
   // A note-shaped line the user typed mid-message is theirs, not an attachment.
   const typed = `see ${attachmentNote(a)} for context`;
-  assert.deepEqual(splitAttachmentNotes(typed), { text: typed, ids: [] });
+  assert.deepEqual(splitAttachmentNotes(typed), { text: typed, ids: [], names: [] });
 });
