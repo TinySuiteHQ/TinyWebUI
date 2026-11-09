@@ -55,7 +55,8 @@ web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
   src/stores/    Pinia: session (who, can()), config, chats (sidebar), chat (the open chat,
                  its run, queue, held input), attachments, panels (PANEL), ui, theme, admin
   src/chat/      ChatView.vue (the chat screen), Markdown.vue (also used by panels), and
-                 sidebar/ (chat list with forks under their originals, folders, account menu),
+                 sidebar/ (chat list with forks under their originals, folders and their
+                 instructions (FolderDialog), account menu),
                  transcript/ (turns, activity, approvals, questions, outline, HistoryDialog: what an
                  edit, delete or fork will do, counted, before it is done),
                  composer/ (input, ComposerBar: the + and model menus, shared with a question edited
@@ -64,7 +65,8 @@ web/             the page: Vue 3 + TS, built by Vite (vite.config.ts) into dist/
                  usePanel.ts; settings/ holds the settings draft (draft.ts) and its store
                  (draft_store.ts), shared by models/, Model defaults and Chat behaviour
   src/auth/      sign-in and the waiting room
-  src/ui/        app-agnostic widgets: Icon, Modal, Popover, Switch
+  src/ui/        app-agnostic widgets: Icon, Modal (given a title, the small dialogs' card),
+                 Popover, Switch
   src/styles/    base.css (tokens, layout, panels), chat.css (the transcript)
   public/        copied into dist/ as is: favicon, icons, themes/ (see its README)
 test/            node:test suites; evals/ model-behaviour evals (costs API calls)

@@ -177,6 +177,46 @@ export class ChatStore {
     return this.db.prepare(`SELECT name FROM folders WHERE ${s.sql}`).all(...s.params).map((r) => r.name as string).sort((a, b) => a.localeCompare(b));
   }
 
+  /** The folders that have instructions of their own: name -> prompt. */
+  folderPrompts(userId: Scope): Record<string, string> {
+    const s = scope(userId);
+    const rows = this.db.prepare(`SELECT name, prompt FROM folders WHERE prompt != '' AND ${s.sql}`).all(...s.params) as { name: string; prompt: string }[];
+    return Object.fromEntries(rows.map((r) => [r.name, r.prompt]));
+  }
+
+  /** The instructions of the folder a chat is in, '' when it is in none or the folder has none. Unscoped: the chat
+   * row already says whose folder it is. */
+  folderPromptFor(chat: Pick<ChatRow, 'folder' | 'user_id'>): string {
+    if (!chat.folder) return '';
+    const row = this.db.prepare('SELECT prompt FROM folders WHERE name = ? AND user_id IS ?').get(chat.folder, chat.user_id) as { prompt: string } | undefined;
+    return row?.prompt || '';
+  }
+
+  /**
+   * Renames a folder and/or sets its instructions. A rename moves its chats
+   * along, in the same transaction. 'missing' when there is no such folder,
+   * 'taken' when the new name is another folder's.
+   */
+  updateFolder(name: string, { rename, prompt }: { rename?: string; prompt?: string }, userId: Scope): string | 'missing' | 'taken' {
+    const owner = ownerOf(userId);
+    const s = scope(owner);
+    const has = (n: string) => Boolean(this.db.prepare(`SELECT 1 FROM folders WHERE name = ? AND ${s.sql}`).get(n, ...s.params));
+    if (!has(name)) return 'missing';
+    const to = rename === undefined ? name : rename.trim().slice(0, 40);
+    if (!to) return 'missing';
+    if (to !== name && has(to)) return 'taken';
+    this.db.exec('BEGIN');
+    try {
+      if (prompt !== undefined) this.db.prepare(`UPDATE folders SET prompt = ? WHERE name = ? AND ${s.sql}`).run(prompt.trim().slice(0, 20000), name, ...s.params);
+      if (to !== name) {
+        this.db.prepare(`UPDATE folders SET name = ? WHERE name = ? AND ${s.sql}`).run(to, name, ...s.params);
+        this.db.prepare(`UPDATE chats SET folder = ? WHERE folder = ? AND ${s.sql}`).run(to, name, ...s.params);
+      }
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+    return to;
+  }
+
   createFolder(name: unknown, userId: Scope): string | null {
     const clean = String(name || '').trim().slice(0, 40);
     if (!clean) return null;

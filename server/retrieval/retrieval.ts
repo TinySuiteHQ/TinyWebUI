@@ -59,7 +59,8 @@ export interface Corpus<S = any, R = unknown> {
 
 export interface DocumentScope { docId: string }
 export interface PassageHit extends Scores { passageIdx: number; charStart: number; body: string }
-export interface ChatScope { userId: Scope; excludeChatId: string | null }
+/** `folder`: only chats in that folder (a chat in a folder searches only its own); absent or null, all of them. */
+export interface ChatScope { userId: Scope; excludeChatId: string | null; folder?: string | null }
 export interface TurnHit extends Turn, Scores { chatTitle: string }
 
 const cosine = (a: Float32Array, b: Float32Array) => {
@@ -135,7 +136,7 @@ const TURN_ANSWER_CHARS = 6000;
 
 /**
  * Past conversations: one unit per turn -- a question and the answer it
- * finally got. Scope: { userId, excludeChatId }. A turn's answer can still
+ * finally got. Scope: { userId, excludeChatId, folder }. A turn's answer can still
  * change (the run was going when it was last embedded), so it is mutable.
  */
 export function chatsCorpus(store: Store): Corpus<ChatScope, TurnHit> {
@@ -144,8 +145,8 @@ export function chatsCorpus(store: Store): Corpus<ChatScope, TurnHit> {
     mutable: true,
     units: (chatId) => store.turns.forChat(chatId).map((t) => ({ id: t.id, text: turnText(t) })).filter((u) => u.text),
     ownersMissing: (key) => store.turns.chatsMissingVectors(key),
-    candidates: ({ userId, excludeChatId }) => store.turns.ids(userId, { excludeChatId }),
-    lexical: ({ userId, excludeChatId }, query, { any }) => store.turns.lexicalScores(userId, query, { excludeChatId, any }),
+    candidates: ({ userId, excludeChatId, folder }) => store.turns.ids(userId, { excludeChatId, folder }),
+    lexical: ({ userId, excludeChatId, folder }, query, { any }) => store.turns.lexicalScores(userId, query, { excludeChatId, folder, any }),
     hydrate(hits) {
       const turns = store.turns.byIds(hits.map((h) => h.id));
       return hits.filter((h) => turns.has(h.id)).map((h) => ({ ...turns.get(h.id)!, rank: h.rank, dense: h.dense, bm25: h.bm25 }));

@@ -196,15 +196,6 @@ body.resizing { cursor: col-resize; user-select: none; }
   border: 0; background: transparent; color: var(--faint); font-size: 1.1rem;
 }
 .chat-item .organize-chat:hover, .chat-item .organize-chat:focus-visible { color: var(--accent); }
-dialog#organizeDialog {
-  width: min(24rem, calc(100vw - 2rem)); padding: 1.25rem;
-  border: 1px solid var(--line); border-radius: var(--r-lg);
-  background: var(--raise); color: var(--fg);
-}
-dialog#organizeDialog::backdrop { background: rgba(0, 0, 0, .62); }
-#organizeForm { display: flex; flex-direction: column; gap: .5rem; }
-#organizeForm h2 { margin: 0 0 .5rem; font-size: var(--fs-body); }
-#organizeForm label { color: var(--muted); font-size: var(--fs-meta); }
 dialog#libraryDialog {
   width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem;
   border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -1714,16 +1705,52 @@ dialog#cameraDialog::backdrop { background: rgba(0, 0, 0, .62); }
 .answer-edit .usage { margin-left: auto; }
 
 /* ---- What a change to the history will do, before it is done ---- */
-dialog#historyDialog {
-  width: min(28rem, calc(100vw - 2rem)); padding: 1.25rem;
-  border: 1px solid var(--line); border-radius: var(--r-lg);
-  background: var(--raise); color: var(--fg);
-}
-dialog#historyDialog::backdrop { background: rgba(0, 0, 0, .62); }
-#historyForm { display: flex; flex-direction: column; gap: .5rem; }
-#historyForm h2 { margin: 0 0 .25rem; font-size: var(--fs-body); }
 #historyForm p { margin: 0; color: var(--muted); line-height: 1.5; }
 .history-files { margin: .25rem 0 0; padding: .625rem .75rem; border: 1px solid var(--line); border-radius: var(--r-sm); display: flex; flex-direction: column; gap: .375rem; }
 .history-files legend { padding: 0 .25rem; font-size: var(--fs-meta); color: var(--muted); }
 .history-note { font-size: var(--fs-meta); }
 button.primary.danger-solid, button.primary.danger-solid:hover { background: var(--err); border-color: var(--err); color: #fff; }
+
+/* ---- Small dialogs as cards (Modal with a title): an icon, the title and a
+   line under it, the fields, and the buttons on a footer band ---- */
+dialog.modal-card {
+  width: min(28rem, calc(100vw - 2rem)); padding: 0; overflow: hidden;
+  border: 1px solid var(--line); background: var(--raise); color: var(--fg);
+}
+dialog.modal-card::backdrop { background: rgb(0 0 0 / 45%); backdrop-filter: blur(2px); }
+#folderDialog, #newFolderDialog { width: min(30rem, calc(100vw - 2rem)); }
+.modal-head { display: flex; align-items: flex-start; gap: .875rem; padding: 1.25rem 1.25rem 0; }
+.modal-icon {
+  flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem;
+  border-radius: var(--r-md); background: var(--accent-soft); color: var(--fg);
+}
+.modal-danger .modal-icon { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
+.modal-titles { flex: 1; min-width: 0; padding-top: .1rem; }
+.modal-head h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; line-height: 1.35; }
+.modal-sub { margin: .2rem 0 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; overflow-wrap: anywhere; }
+.modal-close { flex: none; width: 2rem; height: 2rem; margin: -.25rem -.5rem 0 0; }
+.modal-close .ic { width: 1rem; height: 1rem; }
+.modal-body { display: flex; flex-direction: column; gap: 1rem; padding: 1.125rem 1.25rem 0; }
+.modal-card .dialog-actions {
+  margin: .25rem -1.25rem 0; padding: .875rem 1.25rem;
+  border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--raise));
+}
+.modal-card .dialog-actions button { min-width: 5.5rem; }
+.modal-note { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.5; }
+.field { display: flex; flex-direction: column; gap: .375rem; }
+.field-label { font-size: var(--fs-meta); font-weight: 600; color: var(--fg); }
+.field-optional { margin-left: .25rem; font-weight: 400; color: var(--faint); }
+.field-hint { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
+.field textarea { resize: vertical; min-height: 6rem; line-height: 1.5; }
+
+/* ---- Folders: settings on the heading, a mark when it has instructions ---- */
+.chat-folder-heading .folder-mark { flex: none; display: inline-flex; color: var(--muted); }
+.chat-folder-heading .folder-options {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.75rem; min-height: 1.75rem; margin: -.25rem -.25rem -.25rem 0; padding: 0;
+  border: 0; background: transparent; color: var(--faint); opacity: 0; transition: opacity var(--t-fast);
+}
+.chat-folder-heading .folder-options .ic { width: 1rem; height: 1rem; }
+.chat-folder-heading:hover .folder-options, .chat-folder-heading:focus-within .folder-options { opacity: 1; }
+.chat-folder-heading .folder-options:hover, .chat-folder-heading .folder-options:focus-visible { color: var(--fg); }
+@media (hover: none) { .chat-folder-heading .folder-options { opacity: 1; } }

@@ -195,10 +195,16 @@ export function createRuns(app: RunsApp) {
         // rest of this turn (post() in provider.ts). Nothing is remembered.
         const think = thinkingFor(app.cfg, model, thinking);
         const base = { ...effectiveConfig(app.cfg, model, roleSettingsFor(app.cfg, role)), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
-        const cfg = instructions ? { ...base, systemPrompt: `${base.systemPrompt}
-
-The user's own instructions:
-${instructions}` } : base;
+        // Read now, not from the row the run started with: a chat moved into a
+        // folder, or a folder's prompt edited, counts from the next turn on.
+        // The folder's comes last, as the most specific of the three.
+        const row = store.chats.byId(chat.id);
+        const folderPrompt = row ? store.chats.folderPromptFor(row) : '';
+        const cfg = { ...base, systemPrompt: [
+          base.systemPrompt,
+          instructions ? `The user's own instructions:\n${instructions}` : '',
+          folderPrompt ? `This chat is in the user's folder "${row?.folder}". Instructions for the chats in it:\n${folderPrompt}` : ''
+        ].filter(Boolean).join('\n\n') };
         // A model its admin set to no tools gets none, whatever the person's role allows.
         const offered = usesTools(findEntry(app.cfg, model ?? app.cfg.model)) ? tools : [];
         await runChat({ cfg, chatId: chat.id, store, tools: offered, hub: app.hub, emit, signal: run.ac.signal, historyFromSeq, unattended, approve, takeInput, askUser });

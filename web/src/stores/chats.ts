@@ -16,6 +16,8 @@ export type SearchHit = { chatId: string, chatTitle: string, role: string, snipp
 export const useChats = defineStore('chats', () => {
   const chats = ref<ChatRow[]>([]);
   const folders = ref<string[]>([]);
+  /** The folders with instructions of their own: name -> prompt. */
+  const prompts = ref<Record<string, string>>({});
   // Folders start collapsed; the ones opened stay open across redraws.
   const expanded = ref(new Set<string>());
 
@@ -33,7 +35,7 @@ export const useChats = defineStore('chats', () => {
     if (request !== requestSeq) return;
     // On failure keep whatever is already on screen rather than blanking it.
     if (c.status === 'fulfilled') chats.value = c.value.chats || [];
-    if (f.status === 'fulfilled') folders.value = f.value.folders || [];
+    if (f.status === 'fulfilled') { folders.value = f.value.folders || []; prompts.value = f.value.prompts || {}; }
   }
 
   /** Debounced: each keystroke would otherwise be a round trip. */
@@ -66,12 +68,19 @@ export const useChats = defineStore('chats', () => {
     try { await api.post(`/api/chats/${encodeURIComponent(id)}/read`); } catch { /* still marked; the next look retries */ }
   }
 
-  async function createFolder(name: string) {
-    const body = await api.post('/api/folders', { name });
+  async function createFolder(name: string, prompt = '') {
+    const body = await api.post('/api/folders', { name, prompt });
     // A freshly created folder starts open: the point is to move chats into it.
     expanded.value.add(body.folder);
     await load();
   }
 
-  return { chats, folders, expanded, query, results, load, search, clearSearch, markRead, createFolder };
+  /** Renames a folder (its chats move with it) and sets its instructions. */
+  async function saveFolder(name: string, { rename, prompt }: { rename: string, prompt: string }) {
+    const body = await api.patch('/api/folders', { name, rename, prompt });
+    if (body.folder !== name && expanded.value.delete(name)) expanded.value.add(body.folder);
+    await load();
+  }
+
+  return { chats, folders, prompts, expanded, saveFolder, query, results, load, search, clearSearch, markRead, createFolder };
 });

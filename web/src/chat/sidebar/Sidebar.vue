@@ -18,7 +18,7 @@ import { useAdmin } from '../../stores/admin.ts';
 import Icon from '../../ui/Icon.vue';
 import ChatItem from './ChatItem.vue';
 import OrganizeDialog from './OrganizeDialog.vue';
-import NewFolderDialog from './NewFolderDialog.vue';
+import FolderDialog from './FolderDialog.vue';
 
 const session = useSession();
 const chats = useChats();
@@ -31,7 +31,8 @@ const sideEl = ref<HTMLElement>();
 const newEl = ref<HTMLButtonElement>();
 const searchEl = ref<HTMLInputElement>();
 const organizing = ref<ChatRow | null>(null);
-const folderDialog = ref(false);
+/** The open folder dialog, if any: `folder` null for a new one, else the folder whose settings it shows. */
+const folderDialog = ref<{ folder: string | null, count: number } | undefined>();
 
 // Picking a chat or New is a way out of any open panel, unless it holds
 // unsaved edits the person chose to keep.
@@ -286,7 +287,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
       <div class="side-label">
         <span>{{ searching ? 'Search results' : 'Recent conversations' }}</span>
         <button v-if="session.can(FEATURE.FOLDERS)" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
-                @click="folderDialog = true"><Icon name="folderPlus" /></button>
+                @click="folderDialog = { folder: null, count: 0 }"><Icon name="folderPlus" /></button>
       </div>
 
       <div id="chats">
@@ -306,7 +307,12 @@ function rowKey(e: KeyboardEvent, go: () => void) {
           <template v-for="g in groups" :key="g.folder ?? ''">
             <details v-if="g.folder !== null" class="chat-folder" :open="chats.expanded.has(g.folder)" @toggle="toggleFolder(g.folder, $event)">
               <summary class="chat-folder-heading">
-                <span class="chat-folder-name">{{ g.folder }}</span><span class="chat-folder-count">{{ g.count }}</span>
+                <span class="chat-folder-name">{{ g.folder }}</span>
+                <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="sparkle" size=".8rem" /></span>
+                <span class="chat-folder-count">{{ g.count }}</span>
+                <button v-if="session.can(FEATURE.FOLDERS)" class="organize-chat folder-options" type="button" title="Folder settings: name and instructions"
+                        :aria-label="`Settings for folder “${g.folder}”`" @click.prevent.stop="folderDialog = { folder: g.folder, count: g.count }"
+                        @keydown.stop><Icon name="more" /></button>
               </summary>
               <div class="chat-folder-content">
                 <template v-for="row in g.rows" :key="row.key">
@@ -358,6 +364,6 @@ function rowKey(e: KeyboardEvent, go: () => void) {
     <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize chat history"
          title="Drag to resize, double-click to reset" @pointerdown="startResize" @dblclick="resetSideWidth" @keydown="resizeKey" />
     <OrganizeDialog v-if="organizing" :chat="organizing" @close="organizing = null" />
-    <NewFolderDialog v-if="folderDialog" @close="folderDialog = false" />
+    <FolderDialog v-if="folderDialog" :folder="folderDialog.folder" :count="folderDialog.count" @close="folderDialog = undefined" />
   </aside>
 </template>

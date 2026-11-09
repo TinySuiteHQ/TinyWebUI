@@ -40,7 +40,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 
 ## Highlights
 
-- **Durable conversations.** Edit, retry, rewind, folders and full-text search. A running turn belongs to the server, so you can reload and come back to it.
+- **Durable conversations.** Edit, retry, rewind, fork, full-text search, and folders with instructions of their own (a chat in a folder also searches only that folder's chats). A running turn belongs to the server, so you can reload and come back to it.
 - **Steer a turn while it runs.** Press Enter to reach the model at the next safe point, or Alt+Enter to hold a follow-up.
 - **MCP over stdio, Streamable HTTP or SSE.** Calls that can change something wait for your approval.
 - **Attachments.** Text and source files, PDFs, DOCX and images.

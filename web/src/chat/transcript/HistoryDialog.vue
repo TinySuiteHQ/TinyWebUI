@@ -43,7 +43,7 @@ const view = computed(() => {
           `This removes what came after it: ${list(gone, { laterQuestions: true })}.`,
           ...(gone.documents ? ['Attached documents stay in this chat\'s artifacts.'] : [])
         ],
-        confirm: a.kind === 'retry' ? 'Ask again' : 'Resubmit',
+        confirm: a.kind === 'retry' ? 'Ask again' : 'Resubmit', icon: a.kind === 'retry' ? 'retry' : 'edit',
         danger: gone.answers + gone.questions > 0
       };
     }
@@ -56,7 +56,7 @@ const view = computed(() => {
           ...(gone.documents ? ['Attached documents stay in this chat\'s artifacts.'] : []),
           'This can\'t be undone.'
         ],
-        confirm: 'Delete', danger: true
+        confirm: 'Delete', danger: true, icon: 'trash'
       };
     }
     case 'delete-answer': {
@@ -68,7 +68,7 @@ const view = computed(() => {
           ...(gone.documents ? ['Attached documents stay in this chat\'s artifacts.'] : []),
           'This can\'t be undone.'
         ],
-        confirm: 'Delete', danger: true
+        confirm: 'Delete', danger: true, icon: 'trash'
       };
     }
     case 'edit-answer':
@@ -78,7 +78,7 @@ const view = computed(() => {
           'This changes 1 answer. Nothing runs again.',
           'From now on the model reads your version as what it said, in this chat\'s later questions.'
         ],
-        confirm: 'Save', danger: false
+        confirm: 'Save', danger: false, icon: 'edit'
       };
     case 'fork': {
       const copied = tally(items.value.slice(0, i + 1));
@@ -88,20 +88,19 @@ const view = computed(() => {
           `A new chat is made with ${list(copied)}, up to and including this ${a.at}. It is listed under “${chat.model.chat.title}”, which stays as it is.`,
           ...(a.at === 'question' ? ['The question is left unanswered in the fork, to be asked again there.'] : [])
         ],
-        confirm: 'Fork', danger: false,
+        confirm: 'Fork', danger: false, icon: 'fork',
         files: copied.documents + copied.images ? { documents: copied.documents, images: copied.images } : null
       };
     }
   }
-  return { title: '', lines: [], confirm: 'OK', danger: false };
+  return { title: '', lines: [], confirm: 'OK', danger: false, icon: 'history' };
 });
 const files = computed(() => ('files' in view.value ? view.value.files : null));
 </script>
 
 <template>
-  <Modal id="historyDialog" labelledby="historyDialogTitle" @close="chat.cancelAction()">
-    <form id="historyForm" @submit.prevent="chat.confirmAction({ withFiles: Boolean(files) && withFiles })">
-      <h2 id="historyDialogTitle">{{ view.title }}</h2>
+  <Modal id="historyDialog" labelledby="historyDialogTitle" :title="view.title" :icon="view.icon" :danger="view.danger" @close="chat.cancelAction()">
+    <form id="historyForm" class="modal-body" @submit.prevent="chat.confirmAction({ withFiles: Boolean(files) && withFiles })">
       <p v-for="(line, i) in view.lines" :key="i">{{ line }}</p>
       <fieldset v-if="files" class="history-files">
         <legend>Artifacts</legend>

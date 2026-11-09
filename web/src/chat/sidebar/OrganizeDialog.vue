@@ -49,19 +49,24 @@ onMounted(() => select.value?.focus());
 </script>
 
 <template>
-  <Modal id="organizeDialog" labelledby="organizeTitle" @close="emit('close')">
-    <form id="organizeForm" @submit.prevent="save">
-      <h2 id="organizeTitle">Chat options</h2>
-      <label for="organizeFolder">folder</label>
-      <select id="organizeFolder" ref="select" v-model="folder">
-        <option value="">(no folder)</option>
-        <option v-for="n in names" :key="n" :value="n">{{ n }}</option>
-      </select>
+  <Modal id="organizeDialog" labelledby="organizeTitle" icon="chat" title="Chat options" :subtitle="chat.title" @close="emit('close')">
+    <form id="organizeForm" class="modal-body" @submit.prevent="save">
+      <div class="field">
+        <label class="field-label" for="organizeFolder">Folder</label>
+        <select id="organizeFolder" ref="select" v-model="folder">
+          <option value="">No folder</option>
+          <option v-for="n in names" :key="n" :value="n">{{ n }}</option>
+        </select>
+        <p v-if="folder" class="field-hint">
+          {{ chats.prompts[folder] ? 'Its instructions are added to every request here, and' : 'In a folder,' }}
+          the model's search of earlier chats looks only at the other chats in it.
+        </p>
+      </div>
       <div v-if="error" class="organize-error" role="alert">{{ error }}</div>
       <div class="dialog-actions">
-        <button type="button" class="danger" :aria-label="`Delete “${chat.title}”`" @click="remove">delete chat</button>
-        <button type="button" @click="emit('close')">cancel</button>
-        <button type="submit" class="primary" :disabled="saving">save</button>
+        <button type="button" class="danger" :aria-label="`Delete “${chat.title}”`" @click="remove">Delete chat</button>
+        <button type="button" @click="emit('close')">Cancel</button>
+        <button type="submit" class="primary" :disabled="saving">Save</button>
       </div>
     </form>
   </Modal>

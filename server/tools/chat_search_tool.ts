@@ -8,7 +8,9 @@ import type { ToolArgs, ToolContext, ToolDef } from './types.ts';
  * retrieval engine as read_document (retrieval.js, 'chats' corpus), so it is
  * lexical, dense or hybrid with retrieval.mode. Only the asking chat's owner's
  * chats are searched, and never the asking chat itself -- that one is already
- * in context (and expand_context reads what compaction folded away).
+ * in context (and expand_context reads what compaction folded away). A chat
+ * in a folder searches only the other chats in that folder: the person put
+ * them together to keep that work apart from the rest.
  */
 
 export const SEARCH_CHATS = 'search_chats';
@@ -22,6 +24,7 @@ export function chatSearchToolDef(): ToolDef {
       name: SEARCH_CHATS,
       description: [
         "Search the user's earlier conversations (not this one) for what they asked and the answers they got.",
+        'When this chat is in a folder, only the chats in the same folder are searched.',
         'Use it when the user refers to something discussed before ("like last time", "what did we decide about..."),',
         'or when an earlier answer would save redoing work. Returns the best-matching question/answer pairs,',
         'each with the chat it came from. Phrase the query as the topic, not as a question to the user.'
@@ -51,11 +54,14 @@ export async function callSearchChats(args: ToolArgs, { store, retrieval, chatId
   const query = String(args?.query || '').trim();
   if (!query) return 'Error: query is required.';
   const limit = Math.min(MAX_RESULTS, Math.max(1, Number.parseInt(args?.limit, 10) || 5));
-  const owner = chatId ? store.chats.byId(chatId)?.user_id ?? null : null;
-  const hits = await retrieval.search(CORPUS.CHATS, { userId: owner, excludeChatId: chatId ?? null }, query, limit);
-  if (!hits.length) return `[search_chats · no earlier conversation matches "${query}"]\nTry other words for the same topic.`;
+  const asking = chatId ? store.chats.byId(chatId) : null;
+  const owner = asking?.user_id ?? null;
+  const folder = asking?.folder || null;
+  const hits = await retrieval.search(CORPUS.CHATS, { userId: owner, excludeChatId: chatId ?? null, folder }, query, limit);
+  const where = folder ? ` in folder "${folder}"` : '';
+  if (!hits.length) return `[search_chats · no earlier conversation${where} matches "${query}"]\nTry other words for the same topic.`;
 
-  const out = [`[search_chats · ${hits.length} turn(s) matching "${query}"]`];
+  const out = [`[search_chats · ${hits.length} turn(s)${where} matching "${query}"]`];
   const share = Math.max(400, Math.floor((budget - out[0].length) / hits.length) - 120);
   for (const h of hits) {
     const q = clip(h.question, Math.min(600, Math.floor(share / 3)));

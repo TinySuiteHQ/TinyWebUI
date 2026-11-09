@@ -50,17 +50,17 @@ export class TurnStore {
     return out;
   }
 
-  /** Every turn id a user may search, leaving one chat out (the one asking). */
-  ids(userId: Scope, { excludeChatId = null }: { excludeChatId?: string | null } = {}): number[] {
+  /** Every turn id a user may search, leaving one chat out (the one asking); only one folder's chats when `folder` is set. */
+  ids(userId: Scope, { excludeChatId = null, folder = null }: { excludeChatId?: string | null; folder?: string | null } = {}): number[] {
     const s = scope(userId, 'c.user_id');
     return this.db.prepare(`
       SELECT m.id FROM messages m JOIN chats c ON c.id = m.chat_id
-      WHERE m.role = 'user' AND m.chat_id IS NOT ? AND ${s.sql}
-    `).all(excludeChatId, ...s.params).map((r) => r.id as number);
+      WHERE m.role = 'user' AND m.chat_id IS NOT ? AND (? IS NULL OR c.folder = ?) AND ${s.sql}
+    `).all(excludeChatId, folder, folder, ...s.params).map((r) => r.id as number);
   }
 
   /** BM25 per turn (its best message), higher is better. `any`: any query word may match. */
-  lexicalScores(userId: Scope, query: string, { excludeChatId = null, any = true }: { excludeChatId?: string | null; any?: boolean } = {}): Map<number, number> {
+  lexicalScores(userId: Scope, query: string, { excludeChatId = null, folder = null, any = true }: { excludeChatId?: string | null; folder?: string | null; any?: boolean } = {}): Map<number, number> {
     const q = ftsQuery(query, { any });
     if (!q) return new Map();
     const s = scope(userId, 'c.user_id');
@@ -68,8 +68,8 @@ export class TurnStore {
       SELECT bm25(messages_fts) AS rank,
         (SELECT u.id FROM messages u WHERE u.chat_id = m.chat_id AND u.role = 'user' AND u.seq <= m.seq ORDER BY u.seq DESC LIMIT 1) AS turn
       FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid JOIN chats c ON c.id = m.chat_id
-      WHERE messages_fts MATCH ? AND m.chat_id IS NOT ? AND ${s.sql}
-    `).all(q, excludeChatId, ...s.params) as { rank: number; turn: number | null }[];
+      WHERE messages_fts MATCH ? AND m.chat_id IS NOT ? AND (? IS NULL OR c.folder = ?) AND ${s.sql}
+    `).all(q, excludeChatId, folder, folder, ...s.params) as { rank: number; turn: number | null }[];
     const out = new Map<number, number>();
     for (const r of rows) if (r.turn != null) out.set(r.turn, Math.max(out.get(r.turn) ?? -Infinity, -r.rank));
     return out;

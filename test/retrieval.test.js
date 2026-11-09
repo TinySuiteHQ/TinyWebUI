@@ -330,6 +330,26 @@ test('search_chats formats turns with their chat and date', async () => {
   assert.match(await callSearchChats({ query: ' ' }, { store, retrieval: r, chatId: asking.id }), /Error/);
 });
 
+test('a chat in a folder searches only the other chats in that folder', async () => {
+  const { callSearchChats } = await import('../server/tools/chat_search_tool.ts');
+  for (const mode of ['lexical', 'hybrid']) {
+    const { store, r, cars, money, asking } = chatSetup(mode);
+    if (mode === 'hybrid') await r.backfill();
+    store.chats.createFolder('Work', ALL_USERS);
+    store.chats.organize(asking.id, { folder: 'Work' }, ALL_USERS);
+    store.chats.organize(money.id, { folder: 'Work' }, ALL_USERS);
+    // "earnings" is in Finance (same folder); "sedan" only in Garage, outside it.
+    const inside = await callSearchChats({ query: 'earnings' }, { store, retrieval: r, chatId: asking.id });
+    assert.ok(inside.includes(`chat ${money.id}`), mode);
+    assert.match(inside, /in folder "Work"/);
+    const outside = await callSearchChats({ query: 'sedan tyres' }, { store, retrieval: r, chatId: asking.id });
+    assert.ok(!outside.includes(`chat ${cars.id}`), `${mode}: a chat outside the folder stays out`);
+    // Out of the folder again, it searches everything.
+    store.chats.organize(asking.id, { folder: null }, ALL_USERS);
+    assert.ok((await callSearchChats({ query: 'sedan tyres' }, { store, retrieval: r, chatId: asking.id })).includes(`chat ${cars.id}`), mode);
+  }
+});
+
 test('schema 7 document vectors move into the shared embeddings table', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
