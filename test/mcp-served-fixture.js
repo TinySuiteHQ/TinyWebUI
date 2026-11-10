@@ -1,4 +1,4 @@
-// A stand-in for a TinySuite server started with `serve` (src/mcp_serve.ts):
+// A stand-in for a TinySuite server started with `serve` (server/mcp_serve.ts):
 // run as its own process, it listens where MCP_HOST/MCP_PORT say, refuses any
 // request without the proxy token, and reports what each call arrived with.
 // Not a test file: `node --test` also loads it, and then it does nothing.

@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configSchema } from '../src/cli.ts';
+import { configSchema } from '../server/cli.ts';
 
 const BIN = fileURLToPath(new URL('../bin/tinywebui.ts', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-cli-'));
@@ -89,7 +89,7 @@ test('migrate creates, then reports up to date; --check flags an old database', 
   const check = go('migrate', '--check');
   assert.equal(check.status, 1);
   assert.match(check.stderr, /run `tinywebui migrate`/);
-  const { start } = await import('../src/server.ts');
+  const { start } = await import('../server/server.ts');
   await assert.rejects(start({ port: 0, configFile: join(d, 'tinywebui.config.json'), mcpServers: {} }), /tinywebui migrate/);
   assert.match(go('migrate').stdout, /migrated .* from schema 0/);
   assert.equal(go('migrate', '--check').status, 0);
@@ -117,8 +117,8 @@ test('users password is the break glass: a new password for a local account, eve
   const local = mkdtempSync(join(tmpdir(), 'tinywebui-cli-pw-'));
   writeFileSync(join(local, 'tinywebui.config.json'), '{ "authMode": "multiuser" }\n');
   writeFileSync(join(local, 'mcp.json'), '{ "mcpServers": {} }\n');
-  const { Store } = await import('../src/store/index.ts');
-  const { hashPassword, verifyPassword } = await import('../src/access/auth.ts');
+  const { Store } = await import('../server/store/index.ts');
+  const { hashPassword, verifyPassword } = await import('../server/access/auth.ts');
   const db = join(local, 'tinywebui.db');
   const store = new Store(db);
   const admin = store.users.createFirstLocal({ email: 'owner@example.com', passwordHash: hashPassword('forgotten password') });

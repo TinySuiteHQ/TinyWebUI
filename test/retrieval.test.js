@@ -5,11 +5,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store, ALL_USERS } from '../src/store/index.ts';
-import { Retrieval, fuse } from '../src/retrieval/retrieval.ts';
-import { callReadDocument } from '../src/tools/document_tool.ts';
-import { loadEmbedder, PRESETS } from '../src/retrieval/embedding.ts';
-import { configProblems, DEFAULTS } from '../src/config/config.ts';
+import { Store, ALL_USERS } from '../server/store/index.ts';
+import { Retrieval, fuse } from '../server/retrieval/retrieval.ts';
+import { callReadDocument } from '../server/tools/document_tool.ts';
+import { loadEmbedder, PRESETS } from '../server/retrieval/embedding.ts';
+import { configProblems, DEFAULTS } from '../server/config/config.ts';
 
 // Words map to concepts, so "car" and "automobile" land together -- the
 // thing BM25 cannot do and embeddings can.
@@ -321,13 +321,33 @@ test('turn vectors follow the transcript: new answers re-embed, rewinds and dele
 
 test('search_chats formats turns with their chat and date', async () => {
   const { store, r, cars, asking } = chatSetup('hybrid');
-  const { callSearchChats } = await import('../src/tools/chat_search_tool.ts');
+  const { callSearchChats } = await import('../server/tools/chat_search_tool.ts');
   const out = await callSearchChats({ query: 'automobile', limit: 1 }, { store, retrieval: r, chatId: asking.id });
   assert.match(out, /1 turn\(s\) matching "automobile"/);
   assert.match(out, /"Garage" · \d{4}-\d{2}-\d{2} · chat /);
   assert.ok(out.includes(`chat ${cars.id}`));
   assert.match(out, /Q: When should the sedan[\s\S]*A: Before the first frost\./);
   assert.match(await callSearchChats({ query: ' ' }, { store, retrieval: r, chatId: asking.id }), /Error/);
+});
+
+test('a chat in a folder searches only the other chats in that folder', async () => {
+  const { callSearchChats } = await import('../server/tools/chat_search_tool.ts');
+  for (const mode of ['lexical', 'hybrid']) {
+    const { store, r, cars, money, asking } = chatSetup(mode);
+    if (mode === 'hybrid') await r.backfill();
+    store.chats.createFolder('Work', ALL_USERS);
+    store.chats.organize(asking.id, { folder: 'Work' }, ALL_USERS);
+    store.chats.organize(money.id, { folder: 'Work' }, ALL_USERS);
+    // "earnings" is in Finance (same folder); "sedan" only in Garage, outside it.
+    const inside = await callSearchChats({ query: 'earnings' }, { store, retrieval: r, chatId: asking.id });
+    assert.ok(inside.includes(`chat ${money.id}`), mode);
+    assert.match(inside, /in folder "Work"/);
+    const outside = await callSearchChats({ query: 'sedan tyres' }, { store, retrieval: r, chatId: asking.id });
+    assert.ok(!outside.includes(`chat ${cars.id}`), `${mode}: a chat outside the folder stays out`);
+    // Out of the folder again, it searches everything.
+    store.chats.organize(asking.id, { folder: null }, ALL_USERS);
+    assert.ok((await callSearchChats({ query: 'sedan tyres' }, { store, retrieval: r, chatId: asking.id })).includes(`chat ${cars.id}`), mode);
+  }
 });
 
 test('schema 7 document vectors move into the shared embeddings table', async () => {

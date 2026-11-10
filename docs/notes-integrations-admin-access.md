@@ -11,11 +11,11 @@ Branch `integrations-admin-access`, 2026-10-29.
 
 ## What we found
 
-- `authMode` defaults to `multiuser` (`DEFAULTS` in `src/config/config.ts`), so
+- `authMode` defaults to `multiuser` (`DEFAULTS` in `server/config/config.ts`), so
   `npx tinywebui` is multi-user even for one person. That is why the
   Integrations panel showed "This server is shared by everyone here...".
 - A connector without `identity` does not separate users. Chat tool calls go
-  through `clientFor(server, userId)` in `src/mcp.ts`, which ignores `userId` for
+  through `clientFor(server, userId)` in `server/mcp.ts`, which ignores `userId` for
   such a connector and returns the one shared connection. Nothing on it (no
   header, argument or metadata) tells the MCP server who is calling, so every
   user's data lands in one store and any user's chat can query all of it.
@@ -26,7 +26,7 @@ Branch `integrations-admin-access`, 2026-10-29.
 
 - Commit `8aaa229` (admins open a shared connector's `user` views in the
   Integrations panel, actions included) is reverted: it broke the last two rules.
-- Oversight of connectors, in `src/routes/integrations.ts`:
+- Oversight of connectors, in `server/routes/integrations.ts`:
   `GET /api/admin/users/<id>/integrations`, `.../<server>/views/<view>` and
   `.../items/<item>`, behind `FEATURE.OVERSIGHT`. Read on the user's own
   connection; views are sent without actions and there is no action route.
@@ -34,8 +34,8 @@ Branch `integrations-admin-access`, 2026-10-29.
   A shared connector is listed with no views. A user who is not approved has no
   connection to read (409).
 - Admin panel: **connectors** next to **chats** on each user. Nothing is read
-  until a view is picked. `showView()` in `public/panels/integrations.js` now
-  carries its own state, so both panels draw views with it.
+  until a view is picked. `web/src/panels/integrations/IntegrationView.vue` carries its own
+  state, so both panels draw views with it.
 - Tests in `test/integrations.test.js`; docs in `mcp-management.md` and
   `multi-user-mcp.md`.
 
@@ -63,7 +63,7 @@ whole.
 ## Separate by default (done, uncommitted)
 
 With no `mcp.json` and sign-in on, TinyWebUI starts TinyContext and TinySearch
-itself over HTTP (`serve`, `src/mcp_serve.ts`) in their own multi-user modes,
+itself over HTTP (`serve`, `server/mcp_serve.ts`) in their own multi-user modes,
 with a fresh proxy token per start, the tenant secret in the secrets file, and
 `identity` on each. Their data, models and config are under
 `${TINYWEBUI_DATA_DIR}/mcp/`. With no sign-in (`local`) they stay on stdio,

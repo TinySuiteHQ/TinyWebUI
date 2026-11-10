@@ -1,0 +1,234 @@
+import { readFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { brotliCompress, brotliCompressSync, constants as Z, gzip, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, normalize, sep } from 'node:path';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+// The page as Vite built it (`npm run build:web`, web/ -> dist/). The npm
+// package ships it prebuilt, so only a git checkout can be missing it.
+export const PAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+export const pageBuilt = (): boolean => existsSync(join(PAGE_DIR, 'index.html'));
+
+const TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml', '.json': 'application/json', '.map': 'application/json', '.woff2': 'font/woff2',
+  '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.md': 'text/markdown; charset=utf-8'
+};
+
+type Encoding = 'br' | 'gzip';
+/** The compression the client takes, brotli over gzip; null for none (curl, a test's raw request). */
+export function encodingFor(req: IncomingMessage | undefined): Encoding | null {
+  const accept = String(req?.headers['accept-encoding'] || '');
+  if (/\bbr\b(?!;q=0(\.0*)?\b)/.test(accept)) return 'br';
+  if (/\bgzip\b(?!;q=0(\.0*)?\b)/.test(accept)) return 'gzip';
+  return null;
+}
+
+// Below this a reply is sent as is: compressing it would cost more than the bytes it saves.
+const COMPRESS_FROM = 8 * 1024;
+
+/**
+ * A JSON reply. A large one (a long chat is hundreds of KB of text) is
+ * compressed when the client takes it, at a fast setting: this runs per
+ * request. Streams (SSE) never come through here, so nothing is held back
+ * waiting for a compressor to flush.
+ */
+export function json(res: ServerResponse, code: number, payload: unknown): void {
+  const body = JSON.stringify(payload);
+  const size = Buffer.byteLength(body);
+  const encoding = size >= COMPRESS_FROM ? encodingFor(res.req) : null;
+  if (!encoding) {
+    res.writeHead(code, { 'content-type': 'application/json', 'content-length': size });
+    return void res.end(body);
+  }
+  const packed = encoding === 'br'
+    ? brotliCompressSync(body, { params: { [Z.BROTLI_PARAM_QUALITY]: 4, [Z.BROTLI_PARAM_SIZE_HINT]: size } })
+    : gzipSync(body, { level: 6 });
+  res.writeHead(code, { 'content-type': 'application/json', 'content-encoding': encoding, vary: 'accept-encoding', 'content-length': packed.length });
+  res.end(packed);
+}
+
+/** An error that carries its own HTTP status to the handler's catch. */
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
+}
+
+// Body caps. Most requests are a few KB; uploads and turns with images carry
+// base64 (4/3 of the file), so they get room for their own per-file limits.
+export const BODY_LIMIT = 1024 * 1024;
+export const UPLOAD_LIMIT = 8 * 1024 * 1024;       // one 5 MB file, base64
+export const TURN_LIMIT = 60 * 1024 * 1024;        // up to 8 images of 5 MB, base64
+export const BACKUP_LIMIT = 100 * 1024 * 1024;     // a backup is text (no files), but tool output adds up over years
+
+/** A request body: a JSON object whose fields are whatever the client sent, until a route checks them. */
+export type Body = Record<string, unknown>;
+
+/** True when a body field is one of the allowed values, which also tells TypeScript which. */
+export const oneOf = <T extends string>(value: unknown, allowed: readonly T[]): value is T =>
+  typeof value === 'string' && (allowed as readonly string[]).includes(value);
+
+/** Reads a JSON object body, refusing more than `limit` bytes (413), bad JSON or anything but an object (400). */
+export async function readJson(req: IncomingMessage, limit = BODY_LIMIT): Promise<Body> {
+  const declared = Number(req.headers['content-length']);
+  if (declared > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) throw new HttpError(413, `request body exceeds ${limit} bytes`);
+    chunks.push(c);
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    throw new HttpError(400, 'request body is not valid JSON');
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'request body must be a JSON object');
+  return body as Body;
+}
+
+// Sent on every response. The page loads only its own scripts; the one
+// outside origin is the Fall Fairy theme's Google Fonts.
+export const SECURITY_HEADERS = {
+  'content-security-policy': [
+    "default-src 'self'", "script-src 'self'", "connect-src 'self'",
+    "style-src 'self' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "img-src 'self' data: blob:", "object-src 'none'", "base-uri 'none'",
+    "frame-ancestors 'none'", "form-action 'self'"
+  ].join('; '),
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'cross-origin-opener-policy': 'same-origin'
+};
+
+/**
+ * The two framing headers, loosened for a file the page itself frames (a PDF
+ * in the file viewer): its own origin may embed it, nobody else. Set over
+ * SECURITY_HEADERS on that one response only.
+ */
+export const FRAMEABLE_HEADERS = {
+  'content-security-policy': SECURITY_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
+  'x-frame-options': 'SAMEORIGIN'
+};
+
+/**
+ * Cross-site request forgery guard for anything that changes state. Browsers
+ * send Origin on cross-origin POSTs (and Sec-Fetch-Site on all modern ones),
+ * so a page elsewhere cannot drive this one with the user's cookies, the
+ * gateway's included -- or poke a tier-1 instance on localhost.
+ */
+export function crossSite(req: IncomingMessage, cfg: { allowedOrigins?: string[] }): boolean {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return false;
+  const origin = req.headers.origin;
+  if (origin && origin !== 'null') {
+    let host;
+    try { host = new URL(origin).host; } catch { return true; }
+    if (host === req.headers.host) return false;
+    return !(cfg.allowedOrigins || []).includes(origin);
+  }
+  if (origin === 'null') return true;
+  return req.headers['sec-fetch-site'] === 'cross-site';
+}
+
+/**
+ * DNS-rebinding guard. With no login, a hostile site can point its own name at
+ * 127.0.0.1 and pass the same-origin check above (Origin and Host both name it),
+ * so a no-login install only answers to loopback names and allowedHosts.
+ * Logged-in modes are safe: the attacker's origin has no session cookie.
+ */
+export function badHost(req: IncomingMessage, cfg: { authMode?: string; allowedHosts?: string[] }): boolean {
+  if (cfg.authMode !== 'local') return false;
+  let hostname;
+  try { hostname = new URL(`http://${req.headers.host}`).hostname.toLowerCase(); } catch { return true; }
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '[::1]') return false;
+  return !(cfg.allowedHosts || []).some((h) => h.toLowerCase() === hostname);
+}
+
+export async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // Resolve the index BEFORE normalising: on Windows normalize('/') returns a
+  // lone backslash, so a check for '/' after it never matches and the root
+  // request lands on the directory itself.
+  const pathname = (req.url ?? '/').split('?')[0];
+  const rel = normalize(pathname === '/' ? 'index.html' : pathname)
+    .replace(/^(\.\.[/\\])+/, '');
+  const file = join(PAGE_DIR, rel);
+  if (!file.startsWith(PAGE_DIR + sep)) return json(res, 403, { error: 'forbidden' });
+  try {
+    const entry = await cached(file);
+    if (!entry) throw new Error('not a file');
+    const ext = file.slice(file.lastIndexOf('.'));
+    const encoding = entry.compressible ? encodingFor(req) : null;
+    // Each encoding is its own representation, so its own ETag.
+    const etag = encoding ? `"${entry.hash}-${encoding}"` : `"${entry.hash}"`;
+    const headers: Record<string, string | number> = { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': cacheFor(rel), etag };
+    if (entry.compressible) headers.vary = 'accept-encoding';
+    // A proxy that compresses (Cloudflare does) sends it back weakened, W/"...".
+    // no-cache alone still lets a cache keep the file; the ETag turns every
+    // revalidation of an unchanged file into a 304 instead of a full download.
+    const asked = String(req.headers['if-none-match'] || '').split(/\s*,\s*/).map((t) => t.replace(/^W\//, ''));
+    if (asked.includes(etag)) {
+      res.writeHead(304, headers);
+      return void res.end();
+    }
+    const body = encoding ? await compressed(entry, encoding) : entry.data;
+    if (encoding) headers['content-encoding'] = encoding;
+    headers['content-length'] = body.length;
+    res.writeHead(200, headers);
+    res.end(body);
+  } catch {
+    if (rel === 'index.html' && !pageBuilt()) return json(res, 503, { error: 'the page is not built: run `npm run build:web`' });
+    json(res, 404, { error: 'not found' });
+  }
+}
+
+/**
+ * The page's files, held in memory once read: a page load used to read and
+ * hash every file from disk. Each compressed copy is made once, at the
+ * strongest setting (it is paid for once, then served to every visitor) and
+ * off the main thread. A file changed on disk (a rebuild, a theme edited in
+ * place) is noticed by its size and time and read again.
+ */
+type Entry = { mtimeMs: number, size: number, data: Buffer, hash: string, compressible: boolean, packed: Partial<Record<Encoding, Promise<Buffer>>> };
+const pageFiles = new Map<string, Entry>();
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.svg', '.json', '.map', '.md']);
+const CACHE_UP_TO = 4 * 1024 * 1024;
+const brotliAsync = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
+
+async function cached(file: string): Promise<Entry | null> {
+  const st = await stat(file);
+  if (!st.isFile()) return null;
+  const hit = pageFiles.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit;
+  const data = await readFile(file);
+  const ext = file.slice(file.lastIndexOf('.'));
+  const entry: Entry = {
+    mtimeMs: st.mtimeMs, size: st.size, data, packed: {},
+    hash: createHash('sha1').update(data).digest('base64url'),
+    compressible: COMPRESSIBLE.has(ext) && data.length >= 1024
+  };
+  if (data.length <= CACHE_UP_TO) pageFiles.set(file, entry);
+  return entry;
+}
+
+function compressed(entry: Entry, encoding: Encoding): Promise<Buffer> {
+  entry.packed[encoding] ??= encoding === 'br'
+    ? brotliAsync(entry.data, { params: { [Z.BROTLI_PARAM_QUALITY]: Z.BROTLI_MAX_QUALITY, [Z.BROTLI_PARAM_SIZE_HINT]: entry.data.length } })
+    : gzipAsync(entry.data, { level: 9 });
+  return entry.packed[encoding];
+}
+
+// Vite names everything under assets/ by its content hash, so a cached copy is
+// never stale. Everything else (index.html, themes) keeps its name across
+// releases and has to be revalidated.
+function cacheFor(rel: string): string {
+  // `rel` keeps the request's leading slash (/assets/...); missing that once sent every asset as no-cache.
+  return /^[/\\]*assets[/\\]/.test(rel) ? 'public, max-age=31536000, immutable' : 'no-cache';
+}

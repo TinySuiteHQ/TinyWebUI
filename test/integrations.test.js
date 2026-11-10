@@ -10,7 +10,7 @@ import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 // The SDK's tool schemas must be zod, which the SDK itself depends on.
 import { z } from 'zod';
 
-import { parseManifest, viewUri, detailUri, actionArgs, shapeViewData, shapeDetail, MANIFEST_MIME } from '../src/management.ts';
+import { parseManifest, viewUri, detailUri, actionArgs, shapeViewData, shapeDetail, MANIFEST_MIME } from '../server/management.ts';
 import { startMcpHttpServer } from './mcp-http-fixture.js';
 
 /* ---------- a server that offers a management page ---------- */
@@ -78,7 +78,7 @@ function memoryServer({ manifest = manifestOf([MEMORIES, SERVICE]) } = {}) {
 
 async function deployment(t, { servers, authMode = 'trusted-header' }) {
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-integrations-'));
-  const { start } = await import('../src/server.ts');
+  const { start } = await import('../server/server.ts');
   const srv = await start({
     port: 0, host: '127.0.0.1', configFile: false, watch: false, mcpServers: servers, dbPath: join(dir, 'db.sqlite'),
     config: { authMode, trustedProxyCidrs: ['127.0.0.1/32', '::1/128'], baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k', model: 'm', access: { newUsers: 'approved' } }

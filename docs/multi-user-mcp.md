@@ -189,7 +189,7 @@ Each user's `list_memories` shows only their own.
 ## Management pages
 
 With `TINYCONTEXT_MANAGEMENT=on` and `TINYSEARCH_MANAGEMENT=on`, the
-**Integrations** panel shows each person their own memories and search
+**MCP** page shows each person their own memories and search
 history. It reads them on that person's own connection, under the same
 identity as their chats. An admin also sees the servers' instance-wide views
 (TinySearch's domains and health, TinyContext's store count) when the server
@@ -249,6 +249,6 @@ from posing as one of your users:
 ```
 
 Sign in as two people in two browsers. Each one saves a memory and runs a
-search, then opens **Integrations**. Each sees only their own memories and
+search, then opens **MCP**. Each sees only their own memories and
 searches. The admin also sees TinySearch's Overview, Domains and Blocking
 rules, and TinyContext's Service view.

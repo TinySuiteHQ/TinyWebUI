@@ -5,9 +5,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createConfigSource } from '../src/config/config.ts';
-import { serversIdentityProblems } from '../src/access/mcp_identity.ts';
-import { serveProblems } from '../src/mcp_serve.ts';
+import { createConfigSource } from '../server/config/config.ts';
+import { isBundled } from '../server/config/bundled.ts';
+import { serversIdentityProblems } from '../server/access/mcp_identity.ts';
+import { serveProblems } from '../server/mcp_serve.ts';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'twui-default-mcp-'));
 const valid = (servers) => [...serversIdentityProblems(servers), ...Object.entries(servers).flatMap(([n, s]) => serveProblems(n, s))];
@@ -83,4 +84,20 @@ test('any mcp.json, even an empty one, replaces the defaults', () => {
 test('servers set in code replace the defaults', () => {
   const source = createConfigSource({ configFile: false, mcpServers: {} });
   assert.deepEqual(source.loadMcpServers(), {});
+});
+
+test('the MCP page lists TinySuite servers as bundled, by package, not by name', () => {
+  for (const authMode of ['multiuser', 'local']) {
+    const source = createConfigSource({ configFile: join(fresh(), 'tinywebui.config.json'), config: { authMode } });
+    for (const [name, spec] of Object.entries(source.loadMcpServers())) assert.ok(isBundled(spec), `${authMode} ${name}`);
+  }
+  const uvx = (from) => ({ command: 'uvx', args: ['--python', '3.12', '--from', from, 'tinysearch'] });
+  // Renamed in mcp.json, or with a raised version floor: still TinySuite's own.
+  assert.ok(isBundled(uvx('tinysuite-search[server]>=0.9.0')));
+  assert.ok(isBundled(uvx('tinysuite-context')));
+  // Called "tinysearch" but run from something else: someone's own server.
+  assert.equal(isBundled(uvx('tinysearch-fork[server]')), false);
+  assert.equal(isBundled({ command: 'npx', args: ['-y', 'tinysuite-search'] }), false);
+  assert.equal(isBundled({ url: 'https://example.com/mcp' }), false);
+  assert.equal(isBundled({ command: 'uvx', args: ['tinysuite-search'] }), false, 'no --from: the package is not named');
 });

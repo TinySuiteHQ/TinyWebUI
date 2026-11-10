@@ -1,13 +1,13 @@
 // Keys live in tinywebui.secrets.json or the environment, never in the config
-// file, which only says what the deployment is (see src/config/secrets.ts).
+// file, which only says what the deployment is (see server/config/secrets.ts).
 // The database, which holds every conversation, is owner-only too.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createConfigSource, configProblems, DEFAULTS } from '../src/config/config.ts';
-import { Store } from '../src/store/index.ts';
+import { createConfigSource, configProblems, DEFAULTS } from '../server/config/config.ts';
+import { Store } from '../server/store/index.ts';
 
 const setup = (config) => {
   const dir = mkdtempSync(join(tmpdir(), 'tinywebui-secrets-'));

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configProblems, DEFAULTS } from '../src/config/config.ts';
+import { configProblems, DEFAULTS } from '../server/config/config.ts';
 
-const { start } = await import('../src/server.ts');
+const { start } = await import('../server/server.ts');
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-frozen-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));
 const base = { authMode: 'local', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'k' };

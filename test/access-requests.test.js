@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { start } from '../src/server.ts';
-import { Store } from '../src/store/index.ts';
+import { start } from '../server/server.ts';
+import { Store } from '../server/store/index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-requests-'));
 const configFile = join(dir, 'tinywebui.config.json');

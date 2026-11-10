@@ -3,8 +3,8 @@
 // attached to another chat; documents from before that fall back to the text.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Store, ALL_USERS } from '../src/store/index.ts';
-import { servingFor } from '../src/files/documents.ts';
+import { Store, ALL_USERS } from '../server/store/index.ts';
+import { servingFor } from '../server/files/documents.ts';
 
 const blobs = (store) => store.db.prepare('SELECT COUNT(*) AS n FROM document_blobs').get().n;
 
@@ -88,13 +88,13 @@ test('only a PDF or plain text is shown inline; anything a browser would run is 
 });
 
 test('a stored message splits back into its text and the document ids its notes name', async () => {
-  const { attachmentNote, splitAttachmentNotes } = await import('../public/shared/attachment_note.js');
+  const { attachmentNote, splitAttachmentNotes } = await import('../shared/attachment_note.ts');
   const a = { id: 'aa11', filename: 'a "b" (1).pdf', char_len: 1743 };
   const b = { id: 'bb22', filename: 'b.txt', char_len: 12 };
   const stored = 'summarise these' + attachmentNote(a) + attachmentNote(b);
-  assert.deepEqual(splitAttachmentNotes(stored), { text: 'summarise these', ids: ['aa11', 'bb22'] });
-  assert.deepEqual(splitAttachmentNotes('no notes'), { text: 'no notes', ids: [] });
+  assert.deepEqual(splitAttachmentNotes(stored), { text: 'summarise these', ids: ['aa11', 'bb22'], names: ['a "b" (1).pdf', 'b.txt'] });
+  assert.deepEqual(splitAttachmentNotes('no notes'), { text: 'no notes', ids: [], names: [] });
   // A note-shaped line the user typed mid-message is theirs, not an attachment.
   const typed = `see ${attachmentNote(a)} for context`;
-  assert.deepEqual(splitAttachmentNotes(typed), { text: typed, ids: [] });
+  assert.deepEqual(splitAttachmentNotes(typed), { text: typed, ids: [], names: [] });
 });

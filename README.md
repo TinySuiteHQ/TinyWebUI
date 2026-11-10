@@ -31,7 +31,7 @@ Part of [TinySuite](https://tinysuite.dev). Comes with [TinySearch](https://gith
 
 ---
 
-TinyWebUI is the chat interface of [TinySuite](https://tinysuite.dev), a set of small, local-first tools for AI agents. Bring an endpoint (OpenRouter, OpenAI, Groq, Ollama, vLLM, LM Studio, or anything else that speaks the OpenAI API), pick a model and a system prompt, and start working. Chats, documents and tool output stay in one SQLite file on your machine. There is no hosted backend, no account to create, no build step and no frontend framework.
+TinyWebUI is the chat interface of [TinySuite](https://tinysuite.dev), a set of small, local-first tools for AI agents. Bring an endpoint (OpenRouter, OpenAI, Groq, Ollama, vLLM, LM Studio, or anything else that speaks the OpenAI API), pick a model and a system prompt, and start working. Chats, documents and tool output stay in one SQLite file on your machine. There is no hosted backend and no account to create, and `npx tinywebui` needs no build step: the page ships prebuilt.
 
 It comes pre-loaded with two TinySuite MCP servers, so a new install can already search the web and remember things:
 
@@ -40,7 +40,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 
 ## Highlights
 
-- **Durable conversations.** Edit, retry, rewind, folders and full-text search. A running turn belongs to the server, so you can reload and come back to it.
+- **Durable conversations.** Edit, retry, rewind, fork, full-text search, and folders with instructions of their own (a chat in a folder also searches only that folder's chats). A running turn belongs to the server, so you can reload and come back to it.
 - **Steer a turn while it runs.** Press Enter to reach the model at the next safe point, or Alt+Enter to hold a follow-up.
 - **MCP over stdio, Streamable HTTP or SSE.** Calls that can change something wait for your approval.
 - **Attachments.** Text and source files, PDFs, DOCX and images.
@@ -49,7 +49,7 @@ It comes pre-loaded with two TinySuite MCP servers, so a new install can already
 - **Automations.** Cron-scheduled prompts that run in a chat of your choice.
 - **Private by default.** The first account becomes the administrator; later local accounts come from a single-use invitation, or, with `access.allowRequests: true` (off by default), ask from the sign-in page and wait for an admin to approve them. Teams can alternatively put SSO in front.
 - **Managed from files.** Version-controlled config that hot-reloads, refuses typos and has a fingerprint you can check against a running instance.
-- **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](public/themes/README.md) to write your own.
+- **Themes.** Fall Fairy and Cyber Grid are included. See [theme authoring](web/public/themes/README.md) to write your own.
 
 ## Quick start
 
@@ -59,7 +59,7 @@ Requires **Node.js 22.13** or later. The bundled TinySearch and TinyContext serv
 npx tinywebui
 ```
 
-Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from the Admin panel, where requests for access from the sign-in page also wait for approval. Settings then opens on its first step: add a connector (any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connector. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
+Open <http://127.0.0.1:7777> and create the first account with a password of at least 10 characters. That account becomes the administrator and can invite others from Settings → People & roles, where requests for access from the sign-in page also wait for approval. Settings then opens on Models: add a connection (`connectors` in the config: any OpenAI-compatible URL, with an API key if it needs one), then the models people can pick from it. Every model, with its prompt, sampling and caching, belongs to a connection. The same in `tinywebui.config.json` (start from `example.tinywebui.config.json`):
 
 ```json
 {
@@ -75,6 +75,14 @@ Open <http://127.0.0.1:7777> and create the first account with a password of at 
 
 A connector that needs a key takes `"apiKey": "${NAME}"`, filled in from the environment, or the key typed into Settings.
 
+With accounts, a role decides what its people may use (features, models, what they may personalise) and, under Settings → People & roles, what their chats run with: its own prompt (which replaces the system prompt), default model, temperature, token and tool-turn limits, question timeout and tool approval. A value left blank keeps the global one. The prompt, temperature, token and tool-turn limits and tool approval can also be set for one model at a time, over the role's own. In the file these are `access.roles.<name>.settings` and `access.roles.<name>.modelSettings.<model id>`:
+
+```json
+{ "access": { "roles": { "student": { "features": ["chat"], "models": ["fast", "smart"],
+  "settings": { "systemPrompt": "Explain step by step.", "model": "fast", "toolApproval": "all" },
+  "modelSettings": { "smart": { "temperature": 0.2, "maxTokens": 2000 } } } } } }
+```
+
 `tinywebui.config.json` describes the deployment (endpoints, connectors, models, policy) and holds no secrets. A key is either a `${NAME}` reference, filled in from the environment, or kept in `tinywebui.secrets.json` beside it: what the Settings panel saves, and the generated session-signing secret. A key written straight into the config file moves there the next time the server starts. Accounts, password hashes and conversations live in `tinywebui.db`. TinyWebUI keeps the secrets file and the database readable by their owner only; keep them private and backed up.
 
 `npx tinywebui` keeps the config, keys, database and embedding models in one folder per user: `~/Library/Application Support/TinyWebUI` on macOS, `%LOCALAPPDATA%\TinyWebUI` on Windows and `~/.local/share/tinywebui` (or `$XDG_DATA_HOME/tinywebui`) on Linux. Run it in a folder that has its own `tinywebui.config.json`, or pass `--config`, to use that instead. It uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
@@ -88,7 +96,7 @@ docker compose up -d
 
 The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes.
 
-Since no mail is sent, there is no emailed reset. People change their own password under Settings → My preferences, and an admin can set a new one for anyone from the Admin panel. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
+Since no mail is sent, there is no emailed reset. People change their own password under Settings → Account, and an admin can set a new one for anyone from Settings → People & roles. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
 
 ```bash
 node bin/tinywebui.ts users password owner@example.com                          # from a clone
@@ -118,16 +126,17 @@ The full reference lives at **[tinysuite.dev/docs/tinywebui](https://tinysuite.d
 | [CLI](https://tinysuite.dev/docs/tinywebui/#cli) | Every command |
 | [Security and limits](https://tinysuite.dev/docs/tinywebui/#security-and-limits) | Exposure, MCP trust, what isn't included |
 
-In this repository: [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, [docs/mcp-management.md](docs/mcp-management.md) is the contract any MCP server can implement to get a page in the Integrations panel, and [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`).
+In this repository: [docs/architecture.md](docs/architecture.md) is how the pieces fit, what the app survives and how its pages are laid out, [docs/deploy.md](docs/deploy.md) is a scripted container deployment, [docs/multi-user-mcp.md](docs/multi-user-mcp.md) covers sharing one TinySearch and TinyContext between many users, [docs/mcp-management.md](docs/mcp-management.md) is the contract any MCP server can implement to get a page on the MCP page, [docs/config.schema.json](docs/config.schema.json) is the config schema (also `tinywebui schema`), and [docs/performance.md](docs/performance.md) is what the page costs a browser, with the method to measure it again.
 
 ## Development
 
 ```bash
-npm test        # type check, then the whole suite, about 10 seconds
-npm run dev     # restart on changes in src/ and bin/
+npm test        # type check (server and page), then the whole suite, about 15 seconds on a fast disk
+npm run dev     # the API on :7777, restarting on changes in server/, bin/ and shared/
+npm run dev:web # the page on :5173 with hot reload, proxying /api to :7777
 ```
 
-The server is TypeScript that Node runs directly, with no build step, so working from a clone needs Node.js 22.18 or later. The npm package ships JavaScript compiled from it (`npm run build`, which `npm pack` runs) and works from 22.13.
+The server is TypeScript that Node runs directly, with no build step, so working from a clone needs Node.js 22.18 or later. The page is Vue 3 and TypeScript in `web/`, built by Vite into `dist/`, which the server serves; `npm start` builds it first, and during development `npm run dev:web` serves it with hot reload instead. The npm package ships JavaScript compiled from the server and the built page (`npm run build`, which `npm pack` runs) and works from 22.13.
 
 [AGENTS.md](AGENTS.md) maps the codebase and says where new code goes. `npm run eval` runs model-behaviour evals from `evals/tasks/` and makes real API calls, so it costs money.
 

@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configProblems, DEFAULTS } from '../src/config/config.ts';
-import { effectiveConfig, flattenCatalog, nestCatalog } from '../src/config/models.ts';
-import { fingerprint } from '../src/access/policy.ts';
+import { configProblems, DEFAULTS } from '../server/config/config.ts';
+import { effectiveConfig, flattenCatalog, nestCatalog } from '../server/config/models.ts';
+import { fingerprint } from '../server/access/policy.ts';
 
 const SECRET = 'sk-test-abcdef123456';
 
@@ -75,7 +75,7 @@ const readSecrets = () => JSON.parse(readFileSync(join(dir, 'tinywebui.secrets.j
 const logged = [];
 const origLog = console.log;
 console.log = (...args) => { logged.push(args.join(' ')); };
-const { start } = await import('../src/server.ts');
+const { start } = await import('../server/server.ts');
 const srv = await start({
   port: 0, host: '127.0.0.1', configFile, dbPath: join(dir, 'c.db'),
   config: {

@@ -5,8 +5,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { start } from '../src/server.ts';
-import { Store, ALL_USERS } from '../src/store/index.ts';
+import { start } from '../server/server.ts';
+import { Store, ALL_USERS } from '../server/store/index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'tinywebui-multiuser-'));
 const dbPath = join(dir, 'chats.db');
@@ -150,7 +150,7 @@ test('an admin sets a password for someone locked out, under the same rule', asy
 
   const set = (id, password, cookie = adminCookie) => call(`/api/admin/users/${id}/password`, { method: 'POST', cookie, body: { password } });
   assert.equal((await set(friend.id, 'tiny')).status, 400);
-  assert.equal((await set(owner.id, 'owner new password')).status, 400, 'your own goes through My preferences');
+  assert.equal((await set(owner.id, 'owner new password')).status, 400, 'your own goes through Settings → Account');
   assert.equal((await set(owner.id, 'hijacked password', friendSession)).status, 403, 'admins only');
 
   assert.equal((await set(friend.id, 'reset by the admin')).status, 200);

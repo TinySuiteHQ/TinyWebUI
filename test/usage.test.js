@@ -1,8 +1,8 @@
-// One reader of provider usage for the page and the server (public/shared/usage.js),
+// One reader of provider usage for the page and the server (shared/usage.ts),
 // so a turn's usage line and the Statistics panel agree on cache hits.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inputTokens, outputTokens, cacheReads, cacheWrites, tally } from '../public/shared/usage.js';
+import { inputTokens, outputTokens, cacheReads, cacheWrites, tally } from '../shared/usage.ts';
 
 test('cache reads are found under every provider spelling', () => {
   assert.equal(cacheReads({ prompt_tokens_details: { cached_tokens: 5 } }), 5); // OpenAI chat

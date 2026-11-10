@@ -411,6 +411,10 @@
       "type": "string",
       "x-change": "editable (UI writes it back here)"
     },
+    "theme": {
+      "type": "string",
+      "x-change": "editable (UI writes it back here)"
+    },
     "toolApproval": {
       "enum": [
         "writes",
@@ -648,6 +652,82 @@
                   },
                   "uniqueItems": true,
                   "description": "What this role may personalise; defaults to access.customize."
+                },
+                "settings": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "What this role's people get over the global and per-model values; a key left out inherits.",
+                  "properties": {
+                    "systemPrompt": {
+                      "type": "string",
+                      "description": "Replaces the system prompt (and a model's own) for this role."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The model new chats start with: one of this role's models. A person's own pick still wins."
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2
+                    },
+                    "maxTokens": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxToolRounds": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 50
+                    },
+                    "askUserTimeoutSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 86400
+                    },
+                    "toolApproval": {
+                      "enum": [
+                        "writes",
+                        "all",
+                        "off"
+                      ]
+                    }
+                  }
+                },
+                "modelSettings": {
+                  "type": "object",
+                  "description": "Per model (a catalog id this role may use): what this role's chats on that model run with, over its settings; a key left out inherits.",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "systemPrompt": {
+                        "type": "string",
+                        "description": "Replaces the system prompt for this role on this model."
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "maxTokens": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maxToolRounds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50
+                      },
+                      "toolApproval": {
+                        "enum": [
+                          "writes",
+                          "all",
+                          "off"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             },
@@ -707,6 +787,82 @@
                   },
                   "uniqueItems": true,
                   "description": "What this role may personalise; defaults to access.customize."
+                },
+                "settings": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "What this role's people get over the global and per-model values; a key left out inherits.",
+                  "properties": {
+                    "systemPrompt": {
+                      "type": "string",
+                      "description": "Replaces the system prompt (and a model's own) for this role."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The model new chats start with: one of this role's models. A person's own pick still wins."
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2
+                    },
+                    "maxTokens": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxToolRounds": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 50
+                    },
+                    "askUserTimeoutSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 86400
+                    },
+                    "toolApproval": {
+                      "enum": [
+                        "writes",
+                        "all",
+                        "off"
+                      ]
+                    }
+                  }
+                },
+                "modelSettings": {
+                  "type": "object",
+                  "description": "Per model (a catalog id this role may use): what this role's chats on that model run with, over its settings; a key left out inherits.",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "systemPrompt": {
+                        "type": "string",
+                        "description": "Replaces the system prompt for this role on this model."
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "maxTokens": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maxToolRounds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50
+                      },
+                      "toolApproval": {
+                        "enum": [
+                          "writes",
+                          "all",
+                          "off"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -770,6 +926,82 @@
                 },
                 "uniqueItems": true,
                 "description": "What this role may personalise; defaults to access.customize."
+              },
+              "settings": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "What this role's people get over the global and per-model values; a key left out inherits.",
+                "properties": {
+                  "systemPrompt": {
+                    "type": "string",
+                    "description": "Replaces the system prompt (and a model's own) for this role."
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "The model new chats start with: one of this role's models. A person's own pick still wins."
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 2
+                  },
+                  "maxTokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxToolRounds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  },
+                  "askUserTimeoutSeconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 86400
+                  },
+                  "toolApproval": {
+                    "enum": [
+                      "writes",
+                      "all",
+                      "off"
+                    ]
+                  }
+                }
+              },
+              "modelSettings": {
+                "type": "object",
+                "description": "Per model (a catalog id this role may use): what this role's chats on that model run with, over its settings; a key left out inherits.",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "systemPrompt": {
+                      "type": "string",
+                      "description": "Replaces the system prompt for this role on this model."
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2
+                    },
+                    "maxTokens": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxToolRounds": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 50
+                    },
+                    "toolApproval": {
+                      "enum": [
+                        "writes",
+                        "all",
+                        "off"
+                      ]
+                    }
+                  }
+                }
               }
             }
           },

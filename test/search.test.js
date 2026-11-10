@@ -41,7 +41,7 @@ process.env.TINYWEBUI_BASE_URL = `http://127.0.0.1:${port}/v1`;
 process.env.TINYWEBUI_MODEL = 'fake-model';
 process.env.TINYWEBUI_DB = join(dir, 'chats.db');
 
-const { start } = await import('../src/server.ts');
+const { start } = await import('../server/server.ts');
 const srv = await start({ port: 0, host: '127.0.0.1', config: { authMode: 'local' } });
 const base = `http://127.0.0.1:${srv.address().port}`;
 
@@ -83,7 +83,7 @@ test('search finds a chat whether the word is in the question or the answer', as
 
 test('one result per matching chat, never one per matching message', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-dedupe-'));
-  const { Store, ALL_USERS } = await import('../src/store/index.ts');
+  const { Store, ALL_USERS } = await import('../server/store/index.ts');
   const store = new Store(join(dir2, 'x.db'));
 
   // Three messages in one chat all say "lisbon" -- the question, and two
@@ -99,11 +99,14 @@ test('one result per matching chat, never one per matching message', async () =>
   const results = store.search.chats('lisbon', 30, ALL_USERS);
   assert.equal(results.length, 2, 'two distinct chats, not one row per matching message');
   assert.deepEqual(new Set(results.map((r) => r.chatId)), new Set([a.id, b.id]));
+  // Each row says how many of its chat's messages matched, so the page can tell one chat with many hits.
+  assert.equal(results.find((r) => r.chatId === a.id).matches, 2);
+  assert.equal(results.find((r) => r.chatId === b.id).matches, 1);
 });
 
 test('search does not reach into reasoning, tool calls, tool results, or narration', async () => {
   const dir2 = mkdtempSync(join(tmpdir(), 'search-store-'));
-  const { Store, ALL_USERS } = await import('../src/store/index.ts');
+  const { Store, ALL_USERS } = await import('../server/store/index.ts');
   const store = new Store(join(dir2, 'x.db'));
   const chat = store.chats.create({ title: 'probe' });
   // A round that opens a tool call: narration + reasoning, then the tool

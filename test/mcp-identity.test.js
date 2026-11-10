@@ -8,11 +8,11 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { McpHub, POOL_IDLE_MS } from '../src/mcp.ts';
-import { identityProblems, claimValue, DISCOVERY_PRINCIPAL } from '../src/access/mcp_identity.ts';
-import { createConfigSource } from '../src/config/config.ts';
-import { Store } from '../src/store/index.ts';
-import { runChat } from '../src/chat/llm.ts';
+import { McpHub, POOL_IDLE_MS } from '../server/mcp.ts';
+import { identityProblems, claimValue, DISCOVERY_PRINCIPAL } from '../server/access/mcp_identity.ts';
+import { createConfigSource } from '../server/config/config.ts';
+import { Store } from '../server/store/index.ts';
+import { runChat } from '../server/chat/llm.ts';
 import { startMcpHttpServer } from './mcp-http-fixture.js';
 
 const as = (userId) => ({ store: null, chatId: 'c', budget: 8000, unattended: false, askUser: null, userId });

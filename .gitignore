@@ -9,8 +9,11 @@ tinywebui.secrets.json
 tinywebui.config.js
 tinywebui.config.mjs
 
-# Local MCP wiring (paths, tokens).
+# Local MCP wiring (paths, tokens), and the local servers' data (their
+# embedding models, per-person databases). Anchored to the root, like
+# /models/ below: a bare "mcp/" would also hide web/src/panels/mcp/.
 mcp.json
+/mcp/
 
 # Conversation store (holds every tool result in full).
 tinywebui.db
@@ -23,7 +26,9 @@ tinywebui.db-shm
 evals/results/
 
 # Embedding bundles (tinywebui models pull): large, fetched per deployment.
-models/
+# Anchored: a bare "models/" also matched web/src/panels/models/ and kept
+# ModelsPanel.vue out of git.
+/models/
 .playwright-mcp/
 
 # Local agent notes.
@@ -31,5 +36,9 @@ CLAUDE.md
 
 # Emitted beside the .ts sources by `npm run build`, for the npm package only
 # (`npm run clean` removes them).
-src/**/*.js
+server/**/*.js
 bin/*.js
+shared/*.js
+
+# The built page (`npm run build:web`): shipped in the npm package, never committed.
+dist/
