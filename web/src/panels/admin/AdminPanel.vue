@@ -18,6 +18,7 @@ import PersonRow from './PersonRow.vue';
 import RoleEditor from './RoleEditor.vue';
 import IntegrationView from '../mcp/IntegrationView.vue';
 import Markdown from '../../chat/Markdown.vue';
+import Icon from '../../ui/Icon.vue';
 
 // /api/admin/* replies, read field by field.
 type Json = any;
@@ -281,18 +282,18 @@ onBeforeUnmount(stopPoll);
     </div>
     <div class="panel-scroll">
       <section v-if="view" class="panel-card">
-        <div class="sec-h"><button type="button" @click="back">← back</button> <span>{{ viewTitle }}</span><span class="usage">{{ viewMeta }}</span></div>
+        <div class="sec-h"><button type="button" class="adm-back" @click="back"><Icon name="arrowLeft" size="1rem" />Back</button> <span>{{ viewTitle }}</span><span class="usage">{{ viewMeta }}</span></div>
         <div class="usage admin-note">Read-only admin view. Every view is recorded in the audit log.</div>
         <template v-if="view.kind === 'chats' && view.data">
           <button v-for="c in view.data.chats" :key="c.id" type="button" class="admin-chat" @click="openChat(view.user, c.id)">
-            <span>{{ c.title || c.id }}</span><span v-if="c.running" class="admin-live">● live</span>
+            <span>{{ c.title || c.id }}</span><span v-if="c.running" class="admin-live">live</span>
             <span class="usage">{{ new Date(c.updated_at).toLocaleString() }}</span>
           </button>
           <div v-if="!view.data.chats.length" class="empty">no chats</div>
         </template>
         <template v-else-if="view.kind === 'chat' && view.data">
           <template v-for="doc in view.data.documents || []" :key="doc.id">
-            <button type="button" class="link usage" @click="openDocument(doc.id)">📎 {{ doc.filename }}</button><br>
+            <button type="button" class="link usage" @click="openDocument(doc.id)"><Icon name="doc" size=".95rem" />{{ doc.filename }}</button><br>
           </template>
           <div v-for="(m, i) in view.data.messages.filter((x: any) => x.role !== 'system')" :key="i" class="admin-msg">
             <div class="admin-msg-role">{{ m.role === 'tool' ? 'tool result' : m.role }}{{ m.compacted ? ' (compacted)' : '' }}</div>

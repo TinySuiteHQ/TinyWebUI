@@ -308,7 +308,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
             <details v-if="g.folder !== null" class="chat-folder" :open="chats.expanded.has(g.folder)" @toggle="toggleFolder(g.folder, $event)">
               <summary class="chat-folder-heading">
                 <span class="chat-folder-name">{{ g.folder }}</span>
-                <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="sparkle" size=".8rem" /></span>
+                <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="instructions" size=".8rem" /></span>
                 <span class="chat-folder-count">{{ g.count }}</span>
                 <button v-if="session.can(FEATURE.FOLDERS)" class="organize-chat folder-options" type="button" title="Folder settings: name and instructions"
                         :aria-label="`Settings for folder “${g.folder}”`" @click.prevent.stop="folderDialog = { folder: g.folder, count: g.count }"

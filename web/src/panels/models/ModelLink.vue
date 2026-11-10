@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ModelDraft } from '../settings/draft.ts';
+import Icon from '../../ui/Icon.vue';
 
 defineProps<{ model: ModelDraft, isDefault: boolean }>();
 const emit = defineEmits<{ open: [] }>();
@@ -17,6 +18,6 @@ const emit = defineEmits<{ open: [] }>();
       <span v-if="!model.images" class="chip">no images</span>
       <span v-if="!model.tools" class="chip">no tools</span>
     </span>
-    <span class="chev" aria-hidden="true">›</span>
+    <Icon class="chev" name="chevronRight" size="1rem" />
   </button>
 </template>

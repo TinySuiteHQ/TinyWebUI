@@ -80,8 +80,8 @@ function onKey(e: KeyboardEvent) {
         </template>
       </div>
       <template v-if="viewer.items.length > 1">
-        <button type="button" class="viewer-nav prev" aria-label="Previous file" title="Previous (←)" @click="viewer.step(-1)">‹</button>
-        <button type="button" class="viewer-nav next" aria-label="Next file" title="Next (→)" @click="viewer.step(1)">›</button>
+        <button type="button" class="viewer-nav prev" aria-label="Previous file" title="Previous (←)" @click="viewer.step(-1)"><Icon name="chevronLeft" /></button>
+        <button type="button" class="viewer-nav next" aria-label="Next file" title="Next (→)" @click="viewer.step(1)"><Icon name="chevronRight" /></button>
       </template>
     </div>
   </Modal>

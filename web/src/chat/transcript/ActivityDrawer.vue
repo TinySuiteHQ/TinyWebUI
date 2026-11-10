@@ -56,7 +56,7 @@ const recap = computed(() => {
       </template>
       <template v-else>
         <span v-if="working" class="status-dot small" aria-hidden="true" />
-        <Icon v-else name="sparkle" size=".95rem" />
+        <Icon v-else name="steps" size=".95rem" />
         <span class="activity-label">Activity</span>
         <span class="activity-count">{{ recap }}</span>
       </template>
