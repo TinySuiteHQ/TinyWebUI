@@ -9,6 +9,7 @@ import { CACHE_MODES, CACHE_TTLS, TOOL_APPROVALS, type CacheTtl, type ToolApprov
 import { applySecrets, extractSecrets, mergeSecrets, refProblems, takeSecrets, type Secrets } from './secrets.ts';
 import { serversIdentityProblems, type IdentitySpec } from '../access/mcp_identity.ts';
 import { serveProblems, type ServeSpec } from '../mcp_serve.ts';
+import { TINYCONTEXT, TINYSEARCH } from './bundled.ts';
 
 export type AuthMode = 'local' | 'multiuser' | 'trusted-header';
 export type { ToolApproval };
@@ -370,13 +371,8 @@ export const DEFAULTS: Omit<Config, 'access'> = {
 // and TinyWebUI proves each call with a fresh proxy token (mcp_serve.ts).
 // With no sign-in (local) there is one person, and stdio is enough.
 //
-// The version floors are the first releases with the proxy token (and, for
-// TinyContext, own views open without the operator's management token,
-// which TinyWebUI sends on its server-wide connection only); raise them when
-// either ships a security fix.
-const TINYSEARCH = 'tinysuite-search[server]>=0.6.8';
-const TINYCONTEXT = 'tinysuite-context[server]>=0.5.4';
-
+// The packages and their version floors are in bundled.ts, with isBundled(),
+// which tells these servers apart on the MCP page.
 export function defaultMcpServers(authMode: AuthMode): McpServers {
   const data = (...parts: string[]) => ['${TINYWEBUI_DATA_DIR}', 'mcp', ...parts].join('/');
   const uvx = (from: string, cmd: string) => ({ command: 'uvx', args: ['--python', '3.12', '--from', from, cmd] });

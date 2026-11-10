@@ -8,7 +8,9 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import type { Stream } from 'node:stream';
 import { logger } from './log.ts';
 import { expandRefs } from './config/refs.ts';
+// Types only from config.ts: loading it here would fix its file paths before a caller sets them.
 import type { McpServerSpec, McpServers } from './config/config.ts';
+import { isBundled } from './config/bundled.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
 import { DISCOVERY_PRINCIPAL, identityProblems, type IdentityClaim } from './access/mcp_identity.ts';
@@ -715,7 +717,9 @@ export class McpHub {
       // How often it has failed, and when it is tried again on its own (null: only by hand).
       const tried = status === 'error' ? this.retries.get(name) : undefined;
       const retry = tried ? { attempts: tried.attempts, nextAt: tried.nextAt } : null;
-      return { name, status, error, install, instructions, identity, retry, tools: [] as ReturnType<typeof toRow>[] };
+      // Shipped with TinyWebUI, so the MCP page lists it apart from servers someone added.
+      const bundled = isBundled(spec);
+      return { name, status, error, install, instructions, identity, retry, bundled, tools: [] as ReturnType<typeof toRow>[] };
     });
     const byName = new Map(servers.map((row) => [row.name, row]));
     for (const t of this.tools) {

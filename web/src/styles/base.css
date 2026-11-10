@@ -1579,7 +1579,14 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 .int-icon { font-size: 1.4rem; width: 2rem; text-align: center; color: var(--accent); }
 .int-logo { height: 2rem; flex: none; }
 .int-name { display: flex; flex-direction: column; min-width: 0; }
-.int-name h3 { margin: 0; font-size: var(--fs-ui); }
+.int-name h4 { margin: 0; font-size: var(--fs-ui); }
+/* The MCP page's tiers (built-in, bundled, third-party): a heading over the cards, as wide as they are. */
+.mcp-tier { margin-bottom: 1.75rem; }
+.mcp-tier .panel-card { margin-bottom: .75rem; }
+.mcp-tier-head { width: min(52rem, 100%); margin: 0 auto .6rem; }
+.mcp-tier-head h3 { margin: 0; font-size: 1.0625rem; }
+.mcp-tier-head p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
+.mcp-tier-empty { width: min(52rem, 100%); margin: 0 auto; padding: 1rem; border: 1px dashed var(--line); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-small); }
 .int-chips { margin-left: auto; display: flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; }
 .chip-ok { color: var(--tool); border-color: var(--tool); }
 .chip-bad { color: var(--err); border-color: var(--err); }

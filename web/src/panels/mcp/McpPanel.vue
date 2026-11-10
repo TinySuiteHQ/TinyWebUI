@@ -68,9 +68,27 @@ const cards = computed(() => {
 });
 const builtins = computed<Json[]>(() => toolData.value?.internal || []);
 
-const status = (c: { info: Json, tools: Json }) => c.tools?.status || c.info?.status || 'error';
-const logo = (m: Json) => (m && Object.hasOwn(LOGO, m.id) ? LOGO[m.id] : null);
-const meta = (c: { name: string, info: Json, tools: Json }) => {
+/*
+ * Three tiers: built into TinyWebUI, bundled with it (the TinySuite servers,
+ * whose Manage pages show what each keeps, did and failed), and whatever
+ * someone added after. Which servers are bundled is the server's call, read
+ * off the package each runs from, not the name it was given.
+ */
+type Card = { name: string, info: Json, tools: Json };
+const isBundled = (c: Card) => Boolean(c.tools?.bundled ?? c.info?.bundled);
+const tiers = computed(() => [
+  { id: 'bundled', title: 'Bundled with insights', note: 'Shipped with TinyWebUI. Manage opens what each one keeps, did and failed.', cards: cards.value.filter(isBundled) },
+  { id: 'third-party', title: 'Third-party', note: 'Servers added in the config file. Manage appears only if the server offers it.', cards: cards.value.filter((c) => !isBundled(c)) }
+  // Whoever manages the servers always sees where an added one would go.
+].filter((t) => t.cards.length || (t.id === 'third-party' && manages.value)));
+
+const status = (c: Card) => c.tools?.status || c.info?.status || 'error';
+// The marks are TinySuite's, so only a bundled server gets one: a manifest id alone could claim it.
+const logo = (c: Card) => {
+  const m = c.info?.manifest;
+  return isBundled(c) && m && Object.hasOwn(LOGO, m.id) ? LOGO[m.id] : null;
+};
+const meta = (c: Card) => {
   const m = c.info?.manifest;
   const count = c.tools ? c.tools.tools.length : c.info?.tools;
   return [m?.title && c.name !== m.title ? c.name : null, m?.version ? `v${m.version}` : null,
@@ -210,42 +228,50 @@ const { isOpen } = usePanel(PANEL.MCP, {
         <p v-if="error" class="int-error">{{ error }}</p>
         <p v-if="manages && config.toolsError" class="int-error">{{ config.toolsError }}</p>
 
-        <section v-if="builtins.length" class="panel-card int-card">
-          <div class="int-head">
-            <span class="int-icon">{{ ICON.tool }}</span>
-            <div class="int-name"><h3>Built-in tools</h3><span class="usage">part of TinyWebUI · never ask before running</span></div>
-          </div>
-          <details class="int-tools">
-            <summary>Tools · {{ onCount(builtins) }}</summary>
-            <div class="tool-list">
-              <ToolRow v-for="t in builtins" :key="t.name" :tool="t" :read-only="config.readOnly" :default-approval="defaultApproval(t)"
-                       @toggle="toggleTool(t.name, $event)" @approval="setApproval(t.name, $event)" />
+        <section v-if="builtins.length" class="mcp-tier" aria-labelledby="mcp-tier-builtin">
+          <!-- A div, not <header>: that element is styled as the app's top bar. -->
+          <div class="mcp-tier-head"><h3 id="mcp-tier-builtin">Built-in</h3></div>
+          <section class="panel-card int-card">
+            <div class="int-head">
+              <span class="int-icon">{{ ICON.tool }}</span>
+              <div class="int-name"><h4>Built-in tools</h4><span class="usage">part of TinyWebUI · never ask before running</span></div>
             </div>
-          </details>
+            <details class="int-tools">
+              <summary>Tools · {{ onCount(builtins) }}</summary>
+              <div class="tool-list">
+                <ToolRow v-for="t in builtins" :key="t.name" :tool="t" :read-only="config.readOnly" :default-approval="defaultApproval(t)"
+                         @toggle="toggleTool(t.name, $event)" @approval="setApproval(t.name, $event)" />
+              </div>
+            </details>
+          </section>
         </section>
 
         <p v-if="loading && !cards.length" class="empty">Loading…</p>
-        <p v-else-if="!cards.length" class="empty">No MCP servers are connected.{{ manages ? ' Add one in the config file.' : '' }}</p>
+        <p v-else-if="!cards.length && !manages" class="empty">No MCP servers are connected.</p>
 
-        <section v-for="c in cards" :key="c.name" class="panel-card int-card">
-          <div class="int-head">
-            <img v-if="logo(c.info?.manifest)" class="int-icon int-logo" :src="logo(c.info?.manifest) ?? undefined" alt="">
-            <span v-else class="int-icon">{{ ICON[c.info?.manifest?.icon] || ICON.plug }}</span>
-            <div class="int-name"><h3>{{ c.info?.manifest?.title || c.name }}</h3><span class="usage">{{ meta(c) }}</span></div>
-            <span class="int-chips">
-              <span class="chip" :class="status(c) === 'ok' ? 'chip-ok' : 'chip-bad'">{{ status(c) === 'ok' ? 'connected' : status(c) }}</span>
-              <span v-if="state.multiUser && c.info" class="chip">{{ c.info.perUser ? 'per person' : 'shared by everyone' }}</span>
-            </span>
-          </div>
-          <p v-if="c.info?.manifest?.description" class="int-desc">{{ c.info.manifest.description }}</p>
-          <p v-if="c.info?.error && !c.tools" class="int-error">{{ c.info.error }}</p>
-          <p v-if="c.info?.manageError" class="int-error">Management page unavailable: {{ c.info.manageError }}</p>
-          <button v-if="c.info?.manifest?.views.length" type="button" class="primary" @click="manage(c.name)">Manage</button>
-          <p v-else-if="!manages && status(c) === 'ok' && !c.info?.manageError" class="usage">Its tools work in chats; it offers no management page.</p>
-          <details v-if="c.tools" class="int-tools">
-            <summary>Tools · {{ c.tools.status === 'ok' ? onCount(c.tools.tools) : c.tools.status }}</summary>
-            <ServerTools :server="c.tools" />
-          </details>
+        <section v-for="tier in tiers" :key="tier.id" class="mcp-tier" :aria-labelledby="`mcp-tier-${tier.id}`">
+          <div class="mcp-tier-head"><h3 :id="`mcp-tier-${tier.id}`">{{ tier.title }}</h3><p>{{ tier.note }}</p></div>
+          <p v-if="!tier.cards.length" class="mcp-tier-empty">None yet: add one in the config file.</p>
+          <section v-for="c in tier.cards" :key="c.name" class="panel-card int-card">
+            <div class="int-head">
+              <img v-if="logo(c)" class="int-icon int-logo" :src="logo(c) ?? undefined" alt="">
+              <span v-else class="int-icon">{{ ICON[c.info?.manifest?.icon] || ICON.plug }}</span>
+              <div class="int-name"><h4>{{ c.info?.manifest?.title || c.name }}</h4><span class="usage">{{ meta(c) }}</span></div>
+              <span class="int-chips">
+                <span class="chip" :class="status(c) === 'ok' ? 'chip-ok' : 'chip-bad'">{{ status(c) === 'ok' ? 'connected' : status(c) }}</span>
+                <span v-if="state.multiUser && c.info" class="chip">{{ c.info.perUser ? 'per person' : 'shared by everyone' }}</span>
+              </span>
+            </div>
+            <p v-if="c.info?.manifest?.description" class="int-desc">{{ c.info.manifest.description }}</p>
+            <p v-if="c.info?.error && !c.tools" class="int-error">{{ c.info.error }}</p>
+            <p v-if="c.info?.manageError" class="int-error">Management page unavailable: {{ c.info.manageError }}</p>
+            <button v-if="c.info?.manifest?.views.length" type="button" class="primary" @click="manage(c.name)">Manage</button>
+            <p v-else-if="!manages && status(c) === 'ok' && !c.info?.manageError" class="usage">Its tools work in chats; it offers no management page.</p>
+            <details v-if="c.tools" class="int-tools">
+              <summary>Tools · {{ c.tools.status === 'ok' ? onCount(c.tools.tools) : c.tools.status }}</summary>
+              <ServerTools :server="c.tools" />
+            </details>
+          </section>
         </section>
       </template>
     </div>

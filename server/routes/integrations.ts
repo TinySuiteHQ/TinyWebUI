@@ -180,6 +180,7 @@ export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'h
           perUser: bound,
           shared: multiUser() && !bound,
           tools: s.tools.length,
+          bundled: s.bundled,
           managed: h.manifests.has(s.name) && s.status === 'ok',
           manifest: null
         };
