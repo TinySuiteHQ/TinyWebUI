@@ -89,7 +89,7 @@ const { isOpen } = usePanel(PANEL.DATA, { onOpen: () => { exportMsg.value = ''; 
         <ul class="data-list">
           <li v-for="item in included" :key="item">{{ item }}</li>
         </ul>
-        <p class="data-note">Not included: uploaded documents and images, and the server's own settings. To export one chat, use its ⋯ menu.</p>
+        <p class="data-note">Not included: uploaded documents and images, and the server's own settings.</p>
         <div class="pw-actions">
           <button class="primary" type="button" :disabled="exporting" @click="exportAll">{{ exporting ? 'Preparing…' : 'Download backup' }}</button>
           <span class="pw-msg" role="status">{{ exportMsg }}</span>

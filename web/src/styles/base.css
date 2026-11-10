@@ -204,6 +204,24 @@ body.resizing { cursor: col-resize; user-select: none; }
   border: 0; background: transparent; color: var(--faint); font-size: 1.1rem;
 }
 .chat-item .organize-chat:hover, .chat-item .organize-chat:focus-visible { color: var(--accent); }
+/* Rename and delete: out of the way until the row is pointed at or focused,
+   always there on touch, where nothing hovers. */
+.chat-actions { flex: none; display: none; align-items: center; gap: 1px; margin-right: -.125rem; }
+.chat-item:hover .chat-actions, .chat-item:focus-within .chat-actions, .chat-item.armed .chat-actions { display: inline-flex; }
+@media (hover: none) { .chat-actions { display: inline-flex; } }
+.chat-action {
+  width: 1.625rem; height: 1.625rem; min-height: 0; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
+}
+.chat-action .ic { width: .95rem; height: .95rem; }
+.chat-action:hover, .chat-action:focus-visible { color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); }
+button.chat-action:active:not(:disabled) { transform: none; }
+.chat-delete:hover, .chat-delete:focus-visible, .chat-item.armed .chat-delete { color: var(--err); }
+.chat-rename {
+  flex: 1; min-width: 0; height: 1.75rem; min-height: 0; padding: 0 .375rem; margin: -.125rem 0;
+  font: inherit; color: var(--fg); background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.chat-item.editing { cursor: default; }
 dialog#libraryDialog {
   width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem;
   border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -256,16 +274,13 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
   color: var(--fg); font-size: var(--fs-ui);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.hit-role {
-  flex-shrink: 0; margin-left: auto; color: var(--faint); font-size: var(--fs-meta);
-  font-family: var(--mono); text-transform: uppercase; letter-spacing: .04em;
-}
+.hit-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hit-name mark, .hit-snippet mark { background: none; color: var(--fg); font-weight: 600; }
+.hit-count { flex-shrink: 0; margin-left: auto; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.hit-who { color: var(--faint); }
 .hit-snippet {
   color: var(--muted); font-size: var(--fs-meta); line-height: 1.4;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.hit-snippet mark {
-  background: none; color: var(--fg); font-weight: 600;
 }
 
 /* main column */
@@ -1894,3 +1909,19 @@ dialog.viewer::backdrop { background: rgb(0 0 0 / 70%); }
 /* A thumbnail in a message is a button that opens the viewer. */
 .msg-image-btn { padding: 0; border: 0; background: none; border-radius: var(--r-sm); cursor: zoom-in; min-height: 0; }
 .msg-image-btn:active:not(:disabled) { transform: none; }
+
+/* ---- A folder's chats, ticked in its dialog ---- */
+.folder-chats-filter { margin-bottom: .375rem; }
+.folder-chats {
+  list-style: none; margin: 0; padding: .25rem; max-height: 14rem; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.folder-chat {
+  display: flex; align-items: center; gap: .5rem; margin: 0; padding: .375rem .5rem;
+  border-radius: var(--r-sm); cursor: pointer; font-weight: 400; color: var(--fg);
+}
+.folder-chat:hover { background: var(--accent-soft); }
+.folder-chat input { flex: none; margin: 0; }
+.folder-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-chat-from { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: var(--fs-meta); }
+.folder-chats-empty { padding: .5rem; color: var(--muted); font-size: var(--fs-small); }

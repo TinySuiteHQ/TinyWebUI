@@ -1,7 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { scope, ftsQuery, type Scope } from './scope.ts';
 
-export interface ChatHit { chatId: string; chatTitle: string; seq: number; role: string; chatUpdatedAt: number; snippet: string }
+/** The best match in one chat, and how many of its messages matched. */
+export interface ChatHit { chatId: string; chatTitle: string; seq: number; role: string; chatUpdatedAt: number; snippet: string; matches: number }
 
 // Sidebar search: full-text over what was said, one row per chat.
 // One area of the Store; see index.js.
@@ -47,10 +48,11 @@ export class SearchStore {
         WHERE messages_fts MATCH ? AND ${s.sql}
       ),
       ranked AS (
-        SELECT *, ROW_NUMBER() OVER (PARTITION BY chatId ORDER BY rank) AS rn
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY chatId ORDER BY rank) AS rn,
+               COUNT(*) OVER (PARTITION BY chatId) AS matches
         FROM hits
       )
-      SELECT chatId, chatTitle, seq, role, chatUpdatedAt, snippet
+      SELECT chatId, chatTitle, seq, role, chatUpdatedAt, snippet, matches
       FROM ranked
       WHERE rn = 1
       ORDER BY rank

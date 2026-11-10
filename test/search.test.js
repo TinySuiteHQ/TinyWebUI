@@ -99,6 +99,9 @@ test('one result per matching chat, never one per matching message', async () =>
   const results = store.search.chats('lisbon', 30, ALL_USERS);
   assert.equal(results.length, 2, 'two distinct chats, not one row per matching message');
   assert.deepEqual(new Set(results.map((r) => r.chatId)), new Set([a.id, b.id]));
+  // Each row says how many of its chat's messages matched, so the page can tell one chat with many hits.
+  assert.equal(results.find((r) => r.chatId === a.id).matches, 2);
+  assert.equal(results.find((r) => r.chatId === b.id).matches, 1);
 });
 
 test('search does not reach into reasoning, tool calls, tool results, or narration', async () => {

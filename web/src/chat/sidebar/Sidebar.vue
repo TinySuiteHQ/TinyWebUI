@@ -10,14 +10,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FEATURE } from '../../../../shared/features.ts';
 import { markSnippet } from '../../core/md.ts';
 import { useSession } from '../../stores/session.ts';
-import { useChats, type ChatRow } from '../../stores/chats.ts';
+import { useChats, type ChatRow, type SearchHit } from '../../stores/chats.ts';
 import { useChat } from '../../stores/chat.ts';
 import { usePanels, PANEL } from '../../stores/panels.ts';
 import { useUi } from '../../stores/ui.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import Icon from '../../ui/Icon.vue';
 import ChatItem from './ChatItem.vue';
-import OrganizeDialog from './OrganizeDialog.vue';
 import FolderDialog from './FolderDialog.vue';
 
 const session = useSession();
@@ -30,9 +29,8 @@ const admin = useAdmin();
 const sideEl = ref<HTMLElement>();
 const newEl = ref<HTMLButtonElement>();
 const searchEl = ref<HTMLInputElement>();
-const organizing = ref<ChatRow | null>(null);
 /** The open folder dialog, if any: `folder` null for a new one, else the folder whose settings it shows. */
-const folderDialog = ref<{ folder: string | null, count: number } | undefined>();
+const folderDialog = ref<{ folder: string | null } | undefined>();
 
 // Picking a chat or New is a way out of any open panel, unless it holds
 // unsaved edits the person chose to keep.
@@ -174,7 +172,17 @@ function toggleFolder(folder: string, e: Event) {
 
 /* ---------- search ---------- */
 
-const SEARCH_ROLE_LABEL: Record<string, string> = { user: 'you', assistant: 'assistant', tool: 'tool' };
+const SEARCH_ROLE_LABEL: Record<string, string> = { user: 'You', assistant: 'Assistant', tool: 'Tool result' };
+// A short chat's title is its first message, so the hit in that message would
+// repeat the title as a second line, reading as the same chat twice. Then the
+// title alone shows, with the match marked in it.
+const plainText = (s: string) => s.replace(/[‹›…]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+const repeatsTitle = (r: SearchHit) => {
+  const snippet = plainText(r.snippet);
+  return !snippet || plainText(r.chatTitle).includes(snippet);
+};
+// The snippet carries the marks; it can stand in for a title it spells out whole.
+const titleIsSnippet = (r: SearchHit) => plainText(r.chatTitle) === plainText(r.snippet) && !r.snippet.includes('…');
 const searching = computed(() => Boolean(chats.query.trim()) && chats.results !== null);
 const q = computed({ get: () => chats.query, set: (v: string) => chats.search(v) });
 function onSearchKey(e: KeyboardEvent) {
@@ -287,7 +295,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
       <div class="side-label">
         <span>{{ searching ? 'Search results' : 'Recent conversations' }}</span>
         <button v-if="session.can(FEATURE.FOLDERS)" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
-                @click="folderDialog = { folder: null, count: 0 }"><Icon name="folderPlus" /></button>
+                @click="folderDialog = { folder: null }"><Icon name="folderPlus" /></button>
       </div>
 
       <div id="chats">
@@ -296,9 +304,15 @@ function rowKey(e: KeyboardEvent, go: () => void) {
           <div v-for="(r, i) in chats.results" :key="`${r.chatId}:${i}`" class="chat-item search-hit" tabindex="0" role="button"
                @click="openChat(r.chatId)" @keydown="rowKey($event, () => openChat(r.chatId))">
             <div class="t">
-              <div class="hit-title">{{ r.chatTitle }}<span class="hit-role">{{ SEARCH_ROLE_LABEL[r.role] || r.role }}</span></div>
-              <!-- markSnippet escapes everything but its own <mark>. -->
-              <div class="hit-snippet" v-html="markSnippet(r.snippet)" />
+              <div class="hit-title">
+                <!-- markSnippet escapes everything but its own <mark>. -->
+                <span v-if="titleIsSnippet(r)" class="hit-name" v-html="markSnippet(r.snippet.trim())" />
+                <span v-else class="hit-name">{{ r.chatTitle }}</span>
+                <span v-if="r.matches > 1" class="hit-count" :title="`${r.matches} messages in this chat match`">{{ r.matches }} matches</span>
+              </div>
+              <div v-if="!repeatsTitle(r)" class="hit-snippet">
+                <span class="hit-who">{{ SEARCH_ROLE_LABEL[r.role] || r.role }}:</span> <span v-html="markSnippet(r.snippet)" />
+              </div>
             </div>
           </div>
         </template>
@@ -310,15 +324,15 @@ function rowKey(e: KeyboardEvent, go: () => void) {
                 <span class="chat-folder-name">{{ g.folder }}</span>
                 <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="instructions" size=".8rem" /></span>
                 <span class="chat-folder-count">{{ g.count }}</span>
-                <button v-if="session.can(FEATURE.FOLDERS)" class="organize-chat folder-options" type="button" title="Folder settings: name and instructions"
-                        :aria-label="`Settings for folder “${g.folder}”`" @click.prevent.stop="folderDialog = { folder: g.folder, count: g.count }"
+                <button v-if="session.can(FEATURE.FOLDERS)" class="organize-chat folder-options" type="button" title="Folder settings: name, chats and instructions"
+                        :aria-label="`Settings for folder “${g.folder}”`" @click.prevent.stop="folderDialog = { folder: g.folder }"
                         @keydown.stop><Icon name="more" /></button>
               </summary>
               <div class="chat-folder-content">
                 <template v-for="row in g.rows" :key="row.key">
                   <div v-if="row.kind === 'heading'" class="chat-date-heading">{{ row.label }}</div>
                   <ChatItem v-else-if="row.kind === 'chat'" :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
-                            @open="openChat(row.chat.id)" @organize="organizing = row.chat" />
+                            @open="openChat(row.chat.id)" />
                 </template>
               </div>
             </details>
@@ -329,7 +343,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
                   <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
                 </div>
                 <ChatItem v-else :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
-                          @open="openChat(row.chat.id)" @organize="organizing = row.chat" />
+                          @open="openChat(row.chat.id)" />
               </template>
             </template>
           </template>
@@ -363,7 +377,6 @@ function rowKey(e: KeyboardEvent, go: () => void) {
     </div>
     <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize chat history"
          title="Drag to resize, double-click to reset" @pointerdown="startResize" @dblclick="resetSideWidth" @keydown="resizeKey" />
-    <OrganizeDialog v-if="organizing" :chat="organizing" @close="organizing = null" />
-    <FolderDialog v-if="folderDialog" :folder="folderDialog.folder" :count="folderDialog.count" @close="folderDialog = undefined" />
+    <FolderDialog v-if="folderDialog" :folder="folderDialog.folder" @close="folderDialog = undefined" />
   </aside>
 </template>

@@ -140,6 +140,15 @@ export function chatRoutes({ config, instructionsFor, modelFor, retrieval, runs,
       return json(res, 200, { ok: true });
     } },
 
+    // Renaming is the person's own title; it does not move the chat up the list.
+    { method: 'PATCH', path: /^\/api\/chats\/([\w.-]+)$/, feature: F, handle: async ({ req, res, auth, params: [id] }) => {
+      if (!store.chats.get(id, auth.userId)) return noChat(res);
+      const { title } = await readJson(req);
+      if (typeof title !== 'string' || !title.trim()) return json(res, 400, { error: 'the title cannot be blank' });
+      const renamed = store.chats.rename(id, title, auth.userId);
+      return json(res, 200, { title: renamed?.title ?? title.trim() });
+    } },
+
     { method: 'GET', path: /^\/api\/chats\/([\w.-]+)\/stream$/, feature: F, handle: ({ res, auth, url, params: [id] }) => {
       if (!store.chats.get(id, auth.userId)) return noChat(res);
       const run = runs.get(id);

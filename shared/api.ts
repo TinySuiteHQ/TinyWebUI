@@ -8,6 +8,18 @@
  * (`type Json = any`) and move here as their area is next touched.
  */
 
+/**
+ * One chat in the sidebar's search results: its best-matching message, with
+ * the match marked between ‹ and ›, and how many of its messages matched.
+ */
+export interface SearchHitView {
+  chatId: string;
+  chatTitle: string;
+  role: string;
+  snippet: string;
+  matches: number;
+}
+
 /** One automation, as /api/automations lists it. */
 export interface AutomationView {
   id: string;

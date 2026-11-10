@@ -5,13 +5,14 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '../core/api.ts';
+import type { SearchHitView } from '../../../shared/api.ts';
 
 export type ChatRow = {
   id: string, title: string, folder?: string | null, updated_at: number, running?: boolean, unread?: boolean,
   /** A fork: the chat it was branched from; the sidebar lists it under that one. */
   parent_id?: string | null
 };
-export type SearchHit = { chatId: string, chatTitle: string, role: string, snippet: string };
+export type SearchHit = SearchHitView;
 
 export const useChats = defineStore('chats', () => {
   const chats = ref<ChatRow[]>([]);
@@ -68,11 +69,26 @@ export const useChats = defineStore('chats', () => {
     try { await api.post(`/api/chats/${encodeURIComponent(id)}/read`); } catch { /* still marked; the next look retries */ }
   }
 
-  async function createFolder(name: string, prompt = '') {
+  /** Creates a folder; returns its name as stored (trimmed, maybe shortened). */
+  async function createFolder(name: string, prompt = ''): Promise<string> {
     const body = await api.post('/api/folders', { name, prompt });
-    // A freshly created folder starts open: the point is to move chats into it.
+    // A freshly created folder starts open, so the chats put in it are in view.
     expanded.value.add(body.folder);
     await load();
+    return body.folder;
+  }
+
+  /** Makes these the folder's chats: listed ones join, the rest of its chats leave it. */
+  async function setFolderChats(name: string, chatIds: string[]) {
+    await api.patch('/api/folders/chats', { name, chatIds });
+    await load();
+  }
+
+  async function renameChat(id: string, title: string): Promise<string> {
+    const body = await api.patch(`/api/chats/${id}`, { title });
+    const row = chats.value.find((c) => c.id === id);
+    if (row) row.title = body.title;
+    return body.title;
   }
 
   /** Renames a folder (its chats move with it) and sets its instructions. */
@@ -82,5 +98,5 @@ export const useChats = defineStore('chats', () => {
     await load();
   }
 
-  return { chats, folders, prompts, expanded, saveFolder, query, results, load, search, clearSearch, markRead, createFolder };
+  return { chats, folders, prompts, expanded, saveFolder, query, results, load, search, clearSearch, markRead, createFolder, setFolderChats, renameChat };
 });

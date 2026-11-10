@@ -1,5 +1,6 @@
 import { json, readJson } from '../http.ts';
 import { FEATURE } from '../../shared/features.ts';
+import type { SearchHitView } from '../../shared/api.ts';
 import type { Route, RouteDeps } from './types.ts';
 
 /** The sidebar's search, usage statistics, and folders. */
@@ -19,7 +20,7 @@ export function libraryRoutes({ runs, store }: Pick<RouteDeps, 'runs' | 'store'>
       const results = store.search.chats(q, limit * 2, auth.userId)
         .filter((r) => !runs.isRunning(r.chatId))
         .slice(0, limit);
-      return json(res, 200, { results });
+      return json(res, 200, { results: results satisfies SearchHitView[] });
     } },
 
     // ?model= narrows every figure to one model; adding &provider= to one
@@ -55,6 +56,17 @@ export function libraryRoutes({ runs, store }: Pick<RouteDeps, 'runs' | 'store'>
       if (done === 'missing') return json(res, 404, { error: 'no such folder' });
       if (done === 'taken') return json(res, 409, { error: 'there is already a folder with that name' });
       return json(res, 200, { folder: done });
+    } },
+
+    // Which chats a folder holds, set in one go from its dialog: listed chats
+    // join it, any it held that are not listed leave it for no folder.
+    { method: 'PATCH', path: /^\/api\/folders\/chats$/, feature: FEATURE.FOLDERS, handle: async ({ req, res, auth }) => {
+      const { name, chatIds } = await readJson(req);
+      if (typeof name !== 'string' || !name.trim()) return json(res, 400, { error: 'folder name required' });
+      if (!Array.isArray(chatIds) || !chatIds.every((id) => typeof id === 'string')) return json(res, 400, { error: 'chatIds must be a list of chat ids' });
+      const moved = store.chats.setFolderChats(name, chatIds, auth.userId);
+      if (moved === 'missing') return json(res, 404, { error: 'no such folder' });
+      return json(res, 200, { folder: name, chats: moved });
     } },
 
     { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/organize$/, feature: FEATURE.FOLDERS, handle: async ({ req, res, auth, params: [chatId] }) => {

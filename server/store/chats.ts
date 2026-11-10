@@ -277,6 +277,38 @@ export class ChatStore {
     return to;
   }
 
+  /**
+   * Makes `ids` the folder's chats: those join it (from wherever they were),
+   * and any chat in it that is not listed leaves it for no folder. Chats that
+   * are not the owner's are skipped. Neither move counts as activity, so the
+   * list order stays. 'missing' when there is no such folder.
+   */
+  setFolderChats(name: string, ids: string[], userId: Scope): number | 'missing' {
+    const owner = ownerOf(userId);
+    const s = scope(owner);
+    if (!this.db.prepare(`SELECT 1 FROM folders WHERE name = ? AND ${s.sql}`).get(name, ...s.params)) return 'missing';
+    const keep = [...new Set(ids)];
+    const marks = keep.map(() => '?').join(', ');
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare(`UPDATE chats SET folder = NULL WHERE folder = ? AND ${s.sql}${keep.length ? ` AND id NOT IN (${marks})` : ''}`)
+        .run(name, ...s.params, ...keep);
+      const moved = keep.length
+        ? Number(this.db.prepare(`UPDATE chats SET folder = ? WHERE id IN (${marks}) AND ${s.sql}`).run(name, ...keep, ...s.params).changes)
+        : 0;
+      this.db.exec('COMMIT');
+      return moved;
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+  }
+
+  /** A new title, without counting as activity. Null when the chat is not theirs or the title is blank. */
+  rename(id: string, title: unknown, userId: Scope): ChatRow | null {
+    const clean = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!clean || !this.get(id, userId)) return null;
+    this.db.prepare('UPDATE chats SET title = ? WHERE id = ?').run(clean, id);
+    return this.byId(id);
+  }
+
   createFolder(name: unknown, userId: Scope): string | null {
     const clean = String(name || '').trim().slice(0, 40);
     if (!clean) return null;

@@ -86,3 +86,42 @@ test("a folder's instructions join the system prompt of its chats' turns, and on
   await send(id, 'fourth');
   assert.ok(!system().includes('Use grams.'), 'moved out, it stops');
 });
+
+test("a folder's chats are set from the folder in one go: listed ones join, the rest leave, and the order stays", async () => {
+  await call('/api/folders', { method: 'POST', body: { name: 'Picked' } });
+  await call('/api/folders', { method: 'POST', body: { name: 'Elsewhere' } });
+  const a = await send(null, 'chat a');
+  const b = await send(null, 'chat b');
+  const c = await send(null, 'chat c');
+  await call(`/api/chats/${c}/organize`, { method: 'POST', body: { folder: 'Elsewhere' } });
+  const order = (await call('/api/chats')).data.chats.map((x) => x.id);
+  const folderOf = async (id) => (await call('/api/chats')).data.chats.find((x) => x.id === id).folder;
+
+  assert.equal((await call('/api/folders/chats', { method: 'PATCH', body: { name: 'Picked', chatIds: [a, c] } })).status, 200);
+  assert.equal(await folderOf(a), 'Picked');
+  assert.equal(await folderOf(c), 'Picked', 'taken from the folder it was in');
+  assert.equal(await folderOf(b), null);
+  assert.deepEqual((await call('/api/chats')).data.chats.map((x) => x.id), order, 'moving is not activity');
+
+  await call('/api/folders/chats', { method: 'PATCH', body: { name: 'Picked', chatIds: [b] } });
+  assert.equal(await folderOf(b), 'Picked');
+  assert.equal(await folderOf(a), null, 'unticked: no folder');
+  assert.equal(await folderOf(c), null);
+
+  assert.equal((await call('/api/folders/chats', { method: 'PATCH', body: { name: 'Nope', chatIds: [a] } })).status, 404);
+  assert.equal((await call('/api/folders/chats', { method: 'PATCH', body: { name: 'Picked', chatIds: 'all' } })).status, 400);
+});
+
+test('a chat is renamed in place, without moving up the list', async () => {
+  const a = await send(null, 'first of two');
+  await send(null, 'second of two');
+  const order = (await call('/api/chats')).data.chats.map((x) => x.id);
+  const renamed = await call(`/api/chats/${a}`, { method: 'PATCH', body: { title: '  My   chat  ' } });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.data.title, 'My chat');
+  const list = (await call('/api/chats')).data.chats;
+  assert.equal(list.find((x) => x.id === a).title, 'My chat');
+  assert.deepEqual(list.map((x) => x.id), order);
+  assert.equal((await call(`/api/chats/${a}`, { method: 'PATCH', body: { title: '   ' } })).status, 400);
+  assert.equal((await call('/api/chats/nope', { method: 'PATCH', body: { title: 'x' } })).status, 404);
+});
