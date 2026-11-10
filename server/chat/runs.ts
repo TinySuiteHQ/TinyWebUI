@@ -194,7 +194,9 @@ export function createRuns(app: RunsApp) {
         // answers as usual; one that rejects it has the field dropped for the
         // rest of this turn (post() in provider.ts). Nothing is remembered.
         const think = thinkingFor(app.cfg, model, thinking);
-        const base = { ...effectiveConfig(app.cfg, model, roleSettingsFor(app.cfg, role)), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
+        // The role's settings for this model are looked up by its catalog id, which is how the role editor names it.
+        const modelId = findEntry(app.cfg, model ?? app.cfg.model)?.id ?? model ?? app.cfg.model;
+        const base = { ...effectiveConfig(app.cfg, model, roleSettingsFor(app.cfg, role, modelId)), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
         // Read now, not from the row the run started with: a chat moved into a
         // folder, or a folder's prompt edited, counts from the next turn on.
         // The folder's comes last, as the most specific of the three.

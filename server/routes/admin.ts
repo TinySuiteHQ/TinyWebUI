@@ -3,7 +3,7 @@ import { json, readJson, oneOf } from '../http.ts';
 import { ALL_USERS, toView } from '../store/index.ts';
 import {
   validateConfig, fingerprint, resolveAccess, roleNames, passwordProblem, FEATURES, CUSTOMIZABLE, BUILTIN_ROLES, ROLE_NAME, STATUSES,
-  type AccessConfig, type Feature, type RoleSettings, type RoleSpec
+  type AccessConfig, type Feature, type RoleModelSettings, type RoleSettings, type RoleSpec
 } from '../access/policy.ts';
 import { catalog, modelProblems } from '../config/models.ts';
 import { destroyUserSessions, hashPassword, hashToken } from '../access/auth.ts';
@@ -56,25 +56,38 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
 
   /** Writes what a role grants into the file: a new role, or the fields sent for an existing one. */
   const saveRole = (name: string, body: Record<string, unknown>, auth: AdminContext['auth'], res: AdminContext['res'], created: boolean) => {
-    const { features, models, customize, settings } = body;
+    const { features, models, customize, settings, modelSettings } = body;
     const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
     if (features !== undefined && !strings(features)) return json(res, 400, { error: 'features must be a list' });
     if (models !== undefined && models !== '*' && !strings(models)) return json(res, 400, { error: "models must be '*' or a list" });
     if (customize !== undefined && !strings(customize)) return json(res, 400, { error: 'customize must be a list' });
-    if (settings !== undefined && (!settings || typeof settings !== 'object' || Array.isArray(settings))) return json(res, 400, { error: 'settings must be an object' });
-    // A blank value inherits, so it is left out rather than stored. Each kept
-    // value is checked by validateConfig before anything is written.
-    const kept = settings ? Object.fromEntries(Object.entries(settings).filter(([, v]) => v !== null && v !== '')) as RoleSettings : null;
+    const isObject = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+    if (settings !== undefined && !isObject(settings)) return json(res, 400, { error: 'settings must be an object' });
+    if (modelSettings !== undefined && !(isObject(modelSettings) && Object.values(modelSettings).every(isObject))) {
+      return json(res, 400, { error: 'modelSettings must be an object of model id to settings' });
+    }
+    // A blank value inherits, so it is left out rather than stored, and so is a
+    // model left with nothing set. Each kept value is checked by validateConfig
+    // before anything is written.
+    const filled = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== ''));
+    const kept = settings ? filled(settings) as RoleSettings : null;
+    const keptPerModel = modelSettings
+      ? Object.fromEntries(Object.entries(modelSettings).map(([m, o]) => [m, filled(o as Record<string, unknown>)]).filter(([, o]) => Object.keys(o).length)) as Record<string, RoleModelSettings>
+      : null;
     let spec: RoleSpec = {};
     const refused = writeAccess((access) => {
-      const { settings: _previous, ...rest } = access.roles?.[name] || {};
+      // What is sent replaces what was there, so a blanked block is removed, not kept.
+      const previous: RoleSpec = { ...(access.roles?.[name] || {}) };
+      if (kept) delete previous.settings;
+      if (keptPerModel) delete previous.modelSettings;
       spec = {
-        ...(kept ? rest : access.roles?.[name] || {}),
+        ...previous,
         // Names only so far: validateConfig rejects any that is not a feature before anything is written.
         ...(features !== undefined ? { features: features as Feature[] } : {}),
         ...(models !== undefined ? { models } : {}),
         ...(customize !== undefined ? { customize } : {}),
-        ...(kept && Object.keys(kept).length ? { settings: kept } : {})
+        ...(kept && Object.keys(kept).length ? { settings: kept } : {}),
+        ...(keptPerModel && Object.keys(keptPerModel).length ? { modelSettings: keptPerModel } : {})
       };
       return { ...access, roles: { ...(access.roles || {}), [name]: spec } };
     });
@@ -90,7 +103,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     return Object.entries(roles).map(([name, spec]) => ({
       name, builtin: BUILTIN_ROLES.includes(name), fixed: name === 'admin',
       features: spec.features === '*' ? FEATURES : spec.features,
-      models: spec.models, customize: spec.customize, settings: spec.settings, users: counts[name] || 0
+      models: spec.models, customize: spec.customize, settings: spec.settings, modelSettings: spec.modelSettings, users: counts[name] || 0
     }));
   };
 
@@ -237,7 +250,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       if (!roleNames(config()).includes(name)) return json(res, 404, { error: 'no such role' });
       const body = await readJson(req);
       // Admins always have everything; what their chats run with is still the admin's to set.
-      if (name === 'admin' && Object.keys(body).some((k) => k !== 'settings')) return json(res, 400, { error: 'the admin role always has everything; only its settings can change' });
+      if (name === 'admin' && Object.keys(body).some((k) => k !== 'settings' && k !== 'modelSettings')) return json(res, 400, { error: 'the admin role always has everything; only its settings can change' });
       return saveRole(name, body, auth, res, false);
     }) },
 

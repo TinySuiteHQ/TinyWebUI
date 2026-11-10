@@ -26,6 +26,14 @@ export const TOOL_APPROVALS = Object.freeze(['writes', 'all', 'off'] as const);
 export const ROLE_SETTINGS = Object.freeze(['systemPrompt', 'model', 'temperature', 'maxTokens', 'maxToolRounds', 'askUserTimeoutSeconds', 'toolApproval'] as const);
 export type RoleSettingKey = typeof ROLE_SETTINGS[number];
 
+/**
+ * What a role may set for one model (access.roles.<name>.modelSettings.<model id>),
+ * over the role's own settings: the ones that are about how a turn runs. The
+ * default model and the question timeout belong to the person, not the model.
+ */
+export const ROLE_MODEL_SETTINGS = Object.freeze(['systemPrompt', 'temperature', 'maxTokens', 'maxToolRounds', 'toolApproval'] as const satisfies readonly RoleSettingKey[]);
+export type RoleModelSettingKey = typeof ROLE_MODEL_SETTINGS[number];
+
 export type CacheMode = typeof CACHE_MODES[number];
 export type CacheTtl = typeof CACHE_TTLS[number];
 export type ReasoningReplay = typeof REASONING_REPLAYS[number];

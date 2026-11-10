@@ -484,6 +484,20 @@ export function configSchema() {
           askUserTimeoutSeconds: { type: 'integer', minimum: 0, maximum: 86400 },
           toolApproval: { enum: TOOL_APPROVALS }
         }
+      },
+      modelSettings: {
+        type: 'object',
+        description: "Per model (a catalog id this role may use): what this role's chats on that model run with, over its settings; a key left out inherits.",
+        additionalProperties: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            systemPrompt: { type: 'string', description: 'Replaces the system prompt for this role on this model.' },
+            temperature: { type: 'number', minimum: 0, maximum: 2 },
+            maxTokens: { type: 'integer', minimum: 1 },
+            maxToolRounds: { type: 'integer', minimum: 1, maximum: 50 },
+            toolApproval: { enum: TOOL_APPROVALS }
+          }
+        }
       }
     }
   };

@@ -75,10 +75,12 @@ Open <http://127.0.0.1:7777> and create the first account with a password of at 
 
 A connector that needs a key takes `"apiKey": "${NAME}"`, filled in from the environment, or the key typed into Settings.
 
-With accounts, a role decides what its people may use (features, models, what they may personalise) and, under Settings → People & roles, what their chats run with: its own prompt (which replaces the system prompt), default model, temperature, token and tool-turn limits, question timeout and tool approval. A value left blank keeps the global one. In the file this is `access.roles.<name>.settings`:
+With accounts, a role decides what its people may use (features, models, what they may personalise) and, under Settings → People & roles, what their chats run with: its own prompt (which replaces the system prompt), default model, temperature, token and tool-turn limits, question timeout and tool approval. A value left blank keeps the global one. The prompt, temperature, token and tool-turn limits and tool approval can also be set for one model at a time, over the role's own. In the file these are `access.roles.<name>.settings` and `access.roles.<name>.modelSettings.<model id>`:
 
 ```json
-{ "access": { "roles": { "student": { "features": ["chat"], "models": ["fast"], "settings": { "systemPrompt": "Explain step by step.", "model": "fast", "toolApproval": "all" } } } } }
+{ "access": { "roles": { "student": { "features": ["chat"], "models": ["fast", "smart"],
+  "settings": { "systemPrompt": "Explain step by step.", "model": "fast", "toolApproval": "all" },
+  "modelSettings": { "smart": { "temperature": 0.2, "maxTokens": 2000 } } } } } }
 ```
 
 `tinywebui.config.json` describes the deployment (endpoints, connectors, models, policy) and holds no secrets. A key is either a `${NAME}` reference, filled in from the environment, or kept in `tinywebui.secrets.json` beside it: what the Settings panel saves, and the generated session-signing secret. A key written straight into the config file moves there the next time the server starts. Accounts, password hashes and conversations live in `tinywebui.db`. TinyWebUI keeps the secrets file and the database readable by their owner only; keep them private and backed up.

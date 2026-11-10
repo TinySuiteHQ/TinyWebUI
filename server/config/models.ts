@@ -335,6 +335,9 @@ export function modelProblems(cfg: Record<string, any>): string[] {
   for (const [role, spec] of Object.entries<any>(cfg.access?.roles || {})) {
     const m = spec?.settings?.model;
     if (typeof m === 'string' && m && !ids.has(m)) out.push(`access.roles.${role}.settings.model: "${m}" is not a models catalog id`);
+    for (const m of Object.keys(spec?.modelSettings && typeof spec.modelSettings === 'object' ? spec.modelSettings : {})) {
+      if (!ids.has(m)) out.push(`access.roles.${role}.modelSettings: "${m}" is not a models catalog id`);
+    }
   }
   return out;
 }

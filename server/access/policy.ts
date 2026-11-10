@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { FEATURE } from '../../shared/features.ts';
-import { ROLE_SETTINGS, TOOL_APPROVALS, type ToolApproval } from '../../shared/settings.ts';
+import { ROLE_MODEL_SETTINGS, ROLE_SETTINGS, TOOL_APPROVALS, type RoleModelSettingKey, type ToolApproval } from '../../shared/settings.ts';
 import type { UserRole, UserStatus } from '../store/users.ts';
 
 /**
@@ -16,6 +16,7 @@ import type { UserRole, UserStatus } from '../store/users.ts';
  *              '<custom role>': { ... } },                 // any other name is a custom role
  *              // settings: what this role's people get over the global and per-model values
  *              // (systemPrompt replaces the prompt, model is their default, ...; see ROLE_SETTINGS)
+ *              // modelSettings: { '<model id>': { ... } }: the same for one model, over settings (ROLE_MODEL_SETTINGS)
  *     users: { '<gateway user id>': { role?, status? } }  // admin decisions, written back
  *   }
  *
@@ -46,7 +47,13 @@ export interface RoleSettings {
   askUserTimeoutSeconds?: number;
   toolApproval?: ToolApproval;
 }
-export interface RoleSpec { features?: Feature[] | '*'; models?: string[] | '*'; customize?: string[]; settings?: RoleSettings }
+/** What a role sets for one model, over its own settings. The keys are ROLE_MODEL_SETTINGS. */
+export type RoleModelSettings = Pick<RoleSettings, RoleModelSettingKey>;
+export interface RoleSpec {
+  features?: Feature[] | '*'; models?: string[] | '*'; customize?: string[]; settings?: RoleSettings;
+  /** Per model id (a catalog id), what this role's chats on that model run with. */
+  modelSettings?: Record<string, RoleModelSettings>;
+}
 /** An admin decision about one user, kept in access.users. */
 export interface UserPin { role?: UserRole; status?: UserStatus }
 
@@ -115,7 +122,7 @@ export function resolveAccess(cfg: PolicyConfig) {
   const declared = a.roles && typeof a.roles === 'object' ? a.roles : {};
   // A custom role starts with nothing: what it may do is what it lists.
   for (const r of new Set([...BUILTIN_ROLES, ...Object.keys(declared)])) {
-    roles[r] = { features: [], models: '*', customize, settings: {}, ...DEFAULT_ROLES[r], ...(declared[r] || {}) };
+    roles[r] = { features: [], models: '*', customize, settings: {}, modelSettings: {}, ...DEFAULT_ROLES[r], ...(declared[r] || {}) };
   }
   return {
     bootstrapAdmins: Array.isArray(a.bootstrapAdmins) ? a.bootstrapAdmins.map(String) : [],
@@ -170,10 +177,13 @@ export function modelsFor(cfg: PolicyConfig, role: UserRole | null | undefined):
  * What this role sets for its people over the global and per-model values.
  * Tiers 1 and 2 have no roles, so nothing; nor does an unknown role.
  */
-export function roleSettingsFor(cfg: PolicyConfig, role: UserRole | null | undefined): RoleSettings {
+export function roleSettingsFor(cfg: PolicyConfig, role: UserRole | null | undefined, model?: string | null): RoleSettings {
   if (!['multiuser', 'trusted-header'].includes(cfg.authMode)) return {};
   if (!role || !isRole(cfg, role)) return {};
-  return resolveAccess(cfg).roles[role].settings || {};
+  const spec = resolveAccess(cfg).roles[role];
+  // What the role sets for this one model wins over what it sets for all of them.
+  const perModel = model && Object.hasOwn(spec.modelSettings || {}, model) ? spec.modelSettings[model] : null;
+  return perModel ? { ...(spec.settings || {}), ...perModel } : spec.settings || {};
 }
 
 // The same bounds the global settings form uses, for the keys that are numbers.
@@ -184,13 +194,15 @@ const ROLE_NUMBER: Partial<Record<keyof RoleSettings, { min: number, max?: numbe
   askUserTimeoutSeconds: { min: 0, max: 86400, int: true }
 };
 
-/** Every problem with one role's settings block, as readable strings. */
-function roleSettingsProblems(role: string, settings: unknown, models: unknown): string[] {
-  const at = `access.roles.${role}.settings`;
+/**
+ * Every problem with one role's settings block (or, given `known`, one of its
+ * per-model blocks), as readable strings.
+ */
+function roleSettingsProblems(at: string, settings: unknown, models: unknown, known: readonly string[] = ROLE_SETTINGS): string[] {
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return [`${at} must be an object`];
   const errors: string[] = [];
   for (const [k, v] of Object.entries(settings)) {
-    if (!(ROLE_SETTINGS as readonly string[]).includes(k)) { errors.push(`${at}.${k} is not a known setting (known: ${ROLE_SETTINGS.join(', ')})`); continue; }
+    if (!known.includes(k)) { errors.push(`${at}.${k} is not a known setting (known: ${known.join(', ')})`); continue; }
     const bound = ROLE_NUMBER[k as keyof RoleSettings];
     if (bound) {
       const ok = typeof v === 'number' && Number.isFinite(v) && v >= bound.min && (bound.max === undefined || v <= bound.max) && (!bound.int || Number.isInteger(v));
@@ -202,6 +214,18 @@ function roleSettingsProblems(role: string, settings: unknown, models: unknown):
     } else if (k === 'model' && Array.isArray(models) && !models.includes(v)) {
       errors.push(`${at}.model "${v}" is not one of this role's models`);
     }
+  }
+  return errors;
+}
+
+/** Every problem with one role's per-model settings: keyed by models the role may use, each a settings block. */
+function roleModelSettingsProblems(role: string, perModel: unknown, models: unknown): string[] {
+  const at = `access.roles.${role}.modelSettings`;
+  if (!perModel || typeof perModel !== 'object' || Array.isArray(perModel)) return [`${at} must be an object of model id to settings`];
+  const errors: string[] = [];
+  for (const [model, settings] of Object.entries(perModel)) {
+    if (Array.isArray(models) && !models.includes(model)) errors.push(`${at}: "${model}" is not one of this role's models`);
+    errors.push(...roleSettingsProblems(`${at}.${model}`, settings, models, ROLE_MODEL_SETTINGS));
   }
   return errors;
 }
@@ -253,9 +277,10 @@ export function validateConfig(cfg: Record<string, any>, { env = process.env } =
       if (!ROLE_NAME.test(role)) { errors.push(`access.roles.${role}: a role name is lowercase letters, digits and dashes, starting with a letter (at most 32)`); continue; }
       if (!spec || typeof spec !== 'object') { errors.push(`access.roles.${role} must be an object`); continue; }
       for (const k of Object.keys(spec)) {
-        if (!['features', 'models', 'customize', 'settings'].includes(k)) errors.push(`access.roles.${role}.${k} is not a known setting`);
+        if (!['features', 'models', 'customize', 'settings', 'modelSettings'].includes(k)) errors.push(`access.roles.${role}.${k} is not a known setting`);
       }
-      if (spec.settings !== undefined) errors.push(...roleSettingsProblems(role, spec.settings, spec.models));
+      if (spec.settings !== undefined) errors.push(...roleSettingsProblems(`access.roles.${role}.settings`, spec.settings, spec.models));
+      if (spec.modelSettings !== undefined) errors.push(...roleModelSettingsProblems(role, spec.modelSettings, spec.models));
       if (spec.customize !== undefined) {
         const bad = Array.isArray(spec.customize) ? spec.customize.filter((c: unknown) => !CUSTOMIZABLE.includes(c as string)) : null;
         if (!bad) errors.push(`access.roles.${role}.customize must be a list from ${CUSTOMIZABLE.join(', ')}`);

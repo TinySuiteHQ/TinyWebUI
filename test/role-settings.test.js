@@ -29,6 +29,26 @@ test('a role\'s settings are checked: known keys, types, ranges, and a model the
   assert.match(problems('everything'), /settings must be an object/);
 });
 
+test("a role's per-model settings are checked: a model the role may use, and only the keys that are about a turn", () => {
+  const problems = (modelSettings, models) => validateConfig(multi({ student: { ...(models ? { models } : {}), modelSettings } })).join('\n');
+  assert.equal(problems({ a: { systemPrompt: 'A', temperature: 0.5, maxTokens: 100, maxToolRounds: 4, toolApproval: 'all' } }, ['a']), '');
+  assert.match(problems({ b: { temperature: 0.5 } }, ['a']), /modelSettings: "b" is not one of this role's models/);
+  assert.match(problems({ a: { model: 'a' } }), /modelSettings\.a\.model is not a known setting/);
+  assert.match(problems({ a: { askUserTimeoutSeconds: 5 } }), /askUserTimeoutSeconds is not a known setting/);
+  assert.match(problems({ a: { temperature: 5 } }), /modelSettings\.a\.temperature must be a number from 0 to 2/);
+  assert.match(problems({ a: 'hot' }), /modelSettings\.a must be an object/);
+  assert.match(problems(['a']), /modelSettings must be an object/);
+});
+
+test("a role's settings for one model win over its settings for all of them, on that model only", () => {
+  const cfg = multi({ user: { settings: { systemPrompt: 'ROLE', temperature: 0.2 }, modelSettings: { smart: { temperature: 0.9 } } } });
+  assert.deepEqual(roleSettingsFor(cfg, 'user', 'smart'), { systemPrompt: 'ROLE', temperature: 0.9 });
+  assert.deepEqual(roleSettingsFor(cfg, 'user', 'fast'), { systemPrompt: 'ROLE', temperature: 0.2 });
+  assert.deepEqual(roleSettingsFor(cfg, 'user'), { systemPrompt: 'ROLE', temperature: 0.2 });
+  assert.deepEqual(roleSettingsFor(cfg, 'user', 'constructor'), { systemPrompt: 'ROLE', temperature: 0.2 }, 'no prototype lookups');
+  assert.deepEqual(roleSettingsFor(multi({ user: { modelSettings: { smart: { maxTokens: 5 } } } }), 'user', 'smart'), { maxTokens: 5 });
+});
+
 test('roles only exist with accounts: tiers 1-2 and unknown roles get no settings', () => {
   const roles = { user: { settings: { systemPrompt: 'S' } } };
   assert.deepEqual(roleSettingsFor({ authMode: 'local', access: { roles } }, 'user'), {});
@@ -86,7 +106,10 @@ test('a role\'s prompt replaces the system prompt, its default model applies, an
       customize: ['instructions'],
       roles: {
         user: { features: ['chat', 'model-picker'], models: '*' },
-        student: { features: ['chat', 'model-picker'], models: ['fast', 'smart'], settings: { systemPrompt: 'STUDENT', model: 'smart', temperature: 0.2 } }
+        student: {
+          features: ['chat', 'model-picker'], models: ['fast', 'smart'], settings: { systemPrompt: 'STUDENT', model: 'smart', temperature: 0.2 },
+          modelSettings: { fast: { systemPrompt: 'STUDENT ON FAST', temperature: 0.9 } }
+        }
       },
       users: { 'sub-stu': { role: 'student' }, 'sub-stu2': { role: 'student' } }
     }
@@ -118,6 +141,9 @@ test('a role\'s prompt replaces the system prompt, its default model applies, an
   assert.equal((await as({ id: 'sub-stu2' })('/api/me/prefs', { method: 'POST', body: { model: 'fast' } })).data.model, 'fast');
   await chat('sub-stu2');
   assert.equal(seen.at(-1).model, 'fast');
+  // On that model the role's own settings for it apply.
+  assert.equal(seen.at(-1).temperature, 0.9);
+  assert.match(seen.at(-1).system, /STUDENT ON FAST/);
 });
 
 test('an admin sets a role\'s settings, blanks drop out, the admin role takes settings only, and a bad value writes nothing', async (t) => {
@@ -153,6 +179,18 @@ test('an admin sets a role\'s settings, blanks drop out, the admin role takes se
   assert.equal((await root('/api/admin/roles/admin', { method: 'PATCH', body: { settings: { systemPrompt: 'Admin mode.' } } })).status, 200);
   assert.deepEqual(saved().roles.admin, { settings: { systemPrompt: 'Admin mode.' } });
   assert.equal((await root('/api/admin/roles/admin', { method: 'PATCH', body: { features: ['chat'], settings: {} } })).status, 400, 'admins keep everything');
+
+  // Per model: blanks drop out, a model with nothing left goes, a model outside the role is refused.
+  const pm = await root('/api/admin/roles/user', { method: 'PATCH', body: { modelSettings: { a: { temperature: 0.8, maxTokens: null }, b: { systemPrompt: '' } } } });
+  assert.equal(pm.status, 200);
+  assert.deepEqual(saved().roles.user.modelSettings, { a: { temperature: 0.8 } });
+  assert.deepEqual(pm.data.roles.find((r) => r.name === 'user').modelSettings, { a: { temperature: 0.8 } });
+  assert.equal(saved().roles.user.settings.temperature, 0.4, "the role's own settings are untouched");
+  assert.equal((await root('/api/admin/roles/user', { method: 'PATCH', body: { modelSettings: { zzz: { temperature: 1 } } } })).status, 400, 'a model outside the catalog');
+  assert.equal((await root('/api/admin/roles/user', { method: 'PATCH', body: { modelSettings: { a: 'hot' } } })).status, 400);
+  assert.equal((await root('/api/admin/roles/admin', { method: 'PATCH', body: { modelSettings: { b: { toolApproval: 'all' } } } })).status, 200, 'the admin role takes them too');
+  await root('/api/admin/roles/user', { method: 'PATCH', body: { modelSettings: { a: { temperature: null } } } });
+  assert.equal(saved().roles.user.modelSettings, undefined, 'all blank: gone');
 
   // Every field blank: the role inherits everything again.
   await root('/api/admin/roles/user', { method: 'PATCH', body: { settings: { systemPrompt: '', model: '', temperature: null } } });

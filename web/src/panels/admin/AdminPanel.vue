@@ -399,7 +399,7 @@ onBeforeUnmount(stopPoll);
               <template v-else>
                 <p class="adm-role-sum">{{ roleSummary(r) }}</p>
                 <p v-if="!r.fixed && policy.models.length" class="adm-meta">{{ r.models === '*' ? 'Any model' : r.models.length ? `Models: ${r.models.join(', ')}` : 'No models' }}</p>
-                <p v-if="roleSettingsSummary(r.settings)" class="adm-meta">Chats: {{ roleSettingsSummary(r.settings) }}</p>
+                <p v-if="roleSettingsSummary(r.settings, r.modelSettings)" class="adm-meta">Chats: {{ roleSettingsSummary(r.settings, r.modelSettings) }}</p>
               </template>
             </article>
           </div>

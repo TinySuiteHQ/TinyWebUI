@@ -56,14 +56,15 @@ export const ROLE_SETTING_INFO: Record<RoleSettingKey, [string, string]> = {
   temperature: ['Temperature', 'Over the global value and any model\'s own.'],
   maxTokens: ['Max output tokens', 'Over the global value and any model\'s own.'],
   maxToolRounds: ['Max tool turns', 'Tool calls allowed per reply.'],
-  askUserTimeoutSeconds: ['Question timeout (s)', 'How long a question from the model waits. 0: until answered.'],
+  askUserTimeoutSeconds: ['Question timeout (seconds)', 'How long a question from the model waits. 0: until answered.'],
   toolApproval: ['Ask before running', 'Whether their MCP tool calls wait for approval.']
 };
 
-/** "custom prompt · default: fast · temperature 0.3": what a role sets, for its card. */
-export function roleSettingsSummary(settings: Partial<Record<RoleSettingKey, unknown>> | undefined): string {
-  if (!settings) return '';
+/** "own prompt · default: fast · temperature: 0.3 · own settings on smart": what a role sets, for its card. */
+export function roleSettingsSummary(settings: Partial<Record<RoleSettingKey, unknown>> | undefined, perModel?: Record<string, unknown>): string {
   const parts: string[] = [];
+  const models = Object.keys(perModel || {});
+  if (!settings) return models.length ? `own settings on ${models.join(', ')}` : '';
   for (const k of ROLE_SETTINGS) {
     const v = settings[k];
     if (v === undefined || v === null || v === '') continue;
@@ -71,5 +72,6 @@ export function roleSettingsSummary(settings: Partial<Record<RoleSettingKey, unk
     else if (k === 'model') parts.push(`default: ${v}`);
     else parts.push(`${ROLE_SETTING_INFO[k][0].toLowerCase()}: ${v}`);
   }
+  if (models.length) parts.push(`own settings on ${models.join(', ')}`);
   return parts.join(' · ');
 }
