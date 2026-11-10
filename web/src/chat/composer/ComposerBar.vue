@@ -10,7 +10,7 @@ import { FEATURE } from '../../../../shared/features.ts';
 import { useSession } from '../../stores/session.ts';
 import { useConfig } from '../../stores/config.ts';
 import { useChat } from '../../stores/chat.ts';
-import { useAttachments, DOC_ACCEPT, type Lane } from '../../stores/attachments.ts';
+import { useAttachments, isLongPaste, DOC_ACCEPT, type Lane } from '../../stores/attachments.ts';
 import { usePanels, PANEL } from '../../stores/panels.ts';
 import Icon from '../../ui/Icon.vue';
 import Popover from '../../ui/Popover.vue';
@@ -54,6 +54,21 @@ function stageAll(list: Iterable<File> | null | undefined) {
     if (problem) chat.addError(problem);
   }
 }
+// Both boxes route their paste here: copied files (a screenshot) are staged
+// as if picked, and a long text paste becomes a .txt attachment.
+function onPaste(e: ClipboardEvent) {
+  const data = e.clipboardData;
+  if (!data) return;
+  if (data.files.length) {
+    e.preventDefault();
+    stageAll(data.files);
+    return;
+  }
+  const text = data.getData('text/plain');
+  if (!isLongPaste(text)) return;
+  e.preventDefault();
+  stageAll([attachments.pastedFile(text, props.lane)]);
+}
 function onPicked(e: Event) {
   const el = e.target as HTMLInputElement;
   stageAll(el.files);
@@ -92,7 +107,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocKey, true);
 });
 
-defineExpose({ stageAll });
+defineExpose({ stageAll, onPaste });
 </script>
 
 <template>

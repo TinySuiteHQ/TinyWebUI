@@ -159,7 +159,6 @@ button.quiet:hover { color: var(--fg); background: var(--accent-soft); border-co
 .msg-attachments { justify-content: flex-end; }
 .msg-images { justify-content: flex-end; }
 .attachment-chip .ic { width: .9rem; height: .9rem; color: var(--muted); }
-.attachment-chip .remove { min-height: 0; padding: 0 0 0 .125rem; border: 0; background: none; color: inherit; font-size: .8em; }
 button.attachment-chip { min-height: 0; font: inherit; font-size: var(--fs-small); color: var(--fg); }
 .msg.automation-run .ic { color: var(--tool); width: 1rem; height: 1rem; align-self: center; }
 

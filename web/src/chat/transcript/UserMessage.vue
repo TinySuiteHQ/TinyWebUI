@@ -112,7 +112,7 @@ function onKey(e: KeyboardEvent) {
         </button>
       </div>
       <AttachmentTray lane="edit" />
-      <textarea ref="area" v-model="text" class="composer-input" :rows="rows" aria-label="Edit question" @keydown="onKey" />
+      <textarea ref="area" v-model="text" class="composer-input" :rows="rows" aria-label="Edit question" @keydown="onKey" @paste="bar?.onPaste($event)" />
       <ComposerBar ref="bar" lane="edit">
         <button type="button" class="edit-cancel" @click="cancel">Cancel</button>
         <button type="submit" class="primary composer-send" :disabled="!text.trim()" aria-label="Resubmit" title="Resubmit (Enter)">

@@ -63,6 +63,14 @@ function toBase64(file: File): Promise<string> {
 
 export const stagedName = (a: Staged) => a.existing?.filename ?? a.file?.name ?? '';
 
+const PASTED_NAME = 'Pasted text';
+// A paste this long (or this many lines) becomes a .txt attachment instead of
+// a wall of text in the box; the model reads it the same either way.
+const PASTE_AS_FILE_CHARS = 2000;
+const PASTE_AS_FILE_LINES = 40;
+export const isLongPaste = (text: string) =>
+  text.length >= PASTE_AS_FILE_CHARS || text.split('\n').length >= PASTE_AS_FILE_LINES;
+
 export const useAttachments = defineStore('attachments', () => {
   const pending = ref<Staged[]>([]);
   const editing = ref<Staged[]>([]);
@@ -123,6 +131,12 @@ export const useAttachments = defineStore('attachments', () => {
     }
     lane(l).value.push(entry);
     return problem;
+  }
+
+  /** A long paste as a text file, named so a second one in the same box is told apart. */
+  function pastedFile(text: string, l: Lane = 'compose'): File {
+    const n = lane(l).value.filter((e) => e.file?.name.startsWith(PASTED_NAME)).length;
+    return new File([text], `${PASTED_NAME}${n ? ` ${n + 1}` : ''}.txt`, { type: 'text/plain' });
   }
 
   /** Queues a document uploaded in an earlier chat; the server copies it in on send. */
@@ -192,5 +206,5 @@ export const useAttachments = defineStore('attachments', () => {
     return { docs, images, failed };
   }
 
-  return { pending, editing, chatDocuments, chatImages, reset, setChatFiles, remove, clearEdit, stage, stageExisting, invalid, commit };
+  return { pending, editing, chatDocuments, chatImages, reset, setChatFiles, remove, clearEdit, stage, pastedFile, stageExisting, invalid, commit };
 });

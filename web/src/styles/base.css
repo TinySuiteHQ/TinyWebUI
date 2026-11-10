@@ -863,17 +863,48 @@ footer { padding: .5rem .875rem 1rem; flex-shrink: 0; }
   background: none; border: 0; color: var(--muted);
 }
 .composer-attach:hover { background: var(--panel); color: var(--fg); }
-.attachments {
-  max-width: var(--measure); margin: 0 auto .5rem; display: flex; flex-wrap: wrap; gap: .4rem;
+/* Staged files: cards inside the composer, above the text. */
+.attachments { display: flex; flex-wrap: wrap; gap: .5rem; padding: .25rem .25rem .375rem; }
+.attachments:empty, .attachments[hidden] { display: none; }
+.attachment-card {
+  position: relative; display: flex; align-items: center; gap: .5rem; min-width: 0; max-width: 15rem;
+  padding: .375rem .625rem .375rem .375rem; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--raise); font-size: var(--fs-small);
 }
+.attachment-card-image { padding: 0; overflow: visible; }
+.attachment-card-image .attachment-thumb { width: 3.5rem; height: 3.5rem; display: block; border-radius: calc(var(--r-md) - 1px); }
+.attachment-card-icon {
+  flex: none; width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
+  border-radius: var(--r-sm); background: var(--panel); color: var(--muted);
+}
+.attachment-card-icon .ic { width: 1.1rem; height: 1.1rem; }
+.attachment-card-icon[data-kind="filePdf"] { color: var(--chart-8); }
+.attachment-card-icon[data-kind="fileSheet"] { color: var(--chart-3); }
+.attachment-card-icon[data-kind="fileCode"] { color: var(--chart-7); }
+.attachment-card-text { min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.attachment-card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--fg); }
+.attachment-card-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-meta); }
+.attachment-card-error { border-color: var(--err); }
+.attachment-card-error .attachment-card-detail { color: var(--err); }
+/* The remove button sits on the card's corner, showing on hover or focus
+   (always on touch, where there is no hover). */
+.attachment-remove {
+  position: absolute; top: -.4rem; right: -.4rem; z-index: 1;
+  width: 1.25rem; height: 1.25rem; min-height: 0; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--raise); color: var(--muted);
+  opacity: 0; transition: opacity var(--t-fast);
+}
+.attachment-remove .ic { width: .7rem; height: .7rem; }
+.attachment-remove:hover { color: var(--fg); }
+button.attachment-remove:active:not(:disabled) { transform: none; }
+.attachment-card:hover .attachment-remove, .attachment-card:focus-within .attachment-remove { opacity: 1; }
+@media (hover: none) { .attachment-remove { opacity: 1; } }
 .attachments:empty, .attachments[hidden] { display: none; }
 .attachment-chip {
   display: inline-flex; align-items: center; gap: .35rem;
   border: 1px solid var(--line); border-radius: var(--r-pill); padding: .2rem .65rem;
   font-size: var(--fs-small); background: var(--bg-soft, transparent);
 }
-.attachment-chip .remove { cursor: pointer; opacity: .6; }
-.attachment-chip .remove:hover { opacity: 1; }
 .attachment-chip-image { padding: .2rem; border-radius: var(--r-sm); }
 /* Input queued on a running turn, listed above the text box until delivered. */
 .queue { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
@@ -1520,9 +1551,6 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 }
 .brand-home:hover { background: var(--accent-soft); }
 .brand-home:active:not(:disabled) { transform: none; }
-.attachment-chip-error {
-  border-color: var(--danger, #c0392b); color: var(--danger, #c0392b);
-}
 
 .composer-model.static { cursor: default; }
 .composer-model.static .chev { display: none; }
@@ -1639,47 +1667,56 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
   visibility: visible; opacity: 1; transform: none; pointer-events: auto;
   transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
 }
-.files-tabs { display: flex; gap: .25rem; margin-left: auto; }
-.files-tabs button { border: 0; background: none; padding: .3rem .625rem; border-radius: var(--r-pill); color: var(--muted); }
-.files-tabs button.active { background: var(--accent-soft); color: var(--fg); }
-.files-count { margin-left: .375rem; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.files-count { margin-left: .5rem; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 .files-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
-.files-content > * { width: min(56rem, 100%); margin-left: auto; margin-right: auto; }
+.files-content > * { width: min(60rem, 100%); margin-left: auto; margin-right: auto; }
 .files-filter { display: block; margin-bottom: .75rem; }
 .files-error { margin-bottom: .75rem; }
-.files-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.files-row { display: flex; align-items: center; gap: .5rem; padding: .25rem; border-radius: var(--r-sm); }
-.files-row:hover { background: var(--accent-soft); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* One row per file; the table lays out fixed so a long name or chat title
+   ellipsizes instead of pushing the Use button off the edge. */
+.files-table { table-layout: fixed; }
+.files-table td { vertical-align: middle; padding-top: .25rem; padding-bottom: .25rem; }
+.files-table tbody tr:hover td { background: var(--accent-soft); }
+.files-table th:first-child, .files-table td:first-child { padding-left: .375rem; }
+.files-table th:last-child, .files-table td:last-child { padding-right: .375rem; }
+.files-table .files-col-type { width: 7.5rem; }
+.files-table .files-col-chat { width: 28%; }
+.files-table .files-col-date { width: 7.5rem; }
+.files-table .files-col-use { width: 7.5rem; text-align: right; }
+.files-table td.files-col-use { white-space: nowrap; }
 .files-main {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: .75rem;
-  border: 0; background: none; padding: .375rem; text-align: left; color: var(--fg);
+  width: 100%; min-width: 0; display: flex; align-items: center; gap: .625rem;
+  border: 0; background: none; padding: .25rem 0; text-align: left; color: var(--fg); min-height: 0;
 }
 button.files-main:active:not(:disabled) { transform: none; }
 .files-icon {
-  flex: none; width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
+  flex: none; width: 2rem; height: 2rem; display: grid; place-items: center;
   border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--muted);
 }
+.files-icon .ic { width: 1.05rem; height: 1.05rem; }
+/* The type reads at a glance from the icon's tint too, from the chart palette. */
+.files-icon[data-kind="filePdf"] { color: var(--chart-8); }
+.files-icon[data-kind="fileSheet"] { color: var(--chart-3); }
+.files-icon[data-kind="fileCode"] { color: var(--chart-7); }
+.files-icon[data-kind="image"] { color: var(--chart-1); }
 .files-text { min-width: 0; display: flex; flex-direction: column; }
 .files-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.files-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-meta); }
-.files-actions { flex: none; display: flex; gap: .375rem; }
-.files-actions button { font-size: var(--fs-meta); padding: .3rem .625rem; }
-.files-grid {
-  list-style: none; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: .75rem;
+.files-meta { display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-meta); }
+.files-chat-link {
+  max-width: 100%; min-height: 0; padding: 0; border: 0; background: none; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font: inherit;
 }
-.files-tile {
-  display: flex; flex-direction: column; gap: .25rem; min-width: 0; padding: .5rem;
-  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise);
-}
-.files-thumb { padding: 0; border: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--panel); aspect-ratio: 4 / 3; }
-.files-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.files-tile .files-actions { margin-top: .25rem; }
-.files-tile .files-actions button { flex: 1; }
+.files-chat-link:hover { color: var(--fg); text-decoration: underline; }
+button.files-chat-link:active:not(:disabled) { transform: none; }
+.files-col-use button.primary { font-size: var(--fs-meta); padding: .3rem .625rem; min-height: 0; }
+.files-phone-chat { display: none; }
 @media (max-width: 640px) {
-  .files-row { flex-wrap: wrap; }
-  .files-row .files-actions { width: 100%; padding: 0 .375rem .375rem 3.375rem; }
-  .files-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .files-table thead { display: none; }
+  .files-table .files-col-type, .files-table .files-col-chat, .files-table .files-col-date { display: none; }
+  .files-table .files-col-use { width: 8.5rem; }
+  .files-meta { display: block; }
+  .files-phone-chat { display: inline-flex; width: 2rem; height: 2rem; vertical-align: middle; margin-right: .25rem; }
 }
 
 /* ---- Account: pinned under the chat list, the way into settings ---- */
@@ -1756,7 +1793,6 @@ dialog#cameraDialog::backdrop { background: rgba(0, 0, 0, .62); }
 /* ---- A question edited in place: the composer, small, inside the bubble ---- */
 .msg.user.editing { width: min(85%, var(--measure)); }
 .composer.composer-inline { max-width: none; width: 100%; margin: .25rem 0 0; box-shadow: none; }
-.composer-inline .attachments { margin: 0 0 .25rem; }
 .composer-inline .composer-input { min-height: 2.5rem; max-height: 16rem; }
 .composer-inline .edit-artifacts { display: flex; flex-wrap: wrap; gap: .4rem; }
 .composer-inline .edit-cancel { height: 2rem; min-height: 0; padding: 0 .75rem; border-radius: var(--r-pill); font-size: var(--fs-meta); }
