@@ -523,8 +523,13 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     store.close();
     await new Promise((resolve) => server.close(resolve));
   };
-  process.on('SIGINT', () => shutdown().then(() => process.exit(0)));
-  process.on('SIGTERM', () => shutdown().then(() => process.exit(0)));
+  // Said out loud so a log that ends here reads as a stop someone asked for, not a crash.
+  const stopOn = (signal: NodeJS.Signals) => {
+    log.info(`stopping (${signal})`);
+    shutdown().then(() => process.exit(0));
+  };
+  process.on('SIGINT', () => stopOn('SIGINT'));
+  process.on('SIGTERM', () => stopOn('SIGTERM'));
 
   server.shutdown = shutdown;
   return server;
