@@ -98,5 +98,12 @@ export const useChats = defineStore('chats', () => {
     await load();
   }
 
-  return { chats, folders, prompts, expanded, saveFolder, query, results, load, search, clearSearch, markRead, createFolder, setFolderChats, renameChat };
+  /** Deletes a folder; its chats move to no folder, or with `deleteChats` go with it. */
+  async function deleteFolder(name: string, deleteChats: boolean) {
+    await api.post('/api/folders/delete', { name, deleteChats });
+    expanded.value.delete(name);
+    await load();
+  }
+
+  return { chats, folders, prompts, expanded, saveFolder, query, results, load, search, clearSearch, markRead, createFolder, setFolderChats, renameChat, deleteFolder };
 });

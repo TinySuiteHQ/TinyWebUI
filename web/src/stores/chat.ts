@@ -50,6 +50,8 @@ export const useChat = defineStore('chat', () => {
   /** The id of a chat being opened, while its history loads. */
   const loading = ref<string | null>(null);
   const draft = ref('');
+  /** The folder a new chat was started in: it is filed there with its first message. */
+  const draftFolder = ref<string | null>(null);
   /** Bumped to ask the composer for focus (after a turn, after New). */
   const focusTick = ref(0);
   // Follow-ups held in the browser per chat until their send is clicked. They
@@ -218,10 +220,11 @@ export const useChat = defineStore('chat', () => {
 
   /* ---------- switching chats ---------- */
 
-  function newChat({ url = true } = {}) {
+  function newChat({ url = true, folder = null as string | null } = {}) {
     cancelLoad();
     leaveView();
     model.value = createModel();
+    draftFolder.value = folder;
     editing.value = null;
     useAttachments().reset();
     // Starting fresh is a clear signal that browsing is done; a lingering
@@ -262,6 +265,7 @@ export const useChat = defineStore('chat', () => {
     loadCtrl = null;
     loading.value = null;
     leaveView();
+    draftFolder.value = null;
     // Built outside reactivity, then swapped in whole: replaying a long chat
     // through a proxy would cost far more than the swap.
     const m = createModel({ id: found.id, title: found.title });
@@ -314,6 +318,7 @@ export const useChat = defineStore('chat', () => {
     viewCtrl = ctrl;
     // Assigned before any await, so the uploads and the /api/chat call that
     // follows land on the same not-yet-created chat.
+    const folder = m.chat.id ? null : draftFolder.value;
     if (!m.chat.id) m.chat.id = newId();
     const id = m.chat.id;
     const { docs, images, failed } = await attachments.commit(id, addError);
@@ -334,7 +339,7 @@ export const useChat = defineStore('chat', () => {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chatId: id, message, documentIds: docs.map((d) => d.id), images, thinking: useSession().thinkingPick }),
+        body: JSON.stringify({ chatId: id, message, documentIds: docs.map((d) => d.id), images, thinking: useSession().thinkingPick, ...(folder ? { folder } : {}) }),
         signal: ctrl.signal
       });
       if (!res.ok) {
@@ -575,7 +580,7 @@ export const useChat = defineStore('chat', () => {
   }
 
   return {
-    model, busy, loading, draft, focusTick, chatId, empty, heldHere,
+    model, busy, loading, draft, draftFolder, focusTick, chatId, empty, heldHere,
     addError, newChat, openChat, send, stop, queueInput, holdInput, dropHeld, sendHeld, removeQueued,
     approve, answer, rewind, init, start,
     action, askAction, cancelAction, confirmAction, editing, beginEdit

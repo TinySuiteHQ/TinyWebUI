@@ -292,7 +292,15 @@ export function chatRoutes({ config, instructionsFor, modelFor, retrieval, runs,
       const owned = chatId ? store.chats.get(chatId, auth.userId) : null;
       // Someone else's id is "no such chat", never a primary-key clash.
       if (chatId && !owned && store.chats.byId(chatId)) return noChat(res);
-      const chat = owned || store.chats.create({ id: chatId ?? undefined, title: String(message).slice(0, 60) }, auth.userId)!;
+      let chat = owned || store.chats.create({ id: chatId ?? undefined, title: String(message).slice(0, 60) }, auth.userId)!;
+      // A chat started inside a folder is filed there before its first turn runs, so that turn already reads the
+      // folder's instructions. Only on the first message (an upload may have made the chat a moment before), and
+      // only into a folder of this person's: later moves go through the folder.
+      const { folder } = body;
+      if (typeof folder === 'string' && folder && auth.features.has(FEATURE.FOLDERS) && store.messages.nextSeq(chat.id) === 0
+          && store.chats.listFolders(auth.userId).includes(folder)) {
+        chat = store.chats.organize(chat.id, { folder }, auth.userId) ?? chat;
+      }
 
       // Attachments are surfaced as plain text inline notes rather than a
       // system-prompt change, the same idiom compact.js uses for a compacted

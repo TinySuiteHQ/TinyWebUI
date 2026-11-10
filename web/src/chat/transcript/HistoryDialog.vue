@@ -96,20 +96,29 @@ const view = computed(() => {
   return { title: '', lines: [], confirm: 'OK', danger: false, icon: 'history' };
 });
 const files = computed(() => ('files' in view.value ? view.value.files : null));
+const fileCount = computed(() => {
+  const f = files.value;
+  if (!f) return '';
+  const parts = [f.documents ? n(f.documents, 'document') : '', f.images ? n(f.images, 'image') : ''].filter(Boolean);
+  return parts.join(' and ');
+});
 </script>
 
 <template>
   <Modal id="historyDialog" labelledby="historyDialogTitle" :title="view.title" :icon="view.icon" :danger="view.danger" @close="chat.cancelAction()">
     <form id="historyForm" class="modal-body" @submit.prevent="chat.confirmAction({ withFiles: Boolean(files) && withFiles })">
       <p v-for="(line, i) in view.lines" :key="i">{{ line }}</p>
-      <fieldset v-if="files" class="history-files">
-        <legend>Artifacts</legend>
-        <label class="inline-check"><input v-model="withFiles" type="radio" :value="true">
-          Bring them along: {{ [files.documents ? n(files.documents, 'document') : '', files.images ? n(files.images, 'image') : ''].filter(Boolean).join(' and ') }}</label>
-        <label class="inline-check"><input v-model="withFiles" type="radio" :value="false">
-          Leave them out (the fork keeps the questions' text, not their files)</label>
+      <fieldset v-if="files" class="choice-list">
+        <legend>Its documents and images</legend>
+        <label class="choice">
+          <input v-model="withFiles" type="radio" name="forkFiles" :value="true">
+          <span><b>Bring them along</b><small>{{ fileCount }} copied into the fork</small></span>
+        </label>
+        <label class="choice">
+          <input v-model="withFiles" type="radio" name="forkFiles" :value="false">
+          <span><b>Leave them out</b><small>The fork keeps the questions' text, not their files</small></span>
+        </label>
       </fieldset>
-      <p v-else-if="action.kind === 'fork'" class="history-note">There are no artifacts to bring along.</p>
       <div class="dialog-actions">
         <button type="button" @click="chat.cancelAction()">Cancel</button>
         <button type="submit" class="primary" :class="{ 'danger-solid': view.danger }">{{ view.confirm }}</button>

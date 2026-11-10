@@ -19,6 +19,7 @@ import { onCount, useToolActions } from './tool_actions.ts';
 import IntegrationView from './IntegrationView.vue';
 import ServerTools from './ServerTools.vue';
 import ToolRow from './ToolRow.vue';
+import Icon from '../../ui/Icon.vue';
 
 // /api/integrations and /api/tools, read field by field.
 type Json = any;
@@ -185,7 +186,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
 <template>
   <section :id="PANEL.MCP" :class="{ open: isOpen }" aria-label="MCP">
     <div class="panel-head">
-      <button v-if="page.kind !== 'list'" type="button" class="set-back" @click="back">‹ All</button>
+      <button v-if="page.kind !== 'list'" type="button" class="set-back adm-back" @click="back"><Icon name="arrowLeft" size="1rem" />All</button>
       <h2>{{ title }}</h2>
       <template v-if="manages && page.kind === 'list'">
         <label class="mcp-mode" :title="approvalWhy">
@@ -229,7 +230,6 @@ const { isOpen } = usePanel(PANEL.MCP, {
         <p v-if="manages && config.toolsError" class="int-error">{{ config.toolsError }}</p>
 
         <section v-if="builtins.length" class="mcp-tier" aria-labelledby="mcp-tier-builtin">
-          <!-- A div, not <header>: that element is styled as the app's top bar. -->
           <div class="mcp-tier-head"><h3 id="mcp-tier-builtin">Built-in</h3></div>
           <section class="panel-card int-card">
             <div class="int-head">

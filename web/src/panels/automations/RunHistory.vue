@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** An automation's past runs, fetched on first open; each unfolds to what it produced, rendered as the chat would. */
 import { ref } from 'vue';
+import Icon from '../../ui/Icon.vue';
 import { api } from '../../core/api.ts';
 import Markdown from '../../chat/Markdown.vue';
 import { absolute } from './cron.ts';
@@ -39,7 +40,7 @@ const took = (r: AutomationRunView) => `${Math.max(1, Math.round(((r.finished_at
           <p v-if="r.error" class="automation-run-error">{{ r.error }}</p>
           <div v-if="r.result" class="automation-run-output"><Markdown :text="r.result" /></div>
           <p v-else-if="!r.error" class="muted">{{ r.status === 'running' || r.status === 'queued' ? 'Still running…' : 'No output recorded.' }}</p>
-          <button type="button" class="link" @click="emit('openChat')">Open in chat →</button>
+          <button type="button" class="link with-icon" @click="emit('openChat')">Open in chat<Icon name="arrowRight" /></button>
         </div>
       </details>
     </div>

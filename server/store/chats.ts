@@ -301,6 +301,22 @@ export class ChatStore {
     } catch (err) { this.db.exec('ROLLBACK'); throw err; }
   }
 
+  /**
+   * Deletes a folder. Its chats leave it for no folder, or with `withChats`
+   * are deleted with it (each as a chat delete is). 'missing' when there is no
+   * such folder of the owner's.
+   */
+  deleteFolder(name: string, userId: Scope, { withChats = false } = {}): { chats: number } | 'missing' {
+    const owner = ownerOf(userId);
+    const s = scope(owner);
+    if (!this.db.prepare(`SELECT 1 FROM folders WHERE name = ? AND ${s.sql}`).get(name, ...s.params)) return 'missing';
+    const ids = this.db.prepare(`SELECT id FROM chats WHERE folder = ? AND ${s.sql}`).all(name, ...s.params).map((r) => r.id as string);
+    if (withChats) for (const id of ids) this.delete(id, owner);
+    else this.db.prepare(`UPDATE chats SET folder = NULL WHERE folder = ? AND ${s.sql}`).run(name, ...s.params);
+    this.db.prepare(`DELETE FROM folders WHERE name = ? AND ${s.sql}`).run(name, ...s.params);
+    return { chats: ids.length };
+  }
+
   /** A new title, without counting as activity. Null when the chat is not theirs or the title is blank. */
   rename(id: string, title: unknown, userId: Scope): ChatRow | null {
     const clean = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);

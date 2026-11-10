@@ -36,8 +36,8 @@ const call = async (path, { method = 'GET', body } = {}) => {
   const res = await fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
   return { status: res.status, data: await res.json().catch(() => null) };
 };
-const send = async (chatId, message) => {
-  const res = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, message }) });
+const send = async (chatId, message, extra = {}) => {
+  const res = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, message, ...extra }) });
   const text = await res.text();
   return JSON.parse(text.split('data:')[1].split('\n')[0]).id;
 };
@@ -87,6 +87,20 @@ test("a folder's instructions join the system prompt of its chats' turns, and on
   assert.ok(!system().includes('Use grams.'), 'moved out, it stops');
 });
 
+test('a chat started in a folder is filed there before its first turn, which already follows the folder', async () => {
+  await call('/api/folders', { method: 'POST', body: { name: 'Workshop', prompt: 'Speak like a carpenter.' } });
+  const id = await send(null, 'hi there', { folder: 'Workshop' });
+  assert.match(system(), /folder "Workshop"[\s\S]*Speak like a carpenter\./, 'the very first turn has the instructions');
+  assert.equal((await call('/api/chats')).data.chats.find((c) => c.id === id).folder, 'Workshop');
+
+  // Only a first message files a chat, and only into a folder that exists: moving is the folder's job.
+  const loose = await send(null, 'not in one');
+  await send(loose, 'again', { folder: 'Workshop' });
+  assert.equal((await call('/api/chats')).data.chats.find((c) => c.id === loose).folder ?? null, null);
+  const stray = await send(null, 'where to', { folder: 'No such folder' });
+  assert.equal((await call('/api/chats')).data.chats.find((c) => c.id === stray).folder ?? null, null);
+});
+
 test("a folder's chats are set from the folder in one go: listed ones join, the rest leave, and the order stays", async () => {
   await call('/api/folders', { method: 'POST', body: { name: 'Picked' } });
   await call('/api/folders', { method: 'POST', body: { name: 'Elsewhere' } });
@@ -110,6 +124,28 @@ test("a folder's chats are set from the folder in one go: listed ones join, the 
 
   assert.equal((await call('/api/folders/chats', { method: 'PATCH', body: { name: 'Nope', chatIds: [a] } })).status, 404);
   assert.equal((await call('/api/folders/chats', { method: 'PATCH', body: { name: 'Picked', chatIds: 'all' } })).status, 400);
+});
+
+test('a deleted folder lets its chats go to no folder, or takes them with it when asked', async () => {
+  await call('/api/folders', { method: 'POST', body: { name: 'Keepers', prompt: 'Be brief.' } });
+  const kept = await send(null, 'keep me', { folder: 'Keepers' });
+  const out = await call('/api/folders/delete', { method: 'POST', body: { name: 'Keepers' } });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.data, { folder: 'Keepers', chats: 1, chatsDeleted: false });
+  const after = (await call('/api/folders')).data;
+  assert.ok(!after.folders.includes('Keepers') && !('Keepers' in after.prompts), 'the folder and its instructions are gone');
+  assert.equal((await call('/api/chats')).data.chats.find((c) => c.id === kept).folder ?? null, null, 'its chat stays, in no folder');
+
+  await call('/api/folders', { method: 'POST', body: { name: 'Goners' } });
+  const gone = await send(null, 'delete me', { folder: 'Goners' });
+  const bystander = await send(null, 'not in it');
+  assert.equal((await call('/api/folders/delete', { method: 'POST', body: { name: 'Goners', deleteChats: true } })).data.chats, 1);
+  const ids = (await call('/api/chats')).data.chats.map((c) => c.id);
+  assert.ok(!ids.includes(gone) && ids.includes(bystander), 'only the chats in it went');
+  assert.equal((await call(`/api/chats/${gone}`)).status, 404);
+
+  assert.equal((await call('/api/folders/delete', { method: 'POST', body: { name: 'Goners' } })).status, 404);
+  assert.equal((await call('/api/folders/delete', { method: 'POST', body: { name: 'x', deleteChats: 'yes' } })).status, 400);
 });
 
 test('a chat is renamed in place, without moving up the list', async () => {

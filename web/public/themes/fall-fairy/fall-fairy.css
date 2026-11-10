@@ -89,7 +89,6 @@
 [data-theme="fall-fairy"] body { background: transparent; }
 
 [data-theme="fall-fairy"] #log,
-[data-theme="fall-fairy"] header,
 [data-theme="fall-fairy"] footer {
   background: color-mix(in srgb, var(--bg) var(--ff-scrim), transparent);
   backdrop-filter: blur(7px);
@@ -128,7 +127,6 @@
    place that has to stay comfortable for a long read. */
 [data-theme="fall-fairy"] #log { font-size: calc(var(--fs-body) * 1.04); }
 
-[data-theme="fall-fairy"] header h1,
 [data-theme="fall-fairy"] .sec-h,
 [data-theme="fall-fairy"] .md h1,
 [data-theme="fall-fairy"] .md h2,
@@ -143,13 +141,10 @@
 /* .sec-h is uppercase mono in the base sheet; Grandstander is neither, so the
    tracking that made the mono caps readable now just pulls it apart. */
 [data-theme="fall-fairy"] .sec-h { letter-spacing: .04em; text-transform: lowercase; }
-[data-theme="fall-fairy"] header h1 { font-size: 1.1rem; }
-[data-theme="fall-fairy"] header h1::after { content: " \1F342"; font-size: .8em; }
 
 /* The mono voice stays mono — Space Mono arrives through --mono above, which
    the base sheet already points at for every one of these. It runs wide, so
    the label-sized uses get their tracking wound back in. */
-[data-theme="fall-fairy"] .hit-role,
 [data-theme="fall-fairy"] .activity-row,
 [data-theme="fall-fairy"] .thought > summary,
 [data-theme="fall-fairy"] #status {

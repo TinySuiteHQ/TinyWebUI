@@ -6,6 +6,7 @@
  * then add its models. Drawn from the draft, so it shows unsaved edits.
  */
 import { computed } from 'vue';
+import Icon from '../../ui/Icon.vue';
 import type { ConnectorDraft, Draft, ModelDraft } from '../settings/draft.ts';
 import ModelLink from './ModelLink.vue';
 
@@ -60,7 +61,7 @@ const baseUrl = computed(() => (props.draft.form.baseUrl || '').trim());
       <div class="model-list">
         <button v-for="m in orphans" :key="m.key" type="button" class="model-link" @click="emit('model', m)">
           <span class="model-text"><span class="model-name">{{ m.label || m.id || 'Untitled model' }}</span><span class="model-sub">{{ m.connector }}</span></span>
-          <span class="chev" aria-hidden="true">›</span>
+          <Icon class="chev" name="chevronRight" aria-hidden="true" />
         </button>
       </div>
     </section>

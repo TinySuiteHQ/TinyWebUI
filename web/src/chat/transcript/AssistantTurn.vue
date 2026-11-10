@@ -40,13 +40,19 @@ const stored = computed(() => props.turn.done && props.questionSeq != null);
 const editing = ref(false);
 const text = ref('');
 const area = ref<HTMLTextAreaElement>();
-const rows = computed(() => Math.min(20, text.value.split('\n').length + 1));
 
+/** Grow with the text (wrapped lines included, which counting \n misses); CSS caps it at 60vh, then it scrolls. */
+function fit() {
+  const el = area.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight + 2}px`;
+}
 function beginEdit() {
   if (chat.busy) return;
   text.value = props.turn.answer;
   editing.value = true;
-  nextTick(() => area.value?.focus());
+  nextTick(() => { fit(); area.value?.focus(); });
 }
 async function save() {
   const content = text.value;
@@ -75,12 +81,14 @@ function onKey(e: KeyboardEvent) {
     <div v-if="turn.answer && !editing" class="msg assistant answer" :class="{ final: turn.done, streaming: !turn.done }">
       <Markdown :text="turn.answer" />
     </div>
-    <form v-if="editing" class="edit-box answer-edit" @submit.prevent="save">
-      <textarea ref="area" v-model="text" :rows="rows" aria-label="Edit answer" spellcheck="true" @keydown="onKey" />
-      <div class="edit-actions">
-        <button type="submit" class="primary" :disabled="!text.trim()">Save</button>
-        <button type="button" @click="editing = false">Cancel</button>
-        <span class="usage">Markdown · Ctrl+Enter saves</span>
+    <form v-if="editing" class="composer composer-inline answer-edit" @submit.prevent="save">
+      <textarea ref="area" v-model="text" class="composer-input" rows="3" aria-label="Edit answer" spellcheck="true"
+                @keydown="onKey" @input="fit" />
+      <div class="composer-bar">
+        <span class="edit-hint">Markdown · Ctrl+Enter saves · Esc cancels</span>
+        <span class="grow" />
+        <button type="button" class="edit-cancel" @click="editing = false">Cancel</button>
+        <button type="submit" class="primary edit-save" :disabled="!text.trim()">Save</button>
       </div>
     </form>
     <div v-for="(e, i) in turn.errors" :key="`e${i}`" class="err">{{ e }}</div>

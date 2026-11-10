@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** Prompts that run on a schedule and post their result into a chat. */
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import Icon from '../../ui/Icon.vue';
 import { api } from '../../core/api.ts';
 import { useChat } from '../../stores/chat.ts';
 import { PANEL } from '../../stores/panels.ts';
@@ -103,7 +104,7 @@ onBeforeUnmount(() => clearInterval(timer));
             </span>
             <span class="automation-last">Last run <StatusPill :status="a.lastStatus" />
               <span v-if="a.lastRunAt" :title="absolute(a.lastRunAt)">{{ relative(a.lastRunAt) }}</span></span>
-            <button type="button" class="link" title="Open the chat this automation posts to" @click="goTo(a.chatId)">→ {{ a.chatTitle || 'chat' }}</button>
+            <button type="button" class="link with-icon" title="Open the chat this automation posts to" @click="goTo(a.chatId)"><Icon name="chat" />{{ a.chatTitle || 'chat' }}</button>
           </div>
           <AutomationForm v-if="openForm === a.id" :existing="a" :chats="snapshot.chats" @done="formDone" @cancel="openForm = null" />
           <template v-else>

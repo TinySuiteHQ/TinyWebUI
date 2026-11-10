@@ -9,6 +9,7 @@
  * or script, only values, so a hostile one can at worst show odd text.
  */
 import { onMounted, reactive, ref, watch } from 'vue';
+import Icon from '../../ui/Icon.vue';
 import { api } from '../../core/api.ts';
 
 // A view manifest and its data, as the server relays them, read field by field.
@@ -131,7 +132,7 @@ watch(() => props.base, () => { for (const k of Object.keys(query)) delete query
       </div>
     </template>
     <template v-else-if="data && detail">
-      <button type="button" class="int-back-row" @click="load">‹ Back to the list</button>
+      <button type="button" class="int-back-row with-icon" @click="load"><Icon name="arrowLeft" />Back to the list</button>
       <div class="int-detail">
         <p v-if="detailLoading" class="empty">Loading…</p>
         <template v-else>
@@ -193,8 +194,8 @@ watch(() => props.base, () => { for (const k of Object.keys(query)) delete query
       </table>
       <div class="int-pager">
         <span class="usage">{{ data.rows.length ? `${(offset + 1).toLocaleString()}–${(offset + data.rows.length).toLocaleString()}${data.total !== null ? ` of ${data.total.toLocaleString()}` : ''}` : '' }}</span>
-        <button type="button" :disabled="offset === 0" @click="offset = Math.max(0, offset - view.pageSize); load()">‹ Previous</button>
-        <button type="button" :disabled="!data.hasMore" @click="offset += data.rows.length || view.pageSize; load()">Next ›</button>
+        <button type="button" class="with-icon" :disabled="offset === 0" @click="offset = Math.max(0, offset - view.pageSize); load()"><Icon name="chevronLeft" />Previous</button>
+        <button type="button" class="with-icon" :disabled="!data.hasMore" @click="offset += data.rows.length || view.pageSize; load()">Next<Icon name="chevronRight" /></button>
       </div>
     </template>
   </div>

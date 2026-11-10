@@ -69,6 +69,17 @@ export function libraryRoutes({ runs, store }: Pick<RouteDeps, 'runs' | 'store'>
       return json(res, 200, { folder: name, chats: moved });
     } },
 
+    // A folder goes: its chats leave it for no folder, or with `deleteChats`
+    // are deleted with it. POST, as the name rides in the body (any character).
+    { method: 'POST', path: /^\/api\/folders\/delete$/, feature: FEATURE.FOLDERS, handle: async ({ req, res, auth }) => {
+      const { name, deleteChats } = await readJson(req);
+      if (typeof name !== 'string' || !name.trim()) return json(res, 400, { error: 'folder name required' });
+      if (deleteChats !== undefined && typeof deleteChats !== 'boolean') return json(res, 400, { error: 'deleteChats must be true or false' });
+      const done = store.chats.deleteFolder(name, auth.userId, { withChats: deleteChats === true });
+      if (done === 'missing') return json(res, 404, { error: 'no such folder' });
+      return json(res, 200, { folder: name, chats: done.chats, chatsDeleted: deleteChats === true });
+    } },
+
     { method: 'POST', path: /^\/api\/chats\/([\w.-]+)\/organize$/, feature: FEATURE.FOLDERS, handle: async ({ req, res, auth, params: [chatId] }) => {
       const { folder, tags } = await readJson(req);
       const found = store.chats.get(chatId, auth.userId);

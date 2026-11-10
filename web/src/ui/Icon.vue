@@ -40,6 +40,14 @@ const ICONS: Record<string, Glyph> = {
   mcp: { solid: [p('M5.5 8h13v3.5a6.5 6.5 0 0 1-13 0Z')], line: [p('M9 3v3.5M15 3v3.5M12 18v3')] },
   automations: { solid: [circle(12, 13, 7.75)], cut: [p('M12 9.5V13l2.5 1.75')], line: [p('M3.5 6.5l3-3M20.5 6.5l-3-3')] },
   folderPlus: { solid: [FOLDER], cut: [p('M12 10.25v5.5M9.25 13h5.5')] },
+  folder: { solid: [FOLDER] },
+  // The same folder with its front tipped forward, a gap between back and front.
+  folderOpen: {
+    solid: [
+      p('M2.5 7.5a3 3 0 0 1 3-3h3.4a2 2 0 0 1 1.4.6l1.4 1.4h5.8a3 3 0 0 1 3 3v.5H8.4a3 3 0 0 0-2.75 1.8L2.5 17.2Z'),
+      p('M8.4 11.25H21a1.3 1.3 0 0 1 1.25 1.65l-1.7 5.7a2.7 2.7 0 0 1-2.6 1.9H4.3a1.3 1.3 0 0 1-1.2-1.8l2.6-5.85a2.5 2.5 0 0 1 2.7-1.6Z')
+    ]
+  },
   sidebar: { solid: [p('M7.5 4h2.5v16H7.5A4.5 4.5 0 0 1 3 15.5v-7A4.5 4.5 0 0 1 7.5 4Z')], line: [rect(4, 4.5, 16, 15, 4)] },
   logout: { line: [p('M10 4H7.5A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20H10'), p('m15 7.5 4.5 4.5-4.5 4.5M19.5 12H9.5')] },
   more: { solid: [circle(5.5, 12, 2), circle(12, 12, 2), circle(18.5, 12, 2)] },
@@ -85,6 +93,7 @@ const ICONS: Record<string, Glyph> = {
   chevronLeft: { line: [p('m14.5 6-6 6 6 6')] },
   arrowDown: { line: [p('M12 4.5v15'), p('m6 13.5 6 6 6-6')] },
   arrowLeft: { line: [p('M19.5 12h-15'), p('m10.5 6-6 6 6 6')] },
+  arrowRight: { line: [p('M4.5 12h15'), p('m13.5 6 6 6-6 6')] },
   // A task's state: to do, under way, done.
   todo: { line: [circle(12, 12, 7)] },
   doing: { solid: [p('M12 5a7 7 0 0 1 0 14Z')], line: [circle(12, 12, 7)] }

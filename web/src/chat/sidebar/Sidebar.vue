@@ -17,7 +17,7 @@ import { useUi } from '../../stores/ui.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import Icon from '../../ui/Icon.vue';
 import ChatItem from './ChatItem.vue';
-import FolderDialog from './FolderDialog.vue';
+import FolderDialog, { type FolderDialogMode } from './FolderDialog.vue';
 
 const session = useSession();
 const chats = useChats();
@@ -29,13 +29,26 @@ const admin = useAdmin();
 const sideEl = ref<HTMLElement>();
 const newEl = ref<HTMLButtonElement>();
 const searchEl = ref<HTMLInputElement>();
-/** The open folder dialog, if any: `folder` null for a new one, else the folder whose settings it shows. */
-const folderDialog = ref<{ folder: string | null } | undefined>();
+/** The open folder dialog, if any: `folder` null for a new one. */
+const folderDialog = ref<{ folder: string | null, mode: FolderDialogMode } | undefined>();
+/** The folder whose menu is open. */
+const folderMenu = ref<string | null>(null);
 
 // Picking a chat or New is a way out of any open panel, unless it holds
 // unsaved edits the person chose to keep.
 const openChat = (id: string) => { if (panels.closeAll()) chat.openChat(id); };
 const newChat = () => { if (panels.closeAll()) chat.newChat(); };
+/** A folder is a place to work in, not only to file into: a chat can start there. */
+function newChatIn(folder: string) {
+  folderMenu.value = null;
+  if (!panels.closeAll()) return;
+  chats.expanded.add(folder);
+  chat.newChat({ folder });
+}
+function openFolderDialog(folder: string | null, mode: FolderDialogMode) {
+  folderMenu.value = null;
+  folderDialog.value = { folder, mode };
+}
 
 const showFiles = computed(() => session.can(FEATURE.ATTACHMENTS) || session.can(FEATURE.IMAGES));
 const showMcp = computed(() => session.can(FEATURE.MCP) || session.can(FEATURE.INTEGRATIONS));
@@ -64,9 +77,11 @@ function closeAccount(refocus = false) {
 }
 function onDocPointer(e: PointerEvent) {
   if (accountOpen.value && !accountEl.value?.contains(e.target as Node)) closeAccount();
+  if (folderMenu.value && !(e.target as Element).closest?.('.folder-menu, .folder-options')) folderMenu.value = null;
 }
 function onDocKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && accountOpen.value) { e.preventDefault(); closeAccount(true); }
+  if (e.key === 'Escape' && folderMenu.value) { e.preventDefault(); folderMenu.value = null; }
 }
 
 /* ---------- the list ---------- */
@@ -140,8 +155,10 @@ const groups = computed<Group[]>(() => {
     byFolder.get(folder)!.push(c); // set on the line above
   }
   if (isDraft.value) {
-    if (!byFolder.has(null)) byFolder.set(null, []);
-    byFolder.get(null)!.unshift(null); // set on the line above
+    // A chat started in a folder sits in it from the start.
+    const home = chat.draftFolder && byFolder.has(chat.draftFolder) ? chat.draftFolder : null;
+    if (!byFolder.has(home)) byFolder.set(home, []);
+    byFolder.get(home)!.unshift(null); // set on the line above
   }
   const names = [...byFolder.keys()].sort((a, b) => (a === null ? 1 : b === null ? -1 : a.localeCompare(b)));
   const now = Date.now();
@@ -155,13 +172,15 @@ const groups = computed<Group[]>(() => {
       const bucket = c ? bucketOf(family.value.latest.get(c.id) ?? c.updated_at, now) : 'Today';
       if (bucket !== last) { last = bucket; rows.push({ kind: 'heading', key: `h:${folder}:${bucket}`, label: bucket }); }
       const before = rows.length;
-      if (c) withForks(c, 0, rows, seen); else rows.push({ kind: 'draft', key: 'draft' });
-      count += rows.length - before;
+      if (c) { withForks(c, 0, rows, seen); count += rows.length - before; } else rows.push({ kind: 'draft', key: 'draft' });
     }
     return { folder, rows, count };
   });
 });
 
+const folderGroups = computed(() => groups.value.filter((g): g is Group & { folder: string } => g.folder !== null));
+const looseRows = computed(() => groups.value.find((g) => g.folder === null)?.rows ?? []);
+const canFolder = computed(() => session.can(FEATURE.FOLDERS));
 const empty = computed(() => !chats.chats.length && !isDraft.value && !chats.folders.length);
 const currentId = computed(() => chat.loading || chat.chatId);
 
@@ -292,14 +311,9 @@ function rowKey(e: KeyboardEvent, go: () => void) {
           <Icon name="mcp" /><span>MCP</span>
         </button>
       </nav>
-      <div class="side-label">
-        <span>{{ searching ? 'Search results' : 'Recent conversations' }}</span>
-        <button v-if="session.can(FEATURE.FOLDERS)" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
-                @click="folderDialog = { folder: null }"><Icon name="folderPlus" /></button>
-      </div>
-
       <div id="chats">
         <template v-if="searching">
+          <div class="side-label"><span>Search results</span></div>
           <div v-if="!chats.results?.length" class="empty">no matches for “{{ chats.query }}”</div>
           <div v-for="(r, i) in chats.results" :key="`${r.chatId}:${i}`" class="chat-item search-hit" tabindex="0" role="button"
                @click="openChat(r.chatId)" @keydown="rowKey($event, () => openChat(r.chatId))">
@@ -317,35 +331,66 @@ function rowKey(e: KeyboardEvent, go: () => void) {
           </div>
         </template>
         <template v-else>
-          <div v-if="empty" class="empty">no saved chats</div>
-          <template v-for="g in groups" :key="g.folder ?? ''">
-            <details v-if="g.folder !== null" class="chat-folder" :open="chats.expanded.has(g.folder)" @toggle="toggleFolder(g.folder, $event)">
+          <!-- Two sections, each named: folders first (a short list you go back to), then everything else by day. -->
+          <template v-if="folderGroups.length">
+            <div class="side-label">
+              <span>Folders</span>
+              <button v-if="canFolder" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
+                      @click="openFolderDialog(null, 'new')"><Icon name="folderPlus" /></button>
+            </div>
+            <div v-for="g in folderGroups" :key="g.folder" class="chat-folder-wrap" :class="{ 'menu-open': folderMenu === g.folder }">
+            <!-- The menu sits outside <details>: a closed one renders nothing but its summary. -->
+            <div v-if="folderMenu === g.folder" class="popover folder-menu" role="menu" :aria-label="`Folder “${g.folder}”`">
+              <button type="button" class="pop-item" role="menuitem" @click="newChatIn(g.folder)"><Icon name="new" /><span class="pop-name">New chat here</span></button>
+              <button type="button" class="pop-item" role="menuitem" @click="openFolderDialog(g.folder, 'chats')"><Icon name="folderOpen" /><span class="pop-name">Add or take out chats</span></button>
+              <button type="button" class="pop-item" role="menuitem" @click="openFolderDialog(g.folder, 'edit')"><Icon name="edit" /><span class="pop-name">Name and instructions</span></button>
+              <hr class="pop-sep">
+              <button type="button" class="pop-item pop-danger" role="menuitem" @click="openFolderDialog(g.folder, 'delete')"><Icon name="trash" /><span class="pop-name">Delete folder</span></button>
+            </div>
+            <details class="chat-folder" :open="chats.expanded.has(g.folder)" @toggle="toggleFolder(g.folder, $event)">
               <summary class="chat-folder-heading">
+                <Icon class="folder-icon" :name="chats.expanded.has(g.folder) ? 'folderOpen' : 'folder'" />
                 <span class="chat-folder-name">{{ g.folder }}</span>
-                <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="instructions" size=".8rem" /></span>
-                <span class="chat-folder-count">{{ g.count }}</span>
-                <button v-if="session.can(FEATURE.FOLDERS)" class="organize-chat folder-options" type="button" title="Folder settings: name, chats and instructions"
-                        :aria-label="`Settings for folder “${g.folder}”`" @click.prevent.stop="folderDialog = { folder: g.folder }"
-                        @keydown.stop><Icon name="more" /></button>
+                <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="instructions" size=".75rem" /></span>
+                <span class="chat-folder-count" :aria-label="`${g.count} chats`">{{ g.count }}</span>
+                <span class="folder-actions">
+                  <button class="folder-action" type="button" title="New chat in this folder" :aria-label="`New chat in “${g.folder}”`"
+                          @click.prevent.stop="newChatIn(g.folder)" @keydown.stop><Icon name="new" /></button>
+                  <button v-if="canFolder" class="folder-action folder-options" type="button" title="Folder options"
+                          :aria-label="`Options for folder “${g.folder}”`" aria-haspopup="menu" :aria-expanded="folderMenu === g.folder"
+                          @click.prevent.stop="folderMenu = folderMenu === g.folder ? null : g.folder" @keydown.stop><Icon name="more" /></button>
+                </span>
               </summary>
               <div class="chat-folder-content">
                 <template v-for="row in g.rows" :key="row.key">
-                  <div v-if="row.kind === 'heading'" class="chat-date-heading">{{ row.label }}</div>
-                  <ChatItem v-else-if="row.kind === 'chat'" :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
+                  <ChatItem v-if="row.kind === 'chat'" :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
                             @open="openChat(row.chat.id)" />
+                  <div v-else-if="row.kind === 'draft'" class="chat-item active draft" tabindex="0" role="button" aria-current="true">
+                    <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
+                  </div>
                 </template>
+                <div v-if="!g.count && !(isDraft && chat.draftFolder === g.folder)" class="folder-empty">
+                  <span>Empty.</span>
+                  <button type="button" class="link" @click="newChatIn(g.folder)">Start a chat</button>
+                  <template v-if="canFolder && chats.chats.length"> or <button type="button" class="link" @click="openFolderDialog(g.folder, 'chats')">bring some in</button></template>
+                </div>
               </div>
             </details>
-            <template v-else>
-              <template v-for="row in g.rows" :key="row.key">
-                <div v-if="row.kind === 'heading'" class="chat-date-heading">{{ row.label }}</div>
-                <div v-else-if="row.kind === 'draft'" class="chat-item active draft" tabindex="0" role="button" aria-current="true">
-                  <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
-                </div>
-                <ChatItem v-else :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
-                          @open="openChat(row.chat.id)" />
-              </template>
-            </template>
+            </div>
+          </template>
+          <div v-if="looseRows.length || !folderGroups.length" class="side-label" :class="{ 'side-label-next': folderGroups.length }">
+            <span>Chats</span>
+            <button v-if="canFolder && !folderGroups.length" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
+                    @click="openFolderDialog(null, 'new')"><Icon name="folderPlus" /></button>
+          </div>
+          <div v-if="empty" class="empty">no saved chats</div>
+          <template v-for="row in looseRows" :key="row.key">
+            <div v-if="row.kind === 'heading'" class="chat-date-heading">{{ row.label }}</div>
+            <div v-else-if="row.kind === 'draft'" class="chat-item active draft" tabindex="0" role="button" aria-current="true">
+              <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
+            </div>
+            <ChatItem v-else :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
+                      @open="openChat(row.chat.id)" />
           </template>
         </template>
       </div>
@@ -377,6 +422,6 @@ function rowKey(e: KeyboardEvent, go: () => void) {
     </div>
     <div id="side-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize chat history"
          title="Drag to resize, double-click to reset" @pointerdown="startResize" @dblclick="resetSideWidth" @keydown="resizeKey" />
-    <FolderDialog v-if="folderDialog" :folder="folderDialog.folder" @close="folderDialog = undefined" />
+    <FolderDialog v-if="folderDialog" :folder="folderDialog.folder" :mode="folderDialog.mode" @close="folderDialog = undefined" />
   </aside>
 </template>
