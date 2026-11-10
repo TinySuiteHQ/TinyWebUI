@@ -35,8 +35,12 @@ function areaOf(f) {
   const parts = f.replace('web/src/', '').split('/');
   return parts.length === 1 ? 'app' : parts[0];
 }
-const importsOf = (f) => [...source[f].matchAll(/^\s*import\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm)]
-  .map(([, spec]) => rel(join(REPO, dirname(f), spec)));
+// Static imports, and dynamic ones (`import('./x.vue')`, the pages split off in app/lazy.ts): a lazily
+// loaded module is still a dependency, and the one-way rules hold for it too.
+const importsOf = (f) => [
+  ...source[f].matchAll(/^\s*import\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm),
+  ...source[f].matchAll(/\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)
+].map(([, spec]) => rel(join(REPO, dirname(f), spec)));
 
 test('the page has modules to check', () => {
   assert.ok(files.length > 30, `only ${files.length} files under web/src`);

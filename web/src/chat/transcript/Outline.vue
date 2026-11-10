@@ -10,7 +10,15 @@ import { useChat } from '../../stores/chat.ts';
 const chat = useChat();
 const questions = computed(() => chat.model.items.flatMap((i) => (i.kind === 'user'
   ? [{ id: i.id, text: (i.text || '(attached document)').replace(/\s+/g, ' ').trim() }] : [])));
-const jump = (id: string) => document.querySelector(`[data-item="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+function jump(id: string) {
+  const el = document.querySelector(`[data-item="${id}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Turns not drawn yet count at an estimated height (content-visibility in
+  // chat.css), so a long jump can land a little off: settle on the real spot
+  // once the scroll stops and they have been drawn.
+  document.getElementById('log')?.addEventListener('scrollend', () => el.scrollIntoView({ block: 'start' }), { once: true });
+}
 </script>
 
 <template>

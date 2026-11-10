@@ -838,8 +838,10 @@ button.usage-bar-row:active:not(:disabled) { transform: none; }
 
 
 /* rendered markdown */
-.md > *:first-child { margin-top: 0; }
-.md > *:last-child { margin-bottom: 0; }
+/* Each block sits in a wrapper of its own (chat/Markdown.vue) that takes no box. */
+.md-part { display: contents; }
+.md > .md-part:first-child > :first-child { margin-top: 0; }
+.md > .md-part:last-child > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 .7em; }
 .md h1, .md h2, .md h3, .md h4 { margin: 1.1em 0 .4em; line-height: 1.3; font-weight: 600; font-size: 1em; }
 .md h1 { font-size: 1.15em; } .md h2 { font-size: 1.08em; }

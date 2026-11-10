@@ -3,7 +3,7 @@
 // these are injection tests first and rendering tests second.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMarkdown, markSnippet } from '../web/src/core/md.ts';
+import { renderMarkdown, renderBlocks, markSnippet } from '../web/src/core/md.ts';
 
 // No tag the renderer does not make itself, and no attribute outside a quoted value.
 const OWN_TAGS = new Set(['p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -66,4 +66,28 @@ test('renderMarkdown renders what models emit', () => {
   assert.equal(renderMarkdown('```js\n<x>\n```'), '<pre data-lang="js"><code>&lt;x&gt;</code></pre>');
   assert.match(renderMarkdown('| a |\n|---|\n| 1 |'), /<th>a<\/th>.*<td>1<\/td>/s);
   assert.equal(renderMarkdown('see 1 and 2'), '<p>see 1 and 2</p>');
+});
+
+test('lines that matched a block but not its reading never hang the page', () => {
+  // Each of these once sent the renderer round the same line forever.
+  assert.equal(renderMarkdown('  # indented'), '<p>  # indented</p>');
+  assert.equal(renderMarkdown('- a\r'), '<ul><li>a</li></ul>', 'a stream cut between the \r and \n of a CRLF');
+  assert.equal(renderMarkdown('# title\rnext'), '<h1>title</h1>\n<p>next</p>');
+  assert.equal(renderMarkdown('- a b'), '<ul><li>a b</li></ul>');
+  assert.equal(renderMarkdown('# a b'), '<h1>a b</h1>');
+});
+
+test('block by block, a streaming answer renders as the whole would, reusing what is finished', () => {
+  const answer = '# Plan\n\nFirst **step** here.\n\n- one\n- two\n\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> said\n\nDone.';
+  const cache = new Map();
+  for (let n = 0; n <= answer.length; n++) {
+    const text = answer.slice(0, n);
+    assert.equal(renderBlocks(text, cache).join('\n'), renderMarkdown(text), `after ${n} characters`);
+  }
+  // The cache holds the blocks of the text last rendered, nothing older.
+  assert.equal(cache.size, renderBlocks(answer, cache).length);
+  const parts = renderBlocks(answer, cache);
+  assert.equal(parts.length, 7, 'heading, paragraph, list, code, table, quote, paragraph');
+  assert.equal(parts[3], '<pre data-lang="js"><code>const a = 1;\n\nconst b = 2;</code></pre>', 'a blank line inside a fence stays in it');
+  for (const attack of ATTACKS) for (const part of renderBlocks(attack, new Map())) assertInert(part, attack);
 });

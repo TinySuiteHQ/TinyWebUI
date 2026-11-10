@@ -16,6 +16,15 @@
 .wrap { gap: 1.25rem; }
 .turn { display: flex; flex-direction: column; gap: .625rem; }
 
+/* Finished turns off screen skip layout and paint, so a long chat costs about
+   what is on screen. Each keeps the height it last had when drawn ('auto');
+   one never drawn yet is estimated. Left out: a turn still running (it
+   changes every frame) and a question being edited (its menus open outside
+   it, and this clips). The clip margin keeps focus rings at the edge whole. */
+#wrap > .msg.user:not(.editing), #wrap > .turn:not(.live) { content-visibility: auto; overflow-clip-margin: .5rem; }
+#wrap > .msg.user:not(.editing) { contain-intrinsic-block-size: auto 4rem; }
+#wrap > .turn:not(.live) { contain-intrinsic-block-size: auto 20rem; }
+
 /* ---- the activity row: status line while working, recap afterwards ---- */
 .activity { display: flex; flex-direction: column; align-items: flex-start; }
 .activity-row {
@@ -127,12 +136,12 @@ button.quiet:hover { color: var(--fg); background: var(--accent-soft); border-co
 .msg.assistant.answer .md { font-size: var(--fs-body); line-height: 1.7; }
 .msg.assistant.answer { animation: fade var(--t-med) ease; }
 /* A soft caret while the answer is still being written. */
-.answer.streaming .md > :last-child::after {
+.answer.streaming .md > .md-part:last-child > :last-child::after {
   content: ""; display: inline-block; width: .45em; height: 1em; margin-left: .15em;
   vertical-align: -.12em; border-radius: 2px; background: currentColor; opacity: .3;
   animation: caret 1s steps(2, start) infinite;
 }
-.answer.streaming .md > pre:last-child::after { display: none; }
+.answer.streaming .md > .md-part:last-child > pre:last-child::after { display: none; }
 @keyframes caret { to { visibility: hidden; } }
 
 .turn-meta {

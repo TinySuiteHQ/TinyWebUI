@@ -1,24 +1,20 @@
 <script setup lang="ts">
 /**
  * Settings as one dialog: a rail of sections, grouped into what is yours and
- * what runs the place, beside whichever is open. The sections are the panels,
- * mounted for good so their hooks are registered before the first open; the
- * dialog follows the panels store, it never decides on its own.
+ * what runs the place, beside whichever is open. The sections are the panels:
+ * each one's code is fetched the first time it is opened, then it stays
+ * mounted (see LAZY in lazy.ts); the dialog follows the panels store, it never
+ * decides on its own.
  */
 import { onMounted, ref, watch } from 'vue';
 import { usePanels, inSettings, type PanelName } from '../stores/panels.ts';
 import { useAdmin } from '../stores/admin.ts';
 import { PANEL } from '../stores/panels.ts';
 import Icon from '../ui/Icon.vue';
-import AccountPanel from '../panels/account/AccountPanel.vue';
-import AppearancePanel from '../panels/appearance/AppearancePanel.vue';
-import AutomationsPanel from '../panels/automations/AutomationsPanel.vue';
-import StatisticsPanel from '../panels/statistics/StatisticsPanel.vue';
-import DataPanel from '../panels/data/DataPanel.vue';
-import ModelsPanel from '../panels/models/ModelsPanel.vue';
-import ModelDefaultsPanel from '../panels/settings/ModelDefaultsPanel.vue';
-import ChatBehaviourPanel from '../panels/settings/ChatBehaviourPanel.vue';
-import AdminPanel from '../panels/admin/AdminPanel.vue';
+import { LAZY } from './lazy.ts';
+
+const SECTIONS = [PANEL.ACCOUNT, PANEL.APPEARANCE, PANEL.AUTOMATIONS, PANEL.STATISTICS, PANEL.DATA,
+  PANEL.MODELS, PANEL.MODEL_DEFAULTS, PANEL.CHAT, PANEL.ADMIN] as const;
 
 const panels = usePanels();
 const admin = useAdmin();
@@ -70,15 +66,9 @@ function onClick(e: MouseEvent) { if (e.target === el.value) panels.closeAll(); 
         </div>
       </nav>
       <div class="settings-body">
-        <AccountPanel />
-        <AppearancePanel />
-        <AutomationsPanel />
-        <StatisticsPanel />
-        <DataPanel />
-        <ModelsPanel />
-        <ModelDefaultsPanel />
-        <ChatBehaviourPanel />
-        <AdminPanel />
+        <template v-for="name in SECTIONS" :key="name">
+          <component :is="LAZY[name]" v-if="panels.seen.has(name)" />
+        </template>
       </div>
     </div>
   </dialog>

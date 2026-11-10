@@ -6,7 +6,7 @@
  * that opens or closes one.
  */
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { FEATURE } from '../../../shared/features.ts';
 import { useUi } from './ui.ts';
 import { useSession } from './session.ts';
@@ -76,9 +76,22 @@ export const usePanels = defineStore('panels', () => {
     return groups.length > 1 ? groups : groups.map((g) => ({ ...g, title: '' }));
   });
   const hooks = new Map<PanelName, PanelHooks>();
+  /**
+   * The panels opened at least once. A panel's code is fetched and mounted
+   * only then (AppShell, SettingsDialog), so first load carries the chat and
+   * not every page behind it; once mounted it stays, keeping its state.
+   */
+  const seen = reactive(new Set<PanelName>());
 
-  /** Each panel registers what it does on open and close when it mounts. */
-  const register = (name: PanelName, h: PanelHooks) => { hooks.set(name, h); };
+  /**
+   * Each panel registers what it does on open and close when it mounts. One
+   * mounted by being opened registers after the open, so it gets its onOpen
+   * here instead.
+   */
+  const register = (name: PanelName, h: PanelHooks) => {
+    hooks.set(name, h);
+    if (open.value === name) h.onOpen?.();
+  };
 
   /**
    * `to`: the panel taking its place, so focus belongs there.
@@ -95,6 +108,7 @@ export const usePanels = defineStore('panels', () => {
   async function openPanel(name: PanelName) {
     if (open.value === name) return;
     if (open.value && !closePanel(open.value, { to: name })) return;
+    seen.add(name);
     open.value = name;
     if (IN_SETTINGS.has(name)) lastSection.value = name;
     // On mobile the nav buttons live in the drawer, which would otherwise stay over the panel.
@@ -119,5 +133,5 @@ export const usePanels = defineStore('panels', () => {
     return true;
   }
 
-  return { open, sections, sectionGroups, register, openPanel, openSettings, closePanel, closeAll, toggle, escape };
+  return { open, seen, sections, sectionGroups, register, openPanel, openSettings, closePanel, closeAll, toggle, escape };
 });

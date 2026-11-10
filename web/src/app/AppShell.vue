@@ -15,10 +15,8 @@ import { useTheme } from '../stores/theme.ts';
 import Icon from '../ui/Icon.vue';
 import Sidebar from '../chat/sidebar/Sidebar.vue';
 import ChatView from '../chat/ChatView.vue';
-import FilesPanel from '../panels/files/FilesPanel.vue';
-import McpPanel from '../panels/mcp/McpPanel.vue';
 import SettingsDialog from './SettingsDialog.vue';
-import FileViewer from '../chat/viewer/FileViewer.vue';
+import { FileViewer, LAZY, warmUp } from './lazy.ts';
 import { useViewer } from '../stores/viewer.ts';
 
 const session = useSession();
@@ -56,6 +54,8 @@ onMounted(() => {
   });
   if (session.can(FEATURE.MCP)) config.loadMcp();
   document.addEventListener('keydown', onKey);
+  // The pages behind the chat are fetched once the browser is idle, so their first open is instant.
+  warmUp([...panels.sections.map((s) => s.panel), PANEL.FILES, PANEL.MCP]);
 });
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
 </script>
@@ -71,8 +71,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
               :aria-expanded="ui.narrow ? ui.drawerOpen : !ui.collapsed" @click="ui.toggleMenu()">
         <Icon name="sidebar" />
       </button>
-      <FilesPanel />
-      <McpPanel />
+      <component :is="LAZY[PANEL.FILES]" v-if="panels.seen.has(PANEL.FILES)" />
+      <component :is="LAZY[PANEL.MCP]" v-if="panels.seen.has(PANEL.MCP)" />
       <ChatView />
     </main>
     <SettingsDialog />

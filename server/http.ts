@@ -1,6 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { brotliCompress, brotliCompressSync, constants as Z, gzip, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, sep } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -16,10 +18,37 @@ const TYPES: Record<string, string> = {
   '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.md': 'text/markdown; charset=utf-8'
 };
 
+type Encoding = 'br' | 'gzip';
+/** The compression the client takes, brotli over gzip; null for none (curl, a test's raw request). */
+export function encodingFor(req: IncomingMessage | undefined): Encoding | null {
+  const accept = String(req?.headers['accept-encoding'] || '');
+  if (/\bbr\b(?!;q=0(\.0*)?\b)/.test(accept)) return 'br';
+  if (/\bgzip\b(?!;q=0(\.0*)?\b)/.test(accept)) return 'gzip';
+  return null;
+}
+
+// Below this a reply is sent as is: compressing it would cost more than the bytes it saves.
+const COMPRESS_FROM = 8 * 1024;
+
+/**
+ * A JSON reply. A large one (a long chat is hundreds of KB of text) is
+ * compressed when the client takes it, at a fast setting: this runs per
+ * request. Streams (SSE) never come through here, so nothing is held back
+ * waiting for a compressor to flush.
+ */
 export function json(res: ServerResponse, code: number, payload: unknown): void {
   const body = JSON.stringify(payload);
-  res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
-  res.end(body);
+  const size = Buffer.byteLength(body);
+  const encoding = size >= COMPRESS_FROM ? encodingFor(res.req) : null;
+  if (!encoding) {
+    res.writeHead(code, { 'content-type': 'application/json', 'content-length': size });
+    return void res.end(body);
+  }
+  const packed = encoding === 'br'
+    ? brotliCompressSync(body, { params: { [Z.BROTLI_PARAM_QUALITY]: 4, [Z.BROTLI_PARAM_SIZE_HINT]: size } })
+    : gzipSync(body, { level: 6 });
+  res.writeHead(code, { 'content-type': 'application/json', 'content-encoding': encoding, vary: 'accept-encoding', 'content-length': packed.length });
+  res.end(packed);
 }
 
 /** An error that carries its own HTTP status to the handler's catch. */
@@ -132,29 +161,74 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse): Pr
   const file = join(PAGE_DIR, rel);
   if (!file.startsWith(PAGE_DIR + sep)) return json(res, 403, { error: 'forbidden' });
   try {
-    const data = await readFile(file);
+    const entry = await cached(file);
+    if (!entry) throw new Error('not a file');
     const ext = file.slice(file.lastIndexOf('.'));
+    const encoding = entry.compressible ? encodingFor(req) : null;
+    // Each encoding is its own representation, so its own ETag.
+    const etag = encoding ? `"${entry.hash}-${encoding}"` : `"${entry.hash}"`;
+    const headers: Record<string, string | number> = { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': cacheFor(rel), etag };
+    if (entry.compressible) headers.vary = 'accept-encoding';
+    // A proxy that compresses (Cloudflare does) sends it back weakened, W/"...".
     // no-cache alone still lets a cache keep the file; the ETag turns every
     // revalidation of an unchanged file into a 304 instead of a full download.
-    const etag = `"${createHash('sha1').update(data).digest('base64url')}"`;
-    const headers = { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': cacheFor(rel), etag };
-    // A proxy that compresses (Cloudflare does) sends it back weakened, W/"...".
     const asked = String(req.headers['if-none-match'] || '').split(/\s*,\s*/).map((t) => t.replace(/^W\//, ''));
     if (asked.includes(etag)) {
       res.writeHead(304, headers);
       return void res.end();
     }
+    const body = encoding ? await compressed(entry, encoding) : entry.data;
+    if (encoding) headers['content-encoding'] = encoding;
+    headers['content-length'] = body.length;
     res.writeHead(200, headers);
-    res.end(data);
+    res.end(body);
   } catch {
     if (rel === 'index.html' && !pageBuilt()) return json(res, 503, { error: 'the page is not built: run `npm run build:web`' });
     json(res, 404, { error: 'not found' });
   }
 }
 
+/**
+ * The page's files, held in memory once read: a page load used to read and
+ * hash every file from disk. Each compressed copy is made once, at the
+ * strongest setting (it is paid for once, then served to every visitor) and
+ * off the main thread. A file changed on disk (a rebuild, a theme edited in
+ * place) is noticed by its size and time and read again.
+ */
+type Entry = { mtimeMs: number, size: number, data: Buffer, hash: string, compressible: boolean, packed: Partial<Record<Encoding, Promise<Buffer>>> };
+const pageFiles = new Map<string, Entry>();
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.svg', '.json', '.map', '.md']);
+const CACHE_UP_TO = 4 * 1024 * 1024;
+const brotliAsync = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
+
+async function cached(file: string): Promise<Entry | null> {
+  const st = await stat(file);
+  if (!st.isFile()) return null;
+  const hit = pageFiles.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit;
+  const data = await readFile(file);
+  const ext = file.slice(file.lastIndexOf('.'));
+  const entry: Entry = {
+    mtimeMs: st.mtimeMs, size: st.size, data, packed: {},
+    hash: createHash('sha1').update(data).digest('base64url'),
+    compressible: COMPRESSIBLE.has(ext) && data.length >= 1024
+  };
+  if (data.length <= CACHE_UP_TO) pageFiles.set(file, entry);
+  return entry;
+}
+
+function compressed(entry: Entry, encoding: Encoding): Promise<Buffer> {
+  entry.packed[encoding] ??= encoding === 'br'
+    ? brotliAsync(entry.data, { params: { [Z.BROTLI_PARAM_QUALITY]: Z.BROTLI_MAX_QUALITY, [Z.BROTLI_PARAM_SIZE_HINT]: entry.data.length } })
+    : gzipAsync(entry.data, { level: 9 });
+  return entry.packed[encoding];
+}
+
 // Vite names everything under assets/ by its content hash, so a cached copy is
 // never stale. Everything else (index.html, themes) keeps its name across
 // releases and has to be revalidated.
 function cacheFor(rel: string): string {
-  return /^assets[/\\]/.test(rel) ? 'public, max-age=31536000, immutable' : 'no-cache';
+  // `rel` keeps the request's leading slash (/assets/...); missing that once sent every asset as no-cache.
+  return /^[/\\]*assets[/\\]/.test(rel) ? 'public, max-age=31536000, immutable' : 'no-cache';
 }

@@ -161,7 +161,7 @@
 }
 /* The answer landing is the payoff of the whole chase, so it gets the single
    flourish in the transcript: the fairy who found it signs the last line. */
-[data-theme="fall-fairy"] .answer.final .md > :last-child:not(pre, table)::after {
+[data-theme="fall-fairy"] .answer.final .md > .md-part:last-child > :last-child:not(pre, table)::after {
   content: " \2726";
   color: var(--ff-glow);
   text-shadow: 0 0 6px var(--ff-glow);

@@ -42,57 +42,55 @@ function inline(src: string): string {
 
 const cells = (line: string) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
 
-export function renderMarkdown(src: unknown): string {
-  const lines = String(src).replace(/\r\n/g, '\n').split('\n');
-  const html: string[] = [];
+/**
+ * One top-level block and the lines it was read from. The kind and lines are
+ * all its HTML depends on: no block reads another, which is what lets a
+ * streaming answer render only the block still being written (renderBlocks).
+ */
+type Block = { kind: 'code' | 'heading' | 'hr' | 'quote' | 'ul' | 'ol' | 'table' | 'para', lines: string[] };
+
+/** Splits the text into its top-level blocks, without rendering anything (cheap: no inline rules run). */
+function scan(src: unknown): Block[] {
+  // A lone \r is a line break too: a stream can be cut between the \r and \n of a CRLF, and a line left
+  // ending in \r matched a block's test but not the rule that reads it (`.` stops at \r), which hung the page.
+  const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
+  const blocks: Block[] = [];
   let i = 0;
+  const take = (kind: Block['kind'], from: number) => blocks.push({ kind, lines: lines.slice(from, i) });
 
   const listBlock = (ordered: boolean) => {
-    const items: string[] = [];
-    const marker = ordered ? /^\s*\d+[.)]\s+(.*)$/ : /^\s*[-*+]\s+(.*)$/;
+    const from = i;
+    const marker = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/;
     while (i < lines.length) {
-      const m = lines[i].match(marker);
-      if (m) { items.push(m[1]); i++; continue; }
+      if (marker.test(lines[i])) { i++; continue; }
       // A wrapped continuation line belongs to the item above it.
-      if (items.length && /^\s+\S/.test(lines[i])) {
-        items[items.length - 1] += ' ' + lines[i].trim();
-        i++;
-        continue;
-      }
+      if (i > from && /^\s+\S/.test(lines[i])) { i++; continue; }
       break;
     }
-    const tag = ordered ? 'ol' : 'ul';
-    html.push(`<${tag}>${items.map((t) => `<li>${inline(t)}</li>`).join('')}</${tag}>`);
+    take(ordered ? 'ol' : 'ul', from);
   };
 
   while (i < lines.length) {
     const line = lines[i];
+    const from = i;
 
     if (/^\s*```/.test(line)) {
-      const lang = line.replace(/^\s*```/, '').trim();
-      const body: string[] = [];
       i++;
-      while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
-      i++; // closing fence, or the end of a stream still being written
-      html.push(`<pre data-lang="${esc(lang)}"><code>${esc(body.join('\n'))}</code></pre>`);
+      while (i < lines.length && !/^\s*```/.test(lines[i])) i++;
+      i = Math.min(i + 1, lines.length); // the closing fence, or the end of a stream still being written
+      take('code', from);
       continue;
     }
 
     if (!line.trim()) { i++; continue; }
 
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
-    if (heading) {
-      html.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`);
-      i++;
-      continue;
-    }
+    if (/^(#{1,6})\s+(.*)$/s.test(line)) { i++; take('heading', from); continue; }
 
-    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { html.push('<hr>'); i++; continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { i++; take('hr', from); continue; }
 
     if (/^\s*>/.test(line)) {
-      const body: string[] = [];
-      while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''));
-      html.push(`<blockquote>${renderMarkdown(body.join('\n'))}</blockquote>`);
+      while (i < lines.length && /^\s*>/.test(lines[i])) i++;
+      take('quote', from);
       continue;
     }
 
@@ -100,25 +98,78 @@ export function renderMarkdown(src: unknown): string {
     if (/^\s*\d+[.)]\s+/.test(line)) { listBlock(true); continue; }
 
     if (line.includes('|') && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1] || '')) {
-      const head = cells(line);
       i += 2;
-      const rows: string[][] = [];
-      while (i < lines.length && lines[i].includes('|')) rows.push(cells(lines[i++]));
-      html.push(
-        `<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
-        `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
-      );
+      while (i < lines.length && lines[i].includes('|')) i++;
+      take('table', from);
       continue;
     }
 
-    const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !/^\s*(#{1,6}\s|>|```|[-*+]\s|\d+[.)]\s)/.test(lines[i])) {
-      para.push(lines[i++]);
-    }
-    html.push(`<p>${inline(para.join('\n')).replace(/\n/g, '<br>')}</p>`);
+    while (i < lines.length && lines[i].trim() && !/^\s*(#{1,6}\s|>|```|[-*+]\s|\d+[.)]\s)/.test(lines[i])) i++;
+    // A line no rule above took that still stops a paragraph (an indented "  # x") is a paragraph of its own;
+    // without this the loop made no progress on it and the page hung.
+    if (i === from) i++;
+    take('para', from);
   }
+  return blocks;
+}
 
-  return html.join('\n');
+function renderBlock({ kind, lines }: Block): string {
+  switch (kind) {
+    case 'code': {
+      const closed = lines.length > 1 && /^\s*```/.test(lines[lines.length - 1]);
+      const lang = lines[0].replace(/^\s*```/, '').trim();
+      return `<pre data-lang="${esc(lang)}"><code>${esc(lines.slice(1, closed ? -1 : undefined).join('\n'))}</code></pre>`;
+    }
+    case 'heading': {
+      // `s`: a U+2028 in the text is part of the line, as scan() saw it; scan() matched this line.
+      const [, hashes, text] = lines[0].match(/^(#{1,6})\s+(.*)$/s) as RegExpMatchArray;
+      return `<h${hashes.length}>${inline(text)}</h${hashes.length}>`;
+    }
+    case 'hr': return '<hr>';
+    case 'quote': return `<blockquote>${renderMarkdown(lines.map((l) => l.replace(/^\s*>\s?/, '')).join('\n'))}</blockquote>`;
+    case 'ul':
+    case 'ol': {
+      // `s`, as above: every line scan() took as an item must read as one here.
+      const marker = kind === 'ol' ? /^\s*\d+[.)]\s+(.*)$/s : /^\s*[-*+]\s+(.*)$/s;
+      const items: string[] = [];
+      for (const line of lines) {
+        const m = line.match(marker);
+        if (m) items.push(m[1]);
+        else items[items.length - 1] += ' ' + line.trim();
+      }
+      return `<${kind}>${items.map((t) => `<li>${inline(t)}</li>`).join('')}</${kind}>`;
+    }
+    case 'table': {
+      const [head, , ...rows] = lines.map(cells);
+      return `<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
+        `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    }
+    case 'para': return `<p>${inline(lines.join('\n')).replace(/\n/g, '<br>')}</p>`;
+  }
+}
+
+export function renderMarkdown(src: unknown): string {
+  return scan(src).map(renderBlock).join('\n');
+}
+
+/**
+ * The text as HTML, one string per top-level block, reusing `cache` for every
+ * block already rendered (keyed by its kind and lines) and replacing its
+ * contents with this text's blocks. While an answer streams only its last
+ * block changes, so only that one runs the inline rules again: the cost of a
+ * frame no longer grows with everything written before it.
+ */
+export function renderBlocks(src: unknown, cache: Map<string, string>): string[] {
+  const seen = new Map<string, string>();
+  const out = scan(src).map((block) => {
+    const key = `${block.kind}\n${block.lines.join('\n')}`;
+    const html = seen.get(key) ?? cache.get(key) ?? renderBlock(block);
+    seen.set(key, html);
+    return html;
+  });
+  cache.clear();
+  for (const [k, v] of seen) cache.set(k, v);
+  return out;
 }
 
 /** Turns the search index's ‹...› markers into <mark>, escaping everything else. */

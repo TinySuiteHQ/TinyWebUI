@@ -215,7 +215,9 @@ for themes:
 - `<html data-theme>`, `data-busy` and `data-empty`
 - the ids `#side`, `#log`, `#wrap`, `#input`, `#send`, `#status`
 - in the transcript: `.msg.user .body` (a question), `.turn` (an answer turn),
-  `.answer` / `.answer.final`, `.md` (rendered markdown), `.activity-row` and
+  `.answer` / `.answer.final`, `.md` (rendered markdown; each top-level block
+  sits in a `.md-part` that draws no box, so the answer's last block is
+  `.md > .md-part:last-child > :last-child`), `.activity-row` and
   `.status-line` (the work, folded), `.status-dot`, `.tool-step`,
   `.prompt-card` (an approval or a question waiting for the person),
   `main.empty-chat` and `#hello` (a fresh chat)
