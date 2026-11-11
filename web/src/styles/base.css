@@ -223,6 +223,8 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
   padding: .4rem .5rem; border-radius: var(--r-sm); cursor: pointer;
 }
 .library-row:hover { background: var(--accent-soft); }
+.library-row.off { opacity: .55; cursor: default; }
+.library-row.off:hover { background: none; }
 .library-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library-meta { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
 .library-meta:last-child { text-align: right; }

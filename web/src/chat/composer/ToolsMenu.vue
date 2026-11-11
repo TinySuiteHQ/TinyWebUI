@@ -63,8 +63,8 @@ onMounted(async () => {
       </button>
       <div v-if="!session.modelAcceptsImages" class="pop-note">The current model does not take images.</div>
     </template>
-    <!-- Documents only: an image has no stored text to reuse. Earlier images are under Files. -->
-    <button v-if="session.can(FEATURE.ATTACHMENTS)" type="button" class="pop-item" role="menuitem" @click="emit('library')">
+    <!-- Documents and images both: an image is fetched and attached again, as Files does. -->
+    <button v-if="session.can(FEATURE.ATTACHMENTS) || session.can(FEATURE.IMAGES)" type="button" class="pop-item" role="menuitem" @click="emit('library')">
       <Icon name="history" /><span>Attach from earlier chats</span>
     </button>
     <hr v-if="session.can(FEATURE.TOOLS)" class="pop-sep">
