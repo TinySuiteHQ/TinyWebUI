@@ -71,11 +71,13 @@ onBeforeUnmount(() => clearInterval(timer));
 
 <template>
   <section id="automations" :class="{ open: isOpen }" aria-label="Automations">
-    <div class="panel-head">
-      <h2>Automations</h2>
-      <button v-if="openForm !== 'new'" class="primary" type="button" @click="openForm = 'new'">New automation</button>
-    </div>
+    <div class="panel-head"><h2>Automations</h2></div>
     <div class="automation-content">
+      <div v-if="snapshot.automations.length && openForm !== 'new'" class="page-toolbar">
+        <span class="page-toolbar-note">{{ snapshot.automations.length }} automation{{ snapshot.automations.length === 1 ? '' : 's' }}</span>
+        <span class="grow" />
+        <button class="primary" type="button" @click="openForm = 'new'">New automation</button>
+      </div>
       <section v-if="openForm === 'new'" class="automation-card">
         <h3>New automation</h3>
         <AutomationForm :existing="null" :chats="snapshot.chats" @done="formDone" @cancel="openForm = null" />
@@ -85,6 +87,7 @@ onBeforeUnmount(() => clearInterval(timer));
         <div v-else-if="!snapshot.automations.length && openForm !== 'new'" class="automation-empty">
           <p>No automations yet</p>
           <p class="muted">Run a prompt on a schedule and have the result posted into a chat.</p>
+          <button class="primary automation-empty-action" type="button" @click="openForm = 'new'">New automation</button>
         </div>
         <article v-for="a in snapshot.automations" :key="a.id" class="automation-card" :class="{ 'is-paused': !a.enabled }">
           <div class="automation-card-head">

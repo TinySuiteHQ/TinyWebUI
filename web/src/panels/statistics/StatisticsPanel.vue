@@ -250,13 +250,14 @@ const { isOpen } = usePanel(PANEL.STATISTICS, { onOpen: load });
 
 <template>
   <section id="statistics" :class="{ open: isOpen }" aria-label="Usage">
-    <div class="panel-head">
-      <h2>Usage</h2>
-      <select v-if="filterOptions.length > 1" id="statisticsFilter" v-model="selected" aria-label="Show usage for" @change="load">
-        <option v-for="o in filterOptions" :key="o.value" :value="o.value">{{ o.text }}</option>
-      </select>
-    </div>
+    <div class="panel-head"><h2>Usage</h2></div>
     <div class="page-body">
+      <div v-if="filterOptions.length > 1" class="page-toolbar">
+        <label for="statisticsFilter">Show usage for</label>
+        <select id="statisticsFilter" v-model="selected" @change="load">
+          <option v-for="o in filterOptions" :key="o.value" :value="o.value">{{ o.text }}</option>
+        </select>
+      </div>
       <p v-if="error" class="page-error" role="alert">{{ error }}</p>
       <p v-else-if="loaded && !kpis.length && !days.length" class="page-empty">No model usage recorded yet.</p>
 

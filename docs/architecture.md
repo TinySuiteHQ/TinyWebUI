@@ -120,8 +120,11 @@ and red reads as "something is wrong".
 
 ### One of each
 
-- **One header per panel:** the title on the left, and on the right one filter
-  or one primary action. The title matches the panel's entry in the rail.
+- **One header per panel, and only a header:** the title, sub-page tabs where a
+  page has them, a save status and the close ×. The title matches the panel's
+  entry in the rail. What the page itself does (a filter, its main action)
+  opens its body, in a toolbar as wide as the content, so the bar along the top
+  reads the same on every page.
 - **One file viewer:** images and files open over the app (`FileViewer`,
   driven by `stores/viewer.ts`), never in a new tab:
   - an image at full size;

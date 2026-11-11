@@ -483,8 +483,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .panel-head button { margin-left:auto; }
 .panel-head button + button { margin-left:0; }
 .panel-head button[hidden] + button { margin-left:auto; }
-/* A panel's header: title, then a status or a filter pushed to the right. */
-.panel-head select { width:auto; max-width:min(16rem, 45%); margin-left:auto; }
+/* A panel's header is its title, sub-page tabs, a save status and the ×; a
+   page's own filters and actions go in its body (.page-toolbar). */
 .head-status { margin-left:auto; color:var(--muted); font-size:var(--fs-meta); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cfg-actions .head-status { margin-left:0; white-space:normal; }
 .set-lede { width:min(46rem, 100%); margin:.75rem 0 1rem; color:var(--muted); font-size:var(--fs-meta); }
@@ -599,6 +599,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 
 .automation-empty { width:min(48rem,100%); margin:2rem auto; text-align:center; }
 .automation-empty p { margin:.25rem 0; }
+.automation-empty .automation-empty-action { margin-top:1rem; }
+#automations .page-toolbar { width:min(48rem,100%); margin:0 auto; }
 .automation-empty .muted { color:var(--muted); font-size:var(--fs-meta); }
 .sec {
   display: flex; flex-direction: column; gap: .75rem;
@@ -1668,9 +1670,6 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 .composer-model.static .chev { display: none; }
 [hidden] { display: none !important; }
 
-/* Saved request attribution */
-#statisticsFilter { margin-left: auto; min-width: 0; }
-#statisticsFilter select { max-width: 100%; width: auto; }
 .task-card {
   max-width: var(--measure); margin: 0 auto .5rem; padding: .5rem .75rem;
   border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
@@ -1706,20 +1705,20 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 
 /* MCP: connected servers, their tools and their management views. */
 .mcp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
-.mcp-mode { display: flex; align-items: center; gap: .5rem; margin: 0 0 0 auto; font-size: var(--fs-meta); color: var(--muted); }
-.mcp-mode > span { white-space: nowrap; }
-.panel-head .mcp-mode + button { margin-left: 0; }
 /* Files and MCP close with an ×, last in the header, like Settings. */
 .panel-head .panel-close { flex: none; margin-right: -.375rem; }
-.mcp-mode select { width: auto; max-width: 14rem; }
-/* No room for title, mode and button on one line: the mode takes a row of its
-   own under them, from the page's edge (the menu button is only on the first). */
+.mcp-content > .page-toolbar { width: min(var(--measure), 100%); margin: 0 auto 1.5rem; }
+
+/* A page's own controls -- a filter, its main action -- are the first row of
+   its body, as wide as the content under them. The header is only the title,
+   sub-page tabs and the ×. */
+.page-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; margin-bottom: 1rem; }
+.page-toolbar .grow { flex: 1; }
+.page-toolbar > label { margin: 0; color: var(--muted); font-size: var(--fs-small); font-weight: 400; white-space: nowrap; }
+.page-toolbar > select { width: auto; max-width: 20rem; }
+.page-toolbar-note { color: var(--muted); font-size: var(--fs-small); }
 @media (max-width: 640px) {
-  #mcp .panel-head { flex-wrap: wrap; height: auto; min-height: var(--bar); padding-top: .375rem; padding-bottom: .5rem; row-gap: .375rem; }
-  #mcp .panel-head h2 { line-height: calc(var(--bar) - .875rem); }
-  #mcp .panel-head > .mcp-mode + button { margin-left: auto; }
-  .mcp-mode { order: 1; flex: 1 0 100%; margin-left: -2.25rem; }
-  .mcp-mode select { flex: 1; max-width: none; margin-left: 0; }
+  .page-toolbar > select { flex: 1 1 12rem; max-width: none; }
 }
 /* A long server error: two lines, the rest behind "Show details". */
 .long-err { display: block; color: var(--err); font-size: var(--fs-meta); overflow-wrap: anywhere; }

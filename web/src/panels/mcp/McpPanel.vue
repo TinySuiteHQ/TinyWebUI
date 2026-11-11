@@ -4,7 +4,7 @@
  * what the server is and whether it is up, opens its management views (what a
  * person may open was decided server side), and, for whoever manages the
  * servers, its tools with their switches and approval. The raw config file
- * and the global approval mode sit in the header for them too.
+ * and the global approval mode open the list for them too.
  */
 import { computed, ref, watch } from 'vue';
 import { api } from '../../core/api.ts';
@@ -196,15 +196,6 @@ const { isOpen } = usePanel(PANEL.MCP, {
     <div class="panel-head">
       <button v-if="page.kind !== 'list'" type="button" class="set-back adm-back" @click="back"><Icon name="arrowLeft" size="1rem" />All</button>
       <h2>{{ title }}</h2>
-      <template v-if="manages && page.kind === 'list'">
-        <label class="mcp-mode" :title="approvalWhy">
-          <span>Ask before running</span>
-          <select :value="approval" :disabled="approvalLocked" aria-label="Ask before running" @change="setMode">
-            <option v-for="[v, l] in TOOL_APPROVALS" :key="v" :value="v">{{ l }}</option>
-          </select>
-        </label>
-        <button type="button" @click="page = { kind: 'config' }">Config file</button>
-      </template>
       <button type="button" class="icon-btn panel-close" aria-label="Close MCP" title="Close" @click="toNewChat"><Icon name="x" /></button>
     </div>
 
@@ -234,6 +225,14 @@ const { isOpen } = usePanel(PANEL.MCP, {
 
       <!-- ---------- every server ---------- -->
       <template v-else>
+        <div v-if="manages" class="page-toolbar">
+          <label class="mcp-mode" for="mcpApproval" :title="approvalWhy">Ask before running</label>
+          <select id="mcpApproval" :value="approval" :disabled="approvalLocked" :title="approvalWhy" @change="setMode">
+            <option v-for="[v, l] in TOOL_APPROVALS" :key="v" :value="v">{{ l }}</option>
+          </select>
+          <span class="grow" />
+          <button type="button" @click="page = { kind: 'config' }">Config file</button>
+        </div>
         <p v-if="approvalMsg" class="int-error">{{ approvalMsg }}</p>
         <p v-if="error" class="int-error">{{ error }}</p>
         <p v-if="manages && config.toolsError" class="int-error">{{ config.toolsError }}</p>
