@@ -28,20 +28,23 @@ defineExpose({ log });
 </script>
 
 <template>
-  <div id="log" ref="log" :class="{ loading: chat.loading }" :aria-busy="chat.loading ? 'true' : undefined">
-    <div id="wrap" ref="wrap" class="wrap">
-      <template v-for="item in chat.model.items" :key="item.id">
-        <UserMessage v-if="item.kind === 'user'" :item="item" />
-        <AutomationRun v-else-if="item.kind === 'automation'" :origin="item.origin" />
-        <AssistantTurn v-else-if="item.kind === 'turn'" :turn="item" :question-seq="seqs.get(item.id) ?? null" />
-        <div v-else class="err">{{ item.text }}</div>
-      </template>
+  <!-- One box for the transcript and its pill, so the pill sits just above the composer however tall a queue or task card makes it. -->
+  <div class="log-area">
+    <div id="log" ref="log" :class="{ loading: chat.loading }" :aria-busy="chat.loading ? 'true' : undefined">
+      <div id="wrap" ref="wrap" class="wrap">
+        <template v-for="item in chat.model.items" :key="item.id">
+          <UserMessage v-if="item.kind === 'user'" :item="item" />
+          <AutomationRun v-else-if="item.kind === 'automation'" :origin="item.origin" />
+          <AssistantTurn v-else-if="item.kind === 'turn'" :turn="item" :question-seq="seqs.get(item.id) ?? null" />
+          <div v-else class="err">{{ item.text }}</div>
+        </template>
+      </div>
     </div>
+    <Transition name="fade">
+      <button v-if="!pinned && !chat.empty" type="button" class="jump-latest" @click="pin">
+        <Icon name="arrowDown" size="1rem" /><span>{{ chat.busy ? 'Jump to latest' : 'Back to bottom' }}</span>
+      </button>
+    </Transition>
   </div>
-  <Transition name="fade">
-    <button v-if="!pinned && !chat.empty" type="button" class="jump-latest" @click="pin">
-      <Icon name="arrowDown" size="1rem" /><span>{{ chat.busy ? 'Jump to latest' : 'Back to bottom' }}</span>
-    </button>
-  </Transition>
   <HistoryDialog v-if="chat.action" :action="chat.action" />
 </template>

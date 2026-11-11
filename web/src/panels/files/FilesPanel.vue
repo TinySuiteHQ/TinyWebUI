@@ -145,9 +145,10 @@ async function useImage(i: ImageRow) {
             <td class="files-col-date num muted">{{ when(r.created_at) }}</td>
             <td class="files-col-use">
               <button type="button" class="icon-btn files-phone-chat" :aria-label="`Go to ${r.chatTitle}`" :title="`Go to ${r.chatTitle}`"
-                      @click="goToChat(r.chatId)"><Icon name="chat" size="1rem" /></button>
-              <button type="button" class="primary" :disabled="!!r.useBlocked" :title="r.useBlocked || 'Put this file on the message you are writing'"
-                      @click="r.use()">Use in chat</button>
+                      @click="goToChat(r.chatId)"><Icon name="chat" /></button>
+              <!-- On a phone only the + shows, leaving the name the room; the words stay for screen readers. -->
+              <button type="button" class="primary files-use" :disabled="!!r.useBlocked" :title="r.useBlocked || 'Put this file on the message you are writing'"
+                      @click="r.use()"><Icon name="plus" /><span class="files-use-label">Use in chat</span></button>
             </td>
           </tr>
         </tbody>

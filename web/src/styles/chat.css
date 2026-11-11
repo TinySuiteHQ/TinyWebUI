@@ -173,8 +173,10 @@ button.attachment-chip { min-height: 0; font: inherit; font-size: var(--fs-small
 .msg.automation-run .ic { color: var(--tool); width: 1.125rem; height: 1.125rem; align-self: center; }
 
 /* ---- jump back to the newest output ---- */
+.log-area { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+main.empty-chat .log-area { display: none; }
 .jump-latest {
-  position: absolute; left: 50%; bottom: 8.5rem; z-index: 5; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: .75rem; z-index: 5; transform: translateX(-50%);
   display: inline-flex; align-items: center; gap: .375rem; min-height: 2rem; padding: .25rem .875rem;
   border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--raise); color: var(--fg);
   font-size: var(--fs-meta); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 35%);
@@ -206,7 +208,6 @@ main.empty-chat #hello { display: block; }
 .panel-head > .set-back:first-child { margin-left: -.375rem; }
 
 @media (max-width: 720px) {
-  .jump-latest { bottom: 7.5rem; }
   /* The closed drawer sits just off screen; its shadow must not. */
   #side:not(.open) { box-shadow: none; }
 }

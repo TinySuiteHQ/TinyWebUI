@@ -627,11 +627,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
    no border to close, so the header's own bottom rule stands in for it. */
 .tool-group:not(:has(details, .empty)) .tool-group-h { border-bottom: 0; }
 .tool-group-h .name { font-family: var(--mono); color: var(--fg); font-weight: 500; }
+/* A server row names its state, not a tool: words, not an identifier. */
+.tool-group.server .tool-group-h .name { font-family: var(--sans); }
 .tool-group-h .meta { color: var(--muted); font-size: var(--fs-meta); margin-left: auto; }
-.tool-group-err {
-  padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta);
-  font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
-}
+.tool-group-err { padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta); }
 .tool-group-retry {
   display: flex; align-items: center; gap: .5rem; padding: 0 .625rem .5rem 2rem;
   color: var(--muted); font-size: var(--fs-meta);
@@ -964,6 +963,15 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 /* Input queued on a running turn, listed above the text box until delivered. */
 .queue { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
 .queue[hidden] { display: none; }
+/* A long queue scrolls in place rather than lifting the composer up the screen. */
+.queue-items { display: flex; flex-direction: column; gap: .3rem; max-height: min(12rem, 25dvh); overflow-y: auto; }
+.queue-fold {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: .25rem; min-height: 2rem;
+  padding: .125rem .5rem .125rem .75rem; border: 1px dashed var(--line); border-radius: var(--r-pill);
+  background: none; color: var(--muted); font-size: var(--fs-small);
+}
+.queue-fold .chev { transition: transform var(--t-fast); }
+.queue-fold[aria-expanded="true"] .chev { transform: rotate(180deg); }
 .queued {
   display: flex; align-items: center; gap: .5rem; min-width: 0;
   border: 1px dashed var(--line); border-radius: var(--r-md); padding: .25rem .25rem .25rem .6rem;
@@ -1054,7 +1062,7 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 @media (max-width: 1040px) {
   /* No room beside the measure column at this width -- would either overlap
      the transcript or force it to shrink, so it steps aside instead. */
-  .right-rail, .outline-rail { display: none; }
+  .right-rail { display: none; }
 }
 
 /* The conversation minimap: one flat tick per question, vertically centered
@@ -1085,6 +1093,10 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
   opacity: 0; pointer-events: none; transition: opacity .1s;
 }
 .outline-tick:hover .tip, .outline-tick:focus-visible .tip { opacity: 1; }
+/* Narrower than the measure plus a margin, the ticks would sit on the ends of
+   the lines (and catch taps meant for the text). After the rules above, or
+   their display:flex wins. */
+@media (max-width: 1040px) { .outline-rail { display: none; } }
 
 #side-backdrop { display: none; }
 
@@ -1441,6 +1453,22 @@ main.empty-chat footer { padding-top: 0; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }
 /* An empty chat has room below the centred composer, not above it. */
 main.empty-chat .popover { bottom: auto; top: calc(100% + .5rem); transform-origin: top left; }
+/* On a phone: a sheet along the bottom, over a dimmed page (Popover.vue). */
+.popover.sheet {
+  position: fixed; left: 0; right: 0; width: auto; z-index: 41;
+  border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0;
+  padding: .5rem .5rem calc(.5rem + env(safe-area-inset-bottom));
+  animation: sheet-in var(--t-med) var(--ease);
+}
+.popover.sheet::before {
+  content: ""; flex: none; align-self: center; width: 2.25rem; height: 4px; margin: 0 0 .5rem;
+  border-radius: var(--r-pill); background: var(--line);
+}
+.popover.sheet .pop-item { min-height: 2.75rem; }
+.popover.sheet .pop-search { min-height: 2.75rem; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / 32%); animation: fade-in var(--t-med) var(--ease); }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes fade-in { from { opacity: 0; } }
 
 .pop-scroll { overflow-y: auto; min-height: 0; flex: 1; }
 .pop-item {
@@ -1511,17 +1539,19 @@ button.pop-item:active:not(:disabled) { transform: none; }
   border-right: 2px solid var(--fg); border-bottom: 2px solid var(--fg); transform: rotate(45deg) translate(-2px, -2px);
 }
 
-/* MCP: its own full-column page in main, like Files. */
-#mcp {
+/* MCP and Files: their own full-column pages in main. Opening one covers the
+   chat at once and only its contents rise into place: fading the page itself
+   in showed the chat through it for the length of the fade. Closing fades it
+   out, since what shows through then is where you are going. */
+#mcp, #files {
   position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
   display: flex; flex-direction: column; overflow: hidden;
-  visibility: hidden; opacity: 0; transform: translateY(8px); pointer-events: none;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s linear var(--t-med);
+  visibility: hidden; opacity: 0; pointer-events: none;
+  transition: opacity var(--t-med) var(--ease), visibility 0s linear var(--t-med);
 }
-#mcp.open {
-  visibility: visible; opacity: 1; transform: none; pointer-events: auto;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
-}
+#mcp.open, #files.open { visibility: visible; opacity: 1; pointer-events: auto; transition: visibility 0s; }
+#mcp.open > *, #files.open > * { animation: page-rise var(--t-med) var(--ease); }
+@keyframes page-rise { from { opacity: 0; transform: translateY(8px); } }
 
 /* Settings: plain sections split by a rule, not a card each. Inside one,
    every setting is a row: what it is and what it does on the left, the
@@ -1672,7 +1702,27 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 /* MCP: connected servers, their tools and their management views. */
 .mcp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
 .mcp-mode { display: flex; align-items: center; gap: .5rem; margin: 0 0 0 auto; font-size: var(--fs-meta); color: var(--muted); }
+.mcp-mode > span { white-space: nowrap; }
 .mcp-mode select { width: auto; max-width: 14rem; }
+/* No room for title, mode and button on one line: the mode takes a row of its
+   own under them, from the page's edge (the menu button is only on the first). */
+@media (max-width: 640px) {
+  #mcp .panel-head { flex-wrap: wrap; height: auto; min-height: var(--bar); padding-top: .375rem; padding-bottom: .5rem; row-gap: .375rem; }
+  #mcp .panel-head h2 { line-height: calc(var(--bar) - .875rem); }
+  #mcp .panel-head > .mcp-mode + button { margin-left: auto; }
+  .mcp-mode { order: 1; flex: 1 0 100%; margin-left: -2.25rem; }
+  .mcp-mode select { flex: 1; max-width: none; margin-left: 0; }
+}
+/* A long server error: two lines, the rest behind "Show details". */
+.long-err { display: block; color: var(--err); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.long-err.mono .long-err-text { font-family: var(--mono); white-space: pre-wrap; }
+details.long-err > summary { list-style: none; cursor: pointer; }
+details.long-err > summary::-webkit-details-marker { display: none; }
+details.long-err:not([open]) .long-err-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.long-err-text { display: block; }
+.long-err-more { display: inline-block; margin-top: .25rem; color: var(--muted); font-family: var(--sans); text-decoration: underline; text-underline-offset: 2px; }
+details.long-err > summary:hover .long-err-more { color: var(--fg); }
+.int-card > .long-err { align-self: stretch; }
 .int-tools { width: 100%; }
 .int-tools > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-meta); padding: .25rem 0; }
 .int-tools > summary:hover { color: var(--fg); }
@@ -1739,16 +1789,6 @@ img.int-icon { background: none; }
 }
 
 /* ---- Files: everything attached, as its own full-column page ---- */
-#files {
-  position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
-  display: flex; flex-direction: column; overflow: hidden;
-  visibility: hidden; opacity: 0; transform: translateY(8px); pointer-events: none;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s linear var(--t-med);
-}
-#files.open {
-  visibility: visible; opacity: 1; transform: none; pointer-events: auto;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
-}
 .files-count { margin-left: .5rem; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 .files-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
 .files-content > * { width: min(var(--measure), 100%); margin-left: auto; margin-right: auto; }
@@ -1792,13 +1832,22 @@ button.files-main:active:not(:disabled) { transform: none; }
 .files-chat-link:hover { color: var(--fg); text-decoration: underline; }
 button.files-chat-link:active:not(:disabled) { transform: none; }
 .files-col-use button.primary { font-size: var(--fs-meta); padding: .3rem .625rem; min-height: 0; }
+.files-use { display: inline-flex; align-items: center; gap: .25rem; }
+.files-use .ic { display: none; width: 1.25rem; height: 1.25rem; }
 .files-phone-chat { display: none; }
+/* On a phone the row is the name, and two icon buttons the size of a fingertip. */
 @media (max-width: 640px) {
   .files-table thead { display: none; }
   .files-table .files-col-type, .files-table .files-col-chat, .files-table .files-col-date { display: none; }
-  .files-table .files-col-use { width: 8.5rem; }
+  .files-table .files-col-use { width: 6rem; }
   .files-meta { display: block; }
-  .files-phone-chat { display: inline-flex; width: 2rem; height: 2rem; vertical-align: middle; margin-right: .25rem; }
+  .files-phone-chat { display: inline-flex; width: 2.75rem; height: 2.75rem; vertical-align: middle; }
+  .files-col-use button.files-use {
+    width: 2.75rem; height: 2.75rem; padding: 0; justify-content: center; vertical-align: middle;
+    background: none; border: 1px solid var(--line); color: var(--fg);
+  }
+  .files-use .ic { display: block; }
+  .files-use-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 
 /* ---- Account: pinned under the chat list, the way into settings ---- */
@@ -2028,3 +2077,20 @@ button.folder-chat:active:not(:disabled) { transform: none; }
 .folder-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-chat-from { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: var(--fs-meta); }
 .folder-chats-empty { padding: .5rem; color: var(--muted); font-size: var(--fs-small); }
+
+/* ---- Touch: every button a fingertip can find (44px, Apple's floor) ----
+   On a touch screen, or anything phone-wide, the small icon buttons grow to
+   2.75rem. They keep their look; only the box that takes the tap grows. */
+@media (pointer: coarse), (max-width: 640px) {
+  .icon-btn, #log .msg-tools .icon-btn, #log .turn-meta .icon-btn { width: 2.75rem; height: 2.75rem; }
+  #log .msg-tools { gap: 0; margin-top: 0; }
+  .side-label .icon-btn { margin: -.75rem 0; }
+  .brand { height: 2.75rem; }
+  #menu { top: .125rem; left: .25rem; }
+  main .panel-head, #shell.side-collapsed main .panel-head { padding-left: 3.25rem; }
+  .composer .composer-bar > .composer-attach, .composer .composer-bar > .composer-send { width: 2.75rem; height: 2.75rem; }
+  /* A tool or server switch: the box stays small, the label around it takes the tap. */
+  label.tgl { padding: .75rem; margin: -.75rem; }
+  label.tgl input { width: 1.25rem; height: 1.25rem; }
+  .queued-drop { min-height: 2.5rem; }
+}

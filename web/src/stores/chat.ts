@@ -394,9 +394,19 @@ export const useChat = defineStore('chat', () => {
     }
   }
 
-  /** Queues `text` on the running turn. False when there is no run to take it. */
-  async function enqueue(kind: string, text: string): Promise<boolean> {
+  /**
+   * Queues `text` on the running turn. False when there is no run to take it.
+   * One request at a time, in the order typed: the server queues by arrival,
+   * and lines sent quickly in parallel can arrive in any order.
+   */
+  let enqueuing: Promise<unknown> = Promise.resolve();
+  function enqueue(kind: string, text: string): Promise<boolean> {
     const m = model.value;
+    const done = enqueuing.then(() => postQueued(m, kind, text));
+    enqueuing = done.catch(() => {});
+    return done;
+  }
+  async function postQueued(m: Model, kind: string, text: string): Promise<boolean> {
     try {
       const out = await api.post(`/api/chats/${m.chat.id}/queue`, { id: newId(), kind, message: text });
       m.queue = out.items;

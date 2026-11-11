@@ -19,6 +19,7 @@ import { onCount, useToolActions } from './tool_actions.ts';
 import IntegrationView from './IntegrationView.vue';
 import ServerTools from './ServerTools.vue';
 import ToolRow from './ToolRow.vue';
+import LongError from './LongError.vue';
 import Icon from '../../ui/Icon.vue';
 
 // /api/integrations and /api/tools, read field by field.
@@ -85,6 +86,9 @@ const tiers = computed(() => [
 ].filter((t) => t.cards.length || (t.id === 'third-party' && manages.value)));
 
 const status = (c: Card) => c.tools?.status || c.info?.status || 'error';
+// The same words as the server's row under Tools, never the raw status.
+const STATUS_WORD: Record<string, string> = { ok: 'connected', error: 'failed to connect', disabled: 'off' };
+const statusWord = (s: string) => STATUS_WORD[s] || s;
 // The marks are TinySuite's, so only a bundled server gets one: a manifest id alone could claim it.
 const logo = (c: Card) => {
   const m = c.info?.manifest;
@@ -259,17 +263,17 @@ const { isOpen } = usePanel(PANEL.MCP, {
               <span v-else class="int-icon"><Icon :name="ICON[c.info?.manifest?.icon] || ICON.plug" /></span>
               <div class="int-name"><h4>{{ c.info?.manifest?.title || c.name }}</h4><span class="usage">{{ meta(c) }}</span></div>
               <span class="int-chips">
-                <span class="chip" :class="status(c) === 'ok' ? 'chip-ok' : 'chip-bad'">{{ status(c) === 'ok' ? 'connected' : status(c) }}</span>
+                <span class="chip" :class="status(c) === 'ok' ? 'chip-ok' : 'chip-bad'">{{ statusWord(status(c)) }}</span>
                 <span v-if="state.multiUser && c.info" class="chip">{{ c.info.perUser ? 'per person' : 'shared by everyone' }}</span>
               </span>
             </div>
             <p v-if="c.info?.manifest?.description" class="int-desc">{{ c.info.manifest.description }}</p>
-            <p v-if="c.info?.error && !c.tools" class="int-error">{{ c.info.error }}</p>
+            <LongError v-if="c.info?.error && !c.tools" class="int-error" :text="c.info.error" />
             <p v-if="c.info?.manageError" class="int-error">Management page unavailable: {{ c.info.manageError }}</p>
             <button v-if="c.info?.manifest?.views.length" type="button" class="primary" @click="manage(c.name)">Manage</button>
             <p v-else-if="!manages && status(c) === 'ok' && !c.info?.manageError" class="usage">Its tools work in chats; it offers no management page.</p>
             <details v-if="c.tools" class="int-tools">
-              <summary>Tools · {{ c.tools.status === 'ok' ? onCount(c.tools.tools) : c.tools.status }}</summary>
+              <summary>Tools · {{ c.tools.status === 'ok' ? onCount(c.tools.tools) : statusWord(c.tools.status) }}</summary>
               <ServerTools :server="c.tools" />
             </details>
           </section>
