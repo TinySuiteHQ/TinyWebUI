@@ -10,6 +10,10 @@ const emit = defineEmits<{ toggle: [disabled: boolean], approval: [policy: strin
 const short = computed(() => props.tool.name.replace(/^[^_]+__/, ''));
 const params = computed(() => Object.entries(props.tool.parameters?.properties || {}) as [string, Json][]);
 const required = (key: string) => (props.tool.parameters?.required || []).includes(key);
+// Descriptions are often hard-wrapped, so a first line can stop mid-sentence.
+// The summary is the first paragraph joined into one line; CSS ends it with
+// an ellipsis where it runs out of room.
+const lead = (text: unknown) => (typeof text === 'string' ? text.trim().split(/\n\s*\n/)[0].replace(/\s+/g, ' ') : '');
 </script>
 
 <template>
@@ -20,7 +24,7 @@ const required = (key: string) => (props.tool.parameters?.required || []).includ
              :title="tool.disabled ? 'Disabled: click to let the model use this tool again' : 'Click to stop offering this tool to the model'"
              @change="emit('toggle', !($event.target as HTMLInputElement).checked)"></label>
       <span class="name">{{ short }}</span>
-      <span class="desc">{{ (tool.description || '').split('\n')[0] }}</span>
+      <span class="desc">{{ lead(tool.description) }}</span>
       <!-- MCP tools only: built-ins never ask, so they have no approval state. -->
       <select v-if="tool.approval" class="approval" title="Whether calls to this tool wait for your approval" :value="tool.approval"
               :disabled="readOnly" @click.stop @change="emit('approval', ($event.target as HTMLSelectElement).value)">
@@ -35,7 +39,7 @@ const required = (key: string) => (props.tool.parameters?.required || []).includ
         <div v-for="[key, spec] in params" :key="key" class="param">
           <b>{{ key }}</b><span class="ty">{{ spec.type || (spec.anyOf ? 'any' : '?') }}</span>
           <span :class="required(key) ? 'req' : 'ty'">{{ required(key) ? 'required' : 'optional' }}</span>
-          <span class="d">{{ (spec.description || '').split('\n')[0] }}</span>
+          <span class="d">{{ lead(spec.description) }}</span>
         </div>
       </div>
       <pre>{{ JSON.stringify(tool.parameters ?? {}, null, 2) }}</pre>

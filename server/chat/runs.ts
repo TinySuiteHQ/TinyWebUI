@@ -4,7 +4,8 @@ import { effectiveConfig, findEntry, thinkingFor, usesTools } from '../config/mo
 import { roleSettingsFor } from '../access/policy.ts';
 import { logger } from '../log.ts';
 import { EVENT } from '../../shared/events.ts';
-import { CORPUS, type Store } from '../store/index.ts';
+import { AUX_KIND, CORPUS, type Store } from '../store/index.ts';
+import { writeTitle } from '../harness/title.ts';
 import type { ChatRow, QuestionStatus } from '../store/chats.ts';
 import type { UserRole } from '../store/users.ts';
 import type { Config } from '../config/config.ts';
@@ -16,6 +17,9 @@ import type { ApprovalDecision, Approve } from './tool_executor.ts';
 import type { ServerResponse } from 'node:http';
 
 const log = logger('retrieval');
+const titleLog = logger('title');
+/** How long a finished turn's stream waits for its title, so the page gets it in the same stream. */
+const TITLE_WAIT_MS = 8000;
 
 const RETAIN_MS = 5 * 60 * 1000;
 // A turn can go quiet for minutes (a call waiting on approval, a slow tool),
@@ -58,6 +62,11 @@ export interface RunOptions {
   role?: UserRole | null;
   /** The thinking level the person asked for; the model's own settings decide whether it applies. */
   thinking?: string | null;
+  /** A new chat's first message: a title is asked for from it beside the turn (autoTitle). */
+  titleFrom?: string | null;
+}
+
+/** The part of the app| null;
 }
 
 /** The part of the app a run reads live (built in server.js). */
@@ -105,7 +114,7 @@ export function createRuns(app: RunsApp) {
    * `lead` is a queued follow-up that starts this run: stored after baseCount
    * and sent as an event, so a live view and a reload each show it once.
    */
-  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null, thinking = null, role = null }: RunOptions): Run {
+  function start({ chat, tools, onFinish, historyFromSeq = null, unattended = false, model = null, lead = null, instructions = null, thinking = null, role = null, titleFrom = null }: RunOptions): Run {
     const run: Run = {
       events: [],
       subs: new Set(),
@@ -187,6 +196,23 @@ export function createRuns(app: RunsApp) {
       return items.map((i) => i.content);
     };
 
+    /**
+     * A title from the first message, asked beside the turn so the answer never
+     * waits on it. It replaces the stand-in title only if that is still the
+     * title (a rename meanwhile wins), and reaches the page as a chat event.
+     * Its notices are dropped: a title is not worth a line in the transcript.
+     */
+    function nameChat(cfg: Config, message: string): Promise<void> {
+      const from = store.chats.byId(chat.id)?.title ?? chat.title;
+      return writeTitle({
+        cfg, message, emit: () => {}, signal: AbortSignal.timeout(60_000),
+        onUsage: (usage) => { if (usage) store.usage.addAuxiliary(chat.id, { kind: AUX_KIND.TITLE, model: cfg.model, usage }); }
+      }).then((title) => {
+        if (title && store.chats.retitle(chat.id, from, title)) emit({ type: EVENT.CHAT, id: chat.id, title });
+      }).catch((err) => titleLog.warn(`naming chat ${chat.id} failed: ${err.message}`));
+    }
+    let titling: Promise<void> | null = null;
+
     // Not awaited: the run outlives the request that started it.
     void (async () => {
       try {
@@ -197,6 +223,7 @@ export function createRuns(app: RunsApp) {
         // The role's settings for this model are looked up by its catalog id, which is how the role editor names it.
         const modelId = findEntry(app.cfg, model ?? app.cfg.model)?.id ?? model ?? app.cfg.model;
         const base = { ...effectiveConfig(app.cfg, model, roleSettingsFor(app.cfg, role, modelId)), thinkingLevel: think?.level ?? null, thinkingSend: think?.send };
+        if (titleFrom?.trim() && base.autoTitle !== false) titling = nameChat(base, titleFrom);
         // Read now, not from the row the run started with: a chat moved into a
         // folder, or a folder's prompt edited, counts from the next turn on.
         // The folder's comes last, as the most specific of the three.
@@ -213,6 +240,13 @@ export function createRuns(app: RunsApp) {
       } catch (err) {
         emit({ type: EVENT.ERROR, error: run.ac.signal.aborted ? 'Stopped.' : err.message });
       } finally {
+        // A title still on its way gets a moment, so it lands in this stream;
+        // never after a stop, which should end at once. Later, the sidebar's poll picks it up.
+        if (titling && !run.ac.signal.aborted) {
+          let wait: NodeJS.Timeout | undefined;
+          await Promise.race([titling, new Promise<void>((r) => { wait = setTimeout(r, TITLE_WAIT_MS); })]);
+          clearTimeout(wait);
+        }
         store.chats.touch(chat.id);
         run.done = true;
         app.retrieval.ingest(CORPUS.CHATS, chat.id).catch((err) => log.error(`embedding chat ${chat.id} failed: ${err.message}`));

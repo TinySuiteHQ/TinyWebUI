@@ -363,7 +363,7 @@ const SUPERSEDE_CLEANUP = `
  * database. Stored in SQLite's user_version, so deployments can see where a
  * file stands and run migrations deliberately (`tinywebui migrate`).
  */
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 /**
  * Adds a column if it isn't already there. `CREATE TABLE IF NOT EXISTS` is a
@@ -443,6 +443,8 @@ export function migrate(db: DatabaseSync, { fresh }: { fresh: boolean }): void {
   // No foreign key: deleting the original leaves its forks standing on their own.
   ensureColumn(db, 'chats', 'parent_id', 'TEXT');
   ensureColumn(db, 'chats', 'fork_seq', 'INTEGER');
+  // When the owner pinned the chat to the top of their list; NULL when it is not pinned.
+  ensureColumn(db, 'chats', 'pinned_at', 'INTEGER');
   // A folder's own instructions, added to the system prompt of every turn in
   // its chats; '' for none.
   ensureColumn(db, 'folders', 'prompt', "TEXT NOT NULL DEFAULT ''");

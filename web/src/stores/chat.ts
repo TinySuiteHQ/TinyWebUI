@@ -10,7 +10,7 @@ import { api, type ApiError } from '../core/api.ts';
 import { events } from '../core/sse.ts';
 import { newId } from '../core/id.ts';
 import {
-  createModel, applyEvent, replay, finishTurn, beginTurn, addUser, addError as modelError, adoptSeqs,
+  createModel, applyEvent, replay, finishTurn, beginTurn, addUser, UPLOADING, addError as modelError, adoptSeqs,
   type Model, type StreamEvent, type StoredMessage, type Img, type QueueItem
 } from '../model/turn_model.ts';
 import { EVENT } from '../../../shared/events.ts';
@@ -108,7 +108,9 @@ export const useChat = defineStore('chat', () => {
         // address takes it, and a chat new to the sidebar shows up there.
         if (ev.type === EVENT.CHAT && model.value === m) {
           setUrl(ev.id, 'replace');
-          if (!useChats().chats.some((c) => c.id === ev.id)) useChats().load();
+          // The same event comes again when the model has named a new chat: the sidebar row follows it.
+          const row = useChats().chats.find((c) => c.id === ev.id);
+          if (row) row.title = ev.title; else useChats().load();
         }
       }
     };
@@ -321,16 +323,25 @@ export const useChat = defineStore('chat', () => {
     const folder = m.chat.id ? null : draftFolder.value;
     if (!m.chat.id) m.chat.id = newId();
     const id = m.chat.id;
+    // The question shows at once. A document is read on the server before it
+    // can go with the message, which can take a while, so its chip says it is
+    // still uploading until then, rather than nothing showing at all.
+    const staged = [...attachments.pending];
+    const message = text || (staged.some((s) => s.isImage) && !staged.some((s) => !s.isImage) ? '(attached image)' : '(attached document)');
+    addUser(m, message, null,
+      staged.filter((s) => !s.isImage).map((s) => ({ id: `${UPLOADING}${s.key}`, filename: stagedName(s), char_len: 0 })),
+      staged.flatMap((s) => (s.isImage && s.normalized ? [{ filename: s.file?.name, mime: s.normalized.mime, dataBase64: s.normalized.data }] : [])));
+    const shown = m.items[m.items.length - 1];
+    const takeBack = () => { const at = m.items.indexOf(shown); if (at >= 0) m.items.splice(at, 1); };
+
     const { docs, images, failed } = await attachments.commit(id, addError);
-    if (failed.length) {
-      draft.value = text;
+    if (failed.length || (!text && !docs.length && !images.length)) {
+      takeBack();
+      if (failed.length) draft.value = text;
       if (viewCtrl === ctrl) { viewCtrl = null; busy.value = false; }
       return undefined;
     }
-    if (!text && !docs.length && !images.length) { busy.value = false; return undefined; }
-
-    const message = text || (images.length ? '(attached image)' : '(attached document)');
-    addUser(m, message, null, docs, images);
+    if (shown.kind === 'user') { shown.docs = docs; shown.images = images; }
 
     let outcome: Outcome | undefined;
     try {

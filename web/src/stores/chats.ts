@@ -3,14 +3,16 @@
  * full-text search that swaps in over it.
  */
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { api } from '../core/api.ts';
 import type { SearchHitView } from '../../../shared/api.ts';
 
 export type ChatRow = {
   id: string, title: string, folder?: string | null, updated_at: number, running?: boolean, unread?: boolean,
   /** A fork: the chat it was branched from; the sidebar lists it under that one. */
-  parent_id?: string | null
+  parent_id?: string | null,
+  /** When it was pinned; null when it is not. Pinned chats sit above the folders. */
+  pinned_at?: number | null
 };
 export type SearchHit = SearchHitView;
 
@@ -24,6 +26,9 @@ export const useChats = defineStore('chats', () => {
 
   const query = ref('');
   const results = ref<SearchHit[] | null>(null);
+  /** The query `results` answer; while it trails `query`, a search is on its way. */
+  const answered = ref('');
+  const pending = computed(() => Boolean(query.value.trim()) && answered.value !== query.value);
   let requestSeq = 0;
   let searchSeq = 0;
   let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -48,11 +53,12 @@ export const useChats = defineStore('chats', () => {
 
   async function run(q: string) {
     const seq = ++searchSeq;
-    if (!q.trim()) { results.value = null; return; }
+    if (!q.trim()) { results.value = null; answered.value = q; return; }
     let hits: SearchHit[] = [];
     try { hits = (await api.get(`/api/search?q=${encodeURIComponent(q)}`)).results || []; } catch { /* the next keystroke retries */ }
     if (seq !== searchSeq) return; // a newer query landed first
     results.value = hits;
+    answered.value = q;
   }
 
   function clearSearch() {
@@ -60,6 +66,7 @@ export const useChats = defineStore('chats', () => {
     searchSeq++; // a slow reply must not land after this
     query.value = '';
     results.value = null;
+    answered.value = '';
   }
 
   /** Clears an automation's unread mark; shown cleared at once, the next load agrees. */
@@ -91,6 +98,18 @@ export const useChats = defineStore('chats', () => {
     return body.title;
   }
 
+  /** Pins a chat above the folders, or takes it back to its place; shown at once, the reply confirms. */
+  async function pinChat(id: string, pinned: boolean) {
+    const row = chats.value.find((c) => c.id === id);
+    const before = row?.pinned_at ?? null;
+    if (row) row.pinned_at = pinned ? Date.now() : null;
+    try { await api.patch(`/api/chats/${id}`, { pinned }); } catch (err) {
+      if (row) row.pinned_at = before;
+      throw err;
+    }
+    await load();
+  }
+
   /** Renames a folder (its chats move with it) and sets its instructions. */
   async function saveFolder(name: string, { rename, prompt }: { rename: string, prompt: string }) {
     const body = await api.patch('/api/folders', { name, rename, prompt });
@@ -105,5 +124,5 @@ export const useChats = defineStore('chats', () => {
     await load();
   }
 
-  return { chats, folders, prompts, expanded, saveFolder, query, results, load, search, clearSearch, markRead, createFolder, setFolderChats, renameChat, deleteFolder };
+  return { chats, folders, prompts, expanded, saveFolder, query, results, pending, load, search, clearSearch, markRead, createFolder, setFolderChats, renameChat, pinChat, deleteFolder };
 });

@@ -30,7 +30,7 @@
      is what drives the bar height and the row padding rather than the reverse. */
   --tap: 2.25rem;
   --bar: 3rem;
-  --measure: 46rem;
+  --measure: 48rem; /* the one content column: chat, composer, Files, MCP */
 
   /* Chart series, in fixed order: a palette checked for colour-blind
      separation. Not --accent or --err: a theme may make the accent black, and
@@ -72,7 +72,7 @@ body {
    span. One line, truncated, is what a status string is for anyway; the
    model and tool count are both one click away in settings if cut off. */
 #status {
-  font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono);
+  font-size: var(--fs-meta); color: var(--muted);
   min-width: 3rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 
@@ -98,6 +98,15 @@ input, textarea, select {
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm); resize: vertical;
   transition: border-color .12s, box-shadow .12s;
 }
+/* One drawn chevron for every dropdown, in place of each browser's own, so a
+   settings select reads as the same family as the fields beside it. A grey
+   that holds up on light and dark, since a data URI cannot read the tokens. */
+select:not([multiple]):not([size]) {
+  appearance: none; -webkit-appearance: none; padding-right: 2rem; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%238a8a93%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right .625rem center; background-size: .875rem;
+}
+select:disabled { cursor: default; }
 input[type="checkbox"], input[type="radio"] {
   width: 1rem; height: 1rem; min-height: 0; margin: 0; padding: 0;
   flex: none; accent-color: var(--accent); cursor: pointer;
@@ -112,7 +121,7 @@ label { font-size: var(--fs-ui); color: var(--muted); display: block; margin-bot
    the outline minimap are <aside> too, and don't want the sidebar's chrome. */
 #side {
   /* Driven by the drag handle below; the fallback is the width it always had. */
-  width: var(--side-w, 15rem);
+  width: var(--side-w, 16rem);
   position: relative;
   flex-shrink: 0; border-right: 1px solid var(--line);
   display: flex; flex-direction: column; background: var(--panel);
@@ -185,16 +194,16 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* Rename and delete: out of the way until the row is pointed at or focused,
    always there on touch, where nothing hovers. */
 .chat-actions { flex: none; display: none; align-items: center; gap: 1px; margin-right: -.125rem; }
-.chat-item:hover .chat-actions, .chat-item:focus-within .chat-actions, .chat-item.armed .chat-actions { display: inline-flex; }
+.chat-item:hover .chat-actions, .chat-item:focus-within .chat-actions, .chat-item-wrap.menu-open .chat-actions { display: inline-flex; }
 @media (hover: none) { .chat-actions { display: inline-flex; } }
 .chat-action {
   width: 1.625rem; height: 1.625rem; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
 }
-.chat-action .ic { width: .95rem; height: .95rem; }
+.chat-action .ic { width: 1.125rem; height: 1.125rem; }
 .chat-action:hover, .chat-action:focus-visible { color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 button.chat-action:active:not(:disabled) { transform: none; }
-.chat-delete:hover, .chat-delete:focus-visible, .chat-item.armed .chat-delete { color: var(--err); }
+.chat-delete:hover, .chat-delete:focus-visible { color: var(--err); }
 .chat-rename {
   flex: 1; min-width: 0; height: 1.75rem; min-height: 0; padding: 0 .375rem; margin: -.125rem 0;
   font: inherit; color: var(--fg); background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm);
@@ -234,7 +243,7 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
 }
 .chat-folder-heading::-webkit-details-marker { display: none; }
 .chat-folder-heading:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
-.chat-folder-heading .folder-icon { flex: none; width: 1.0625rem; height: 1.0625rem; color: var(--muted); }
+.chat-folder-heading .folder-icon { flex: none; width: 1.25rem; height: 1.25rem; color: var(--muted); }
 .chat-folder[open] > .chat-folder-heading .folder-icon, .chat-folder-heading:hover .folder-icon { color: var(--fg); }
 .chat-folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-folder-heading .folder-mark { flex: none; display: inline-flex; color: var(--faint); }
@@ -249,7 +258,7 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
   width: 1.625rem; height: 1.625rem; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
 }
-.folder-action .ic { width: 1rem; height: 1rem; }
+.folder-action .ic { width: 1.125rem; height: 1.125rem; }
 .folder-action:hover, .folder-action:focus-visible, .folder-action[aria-expanded="true"] { color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 button.folder-action:active:not(:disabled) { transform: none; }
 .chat-folder-heading:hover .folder-actions, .chat-folder-heading:focus-within .folder-actions,
@@ -264,22 +273,21 @@ button.folder-action:active:not(:disabled) { transform: none; }
 .pop-item.pop-danger, .pop-item.pop-danger .ic { color: var(--err); }
 .pop-item.pop-danger:hover { background: color-mix(in srgb, var(--err) 10%, transparent); }
 .folder-delete-note { margin: 0; color: var(--muted); font-size: var(--fs-ui); line-height: 1.55; }
-.popover.folder-menu { top: calc(var(--tap) + .125rem); bottom: auto; right: 0; width: min(15rem, 100%); transform-origin: top right; }
+/* A row's "…" menu (a chat or a folder), opening under the row, right-aligned. */
+.chat-item-wrap { position: relative; }
+.popover.row-menu { top: calc(var(--tap) + .125rem); bottom: auto; right: 0; width: min(15rem, 100%); transform-origin: top right; }
 .folder-empty button.link {
   padding: 0; min-height: 0; border: 0; background: none; color: var(--fg); font: inherit;
   text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; cursor: pointer;
 }
 .folder-empty button.link:hover { text-decoration-color: currentColor; }
 button.link:active:not(:disabled) { transform: none; }
-/* The guide line runs down from the middle of the folder icon. */
-.chat-folder-content { position: relative; margin-left: 1rem; padding: 1px 0 .375rem .375rem; }
-.chat-folder-content::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: .5rem; width: 1px;
-  background: color-mix(in srgb, var(--line) 80%, transparent);
-}
-.folder-empty { padding: .375rem .5rem; color: var(--faint); font-size: var(--fs-meta); }
-.chat-date-heading { padding: .625rem .5rem .1875rem; color: var(--faint); font-size: .75rem; font-weight: 500; }
-.side-label + .chat-date-heading { padding-top: .125rem; }
+/* A folder's chats indent to where its name starts: the indent says they
+   are inside it, so no guide line is needed to say it again. */
+.chat-folder-content { padding: 0 0 .25rem; }
+#side .chat-folder-content .chat-item { padding-left: 2.25rem; }
+#side .chat-folder-content .chat-item.fork { padding-left: calc(2.25rem + var(--depth, 1) * .875rem); }
+.folder-empty { padding: .375rem .5rem .375rem 2.25rem; color: var(--faint); font-size: var(--fs-meta); }
 
 /* A search result carries a title and a snippet, so it grows past the plain
    list's single line rather than truncating either one away. */
@@ -723,7 +731,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 .automation-run[open] > summary::after, .page-details[open] > summary::before { transform: translateY(-.125rem) rotate(45deg); }
 /* Text and an icon in one control, centred on each other. */
 .with-icon { display: inline-flex; align-items: center; gap: .375rem; }
-.with-icon .ic { flex: none; width: 1rem; height: 1rem; }
+.with-icon .ic { flex: none; width: 1.125rem; height: 1.125rem; }
 .page-details > summary:hover { background: var(--panel); }
 .page-details[open] > summary { margin-bottom: .5rem; }
 
@@ -848,6 +856,9 @@ button.usage-bar-row:active:not(:disabled) { transform: none; }
 .md ul, .md ol { margin: 0 0 .7em; padding-left: 1.3em; }
 .md li { margin: .15em 0; }
 .md li > ul, .md li > ol { margin-bottom: 0; }
+/* A loose list (blank lines between items) wraps each item in a paragraph: keep it list-tight. */
+.md li > p { margin: 0 0 .35em; }
+.md li > p:last-child { margin-bottom: 0; }
 .md a { color: var(--accent); }
 .md code { background: var(--panel); border-radius: var(--r-xs); padding: .1em .3em; font: .9em var(--mono); }
 .md pre {
@@ -861,7 +872,8 @@ button.usage-bar-row:active:not(:disabled) { transform: none; }
 .md th { background: var(--panel); font-weight: 600; }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 
-.usage { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
+/* Small print (token counts, a server's version, a status): the page's own face, figures lined up. */
+.usage { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* An automation run opens its turn like a question does, but nobody asked
    it: a quiet ruled label instead of the tinted user block. */
@@ -920,7 +932,7 @@ footer { padding: .5rem .875rem 1rem; flex-shrink: 0; }
   flex: none; width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
   border-radius: var(--r-sm); background: var(--panel); color: var(--muted);
 }
-.attachment-card-icon .ic { width: 1.1rem; height: 1.1rem; }
+.attachment-card-icon .ic { width: 1.25rem; height: 1.25rem; }
 .attachment-card-icon[data-kind="filePdf"] { color: var(--chart-8); }
 .attachment-card-icon[data-kind="fileSheet"] { color: var(--chart-3); }
 .attachment-card-icon[data-kind="fileCode"] { color: var(--chart-7); }
@@ -1014,7 +1026,7 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 }
 .rail-card[hidden] { display: none; }
 .rail-card .label {
-  font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--fs-meta); font-weight: 600;
   color: var(--faint); margin: 0 0 .2rem .35rem;
 }
 .rail-card .rail-item {
@@ -1211,7 +1223,8 @@ footer::before {
 input:focus, textarea:focus, select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent); }
 button.primary { color: var(--bg); }
 
-.ic { width: 1.125rem; height: 1.125rem; flex-shrink: 0; display: block; }
+/* Icons are drawn at 20px by default: big enough to read their shape at a glance. */
+.ic { width: 1.25rem; height: 1.25rem; flex-shrink: 0; display: block; }
 .icon-btn {
   min-height: 0; width: 2rem; height: 2rem; padding: 0; border: 0; background: none;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1219,56 +1232,76 @@ button.primary { color: var(--bg); }
 }
 .icon-btn:hover { background: var(--accent-soft); color: var(--fg); }
 
-/* Sidebar: a floating card inset from the window edge. */
-#shell { padding: .5rem; gap: .5rem; }
+/* Sidebar: a flush panel down the window's left edge, split from the page by
+   one rule. (It was a floating card; with the toggle outside it and the page
+   inset beside it, nothing lined up.) */
+#shell { padding: 0; gap: 0; }
 #side {
-  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 8px 24px -16px rgb(0 0 0 / 18%);
-  padding: .5rem; overflow: hidden;
+  border: 0; border-right: 1px solid var(--line); border-radius: 0; background: var(--panel);
+  box-shadow: none; padding: .5rem; overflow: hidden;
 }
-.brand { display: flex; align-items: center; gap: .5rem; padding: .25rem .25rem .5rem; }
+/* The brand row is as tall as a page header, so its toggle sits level with the titles beside it. */
+.brand { display: flex; align-items: center; gap: .25rem; height: 2rem; margin-bottom: .5rem; }
 .logo { width: 2rem; height: 2rem; display: block; flex: none; }
 .brand-name { flex: 1; font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em; }
 
+/* One grid for every row in the sidebar: rows start .5rem in, where icons,
+   headings and chat titles all begin; a label after an icon starts at the
+   same place in every row because every icon and gap is the same size. Rows
+   share one size and weight; only where you are steps up. */
 .nav { display: flex; flex-direction: column; gap: 1px; }
 .nav-item {
   display: flex; align-items: center; gap: .625rem; width: 100%;
   min-height: 2.25rem; padding: .375rem .5rem; border: 0; border-radius: var(--r-sm);
   background: none; color: var(--fg); font-size: var(--fs-ui); font-weight: 500; text-align: left;
 }
+/* Sidebar rows: full-strength text, a 20px icon .5rem from its label. The
+   words carry the list; icons only mark what kind of row it is. */
+#side .nav-item, #side .chat-item, #side .chat-folder-heading, #side .search-row input { font-size: var(--fs-small); font-weight: 400; color: var(--fg); }
+#side .nav-item { gap: .5rem; }
+#side .nav-item .ic { width: 1.25rem; height: 1.25rem; }
+#side .nav-item.active, #side .chat-item.active { font-weight: 500; }
 .nav-item:hover { background: var(--accent-soft); }
 .nav-item.active { background: var(--accent-soft); color: var(--fg); }
 .nav-item .ic { color: var(--muted); transition: color var(--t-fast); }
 .nav-item:hover .ic, .nav-item.active .ic, .search-row:focus-within .ic { color: var(--fg); }
 button.nav-item:active:not(:disabled) { transform: none; }
 
-/* Search looks like a nav row until it is focused. */
-.search-row.nav-item { position: relative; padding: 0 .5rem; border: 0; cursor: text; }
-.search-row.nav-item:focus-within { background: var(--raise); box-shadow: 0 0 0 1px var(--line); }
+/* Search: opened from the header icon, it is a field while it is there. */
+.search-row.nav-item { position: relative; padding: 0 .5rem; border: 0; cursor: text; margin-bottom: .25rem; background: var(--raise); box-shadow: 0 0 0 1px var(--line); }
+.icon-btn.active { background: var(--accent-soft); color: var(--fg); }
 .search-row input {
   border: 0; background: none; padding: .375rem 1.75rem .375rem 0; min-height: 2.25rem;
-  font-weight: 500;
 }
 .search-row input:focus { box-shadow: none; }
-.search-row input::placeholder { color: var(--fg); opacity: 1; }
-.search-row:focus-within input::placeholder { color: var(--faint); }
+.search-row input::placeholder { color: var(--faint); opacity: 1; }
 #chatSearchClear { right: .375rem; }
 
-/* A section's name: darker and heavier than the day headings inside it. */
+/* The one heading style in the list: Folders, the day groups, search results.
+   Quiet (the rows' size, muted, regular weight) with room above it: the space
+   separates the groups, so the heading itself need not shout. */
 .side-label {
-  display: flex; align-items: center; justify-content: space-between; min-height: 2.75rem;
-  padding: 1rem .25rem .25rem .5rem; color: var(--muted); font-size: var(--fs-meta); font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: 1.375rem .25rem .375rem .5rem; color: var(--muted); font-size: var(--fs-small); font-weight: 400;
 }
-.side-label-next { margin-top: .375rem; }
-.side-label .icon-btn { width: 1.75rem; height: 1.75rem; }
-.side-label .ic { width: 1rem; height: 1rem; }
-#chats { padding: 0; margin: 0 -.125rem; }
+.side-label .icon-btn { width: 1.75rem; height: 1.75rem; margin: -.375rem 0; }
+.side-label .ic { width: 1.125rem; height: 1.125rem; }
+#chats { padding: 0; margin: 0; }
+/* A search still on its way: the last results stay, dimmed, under a spinner. */
+.side-spinner {
+  flex: none; width: .75rem; height: .75rem; margin-right: .5rem; border-radius: 50%;
+  border: 1.5px solid var(--line); border-top-color: var(--muted); animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.chat-item.search-hit.stale { opacity: .5; }
 
 /* Nav, label and chat list scroll together, as one column under the pinned
-   brand row: scrolling down moves the nav away and brings the chats up. */
+   brand row: scrolling down moves the nav away and brings the chats up. The
+   gutter is kept even while nothing scrolls, so a folder opening far enough
+   to need a scrollbar does not shift every row sideways. */
 .side-scroll {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  margin: 0 -.5rem; padding: 0 .5rem;
+  margin: 0 -.5rem; padding: 0 .125rem 0 .5rem; scrollbar-gutter: stable;
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
 .side-scroll::-webkit-scrollbar { width: .5rem; }
@@ -1276,20 +1309,21 @@ button.nav-item:active:not(:disabled) { transform: none; }
 .side-scroll #chats { flex: none; overflow: visible; }
 .chat-item { padding-left: .5rem; }
 .chat-item.active { background: var(--accent-soft); box-shadow: none; }
-#side-resize { right: -.3125rem; }
+#side-resize { right: -.25rem; }
 
-/* One sidebar toggle at every width: it collapses the desktop sidebar and
-   opens the mobile drawer. It sits above the full-column panels because the
-   sidebar is the way out of them -- they have no close buttons of their own --
-   so every header in the column leaves room for it. */
-#menu { position: absolute; top: .25rem; left: .25rem; z-index: 11; display: inline-flex; }
+/* The way back to a collapsed sidebar (and to the drawer on a phone): in the
+   page's top-left corner, level with the header titles. It sits above the
+   full-column panels because the sidebar is the way out of them, so their
+   headers leave room for it while it shows. An open desktop sidebar carries
+   its own toggle in the brand row, and this one hides. */
+#menu { position: absolute; top: .5rem; left: .5rem; z-index: 11; display: inline-flex; }
 #shell.side-collapsed #side { display: none; }
-.panel-head { padding-left: 3rem; }
-#log { padding-top: 2.75rem; }
+#shell.side-collapsed main .panel-head { padding-left: 3rem; }
+#side-collapse { flex: none; }
 
-/* Full-column panels clip themselves to this frame. Keeping main overflow
-   visible lets focus rings and composer popovers extend where they need to. */
-main { border-radius: var(--r-lg); }
+/* The column the chat, Files and MCP share, so moving between them does not
+   change how wide the page is; scrollers keep their gutter for the same reason. */
+#log, .files-content, .mcp-content, .settings-content, .page-body { scrollbar-gutter: stable; }
 
 /* Transcript: questions are soft grey bubbles on the right. */
 .msg.user { align-self: flex-end; max-width: 85%; }
@@ -1346,7 +1380,6 @@ main.empty-chat .right-rail,
 main.empty-chat .outline-rail { display: none; }
 main.empty-chat #hello { display: block; animation: fade var(--t-med) ease; }
 main.empty-chat footer { padding-top: 0; }
-main.empty-chat .composer { max-width: 48rem; }
 
 /* Panels open inside main, so they take its rounded corners too. */
 .set-panel, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
@@ -1357,7 +1390,7 @@ main.empty-chat .composer { max-width: 48rem; }
   #side-backdrop { top: 0; }
   #menu { display: inline-flex; top: .5rem; left: .5rem; }
   #shell.side-collapsed #side { display: flex; }
-  #log { padding-top: 3rem; }
+  main .panel-head { padding-left: 3rem; }
   footer { padding: .25rem .5rem .5rem; }
   .model-chip { max-width: 55vw; }
 }
@@ -1368,7 +1401,7 @@ main.empty-chat .composer { max-width: 48rem; }
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0; line-height: 0; flex-shrink: 0;
 }
-.composer-send .ic { width: 1.125rem; height: 1.125rem; }
+.composer-send .ic { width: 1.25rem; height: 1.25rem; }
 .composer-bar { min-height: 2.125rem; }
 .nav-item > span { line-height: 1.2; }
 
@@ -1513,7 +1546,8 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .set-grid > div > label:first-child { grid-column: 1; grid-row: 1; padding-top: .5rem; }
 .set-grid > div > small { grid-column: 1; grid-row: 2; }
 .set-grid > div.span-2 { display: block; }
-.set-grid input[type="number"] { max-width: 12rem; }
+/* Short controls share one width, so the control column has one right edge; text and prompts take the full column. */
+.set-grid input[type="number"], .set-grid select { max-width: 20rem; }
 .set-group label { color: var(--fg); font-weight: 500; font-size: var(--fs-small); margin-bottom: .3125rem; }
 .set-group small { display: block; margin-top: .25rem; color: var(--muted); font-size: var(--fs-meta); line-height: 1.4; }
 .set-grid > div > label.inline-check { padding-top: .5rem; }
@@ -1648,27 +1682,31 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 
 .int-card { display: flex; flex-direction: column; gap: .6rem; align-items: flex-start; }
 .int-head { display: flex; gap: .75rem; align-items: center; width: 100%; }
-.int-icon { font-size: 1.4rem; width: 2rem; text-align: center; color: var(--accent); }
+.int-icon { flex: none; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--fg); }
+.int-icon .ic { width: 1.25rem; height: 1.25rem; }
+img.int-icon { background: none; }
 .int-logo { height: 2rem; flex: none; }
 .int-name { display: flex; flex-direction: column; min-width: 0; }
 .int-name h4 { margin: 0; font-size: var(--fs-ui); }
 /* The MCP page's tiers (built-in, bundled, third-party): a heading over the cards, as wide as they are. */
 .mcp-tier { margin-bottom: 1.75rem; }
 .mcp-tier .panel-card { margin-bottom: .75rem; }
-.mcp-tier-head { width: min(52rem, 100%); margin: 0 auto .6rem; }
+.mcp-tier-head { width: min(var(--measure), 100%); margin: 0 auto .6rem; }
 .mcp-tier-head h3 { margin: 0; font-size: 1.0625rem; }
 .mcp-tier-head p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
-.mcp-tier-empty { width: min(52rem, 100%); margin: 0 auto; padding: 1rem; border: 1px dashed var(--line); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-small); }
+.mcp-tier-empty { width: min(var(--measure), 100%); margin: 0 auto; padding: 1rem; border: 1px dashed var(--line); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-small); }
 .int-chips { margin-left: auto; display: flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; }
 .chip-ok { color: var(--tool); border-color: var(--tool); }
 .chip-bad { color: var(--err); border-color: var(--err); }
-.int-desc { margin: 0; color: var(--muted); }
+/* Under the title, so smaller than it. */
+.int-desc { margin: 0; color: var(--muted); font-size: var(--fs-small); line-height: 1.5; }
 .int-error { margin: .25rem 0; color: var(--err); font-size: var(--fs-meta); overflow-wrap: anywhere; }
 .int-notice { margin: 0 0 .75rem; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); color: var(--muted); }
-.int-tabs { width: min(52rem, 100%); margin: 0 auto .75rem; display: flex; gap: .35rem; flex-wrap: wrap; }
+.int-tabs { width: min(var(--measure), 100%); margin: 0 auto .75rem; display: flex; gap: .35rem; flex-wrap: wrap; }
 .int-tabs button.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .int-tabs button.off { opacity: .6; }
-.int-view { width: min(52rem, 100%); margin: 0 auto; }
+.int-view { width: min(var(--measure), 100%); margin: 0 auto; }
+.int-card.panel-card, .mcp-content > .sec { width: min(var(--measure), 100%); margin-left: auto; margin-right: auto; }
 .int-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .6rem; }
 .int-stat { display: flex; flex-direction: column; gap: .15rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raise); }
 .int-stat-label { font-size: var(--fs-meta); color: var(--muted); }
@@ -1713,7 +1751,7 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 }
 .files-count { margin-left: .5rem; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 .files-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
-.files-content > * { width: min(60rem, 100%); margin-left: auto; margin-right: auto; }
+.files-content > * { width: min(var(--measure), 100%); margin-left: auto; margin-right: auto; }
 .files-filter { display: block; margin-bottom: .75rem; }
 .files-error { margin-bottom: .75rem; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -1738,7 +1776,7 @@ button.files-main:active:not(:disabled) { transform: none; }
   flex: none; width: 2rem; height: 2rem; display: grid; place-items: center;
   border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--muted);
 }
-.files-icon .ic { width: 1.05rem; height: 1.05rem; }
+.files-icon .ic { width: 1.25rem; height: 1.25rem; }
 /* The type reads at a glance from the icon's tint too, from the chart palette. */
 .files-icon[data-kind="filePdf"] { color: var(--chart-8); }
 .files-icon[data-kind="fileSheet"] { color: var(--chart-3); }
@@ -1787,7 +1825,11 @@ dialog#settingsDialog {
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
 }
 dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
-.settings-frame { display: flex; height: 100%; min-height: 0; }
+.settings-frame { position: relative; display: flex; height: 100%; min-height: 0; }
+/* Close sits in the dialog's top-right corner, level with the section's title. */
+.settings-close { position: absolute; top: .5rem; right: .5rem; z-index: 2; }
+/* Its own stacking context, so the open section (z-index 10 inside it) stays under the close. */
+.settings-body { isolation: isolate; }
 .settings-rail {
   flex: 0 0 13.5rem; display: flex; flex-direction: column; gap: .5rem; padding: .5rem;
   background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto;
@@ -1798,12 +1840,12 @@ dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
 .settings-rail .adm-badge { margin-left: auto; }
 .settings-rail-group {
   padding: .75rem .625rem .25rem; color: var(--faint); font-size: var(--fs-meta);
-  font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 600;
 }
 .settings-rail-group:first-child { padding-top: .25rem; }
 .settings-body { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 /* No sidebar toggle over these headers here, so they need no room for one. */
-#settingsDialog .panel-head { padding-left: 1rem; }
+#settingsDialog .panel-head { padding-left: 1rem; padding-right: 3rem; }
 @media (max-width: 720px) {
   dialog#settingsDialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
   .settings-frame { flex-direction: column; }
@@ -1885,7 +1927,7 @@ dialog.modal-card::backdrop { background: rgb(0 0 0 / 45%); backdrop-filter: blu
 .modal-head h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; line-height: 1.35; }
 .modal-sub { margin: .2rem 0 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; overflow-wrap: anywhere; }
 .modal-close { flex: none; align-self: flex-start; width: 2rem; height: 2rem; margin: .25rem -.5rem 0 0; }
-.modal-close .ic { width: 1rem; height: 1rem; }
+.modal-close .ic { width: 1.125rem; height: 1.125rem; }
 .modal-body { display: flex; flex-direction: column; gap: 1rem; padding: 1.125rem 1.25rem 0; }
 .modal-card .dialog-actions {
   margin: .25rem -1.25rem 0; padding: .875rem 1.25rem;
@@ -1961,7 +2003,7 @@ dialog.viewer::backdrop { background: rgb(0 0 0 / 70%); }
   flex: none; width: 1.75rem; height: 1.75rem; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
 }
-.folder-picked-remove .ic { width: .875rem; height: .875rem; }
+.folder-picked-remove .ic { width: 1rem; height: 1rem; }
 .folder-picked-remove:hover, .folder-picked-remove:focus-visible { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
 button.folder-picked-remove:active:not(:disabled) { transform: none; }
 .folder-picked-empty {
@@ -1982,7 +2024,7 @@ button.folder-chat:active:not(:disabled) { transform: none; }
 .folder-chat:hover .folder-chat-add { color: var(--fg); }
 .dialog-actions .dialog-back { margin-right: auto; display: inline-flex; align-items: center; gap: .375rem; min-width: 0; }
 .modal-card .dialog-actions .dialog-back { min-width: 0; }
-.dialog-back .ic { width: 1rem; height: 1rem; }
+.dialog-back .ic { width: 1.125rem; height: 1.125rem; }
 .folder-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-chat-from { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: var(--fs-meta); }
 .folder-chats-empty { padding: .5rem; color: var(--muted); font-size: var(--fs-small); }

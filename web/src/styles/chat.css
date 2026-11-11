@@ -161,15 +161,16 @@ button.quiet:hover { color: var(--fg); background: var(--accent-soft); border-co
 
 /* ---- questions ---- */
 .msg.user { position: relative; }
-/* Edit and retry float under the bubble, so a question takes no more room for
-   controls that are only there on hover. */
-.msg-tools { gap: .125rem; margin-top: 0; position: absolute; right: 0; top: 100%; z-index: 1; }
+/* Edit and retry sit under the bubble inside the question's own box. They
+   used to float below it, which put them outside the box, and the off-screen
+   skipping on #wrap's children (content-visibility, which clips) cut them off. */
+.msg-tools { gap: .125rem; margin-top: .25rem; }
 .msg-tools .icon-btn { width: 1.75rem; height: 1.75rem; }
 .msg-attachments { justify-content: flex-end; }
 .msg-images { justify-content: flex-end; }
-.attachment-chip .ic { width: .9rem; height: .9rem; color: var(--muted); }
+.attachment-chip .ic { width: 1.0625rem; height: 1.0625rem; color: var(--muted); }
 button.attachment-chip { min-height: 0; font: inherit; font-size: var(--fs-small); color: var(--fg); }
-.msg.automation-run .ic { color: var(--tool); width: 1rem; height: 1rem; align-self: center; }
+.msg.automation-run .ic { color: var(--tool); width: 1.125rem; height: 1.125rem; align-self: center; }
 
 /* ---- jump back to the newest output ---- */
 .jump-latest {
@@ -195,9 +196,13 @@ main.empty-chat #hello { display: block; }
 .chat-item:hover .organize-chat, .chat-item:focus-within .organize-chat, .chat-item.active .organize-chat { opacity: 1; }
 .chat-item .organize-chat .ic { width: 1rem; height: 1rem; }
 @media (hover: none) { .chat-item .organize-chat { opacity: 1; } }
-.chat-item.active { font-weight: 550; }
 
-/* A long transcript needs breathing room under the floating menu button. */
+
+/* The chat's title bar: the same header as Files and MCP, the title on one line. */
+.chat-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The pinned cards start below it. */
+.right-rail { top: calc(var(--bar) + 1.25rem); }
+
 .panel-head > .set-back:first-child { margin-left: -.375rem; }
 
 @media (max-width: 720px) {
@@ -208,4 +213,13 @@ main.empty-chat #hello { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .status-line { animation: none; color: var(--muted); background: none; }
   .hello-mascot { animation: none; }
+}
+
+/* A document still uploading with the question it was sent on: a spinner in
+   place of its icon until the server has read it. */
+.attachment-chip.uploading { opacity: .75; cursor: progress; }
+.attachment-chip.uploading:disabled { opacity: .75; }
+.chip-spinner {
+  flex: none; width: .8rem; height: .8rem; border-radius: 50%;
+  border: 1.5px solid var(--line); border-top-color: var(--muted); animation: spin .8s linear infinite;
 }

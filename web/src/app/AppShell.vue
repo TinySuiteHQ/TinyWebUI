@@ -3,7 +3,7 @@
  * The signed-in app: the sidebar, the chat, the Files and MCP pages over it, the
  * settings dialog, and the file viewer over everything. The only wiring: stores do nothing until this starts them.
  */
-import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, watchEffect } from 'vue';
 import { FEATURE } from '../../../shared/features.ts';
 import { useSession } from '../stores/session.ts';
 import { useConfig } from '../stores/config.ts';
@@ -33,6 +33,12 @@ watchEffect(() => {
   root.busy = chat.busy ? 'true' : 'false';
   root.empty = chat.empty ? 'true' : 'false';
 });
+
+function onMenu() {
+  ui.toggleMenu();
+  // This button hides as the sidebar opens; focus goes on to the toggle that took its place.
+  if (!ui.narrow) nextTick(() => document.getElementById('side-collapse')?.focus());
+}
 
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
@@ -65,10 +71,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
     <div id="side-backdrop" :class="{ open: ui.narrow && ui.drawerOpen }" @click="ui.closeDrawer()" />
     <Sidebar />
     <main :class="{ 'empty-chat': chat.empty }" :inert="ui.narrow && ui.drawerOpen">
-      <!-- One sidebar toggle at every width: it collapses the desktop sidebar
-           and opens the mobile drawer, and it is the way out of every panel. -->
-      <button id="menu" class="icon-btn" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-controls="side"
-              :aria-expanded="ui.narrow ? ui.drawerOpen : !ui.collapsed" @click="ui.toggleMenu()">
+      <!-- The way back to the sidebar, and so out of every panel: on a phone it
+           opens the drawer; on a desktop it shows only while the sidebar is
+           collapsed, since the open sidebar carries its own toggle. -->
+      <button v-show="ui.narrow || ui.collapsed" id="menu" class="icon-btn" type="button" aria-label="Show sidebar" title="Show sidebar" aria-controls="side"
+              :aria-expanded="ui.narrow ? ui.drawerOpen : !ui.collapsed" @click="onMenu">
         <Icon name="sidebar" />
       </button>
       <component :is="LAZY[PANEL.FILES]" v-if="panels.seen.has(PANEL.FILES)" />

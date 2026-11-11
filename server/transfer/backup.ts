@@ -57,6 +57,8 @@ interface BackupChat {
   epoch: number;
   windowSeq: number;
   checkpoint: unknown;
+  /** When it was pinned; absent from files written before pinning existed. */
+  pinnedAt?: number | null;
   tasks: { title: string; status: TaskStatus; createdAt: number; updatedAt: number; createdSeq: number }[];
   messages: BackupMessage[];
 }
@@ -116,7 +118,7 @@ export function chatRecord(store: Store, chat: ChatRow): BackupChat {
     id: chat.id, title: chat.title, createdAt: chat.created_at, updatedAt: chat.updated_at,
     folder: chat.folder || null, tags: (parsed(chat.tags_json) as string[] | null) || [],
     parentId: chat.parent_id, forkSeq: chat.fork_seq, epoch: chat.epoch,
-    windowSeq: chat.window_seq, checkpoint: parsed(chat.checkpoint_json),
+    windowSeq: chat.window_seq, checkpoint: parsed(chat.checkpoint_json), pinnedAt: chat.pinned_at ?? null,
     tasks: store.chats.taskRecords(chat.id).map((t) => ({ title: t.title, status: t.status, createdAt: t.created_at, updatedAt: t.updated_at, createdSeq: t.created_seq })),
     messages
   };
@@ -261,7 +263,8 @@ function readChat(v: unknown, i: number): ReadChat {
     folder: text(v.folder, `${where}: folder`, 200)?.trim().slice(0, 40) || null, tagsJson: JSON.stringify(tags),
     originalParent: typeof v.parentId === 'string' && CHAT_ID.test(v.parentId) ? v.parentId : null,
     forkSeq: int(v.forkSeq, 0) ? v.forkSeq : null, epoch: int(v.epoch, 0) ? v.epoch : 0,
-    windowSeq: checkpointJson ? windowSeq : -1, checkpointJson, tasks, messages
+    windowSeq: checkpointJson ? windowSeq : -1, checkpointJson,
+    pinnedAt: v.pinnedAt == null ? null : time(v.pinnedAt, createdAt), tasks, messages
   };
 }
 

@@ -23,7 +23,8 @@ import Icon from '../../ui/Icon.vue';
 
 // /api/integrations and /api/tools, read field by field.
 type Json = any;
-const ICON: Record<string, string> = { memory: '◎', search: '⌕', database: '▤', globe: '◍', tool: '⚒', plug: '⏚' };
+// A manifest names a kind of icon; the page draws it in its own line set, never the server's glyph.
+const ICON: Record<string, string> = { memory: 'history', search: 'search', database: 'data', globe: 'search', tool: 'mcp', plug: 'mcp' };
 // TinySuite's own servers get their mark, shipped with the page; the id only
 // picks one of these files, so a server still supplies no markup or URL.
 const LOGO: Record<string, string> = { tinycontext: '/icons/tinycontext.svg', tinysearch: '/icons/tinysearch.svg' };
@@ -206,7 +207,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
         <textarea id="mcpText" v-model="text" rows="16" spellcheck="false" :readonly="fileLocked" aria-label="MCP config" />
         <div class="row">
           <div class="usage">{{ msg }}</div>
-          <div class="no-shrink"><button type="button" :disabled="fileLocked || saving" @click="saveFile">{{ saving ? 'reconnecting…' : 'save & reconnect' }}</button></div>
+          <div class="no-shrink"><button type="button" :disabled="fileLocked || saving" @click="saveFile">{{ saving ? 'Reconnecting…' : 'Save and reconnect' }}</button></div>
         </div>
       </div>
 
@@ -233,7 +234,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
           <div class="mcp-tier-head"><h3 id="mcp-tier-builtin">Built-in</h3></div>
           <section class="panel-card int-card">
             <div class="int-head">
-              <span class="int-icon">{{ ICON.tool }}</span>
+              <span class="int-icon"><Icon :name="ICON.tool" /></span>
               <div class="int-name"><h4>Built-in tools</h4><span class="usage">part of TinyWebUI · never ask before running</span></div>
             </div>
             <details class="int-tools">
@@ -255,7 +256,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
           <section v-for="c in tier.cards" :key="c.name" class="panel-card int-card">
             <div class="int-head">
               <img v-if="logo(c)" class="int-icon int-logo" :src="logo(c) ?? undefined" alt="">
-              <span v-else class="int-icon">{{ ICON[c.info?.manifest?.icon] || ICON.plug }}</span>
+              <span v-else class="int-icon"><Icon :name="ICON[c.info?.manifest?.icon] || ICON.plug" /></span>
               <div class="int-name"><h4>{{ c.info?.manifest?.title || c.name }}</h4><span class="usage">{{ meta(c) }}</span></div>
               <span class="int-chips">
                 <span class="chip" :class="status(c) === 'ok' ? 'chip-ok' : 'chip-bad'">{{ status(c) === 'ok' ? 'connected' : status(c) }}</span>

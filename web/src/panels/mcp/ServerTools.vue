@@ -37,11 +37,11 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <button type="button" @click="retry(server.name)">Retry now</button>
     </div>
     <details v-if="server.status === 'ok' && server.instructions" class="tool-group-instructions">
-      <summary>instructions</summary>
+      <summary>Instructions</summary>
       <div class="body">{{ server.instructions }}</div>
     </details>
     <template v-if="server.status === 'ok'">
-      <div v-if="!server.tools.length" class="empty">no tools</div>
+      <div v-if="!server.tools.length" class="empty">No tools</div>
       <ToolRow v-for="t in server.tools" :key="t.name" :tool="t" :read-only="config.readOnly" :default-approval="defaultApproval(t)"
                @toggle="toggleTool(t.name, $event)" @approval="setApproval(t.name, $event)" />
     </template>

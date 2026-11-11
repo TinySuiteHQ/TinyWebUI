@@ -502,13 +502,28 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
       } catch (err) { log.error(`cannot watch ${folder}: ${err.message}`); }
     }
   }
-  const onHup = () => scheduleReload('SIGHUP');
+  // SIGHUP means two things. Sent on purpose (kill -HUP, `docker compose kill
+  // -s HUP`) it asks for a reload. Sent because the terminal or WSL session the
+  // server was started from went away, it means stop: taken as a reload, the
+  // server lived on unseen, and the page it served came back after it was
+  // "stopped". A hangup takes the parent shell with it, a deliberate one leaves
+  // it, so after a moment for the shell to go, the parent tells them apart.
+  const parentAtStart = process.ppid;
+  const onHup = () => {
+    setTimeout(() => {
+      if (process.ppid !== parentAtStart) stopOn('SIGHUP');
+      else scheduleReload('SIGHUP');
+    }, 300).unref();
+  };
   process.on('SIGHUP', onHup);
   server.reload = reloadFromFiles;
 
   // Real teardown, reused two ways: on SIGINT/SIGTERM it exits the process, and
   // as `server.shutdown()` it does not -- which is what a test harness needs.
   const shutdown = async () => {
+    // New connections stop first, so nothing is served from a database being closed below.
+    const closed = new Promise((resolve) => server.close(resolve));
+    server.closeIdleConnections();
     scheduler.stop();
     clearTimeout(reloadTimer);
     for (const w of watchers) w.close();
@@ -521,7 +536,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     await Promise.allSettled([...retrieval.pending.values()]);
     embedder?.close?.();
     store.close();
-    await new Promise((resolve) => server.close(resolve));
+    // An open stream (a page watching a chat) would hold the close forever.
+    server.closeAllConnections();
+    await closed;
   };
   // Said out loud so a log that ends here reads as a stop someone asked for, not a crash.
   const stopOn = (signal: NodeJS.Signals) => {

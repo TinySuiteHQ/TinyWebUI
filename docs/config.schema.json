@@ -403,6 +403,10 @@
       "type": "boolean",
       "x-change": "editable (UI writes it back here)"
     },
+    "autoTitle": {
+      "type": "boolean",
+      "x-change": "editable (UI writes it back here)"
+    },
     "compactionMaxTokens": {
       "type": "number",
       "x-change": "editable (UI writes it back here)"

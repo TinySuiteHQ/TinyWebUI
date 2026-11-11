@@ -123,6 +123,7 @@ export function fromConfig(cfg: Json): Draft {
     baseUrl: str(cfg.baseUrl),
     apiKey: '',
     llmCompaction: String(cfg.llmCompaction !== false),
+    autoTitle: String(cfg.autoTitle !== false),
     compactionMaxTokens: str(cfg.compactionMaxTokens, '8192'),
     expandCharBudget: str(cfg.expandCharBudget, '8000'),
     cache: String(cfg.cache !== false),
@@ -223,6 +224,7 @@ export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lo
       // would bring the card back with nothing on it.
       ...(d.defaultEndpoint ? { baseUrl: (f.baseUrl || '').trim(), ...(f.apiKey ? { apiKey: f.apiKey } : {}) } : {}),
       llmCompaction: f.llmCompaction === 'true',
+      autoTitle: f.autoTitle === 'true',
       compactionMaxTokens: Number(f.compactionMaxTokens) || 8192,
       expandCharBudget: Number(f.expandCharBudget) || 0,
       cache: f.cache === 'true',
