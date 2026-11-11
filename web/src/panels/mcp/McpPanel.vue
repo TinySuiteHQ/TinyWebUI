@@ -12,7 +12,7 @@ import { FEATURE } from '../../../../shared/features.ts';
 import { useConfig } from '../../stores/config.ts';
 import { useSession } from '../../stores/session.ts';
 import { useChat } from '../../stores/chat.ts';
-import { PANEL } from '../../stores/panels.ts';
+import { PANEL, usePanels } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
 import { TOOL_APPROVALS } from '../settings/draft.ts';
 import { onCount, useToolActions } from './tool_actions.ts';
@@ -32,6 +32,9 @@ const LOGO: Record<string, string> = { tinycontext: '/icons/tinycontext.svg', ti
 const enc = encodeURIComponent;
 
 const config = useConfig();
+const panels = usePanels();
+// The page's ×: back to where a chat starts, as New chat in the sidebar does.
+function toNewChat() { if (panels.closeAll()) useChat().newChat(); }
 const session = useSession();
 const { toggleTool, setApproval, defaultApproval } = useToolActions();
 
@@ -202,6 +205,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
         </label>
         <button type="button" @click="page = { kind: 'config' }">Config file</button>
       </template>
+      <button type="button" class="icon-btn panel-close" aria-label="Close MCP" title="Close" @click="toNewChat"><Icon name="x" /></button>
     </div>
 
     <div class="mcp-content">

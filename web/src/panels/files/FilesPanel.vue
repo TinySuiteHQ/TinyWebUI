@@ -83,6 +83,8 @@ const viewer = useViewer();
 function openDoc(d: DocRow) { viewer.show([{ kind: 'document', name: d.filename, id: d.id }]); }
 function openImage(i: ImageRow) { viewer.show([{ kind: 'image', name: imageName(i), src: imageUrl(i) }]); }
 function goToChat(chatId: string) { if (panels.closeAll()) chat.openChat(chatId); }
+// The page's ×: back to where a chat starts, as New chat in the sidebar does.
+function toNewChat() { if (panels.closeAll()) chat.newChat(); }
 
 // Reusing puts the file on the composer of the chat that is open, the same
 // as picking it there; nothing is sent until the message is.
@@ -108,6 +110,7 @@ async function useImage(i: ImageRow) {
     <div class="panel-head">
       <h2>Files</h2>
       <span v-if="rows" class="files-count">{{ rows.length }}</span>
+      <button type="button" class="icon-btn panel-close" aria-label="Close Files" title="Close" @click="toNewChat"><Icon name="x" /></button>
     </div>
     <div class="files-content">
       <input v-model="filter" class="files-filter" type="search" autocomplete="off"

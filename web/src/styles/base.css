@@ -1257,6 +1257,9 @@ button.primary { color: var(--bg); }
 /* The brand row is as tall as a page header, so its toggle sits level with the titles beside it. */
 .brand { display: flex; align-items: center; gap: .25rem; height: 2rem; margin-bottom: .5rem; }
 .logo { width: 2rem; height: 2rem; display: block; flex: none; }
+/* In the sidebar the mark is bigger than the icons below it, but centred on
+   their centre line (.5rem in, 1.25rem wide), so the column still reads as one. */
+.brand .logo { width: 2rem; height: 2rem; }
 .brand-name { flex: 1; font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em; }
 
 /* One grid for every row in the sidebar: rows start .5rem in, where icons,
@@ -1655,7 +1658,7 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 
 .brand-home {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;
-  min-height: 0; padding: .125rem .375rem .125rem .125rem; margin: -.125rem 0 -.125rem -.125rem;
+  min-height: 2rem; padding: .125rem .5rem .125rem .125rem; margin: 0;
   border: 0; border-radius: var(--r-pill); background: none; color: var(--fg); text-align: left;
 }
 .brand-home:hover { background: var(--accent-soft); }
@@ -1705,6 +1708,9 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 .mcp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
 .mcp-mode { display: flex; align-items: center; gap: .5rem; margin: 0 0 0 auto; font-size: var(--fs-meta); color: var(--muted); }
 .mcp-mode > span { white-space: nowrap; }
+.panel-head .mcp-mode + button { margin-left: 0; }
+/* Files and MCP close with an ×, last in the header, like Settings. */
+.panel-head .panel-close { flex: none; margin-right: -.375rem; }
 .mcp-mode select { width: auto; max-width: 14rem; }
 /* No room for title, mode and button on one line: the mode takes a row of its
    own under them, from the page's edge (the menu button is only on the first). */
