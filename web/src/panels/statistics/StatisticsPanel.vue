@@ -12,15 +12,14 @@ import { computed, ref } from 'vue';
 import { api } from '../../core/api.ts';
 import { PANEL } from '../../stores/panels.ts';
 import { usePanel } from '../usePanel.ts';
+import type { AttributionTotal, DayUsage, UsageReply, UsageStatistics } from '../../../../shared/api.ts';
 
-// /api/usage is a wide report read field by field.
-type Json = any;
 type ModelTotal = { model: string, in: number, out: number, cached: number, requests: number };
-type Day = { day: string, models: (ModelTotal & { attribution?: Json })[] };
+type Day = DayUsage;
 
 const days = ref<Day[]>([]);
-const stats = ref<Json | null>(null);
-const targets = ref<Json[]>([]);
+const stats = ref<UsageStatistics | null>(null);
+const targets = ref<UsageStatistics['targets']>([]);
 const error = ref('');
 const loaded = ref(false);
 // Drill-down: [] is every year, ['2026'] its months, ['2026', '2026-03'] its days.
@@ -62,7 +61,7 @@ const sumTotals = (list: ModelTotal[]) => list.reduce((t, m) => ({ in: t.in + m.
 
 /* ---------- totals (all time, for the model filter) ---------- */
 
-const cache = computed(() => stats.value?.cache || {});
+const cache = computed<Partial<UsageStatistics['cache']>>(() => stats.value?.cache || {});
 const allModels = computed(() => sumModels(days.value));
 const allTotals = computed(() => sumTotals(allModels.value));
 const priced = computed(() => Boolean(stats.value?.pricedRounds));
@@ -125,16 +124,16 @@ const rangeName = computed(() => (path.value.length ? crumbLabel(path.value[path
 /* ---------- by model, tools, averages ---------- */
 
 const byModel = computed(() => {
-  const costs = new Map<string, Json>((stats.value?.models || []).map((m: Json) => [m.model, m]));
+  const costs = new Map((stats.value?.models || []).map((m) => [m.model, m]));
   return allModels.value.map((m) => {
     const c = costs.get(m.model);
     return { ...m, cost: c?.pricedRounds ? c.cost : null, partial: Boolean(c && c.pricedRounds && c.pricedRounds < c.rounds) };
   });
 });
-const tools = computed<Json[]>(() => stats.value?.tools || []);
+const tools = computed(() => stats.value?.tools || []);
 const maxCalls = computed(() => Math.max(1, ...tools.value.map((t) => t.calls)));
 
-const rates = computed(() => (cache.value.rates || []).map((r: Json) => `${r.model}${r.provider ? ` @ ${r.provider}` : ''}: `
+const rates = computed(() => (cache.value.rates || []).map((r) => `${r.model}${r.provider ? ` @ ${r.provider}` : ''}: `
   + `${money(r.full * 1e6)}/M full, ${money(r.cache * 1e6)}/M cached`).join('\n'));
 /** Averages with a value; the coverage note says why the others are missing. */
 const averages = computed(() => {
@@ -177,7 +176,7 @@ const label = (c: string) => CATEGORY_LABELS[c] || c;
 
 const attribution = computed(() => {
   const all = scoped.value.flatMap((d) => d.models);
-  const snapshots = all.map((m) => m.attribution).filter(Boolean);
+  const snapshots = all.map((m) => m.attribution).filter((a): a is AttributionTotal => Boolean(a));
   const requests = snapshots.reduce((n, s) => n + s.requests, 0);
   const totalRequests = all.reduce((n, m) => n + (m.requests || 0), 0);
   const sides = (['input', 'output'] as const).map((side) => {
@@ -230,7 +229,7 @@ async function load() {
     const q = new URLSearchParams();
     if (f.model) q.set('model', f.model);
     if (f.provider != null) q.set('provider', f.provider);
-    const data = await api.get(`/api/usage${q.size ? `?${q}` : ''}`);
+    const data = await api.get<UsageReply>(`/api/usage${q.size ? `?${q}` : ''}`);
     if (mine !== request) return;
     days.value = data.days || [];
     stats.value = data.statistics || null;

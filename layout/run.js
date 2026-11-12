@@ -156,6 +156,13 @@ function audit() {
     for (const c of cells) if (c.scrollWidth > c.clientWidth + 1 && getComputedStyle(c).textOverflow !== 'ellipsis') out.push(`table header does not fit: "${c.textContent.trim()}"`);
   }
 
+  // A menu's list squeezed to a row or two, scrolling on its own inside the menu.
+  for (const list of document.querySelectorAll('.popover .pop-scroll')) {
+    if (shown(list) && list.clientHeight + 1 < Math.min(list.scrollHeight, 120)) {
+      out.push(`a menu's list is squeezed: ${label(list)} shows ${list.clientHeight}px of ${list.scrollHeight}px`);
+    }
+  }
+
   const column = document.querySelector('#log .wrap');
   if (column && shown(column)) {
     const col = column.getBoundingClientRect();

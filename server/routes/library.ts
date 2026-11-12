@@ -1,6 +1,6 @@
 import { json, readJson } from '../http.ts';
 import { FEATURE } from '../../shared/features.ts';
-import type { SearchHitView } from '../../shared/api.ts';
+import type { SearchHitView, UsageReply } from '../../shared/api.ts';
 import type { Route, RouteDeps } from './types.ts';
 
 /** The sidebar's search, usage statistics, and folders. */
@@ -28,7 +28,7 @@ export function libraryRoutes({ runs, store }: Pick<RouteDeps, 'runs' | 'store'>
     { method: 'GET', path: /^\/api\/usage$/, feature: FEATURE.STATISTICS, handle: ({ res, auth, url }) => {
       const q = url.searchParams;
       const filter = { model: q.get('model') || undefined, provider: q.has('provider') ? q.get('provider') : undefined };
-      return json(res, 200, { days: store.usage.rollup(auth.userId, filter), statistics: store.usage.statistics(auth.userId, filter) });
+      return json(res, 200, { days: store.usage.rollup(auth.userId, filter), statistics: store.usage.statistics(auth.userId, filter) } satisfies UsageReply);
     } },
 
     // Names stay a plain list (what moving a chat picks from); the folders

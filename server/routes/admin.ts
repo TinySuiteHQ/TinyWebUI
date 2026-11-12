@@ -13,11 +13,14 @@ import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteContext, RouteDeps } from './types.ts';
 import type { SignedIn } from '../access/auth_gate.ts';
 import type { UserListing, UserRow } from '../store/users.ts';
+import type {
+  AdminChatReply, AdminChatsReply, AdminPolicyReply, AdminUserView, AdminUsersReply, DocumentTextReply, InviteCreatedReply, InviteView, RoleView
+} from '../../shared/api.ts';
 
 /** Multi-user, behind the admin or oversight feature: someone is signed in. */
 type AdminContext = RouteContext<SignedIn & { user: UserRow }>;
 
-function adminUserView(u: Omit<UserListing, 'chat_count' | 'has_password'> & { chat_count?: number; has_password?: number; password_hash?: string | null }) {
+function adminUserView(u: Omit<UserListing, 'chat_count' | 'has_password'> & { chat_count?: number; has_password?: number; password_hash?: string | null }): AdminUserView {
   return {
     id: u.id, email: u.email, name: u.name ?? null, role: u.role, status: u.status,
     createdAt: u.created_at, lastLoginAt: u.last_login_at, chatCount: u.chat_count ?? null,
@@ -93,11 +96,11 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
     });
     if (refused) return json(res, refused.status, { error: refused.error });
     audit(created ? 'admin.role_created' : 'admin.role_changed', { by: auth.userId, role: name, spec });
-    return json(res, created ? 201 : 200, { roles: rolesView() });
+    return json(res, created ? 201 : 200, { roles: rolesView() } satisfies { roles: RoleView[] });
   };
 
   // Each role as the Roles tab shows it: what it grants, spelled out, and who holds it.
-  const rolesView = () => {
+  const rolesView = (): RoleView[] => {
     const { roles } = resolveAccess(config());
     const counts = store.users.roleCounts();
     return Object.entries(roles).map(([name, spec]) => ({
@@ -109,7 +112,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
 
   return [
     { method: 'GET', path: /^\/api\/admin\/invites$/, feature: FEATURE.ADMIN, handle: multi(({ res }) => {
-      return json(res, 200, { invites: store.users.listInvites().map((i) => ({
+      return json(res, 200, { invites: store.users.listInvites().map((i): InviteView => ({
         id: i.id, email: i.email, createdAt: i.created_at, expiresAt: i.expires_at
       })) });
     }) },
@@ -131,7 +134,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       return json(res, 201, {
         invite: { id: invite.id, email, createdAt: invite.created_at, expiresAt: invite.expires_at },
         token, path: `/?invite=${token}`
-      });
+      } satisfies InviteCreatedReply);
     }) },
 
     { method: 'DELETE', path: /^\/api\/admin\/invites\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(({ res, auth, params: [id] }) => {
@@ -148,7 +151,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       return json(res, 200, {
         fingerprint: fingerprint(config(), source.loadMcpServers()),
         users: store.users.list().map((u) => ({ ...adminUserView(u), pinnedInCode: pinnedBy(u) }))
-      });
+      } satisfies AdminUsersReply);
     }) },
 
     { method: 'PATCH', path: /^\/api\/admin\/users\/([\w-]+)$/, feature: FEATURE.ADMIN, handle: multi(async ({ req, res, auth, params: [id] }) => {
@@ -224,7 +227,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
         features: FEATURES, customizable: CUSTOMIZABLE, models: catalog(config()).map((m) => m.id),
         roles: rolesView(), newUsers: resolveAccess(config()).newUsers, allowRequests: resolveAccess(config()).allowRequests,
         locked: source.isFrozen() || source.lockedKeys().has('access')
-      });
+      } satisfies AdminPolicyReply);
     }) },
 
     // Whether the sign-in page offers "Request access". Written to the file like any other decision.
@@ -270,7 +273,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       if (refused) return json(res, refused.status, { error: refused.error });
       const moved = store.users.moveRole(name, 'user');
       audit('admin.role_deleted', { by: auth.userId, role: name, moved });
-      return json(res, 200, { roles: rolesView(), moved });
+      return json(res, 200, { roles: rolesView(), moved } satisfies { roles: RoleView[], moved: number });
     }) },
 
     // Oversight: read-only, every view audited. Reached through ALL_USERS on
@@ -283,7 +286,7 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
       const chats = store.chats.list(500, target.id).map((c) => ({ ...c, running: runs.isRunning(c.id) }));
       // The figures the oversight header shows.
       const { rounds, pricedRounds, reportedCost } = store.usage.statistics(target.id);
-      return json(res, 200, { user: adminUserView(target), chats, summary: { rounds, pricedRounds, reportedCost } });
+      return json(res, 200, { user: adminUserView(target), chats, summary: { rounds, pricedRounds, reportedCost } } satisfies AdminChatsReply);
     }) },
 
     { method: 'GET', path: /^\/api\/admin\/chats\/([\w.-]+)$/, feature: FEATURE.OVERSIGHT, handle: multi(({ res, auth, params: [id] }) => {
@@ -297,14 +300,14 @@ export function adminRoutes({ config, multiUser, refreshConfig, runs, source, st
         running: runs.isRunning(found.id),
         messages: store.messages.list(found.id).map(toView),
         documents: store.documents.list(found.id)
-      });
+      } satisfies AdminChatReply);
     }) },
 
     { method: 'GET', path: /^\/api\/admin\/documents\/([\w.-]+)$/, feature: FEATURE.OVERSIGHT, handle: multi(({ res, auth, params: [id] }) => {
       const doc = store.documents.get(id, ALL_USERS);
       if (!doc) return json(res, 404, { error: 'no such document' });
       audit('admin.view_document', { by: auth.userId, documentId: doc.id, chatId: doc.chat_id });
-      return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content });
+      return json(res, 200, { filename: doc.filename, mime: doc.mime, content: doc.content } satisfies DocumentTextReply);
     }) }
   ];
 }

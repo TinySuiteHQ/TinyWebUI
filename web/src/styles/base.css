@@ -212,7 +212,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .chat-action .ic { width: 1.125rem; height: 1.125rem; }
 .chat-action:hover, .chat-action:focus-visible { color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 button.chat-action:active:not(:disabled) { transform: none; }
-.chat-delete:hover, .chat-delete:focus-visible { color: var(--err); }
 .chat-rename {
   flex: 1; min-width: 0; height: 1.75rem; min-height: 0; padding: 0 .375rem; margin: -.125rem 0;
   font: inherit; color: var(--fg); background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm);
@@ -503,7 +502,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
    page's own filters and actions go in its body (.page-toolbar). */
 .head-status { margin-left:auto; color:var(--muted); font-size:var(--fs-meta); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cfg-actions .head-status { margin-left:0; white-space:normal; }
-.set-lede { width:min(46rem, 100%); margin:.75rem 0 1rem; color:var(--muted); font-size:var(--fs-meta); }
 /* Data: what a backup holds, and what an import did. */
 .data-list { margin:0; padding-left:1.25rem; font-size:var(--fs-small); line-height:1.6; }
 .data-note { margin:.5rem 0 0; color:var(--muted); font-size:var(--fs-meta); line-height:1.45; }
@@ -742,7 +740,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 /* One chevron for disclosures and links that lead on: drawn from two borders,
    so it sits centred on the row instead of on a text baseline the way a ›
    character does. Right when closed, down when open. */
-.automation-run > summary::after, .page-details > summary::before, .set-link::after {
+.automation-run > summary::after, .page-details > summary::before {
   content: ''; flex: none; width: .4375rem; height: .4375rem; margin-right: .1875rem;
   border: solid currentColor; border-width: 0 1.75px 1.75px 0; transform: rotate(-45deg);
   transition: transform var(--t-fast, .14s);
@@ -1343,10 +1341,15 @@ button.nav-item:active:not(:disabled) { transform: none; }
 .side-scroll {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   margin: 0 -.5rem; padding: 0 .125rem 0 .5rem; scrollbar-gutter: stable;
-  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  /* The thumb shows only while the pointer or focus is in the sidebar: a bar
+     that never goes away read as clutter beside the list. The gutter stays. */
+  scrollbar-width: thin; scrollbar-color: transparent transparent;
+  transition: scrollbar-color var(--t-fast);
 }
+#side:hover .side-scroll, .side-scroll:focus-within { scrollbar-color: var(--line) transparent; }
 .side-scroll::-webkit-scrollbar { width: .5rem; }
-.side-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); }
+.side-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--r-pill); }
+#side:hover .side-scroll::-webkit-scrollbar-thumb, .side-scroll:focus-within::-webkit-scrollbar-thumb { background: var(--line); }
 .side-scroll #chats { flex: none; overflow: visible; }
 .chat-item { padding-left: .5rem; }
 .chat-item.active { background: var(--accent-soft); box-shadow: none; }
@@ -1474,8 +1477,8 @@ main.empty-chat footer { padding-top: 0; }
   position: absolute; bottom: calc(100% + .5rem); z-index: 30;
   width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 60dvh);
   display: flex; flex-direction: column; padding: .375rem;
-  /* Its list (.pop-scroll) gives up height first; past that, in a short window,
-     the whole menu scrolls rather than spilling out of its box. */
+  /* Its list (.pop-scroll) gives up height first, down to a few rows
+     (Popover.vue); past that the whole menu scrolls rather than spilling. */
   overflow-y: auto; overscroll-behavior: contain;
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-md);
   box-shadow: 0 16px 40px -12px rgb(0 0 0 / 28%), 0 2px 6px rgb(0 0 0 / 6%);
@@ -1599,7 +1602,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
   width: min(46rem, 100%); margin: 0; padding: 1.25rem 0;
   border-top: 1px solid var(--line);
 }
-.set-group:first-child, .set-divider + .set-group { border-top: 0; }
+.set-group:first-child { border-top: 0; }
 .set-group > header { margin-bottom: .75rem; }
 .set-group h3 { margin: 0; font-size: var(--fs-ui); font-weight: 600; }
 .set-group > header p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
@@ -1617,7 +1620,6 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .set-grid input[type="number"], .set-grid select { max-width: 20rem; }
 .set-group label { color: var(--fg); font-weight: 500; font-size: var(--fs-small); margin-bottom: .3125rem; }
 .set-group small { display: block; margin-top: .25rem; color: var(--muted); font-size: var(--fs-meta); line-height: 1.4; }
-.set-grid > div > label.inline-check { padding-top: .5rem; }
 .set-group textarea#systemPrompt { font-family: var(--sans); font-size: var(--fs-ui); line-height: 1.55; }
 @container (max-width: 480px) {
   .set-panel .settings-content { padding: .5rem 1rem 2rem; }
@@ -1632,11 +1634,6 @@ button.pop-item:active:not(:disabled) { transform: none; }
 }
 .save-bar-text { margin-right: auto; color: var(--fg); font-weight: 500; }
 .save-bar-err { flex-basis: 100%; order: 5; color: var(--err); font-size: var(--fs-meta); }
-.set-divider { width: min(46rem, 100%); margin: 1.5rem 0 .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.set-divider h2 { margin: 0; font-size: 1.0625rem; }
-.set-divider p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
-/* A person without the settings feature sees only what an admin lets them customise. */
-.set-divider.set-first { margin-top: 0; padding-top: 0; border-top: 0; }
 .panel-head .set-back { margin-left: -.375rem; }
 .panel-head .set-back + h2 { margin-right: auto; }
 
@@ -1666,27 +1663,12 @@ button.pop-item:active:not(:disabled) { transform: none; }
 /* A fresh instance: the first step of setting one up. */
 .ep-setup p { margin: .25rem 0 1rem; color: var(--muted); font-size: var(--fs-small); }
 .set-add { width: min(46rem, 100%); margin: 0 0 1.5rem; }
-.set-nav { width: min(46rem, 100%); margin: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise); overflow: hidden; }
-.set-link {
-  display: flex; align-items: center; width: 100%; padding: .875rem 1.25rem; text-align: left;
-  background: none; border: 0; border-radius: 0; color: var(--fg);
-}
-.set-link + .set-link { border-top: 1px solid var(--line); }
-.set-link:hover { background: var(--accent-soft); }
-.set-link { gap: .75rem; }
-.set-link::after { margin-left: auto; color: var(--faint); }
-.set-link b { display: block; font-weight: 600; }
-.set-link small { display: block; color: var(--muted); font-size: var(--fs-small); }
-.set-link[hidden] { display: none; }
 .set-foot { width: min(46rem, 100%); margin: 0 0 1rem; padding-top: 1.25rem; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: .5rem; }
 .danger { color: var(--err); }
-.inline-check { display: inline-flex !important; gap: .375rem; align-items: center; margin: 0 !important; font-weight: 400 !important; }
 /* Editor fields inside the model and connector pages. */
 /* JSON fields: the extra request body, globally and per model. */
 textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small); }
 .cfg-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
-.cfg-tags { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
-.cfg-tags label { display: inline-flex; gap: .3rem; align-items: center; margin: 0; font-weight: 400; }
 
 .brand-home {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;
@@ -1901,7 +1883,6 @@ button.files-chat-link:active:not(:disabled) { transform: none; }
 .popover.account-menu { --pop-gap: .25rem; left: 0; right: 0; width: auto; }
 .account-menu .adm-badge { margin-left: auto; }
 .account-who { display: flex; flex-direction: column; padding: .375rem .5rem .5rem; min-width: 0; }
-.account-who-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-who-sub { color: var(--muted); font-size: var(--fs-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pop-item:disabled { opacity: .5; cursor: not-allowed; }
 .pop-item:disabled:hover { background: none; }
@@ -2024,12 +2005,10 @@ dialog.modal-card::backdrop { background: rgb(0 0 0 / 45%); backdrop-filter: blu
   border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--raise));
 }
 .modal-card .dialog-actions button { min-width: 5.5rem; }
-.modal-note { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.5; }
 .field { display: flex; flex-direction: column; gap: .375rem; }
 .field-label { font-size: var(--fs-meta); font-weight: 600; color: var(--fg); }
 .field-optional { margin-left: .25rem; font-weight: 400; color: var(--faint); }
 .field-hint { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
-.field-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .field textarea { resize: vertical; min-height: 6rem; line-height: 1.5; }
 
 

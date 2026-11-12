@@ -27,7 +27,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 async function load() {
   const mine = ++request;
   try {
-    const next: AutomationsReply = await api.get('/api/automations');
+    const next = await api.get<AutomationsReply>('/api/automations');
     if (mine !== request) return;
     snapshot.value = next;
     error.value = '';

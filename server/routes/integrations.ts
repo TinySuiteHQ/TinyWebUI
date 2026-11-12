@@ -35,16 +35,11 @@ import {
 } from '../management.ts';
 import type { McpHub } from '../mcp.ts';
 import type { Route, RouteContext, RouteDeps } from './types.ts';
+import type { ActionReply, AdminConnectorsReply, IntegrationServer, IntegrationsReply, OverseenServer } from '../../shared/api.ts';
 
 const log = logger('integrations');
 
 type As = { shared: true } | { userId: string | null };
-
-/** One server as oversight lists it: its user's views, or why there are none. */
-type OverseenServer = {
-  name: string; perUser: boolean; title: string; icon: string | null;
-  views: ReturnType<typeof publicView>[]; reason: string | null;
-};
 
 // Manifests are re-read at most this often per server and caller: they can
 // differ by caller, and change when a server restarts with other settings.
@@ -172,7 +167,7 @@ export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'h
       const inventory = h.inventory([]).servers;
       const servers = await Promise.all(inventory.map(async (s) => {
         const bound = h.isBound(s.name);
-        const row: Record<string, unknown> = {
+        const row: IntegrationServer = {
           name: s.name,
           status: s.status,
           // Why a server failed can name hosts and commands: admins only.
@@ -197,7 +192,7 @@ export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'h
         }
         return row;
       }));
-      return json(res, 200, { multiUser: multiUser(), servers });
+      return json(res, 200, { multiUser: multiUser(), servers } satisfies IntegrationsReply);
     } },
 
     { method: 'GET', path: /^\/api\/integrations\/([^/]+)\/views\/([^/]+)$/, feature: FEATURE.INTEGRATIONS,
@@ -230,7 +225,7 @@ export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'h
         cache.get(hub())?.clear();
         const message = result.text.slice(0, 2000);
         if (result.isError) return json(res, 422, { ok: false, message, error: serverMessage(message) || 'the server refused' });
-        return json(res, 200, { ok: true, message });
+        return json(res, 200, { ok: true, message } satisfies ActionReply);
       }) },
 
     { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/integrations$/, feature: FEATURE.OVERSIGHT,
@@ -251,7 +246,7 @@ export function integrationsRoutes({ hub, multiUser, store }: Pick<RouteDeps, 'h
             return { ...row, reason: err instanceof ManifestError ? `invalid manifest: ${err.message}` : `the server did not answer: ${serverMessage(err)}` };
           }
         }));
-        return json(res, 200, { user: { id: user.id, name: user.name, email: user.email }, servers });
+        return json(res, 200, { user: { id: user.id, name: user.name, email: user.email }, servers } satisfies AdminConnectorsReply);
       }) },
 
     { method: 'GET', path: /^\/api\/admin\/users\/([\w-]+)\/integrations\/([^/]+)\/views\/([^/]+)$/, feature: FEATURE.OVERSIGHT,

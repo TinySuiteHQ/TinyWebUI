@@ -71,6 +71,14 @@ test('renderMarkdown renders what models emit', () => {
   assert.equal(renderMarkdown('see 1 and 2'), '<p>see 1 and 2</p>');
 });
 
+test('a block has no newlines between its tags, and code keeps its own', () => {
+  // Each newline between tags was a blank text node: a third of a long answer's DOM.
+  assert.equal(renderMarkdown('- a\n- b'), '<ul><li>a</li><li>b</li></ul>');
+  assert.doesNotMatch(renderMarkdown('| a | b |\n|---|---|\n| 1 | 2 |'), />\n+</);
+  assert.equal(renderMarkdown('```\nx >\n< y\n\n</z>\n```'), '<pre data-lang=""><code>x &gt;\n&lt; y\n\n&lt;/z&gt;</code></pre>');
+  assert.equal(renderMarkdown('**a**\n*b*'), '<p><strong>a</strong><br><em>b</em></p>', 'a line break in text is a <br>, not a newline');
+});
+
 test('lines that matched a block but not its reading never hang the page', () => {
   // Each of these once sent the renderer round the same line forever.
   // Up to three spaces before a # is still a heading (CommonMark).

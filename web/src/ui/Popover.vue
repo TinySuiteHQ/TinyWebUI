@@ -36,6 +36,11 @@ function room(anchor: HTMLElement) {
   return { top, bottom };
 }
 
+/** Room on one side that is enough for a menu, even one that would like more. */
+const ROOMY = 280;
+/** How tall a list inside a menu stays (about four rows, or all of a shorter one) before the menu scrolls instead. */
+const LIST_FLOOR = 160;
+
 // Positioned by hand rather than through a style binding: measuring needs the
 // cap lifted for a moment, which a binding would not know to put back.
 function fit() {
@@ -52,6 +57,8 @@ function fit() {
   const anchor = pop.parentElement;
   if (!anchor) return;
   const gap = 8;
+  const lists = [...pop.querySelectorAll<HTMLElement>('.pop-scroll')];
+  for (const list of lists) list.style.minHeight = '';
   pop.style.maxHeight = 'none';
   const want = Math.min(pop.offsetHeight, 448);
   const rect = anchor.getBoundingClientRect();
@@ -61,10 +68,29 @@ function fit() {
   // A new chat's centred composer prefers below, but a short window (an editor's
   // preview pane) can leave less room there than above.
   const up = below < want && (props.centred ? above > below + 64 : above > below);
-  pop.style.top = up ? 'auto' : 'calc(100% + var(--pop-gap, .5rem))';
-  pop.style.bottom = up ? 'calc(100% + var(--pop-gap, .5rem))' : 'auto';
+  const side = up ? above : below;
   pop.style.transformOrigin = `${up ? 'bottom' : 'top'} ${props.side}`;
-  pop.style.maxHeight = `${Math.max(64, Math.min(want, up ? above : below))}px`;
+  if (side >= Math.min(want, ROOMY)) {
+    pop.style.top = up ? 'auto' : 'calc(100% + var(--pop-gap, .5rem))';
+    pop.style.bottom = up ? 'calc(100% + var(--pop-gap, .5rem))' : 'auto';
+    pop.style.maxHeight = `${Math.max(64, Math.min(want, side))}px`;
+  } else {
+    // Neither side has room (a short window): the menu may cover its anchor
+    // and use the whole height, as a native dropdown does, staying as near
+    // the anchor as it fits. Confined to one side, it was a sliver.
+    const height = Math.min(want, box.bottom - box.top - gap * 2);
+    const top = up ? Math.max(box.top + gap, rect.top - gap - height) : Math.min(rect.bottom + gap, box.bottom - gap - height);
+    pop.style.top = `${top - rect.top - anchor.clientTop}px`;
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = `${height}px`;
+  }
+  // A list (the tools, the models) gives up height first, but not all of it:
+  // below a few rows it was a box one row high with a scrollbar of its own.
+  // Past this, the menu scrolls as one instead.
+  for (const list of lists) {
+    const need = Math.min(list.scrollHeight, LIST_FLOOR);
+    if (list.clientHeight < need) list.style.minHeight = `${need}px`;
+  }
 }
 function onWidth() { sheet.value = SHEET.matches; fit(); }
 

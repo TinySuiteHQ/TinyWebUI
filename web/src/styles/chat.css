@@ -194,11 +194,6 @@ main.empty-chat #hello { display: block; }
 .login-logo { width: 2.75rem; height: 2.75rem; margin-bottom: .25rem; }
 .login-msg { color: var(--err); }
 
-/* ---- sidebar: row actions appear where the pointer or focus is ---- */
-.chat-item .organize-chat { opacity: 0; display: inline-flex; align-items: center; justify-content: center; transition: opacity var(--t-fast); }
-.chat-item:hover .organize-chat, .chat-item:focus-within .organize-chat, .chat-item.active .organize-chat { opacity: 1; }
-.chat-item .organize-chat .ic { width: 1rem; height: 1rem; }
-@media (hover: none) { .chat-item .organize-chat { opacity: 1; } }
 
 
 /* The chat's title bar: the same header as Files and MCP, the title on one line. */

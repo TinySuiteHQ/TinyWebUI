@@ -7,16 +7,14 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { api } from '../core/api.ts';
 import { useSession } from './session.ts';
-
-// /api/config, /api/tools and /api/mcp are wide JSON shapes read field by field.
-type Json = any;
+import type { ConfigReply, McpFileReply, ToolsReply } from '../../../shared/api.ts';
 
 export const useConfig = defineStore('config', () => {
-  const cfg = ref<Json | null>(null);
+  const cfg = ref<ConfigReply | null>(null);
   const loadError = ref('');
-  const tools = ref<Json | null>(null);
+  const tools = ref<ToolsReply | null>(null);
   const toolsError = ref('');
-  const mcp = ref<Json | null>(null);
+  const mcp = ref<McpFileReply | null>(null);
   const mcpError = ref('');
 
   /** A non-admin sees the deployment's settings but cannot change them. */
@@ -45,7 +43,7 @@ export const useConfig = defineStore('config', () => {
 
   async function load() {
     try {
-      cfg.value = await api.get('/api/config');
+      cfg.value = await api.get<ConfigReply>('/api/config');
       loadError.value = '';
     } catch (err) {
       loadError.value = `Couldn't load settings (${err.message}).`;
@@ -54,7 +52,7 @@ export const useConfig = defineStore('config', () => {
 
   async function loadTools() {
     try {
-      tools.value = await api.get('/api/tools');
+      tools.value = await api.get<ToolsReply>('/api/tools');
       toolsError.value = '';
     } catch (err) {
       toolsError.value = `Couldn't load tools (${err.message}).`;
@@ -63,7 +61,7 @@ export const useConfig = defineStore('config', () => {
 
   async function loadMcp() {
     try {
-      mcp.value = await api.get('/api/mcp');
+      mcp.value = await api.get<McpFileReply>('/api/mcp');
       mcpError.value = '';
     } catch (err) {
       mcpError.value = `Couldn't load MCP config (${err.message}).`;

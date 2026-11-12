@@ -31,6 +31,7 @@ import type { RetrievalMode } from './config/config.ts';
 import type { UserRole } from './store/users.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { Route, RouteDeps, ToolsView } from './routes/types.ts';
+import type { ConfigReply } from '../shared/api.ts';
 import { authRoutes } from './routes/auth.ts';
 import { settingsRoutes } from './routes/settings.ts';
 import { mcpRoutes } from './routes/mcp.ts';
@@ -68,7 +69,7 @@ export interface App {
   toolsFor(features: Set<string>): ToolDef[];
   ownerFeatures(userId: string | null): Set<string>;
   toolsView(): ToolsView;
-  configFor(auth: Auth): Record<string, unknown>;
+  configFor(auth: Auth): ConfigReply;
   swapHub(servers: McpServers): Promise<void>;
   onRunIdle(chatId: string): void;
 }
@@ -274,16 +275,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     },
 
     configFor(auth) {
-      const pub = source.public(app.cfg);
+      const pub = source.public(app.cfg) satisfies ConfigReply;
       if (auth.features.has(FEATURE.SETTINGS) && auth.isAdmin) return pub;
-      if (auth.features.has(FEATURE.SETTINGS)) {
-        // Allowed to edit settings, but not to see where the deployment's keys point.
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
-        return out;
-      }
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
+      // The same fields less the admin-only ones: a subset of a ConfigReply, whose fields are all optional.
+      const out = Object.fromEntries(Object.entries(pub).filter(([k]) => !ADMIN_ONLY_FIELDS.test(k))) as Partial<typeof pub>;
+      // Allowed to edit settings, but not to see where the deployment's keys point.
+      if (auth.features.has(FEATURE.SETTINGS)) return out;
       return { ...out, readOnly: true };
     },
 

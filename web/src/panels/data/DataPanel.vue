@@ -62,7 +62,7 @@ async function onFile() {
   try {
     let doc: unknown;
     try { doc = JSON.parse(await file.text()); } catch { throw new Error('that file is not JSON; pick a TinyWebUI backup (.json)'); }
-    const r: ImportReply = await api.post('/api/import', doc);
+    const r = await api.post<ImportReply>('/api/import', doc);
     result.value = r;
     await useChats().load();
     if (r.instructions === 'set') await session.loadAccess();

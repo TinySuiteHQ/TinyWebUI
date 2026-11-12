@@ -8,29 +8,31 @@
  * Everything here is plain data drawn as text. A server never supplies markup
  * or script, only values, so a hostile one can at worst show odd text.
  */
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import Icon from '../../ui/Icon.vue';
 import { api } from '../../core/api.ts';
+import type { ActionInput, ActionReply, DetailData, ViewAction, ViewData, ViewInfo, ViewRow } from '../../../../shared/api.ts';
 
-// A view manifest and its data, as the server relays them, read field by field.
-type Json = any;
-const props = defineProps<{ view: Json, base: string }>();
+const props = defineProps<{ view: ViewInfo, base: string }>();
 
 const enc = encodeURIComponent;
 const query = reactive<Record<string, string>>({});
 const offset = ref(0);
-const data = ref<Json | null>(null);
+const data = ref<ViewData | null>(null);
+// Which of the two a view's data is: its `rows` or `items` says so.
+const stats = computed(() => (data.value?.items ? data.value : null));
+const table = computed(() => (data.value?.rows ? data.value : null));
 const error = ref('');
 const loading = ref(false);
-const detail = ref<Json | null>(null); // { fields, row } while a row is open
+const detail = ref<DetailData | null>(null); // while a row is open
 const detailLoading = ref(false);
-const editing = ref<{ action: Json, row: Json | null, value: string } | null>(null);
+const editing = ref<{ action: ViewAction & { input: ActionInput }, row: ViewRow | null, value: string } | null>(null);
 const actionError = ref<{ id: string, message: string } | null>(null);
 const busyAction = ref('');
 let seq = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-function format(value: unknown, fmt?: string) {
+function format(value: unknown, fmt?: string | null) {
   if (value === null || value === undefined || value === '') return '—';
   if (fmt === 'datetime') {
     const d = new Date(value as string);
@@ -48,7 +50,7 @@ async function load() {
   const params = new URLSearchParams(Object.entries(query).filter(([, v]) => v));
   if (props.view.kind === 'table') params.set('offset', String(offset.value));
   try {
-    const out = await api.get(`${props.base}?${params}`);
+    const out = await api.get<ViewData>(`${props.base}?${params}`);
     if (mine !== seq) return;
     data.value = out;
     error.value = '';
@@ -66,15 +68,15 @@ function setParam(name: string, value: string, debounce = false) {
   if (debounce) timer = setTimeout(go, 300); else go();
 }
 
-async function openRow(row: Json) {
+async function openRow(row: ViewRow) {
   const v = props.view;
-  if (!v.hasDetail && !v.actions.some((a: Json) => a.target === 'row')) return;
+  if (!v.hasDetail && !v.actions.some((a) => a.target === 'row')) return;
   const mine = ++seq;
-  detail.value = { fields: v.columns.map((c: Json) => ({ label: c.label, value: row[c.key], format: c.format })), row };
-  if (v.hasDetail && v.rowKey && row[v.rowKey] !== null) {
+  detail.value = { fields: v.columns.map((c) => ({ label: c.label, value: row[c.key] ?? null, format: c.format })), row };
+  if (v.hasDetail && v.rowKey && row[v.rowKey] != null) {
     detailLoading.value = true;
     try {
-      const out = await api.get(`${props.base}/items/${enc(String(row[v.rowKey]))}`);
+      const out = await api.get<DetailData>(`${props.base}/items/${enc(String(row[v.rowKey]))}`);
       if (mine === seq) detail.value = { ...out, row: out.row || row };
     } catch (err) {
       if (mine === seq) { detail.value = null; error.value = err.message; }
@@ -84,19 +86,20 @@ async function openRow(row: Json) {
   }
 }
 
-function startAction(action: Json, row: Json | null) {
+function startAction(action: ViewAction, row: ViewRow | null) {
   actionError.value = null;
-  if (!action.input) { run(action, row, null); return; }
-  editing.value = { action, row, value: action.input.initial && row ? String(row[action.input.initial] ?? '') : '' };
+  const input = action.input;
+  if (!input) { run(action, row, null); return; }
+  editing.value = { action: { ...action, input }, row, value: input.initial && row ? String(row[input.initial] ?? '') : '' };
 }
 
-async function run(action: Json, row: Json | null, input: string | null) {
+async function run(action: ViewAction, row: ViewRow | null, input: string | null) {
   // The server refuses a destructive action without this; the page's part is
   // making sure a person actually said yes.
   if (action.destructive && !window.confirm(action.confirm || `${action.label}? This cannot be undone.`)) return;
   busyAction.value = action.id;
   try {
-    const res = await api.post(`${props.base}/actions/${enc(action.id)}`, {
+    const res = await api.post<ActionReply>(`${props.base}/actions/${enc(action.id)}`, {
       row: row || undefined, input: input ?? undefined, confirm: action.destructive ? true : undefined
     });
     if (!res.ok) throw new Error(res.message || 'The server refused.');
@@ -109,8 +112,8 @@ async function run(action: Json, row: Json | null, input: string | null) {
   }
 }
 
-const viewActions = () => props.view.actions.filter((a: Json) => a.target === 'view');
-const rowActions = () => props.view.actions.filter((a: Json) => a.target === 'row');
+const viewActions = () => props.view.actions.filter((a) => a.target === 'view');
+const rowActions = () => props.view.actions.filter((a) => a.target === 'row');
 const clickable = () => props.view.hasDetail || rowActions().length;
 
 onMounted(load);
@@ -121,10 +124,10 @@ watch(() => props.base, () => { for (const k of Object.keys(query)) delete query
   <div class="int-view">
     <p v-if="error" class="int-error">{{ error }}</p>
     <p v-else-if="!data && loading" class="empty">Loading…</p>
-    <template v-else-if="data && view.kind === 'stats'">
-      <p v-if="data.notice" class="int-notice">{{ data.notice }}</p>
+    <template v-else-if="stats">
+      <p v-if="stats.notice" class="int-notice">{{ stats.notice }}</p>
       <div class="int-stats">
-        <div v-for="(item, i) in data.items" :key="i" class="int-stat">
+        <div v-for="(item, i) in stats.items" :key="i" class="int-stat">
           <span class="int-stat-label">{{ item.label }}</span>
           <span class="int-stat-value">{{ item.unit && format(item.value, item.format) !== '—' ? `${format(item.value, item.format)} ${item.unit}` : format(item.value, item.format) }}</span>
           <span v-if="item.hint" class="usage">{{ item.hint }}</span>
@@ -159,7 +162,7 @@ watch(() => props.base, () => { for (const k of Object.keys(query)) delete query
         </template>
       </div>
     </template>
-    <template v-else-if="data">
+    <template v-else-if="table">
       <div v-if="view.params.length || viewActions().length" class="int-filters">
         <div v-for="param in view.params" :key="param.name" class="int-field">
           <label :for="`int-${param.name}`">{{ param.label }}</label>
@@ -181,21 +184,21 @@ watch(() => props.base, () => { for (const k of Object.keys(query)) delete query
         <input v-else :id="`int-input-${editing.action.id}`" v-model="editing.value" type="text" required>
         <div class="int-actions"><button type="submit" class="primary">Save</button><button type="button" @click="editing = null">Cancel</button></div>
       </form>
-      <p v-if="data.notice" class="int-notice">{{ data.notice }}</p>
-      <p v-if="!data.rows.length" class="empty">{{ offset ? 'No more rows.' : 'Nothing here yet.' }}</p>
+      <p v-if="table.notice" class="int-notice">{{ table.notice }}</p>
+      <p v-if="!table.rows.length" class="empty">{{ offset ? 'No more rows.' : 'Nothing here yet.' }}</p>
       <table v-else class="int-table">
         <thead><tr><th v-for="c in view.columns" :key="c.key" :class="{ num: c.format === 'number' }">{{ c.label }}</th></tr></thead>
         <tbody>
-          <tr v-for="(row, i) in data.rows" :key="i" :class="{ 'int-row': clickable() }" :tabindex="clickable() ? 0 : undefined"
+          <tr v-for="(row, i) in table.rows" :key="i" :class="{ 'int-row': clickable() }" :tabindex="clickable() ? 0 : undefined"
               @click="openRow(row)" @keydown.enter="openRow(row)">
             <td v-for="c in view.columns" :key="c.key" :class="{ num: c.format === 'number' }">{{ format(row[c.key], c.format) }}</td>
           </tr>
         </tbody>
       </table>
       <div class="int-pager">
-        <span class="usage">{{ data.rows.length ? `${(offset + 1).toLocaleString()}–${(offset + data.rows.length).toLocaleString()}${data.total !== null ? ` of ${data.total.toLocaleString()}` : ''}` : '' }}</span>
+        <span class="usage">{{ table.rows.length ? `${(offset + 1).toLocaleString()}–${(offset + table.rows.length).toLocaleString()}${table.total !== null ? ` of ${table.total.toLocaleString()}` : ''}` : '' }}</span>
         <button type="button" class="with-icon" :disabled="offset === 0" @click="offset = Math.max(0, offset - view.pageSize); load()"><Icon name="chevronLeft" />Previous</button>
-        <button type="button" class="with-icon" :disabled="!data.hasMore" @click="offset += data.rows.length || view.pageSize; load()">Next<Icon name="chevronRight" /></button>
+        <button type="button" class="with-icon" :disabled="!table.hasMore" @click="offset += table.rows.length || view.pageSize; load()">Next<Icon name="chevronRight" /></button>
       </div>
     </template>
   </div>

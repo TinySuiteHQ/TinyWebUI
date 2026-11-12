@@ -8,10 +8,9 @@ import { useConfig } from '../../stores/config.ts';
 import { useToolActions } from './tool_actions.ts';
 import ToolRow from './ToolRow.vue';
 import LongError from './LongError.vue';
+import type { ToolsReply } from '../../../../shared/api.ts';
 
-// A server from /api/tools, read field by field.
-type Json = any;
-defineProps<{ server: Json }>();
+defineProps<{ server: ToolsReply['servers'][number] }>();
 
 const config = useConfig();
 const { toggleTool, setApproval, retry, toggleServer, defaultApproval } = useToolActions();

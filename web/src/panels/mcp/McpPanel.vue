@@ -22,8 +22,9 @@ import ToolRow from './ToolRow.vue';
 import LongError from './LongError.vue';
 import Icon from '../../ui/Icon.vue';
 
-// /api/integrations and /api/tools, read field by field.
-type Json = any;
+import type { IntegrationServer, IntegrationsReply, McpSaveReply, ToolsReply, ToolView } from '../../../../shared/api.ts';
+
+type ToolServer = ToolsReply['servers'][number];
 // A manifest names a kind of icon; the page draws it in its own line set, never the server's glyph.
 const ICON: Record<string, string> = { memory: 'history', search: 'search', database: 'data', globe: 'search', tool: 'mcp', plug: 'mcp' };
 // TinySuite's own servers get their mark, shipped with the page; the id only
@@ -43,7 +44,7 @@ const usesViews = computed(() => session.can(FEATURE.INTEGRATIONS));
 
 /* ---------- the server list: management views and tools, merged by name ---------- */
 
-const state = ref<{ servers: Json[], multiUser: boolean }>({ servers: [], multiUser: false });
+const state = ref<IntegrationsReply>({ servers: [], multiUser: false });
 const loading = ref(false);
 const error = ref('');
 let seq = 0;
@@ -53,7 +54,7 @@ async function loadIntegrations() {
   const mine = ++seq;
   loading.value = true;
   try {
-    const data = await api.get('/api/integrations');
+    const data = await api.get<IntegrationsReply>('/api/integrations');
     if (mine !== seq) return;
     state.value = data;
     error.value = '';
@@ -65,14 +66,14 @@ async function loadIntegrations() {
   }
 }
 
-const toolData = computed<Json | null>(() => (manages.value ? config.tools : null));
+const toolData = computed<ToolsReply | null>(() => (manages.value ? config.tools : null));
 const cards = computed(() => {
-  const byTools = new Map<string, Json>((toolData.value?.servers || []).map((s: Json) => [s.name, s]));
-  const byViews = new Map<string, Json>(state.value.servers.map((s) => [s.name, s]));
+  const byTools = new Map<string, ToolServer>((toolData.value?.servers || []).map((s) => [s.name, s]));
+  const byViews = new Map<string, IntegrationServer>(state.value.servers.map((s) => [s.name, s]));
   const names = [...new Set([...byTools.keys(), ...byViews.keys()])];
   return names.map((name) => ({ name, info: byViews.get(name) || null, tools: byTools.get(name) || null }));
 });
-const builtins = computed<Json[]>(() => toolData.value?.internal || []);
+const builtins = computed<ToolView[]>(() => toolData.value?.internal || []);
 
 /*
  * Three tiers: built into TinyWebUI, bundled with it (the TinySuite servers,
@@ -80,7 +81,7 @@ const builtins = computed<Json[]>(() => toolData.value?.internal || []);
  * someone added after. Which servers are bundled is the server's call, read
  * off the package each runs from, not the name it was given.
  */
-type Card = { name: string, info: Json, tools: Json };
+type Card = { name: string, info: IntegrationServer | null, tools: ToolServer | null };
 const isBundled = (c: Card) => Boolean(c.tools?.bundled ?? c.info?.bundled);
 const tiers = computed(() => [
   { id: 'bundled', title: 'Bundled with insights', note: 'Shipped with TinyWebUI. Manage opens what each one keeps, did and failed.', cards: cards.value.filter(isBundled) },
@@ -92,6 +93,7 @@ const status = (c: Card) => c.tools?.status || c.info?.status || 'error';
 // The same words as the server's row under Tools, never the raw status.
 const STATUS_WORD: Record<string, string> = { ok: 'connected', error: 'failed to connect', disabled: 'off' };
 const statusWord = (s: string) => STATUS_WORD[s] || s;
+const iconOf = (c: Card) => ICON[c.info?.manifest?.icon ?? 'plug'] || 'mcp';
 // The marks are TinySuite's, so only a bundled server gets one: a manifest id alone could claim it.
 const logo = (c: Card) => {
   const m = c.info?.manifest;
@@ -110,7 +112,7 @@ type View = { kind: 'list' } | { kind: 'manage', server: string, view: string } 
 const page = ref<View>({ kind: 'list' });
 const current = computed(() => (page.value.kind === 'manage' ? page.value : null));
 const server = computed(() => (current.value ? state.value.servers.find((s) => s.name === current.value?.server) : null));
-const view = computed(() => server.value?.manifest?.views.find((v: Json) => v.id === current.value?.view));
+const view = computed(() => server.value?.manifest?.views.find((v) => v.id === current.value?.view));
 const title = computed(() => {
   if (page.value.kind === 'config') return 'Config file';
   if (current.value) return server.value?.manifest?.title || current.value.server;
@@ -120,8 +122,8 @@ const title = computed(() => {
 function manage(name: string) {
   const s = state.value.servers.find((x) => x.name === name);
   if (!s?.manifest) return;
-  const first = s.manifest.views.find((v: Json) => v.available) || s.manifest.views[0];
-  page.value = { kind: 'manage', server: name, view: first.id };
+  const first = s.manifest.views.find((v) => v.available) || s.manifest.views[0];
+  if (first) page.value = { kind: 'manage', server: name, view: first.id };
 }
 function back(): boolean {
   if (page.value.kind === 'list') return false;
@@ -159,13 +161,13 @@ const fileLocked = computed(() => Boolean(config.mcp?.locked));
 const where = computed(() => {
   const m = config.mcp;
   if (!m) return config.mcpError;
-  return m.readOnly ? 'managed by your administrator' : m.locked ? 'set in code (read-only)' : m.path;
+  return m.locked ? 'set in code (read-only)' : m.path;
 });
 
 async function saveFile() {
   saving.value = true;
   try {
-    const out = await api.post('/api/mcp', { text: text.value });
+    const out = await api.post<McpSaveReply>('/api/mcp', { text: text.value });
     await config.loadTools();
     msg.value = out.mcpErrors?.length ? out.mcpErrors.join('; ') : 'connected';
     await config.load();
@@ -212,7 +214,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
 
       <!-- ---------- one server's management views ---------- -->
       <template v-else-if="page.kind === 'manage'">
-        <template v-if="server && view">
+        <template v-if="server?.manifest && view">
           <div class="int-tabs" role="tablist">
             <button v-for="v in server.manifest.views" :key="v.id" type="button" role="tab" :aria-selected="v.id === view.id"
                     :class="{ active: v.id === view.id, off: !v.available }" @click="page = { kind: 'manage', server: server.name, view: v.id }">{{ v.title }}</button>
@@ -263,7 +265,7 @@ const { isOpen } = usePanel(PANEL.MCP, {
           <section v-for="c in tier.cards" :key="c.name" class="panel-card int-card">
             <div class="int-head">
               <img v-if="logo(c)" class="int-icon int-logo" :src="logo(c) ?? undefined" alt="">
-              <span v-else class="int-icon"><Icon :name="ICON[c.info?.manifest?.icon] || ICON.plug" /></span>
+              <span v-else class="int-icon"><Icon :name="iconOf(c)" /></span>
               <div class="int-name"><h4>{{ c.info?.manifest?.title || c.name }}</h4><span class="usage">{{ meta(c) }}</span></div>
               <span class="int-chips">
                 <span class="chip" :class="status(c) === 'ok' ? 'chip-ok' : 'chip-bad'">{{ statusWord(status(c)) }}</span>

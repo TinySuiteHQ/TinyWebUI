@@ -76,7 +76,10 @@ function blocks(src: unknown, cache: Map<string, string>): { tokens: Token[], li
 
 function renderToken(token: Token, links: Links): string {
   // The parser looks up reference-style links ([x][1]) on the list it is given.
-  return marked.parser(Object.assign([token], { links })).trim();
+  // marked puts a newline after every block tag (</li>\n<li>); each would be a
+  // blank text node, a third of a long answer's DOM. Text and code are escaped,
+  // so a > and < with only newlines between them are always two tags.
+  return marked.parser(Object.assign([token], { links })).trim().replace(/>\n+</g, '><');
 }
 
 export function renderMarkdown(src: unknown): string {

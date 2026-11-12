@@ -14,10 +14,10 @@ import { useConfig } from '../../stores/config.ts';
 import { TOOL_APPROVALS } from '../settings/draft.ts';
 import { CUSTOMIZE_INFO, FEATURE_GROUPS, FEATURE_INFO, ROLE_SETTING_INFO, plural, roleLabel } from './admin_words.ts';
 
-// The role and the policy, from /api/admin/policy, read field by field.
-type Json = any;
-const props = defineProps<{ role: Json, policy: Json }>();
-const emit = defineEmits<{ saved: [roles: Json[], message: string], deleted: [roles: Json[]], cancel: [] }>();
+import type { AdminPolicyReply, ConfigReply, RoleView } from '../../../../shared/api.ts';
+
+const props = defineProps<{ role: RoleView, policy: AdminPolicyReply }>();
+const emit = defineEmits<{ saved: [roles: RoleView[], message: string], deleted: [roles: RoleView[]], cancel: [] }>();
 const enc = encodeURIComponent;
 // Ids for label/control pairs; a role name is a safe handle, a model id may not be.
 const fid = (...parts: string[]) => `role-${props.role.name}-${parts.join('-').replace(/[^\w-]/g, '_')}`;
@@ -25,7 +25,7 @@ const fid = (...parts: string[]) => `role-${props.role.name}-${parts.join('-').r
 const locked = computed(() => Boolean(props.policy.locked));
 const grouped = new Set(FEATURE_GROUPS.flatMap(([, list]) => list));
 // Features the page has no words for still show, so a newer server's are editable too.
-const others = computed<string[]>(() => props.policy.features.filter((f: string) => !grouped.has(f) && f !== FEATURE.ADMIN));
+const others = computed<string[]>(() => props.policy.features.filter((f) => !grouped.has(f) && f !== FEATURE.ADMIN));
 const groups = computed(() => [...FEATURE_GROUPS, ...(others.value.length ? [['Other', others.value] as [string, string[]]] : [])]
   .map(([title, list]) => [title, list.filter((f) => props.policy.features.includes(f))] as const)
   .filter(([, list]) => list.length));
@@ -59,12 +59,12 @@ const settings = ref(Object.fromEntries(ROLE_SETTINGS.map((k) => [k, asText(prop
 
 type ModelFields = Record<RoleModelSettingKey, string>;
 const blankModel = (): ModelFields => Object.fromEntries(ROLE_MODEL_SETTINGS.map((k) => [k, ''])) as ModelFields;
-const perModel = ref<Record<string, ModelFields>>(Object.fromEntries(Object.entries<Json>(props.role.modelSettings || {})
+const perModel = ref<Record<string, ModelFields>>(Object.fromEntries(Object.entries(props.role.modelSettings || {})
   .map(([m, s]) => [m, Object.fromEntries(ROLE_MODEL_SETTINGS.map((k) => [k, asText(s?.[k])])) as ModelFields])));
 
 // What a blank field falls back to, said under the field.
 const global = computed(() => {
-  const c = config.cfg || {};
+  const c: ConfigReply = config.cfg || {};
   return {
     model: c.model || 'none set',
     systemPrompt: 'the system prompt from Model defaults',
@@ -121,8 +121,8 @@ const modelSettingsBody = () => Object.fromEntries(Object.entries(perModel.value
 async function save() {
   msg.value = '';
   // Features this editor does not offer (admin, set in the files) are kept as they were.
-  const kept = props.role.features.filter((f: string) => !FEATURE_INFO[f] && !others.value.includes(f));
-  const body: Json = props.role.fixed
+  const kept = props.role.features.filter((f) => !FEATURE_INFO[f] && !others.value.includes(f));
+  const body: Record<string, unknown> = props.role.fixed
     ? { settings: settingsBody() }
     : { features: [...[...features.value].filter((f) => FEATURE_INFO[f] || others.value.includes(f)), ...kept], customize: [...customize.value], settings: settingsBody() };
   if (props.policy.models.length) {
@@ -131,7 +131,7 @@ async function save() {
   }
   saving.value = true;
   try {
-    const out = await api.patch(`/api/admin/roles/${enc(props.role.name)}`, body);
+    const out = await api.patch<{ roles: RoleView[] }>(`/api/admin/roles/${enc(props.role.name)}`, body);
     emit('saved', out.roles, `Saved ${roleLabel(props.role.name)}.`);
   } catch (err) { msg.value = err.message; } finally { saving.value = false; }
 }
@@ -140,7 +140,7 @@ async function remove() {
   const moving = props.role.users ? ` ${plural(props.role.users, 'person', 'people')} with it will move to User.` : '';
   if (!confirm(`Delete the ${roleLabel(props.role.name)} role?${moving}`)) return;
   try {
-    const out = await api.del(`/api/admin/roles/${enc(props.role.name)}`);
+    const out = await api.del<{ roles: RoleView[], moved: number }>(`/api/admin/roles/${enc(props.role.name)}`);
     emit('deleted', out.roles);
   } catch (err) { msg.value = err.message; }
 }
