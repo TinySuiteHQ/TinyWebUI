@@ -8,9 +8,10 @@
 import { newId } from '../../core/id.ts';
 import * as SETTING from '../../../../shared/settings.ts';
 import { LEVEL_NAMES } from '../../chat/composer/levels.ts';
+import type { ConfigReply, ConnectorView, ModelEntryView } from '../../../../shared/api.ts';
 
-// /api/config is a wide shape read field by field.
-type Json = any;
+/** What a Save posts to /api/config: the keys that change, each as the server checks it. */
+export type ConfigPatch = Record<string, unknown>;
 
 // The values come from shared/settings.ts, which the server validates
 // against; a label is required for each (Record<T, string>), so a value added
@@ -40,7 +41,7 @@ export const SENDS = options(SETTING.THINKING_SENDS, {
  * The settings a model may override. Each inherits the global value of the
  * same key (on "Model defaults") while blank.
  */
-export type OverrideSpec = { key: string, section: string, label: string, type: 'textarea' | 'number' | 'select' | 'json', note?: string, attrs?: Record<string, number>, options?: [string, string][] };
+export type OverrideSpec = { key: 'systemPrompt' | 'temperature' | 'maxTokens' | 'maxToolRounds' | 'cacheMode' | 'cacheTtl' | 'reasoningReplay' | 'extraBody', section: string, label: string, type: 'textarea' | 'number' | 'select' | 'json', note?: string, attrs?: Record<string, number>, options?: [string, string][] };
 export const OVERRIDES: OverrideSpec[] = [
   { key: 'systemPrompt', section: 'Prompt', label: 'System prompt', type: 'textarea', note: 'Replaces the default prompt for this model.' },
   { key: 'temperature', section: 'Sampling', label: 'Temperature', type: 'number', attrs: { step: 0.1, min: 0, max: 2 } },
@@ -78,11 +79,11 @@ export type Draft = {
 
 const str = (v: unknown, fallback = '') => (v == null ? fallback : String(v));
 
-export function connectorDraft(c: Json = {}): ConnectorDraft {
+export function connectorDraft(c: Partial<ConnectorView> = {}): ConnectorDraft {
   return { key: newId(), id: c.id || '', savedId: c.id || '', label: c.label || '', baseUrl: c.baseUrl || '', apiKey: '', clearKey: false, hasApiKey: Boolean(c.hasApiKey), keyHint: c.keyHint || '' };
 }
 
-export function modelDraft(m: Json = {}): ModelDraft {
+export function modelDraft(m: Partial<ModelEntryView> = {}): ModelDraft {
   const overrides: Record<string, string> = {};
   for (const spec of OVERRIDES) {
     const v = m[spec.key];
@@ -103,7 +104,7 @@ export function modelDraft(m: Json = {}): ModelDraft {
   };
 }
 
-export function fromConfig(cfg: Json): Draft {
+export function fromConfig(cfg: ConfigReply): Draft {
   const form: Form = {
     systemPrompt: str(cfg.systemPrompt),
     model: str(cfg.model),
@@ -123,6 +124,7 @@ export function fromConfig(cfg: Json): Draft {
     baseUrl: str(cfg.baseUrl),
     apiKey: '',
     llmCompaction: String(cfg.llmCompaction !== false),
+    autoTitle: String(cfg.autoTitle !== false),
     compactionMaxTokens: str(cfg.compactionMaxTokens, '8192'),
     expandCharBudget: str(cfg.expandCharBudget, '8000'),
     cache: String(cfg.cache !== false),
@@ -164,7 +166,7 @@ function readThinking(t: ModelDraft['thinking']) {
 
 function readModel(m: ModelDraft) {
   const name = m.id.trim();
-  const out: Json = {
+  const out: ConfigPatch = {
     id: name,
     ...(m.label.trim() ? { label: m.label.trim() } : {}),
     ...(m.description.trim() ? { description: m.description.trim() } : {}),
@@ -191,9 +193,9 @@ function readModel(m: ModelDraft) {
 }
 
 /** The config patch the draft holds. Throws on bad JSON. */
-export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lockedKeys: Set<string> }): Json {
+export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lockedKeys: Set<string> }): ConfigPatch {
   const f = d.form;
-  const patch: Json = {
+  const patch: ConfigPatch = {
     systemPrompt: f.systemPrompt,
     model: (f.model || '').trim(),
     temperature: num(f.temperature),
@@ -217,12 +219,14 @@ export function buildPatch(d: Draft, { admin, lockedKeys }: { admin: boolean, lo
     // A default that is no longer an enabled entry (renamed, removed, or none
     // picked yet) becomes the first enabled one, as the server would read it.
     const on = catalog.models.filter((m) => m.enabled !== false);
-    if (on.length && !on.some((m) => m.id === patch.model || (m.model || m.id) === patch.model)) patch.model = on[0].id;
+    const first = on[0];
+    if (first && !on.some((m) => m.id === patch.model || (m.model || m.id) === patch.model)) patch.model = first.id;
     Object.assign(patch, {
       // The top-level endpoint only while it is shown; saving it otherwise
       // would bring the card back with nothing on it.
       ...(d.defaultEndpoint ? { baseUrl: (f.baseUrl || '').trim(), ...(f.apiKey ? { apiKey: f.apiKey } : {}) } : {}),
       llmCompaction: f.llmCompaction === 'true',
+      autoTitle: f.autoTitle === 'true',
       compactionMaxTokens: Number(f.compactionMaxTokens) || 8192,
       expandCharBudget: Number(f.expandCharBudget) || 0,
       cache: f.cache === 'true',
@@ -253,9 +257,9 @@ export function connectorChoices(d: Draft, current: string): { value: string, la
  * both sides changed, to different values, is a clash, which the caller shows
  * before overwriting it.
  */
-export function changedPatch(next: Json, base: Json, latest: Json): { patch: Json, clashes: string[] } {
+export function changedPatch(next: ConfigPatch, base: ConfigPatch, latest: ConfigPatch): { patch: ConfigPatch, clashes: string[] } {
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  const patch: Json = {};
+  const patch: ConfigPatch = {};
   const clashes: string[] = [];
   // Only keys the draft sends: one it leaves out (an API key never typed, the
   // endpoint while its card is hidden) means "keep", as it always did.

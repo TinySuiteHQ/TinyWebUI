@@ -13,6 +13,7 @@ import type { McpServerSpec, McpServers } from './config/config.ts';
 import { isBundled } from './config/bundled.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { ToolArgs, ToolContext, ToolHandler } from './tools/types.ts';
+import type { McpServerStatus } from '../shared/api.ts';
 import { DISCOVERY_PRINCIPAL, identityProblems, type IdentityClaim } from './access/mcp_identity.ts';
 import { MANIFEST_MIME } from './management.ts';
 import { launchServed, serveProblems, type Served, type ServeSpec } from './mcp_serve.ts';
@@ -706,7 +707,7 @@ export class McpHub {
 
     const servers = Object.keys(this.servers).sort().map((name) => {
       const spec = this.servers[name];
-      const status = spec.disabled ? 'disabled' : this.clients.has(name) ? 'ok' : 'error';
+      const status: McpServerStatus['status'] = spec.disabled ? 'disabled' : this.clients.has(name) ? 'ok' : 'error';
       // Errors are recorded as "name: message"; the name is stripped back off.
       const error = this.errors.find((e) => e.startsWith(`${name}: `))?.slice(name.length + 2) ?? null;
       const instructions = this.clients.get(name)?.getInstructions() || null;

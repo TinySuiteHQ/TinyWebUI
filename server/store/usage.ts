@@ -5,7 +5,7 @@ import type { Attribution, Bucket } from '../harness/attribution.ts';
 import type { Usage } from '../harness/types.ts';
 
 /** What an aux_usage row was spent on. */
-export const AUX_KIND = { CHECKPOINT: 'checkpoint' } as const;
+export const AUX_KIND = { CHECKPOINT: 'checkpoint', TITLE: 'title' } as const;
 import { inputTokens, outputTokens, cacheReads, tally } from '../../shared/usage.ts';
 
 // Token and cost statistics over stored messages.

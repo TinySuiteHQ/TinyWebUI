@@ -7,7 +7,7 @@
  * dropped or added there go along only when it is resubmitted.
  */
 import { computed, nextTick, ref } from 'vue';
-import type { UserItem, Img } from '../../model/turn_model.ts';
+import { isUploading, type UserItem, type Img } from '../../model/turn_model.ts';
 import { useChat } from '../../stores/chat.ts';
 import { useViewer, type ViewItem } from '../../stores/viewer.ts';
 import Icon from '../../ui/Icon.vue';
@@ -94,7 +94,11 @@ function onKey(e: KeyboardEvent) {
   <div class="msg user" :class="{ editing }" :data-item="item.id">
     <div v-if="!editing" class="body">{{ item.text }}</div>
     <div v-if="!editing && item.docs.length" class="msg-attachments">
-      <button v-for="(d, i) in item.docs" :key="d.id" type="button" class="attachment-chip" :title="`Open ${d.filename}`" @click="view('doc', i)"><Icon name="doc" size=".9rem" />{{ d.filename }}</button>
+      <button v-for="(d, i) in item.docs" :key="d.id" type="button" class="attachment-chip" :class="{ uploading: isUploading(d) }"
+              :disabled="isUploading(d)" :title="isUploading(d) ? `Uploading ${d.filename}…` : `Open ${d.filename}`" @click="view('doc', i)">
+        <span v-if="isUploading(d)" class="chip-spinner" aria-hidden="true" /><Icon v-else name="doc" size=".9rem" />{{ d.filename }}
+        <span v-if="isUploading(d)" class="visually-hidden">(uploading)</span>
+      </button>
     </div>
     <div v-if="!editing && item.images.length" class="msg-images">
       <button v-for="(img, i) in item.images" :key="i" type="button" class="msg-image-btn" :title="`Open ${img.filename || 'image'}`" @click="view('image', i)">

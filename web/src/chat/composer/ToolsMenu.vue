@@ -14,38 +14,37 @@ import { useConfig } from '../../stores/config.ts';
 import { useChat } from '../../stores/chat.ts';
 import Icon from '../../ui/Icon.vue';
 import Switch from '../../ui/Switch.vue';
+import type { ToolsReply } from '../../../../shared/api.ts';
 
 const emit = defineEmits<{ close: [], pickDocs: [], pickImages: [], takePhoto: [], library: [], manage: [] }>();
 const session = useSession();
 const config = useConfig();
 const chat = useChat();
 
-// /api/tools: { internal: Tool[], servers: Server[] }, read field by field.
-type Json = any;
-const data = ref<Json | null>(null);
+const data = ref<ToolsReply | null>(null);
 const error = ref('');
 
 const canAttach = computed(() => session.can(FEATURE.ATTACHMENTS) || session.can(FEATURE.IMAGES));
-const total = computed(() => (data.value ? [...data.value.internal, ...data.value.servers.flatMap((s: Json) => s.tools)] : []));
+const total = computed(() => (data.value ? [...data.value.internal, ...data.value.servers.flatMap((s) => s.tools)] : []));
 
-async function refresh(out: Json) {
+async function refresh(out: ToolsReply) {
   data.value = out;
   config.loadTools();
   config.load();
 }
-const toggleTool = async (name: string, on: boolean) => refresh(await api.post('/api/tools/toggle', { name, disabled: !on }));
+const toggleTool = async (name: string, on: boolean) => refresh(await api.post<ToolsReply>('/api/tools/toggle', { name, disabled: !on }));
 async function toggleServer(name: string, on: boolean) {
-  await refresh(await api.post(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, { disabled: !on }));
+  await refresh(await api.post<ToolsReply>(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, { disabled: !on }));
   config.loadMcp();
 }
-const metaOf = (s: Json) => (s.status === 'disabled' ? 'off'
+const metaOf = (s: ToolsReply['servers'][number]) => (s.status === 'disabled' ? 'off'
   : s.status === 'error' ? (s.install ? `needs ${s.install.name}` : 'not connected')
-  : `${s.tools.filter((t: Json) => !t.disabled).length}/${s.tools.length}`);
+  : `${s.tools.filter((t) => !t.disabled).length}/${s.tools.length}`);
 const installHref = (url: string) => (/^https:\/\//.test(url) ? url : '#');
 
 onMounted(async () => {
   if (!session.can(FEATURE.TOOLS)) return;
-  try { data.value = await api.get('/api/tools'); } catch (err) { error.value = `Could not load tools: ${err.message}`; }
+  try { data.value = await api.get<ToolsReply>('/api/tools'); } catch (err) { error.value = `Could not load tools: ${err.message}`; }
 });
 </script>
 
@@ -63,8 +62,8 @@ onMounted(async () => {
       </button>
       <div v-if="!session.modelAcceptsImages" class="pop-note">The current model does not take images.</div>
     </template>
-    <!-- Documents only: an image has no stored text to reuse. Earlier images are under Files. -->
-    <button v-if="session.can(FEATURE.ATTACHMENTS)" type="button" class="pop-item" role="menuitem" @click="emit('library')">
+    <!-- Documents and images both: an image is fetched and attached again, as Files does. -->
+    <button v-if="session.can(FEATURE.ATTACHMENTS) || session.can(FEATURE.IMAGES)" type="button" class="pop-item" role="menuitem" @click="emit('library')">
       <Icon name="history" /><span>Attach from earlier chats</span>
     </button>
     <hr v-if="session.can(FEATURE.TOOLS)" class="pop-sep">

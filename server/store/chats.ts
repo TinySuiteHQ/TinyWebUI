@@ -25,9 +25,11 @@ export interface ChatRow {
   /** A fork: the chat it was branched from (which may since be gone), and the last seq it copied. */
   parent_id: string | null;
   fork_seq: number | null;
+  /** When its owner pinned it to the top of their list; null when it is not pinned. */
+  pinned_at: number | null;
 }
 
-export type ChatListing = Pick<ChatRow, 'id' | 'title' | 'updated_at' | 'epoch' | 'boundary_seq' | 'folder' | 'unread_at' | 'parent_id' | 'fork_seq'>;
+export type ChatListing = Pick<ChatRow, 'id' | 'title' | 'updated_at' | 'epoch' | 'boundary_seq' | 'folder' | 'unread_at' | 'parent_id' | 'fork_seq' | 'pinned_at'>;
 export type ChatPatch = Partial<Pick<ChatRow, 'title' | 'epoch' | 'boundary_seq' | 'window_seq' | 'checkpoint_json'>>;
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -52,6 +54,7 @@ export interface RestoredChat {
   epoch: number;
   windowSeq: number;
   checkpointJson: string | null;
+  pinnedAt: number | null;
   tasks: { title: string; status: TaskStatus; createdAt: number; updatedAt: number; createdSeq: number }[];
   messages: RestoredMessage[];
 }
@@ -175,9 +178,9 @@ export class ChatStore {
     const owner = ownerOf(userId);
     this.db.exec('BEGIN');
     try {
-      this.db.prepare(`INSERT INTO chats (id, title, created_at, updated_at, user_id, folder, tags_json, parent_id, fork_seq, epoch, window_seq, checkpoint_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(chat.id, chat.title, chat.createdAt, chat.updatedAt, owner, chat.folder, chat.tagsJson,
-        chat.parentId, chat.forkSeq, chat.epoch, chat.windowSeq, chat.checkpointJson);
+      this.db.prepare(`INSERT INTO chats (id, title, created_at, updated_at, user_id, folder, tags_json, parent_id, fork_seq, epoch, window_seq, checkpoint_json, pinned_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(chat.id, chat.title, chat.createdAt, chat.updatedAt, owner, chat.folder, chat.tagsJson,
+        chat.parentId, chat.forkSeq, chat.epoch, chat.windowSeq, chat.checkpointJson, chat.pinnedAt);
       for (const m of chat.messages) {
         const artifactId = m.artifact ? this.messages.restoreArtifact(chat.id, m.artifact, owner) : null;
         this.messages.restore(chat.id, m, artifactId);
@@ -204,7 +207,9 @@ export class ChatStore {
   list(limit: number, userId: Scope): ChatListing[] {
     const s = scope(userId);
     return this.db.prepare(
-      `SELECT id, title, updated_at, epoch, boundary_seq, folder, unread_at, parent_id, fork_seq FROM chats WHERE ${s.sql} ORDER BY updated_at DESC LIMIT ?`
+      // Pinned first, so an old pinned chat is never cut off by the limit.
+      `SELECT id, title, updated_at, epoch, boundary_seq, folder, unread_at, parent_id, fork_seq, pinned_at FROM chats
+       WHERE ${s.sql} ORDER BY pinned_at IS NULL, updated_at DESC LIMIT ?`
     ).all(...s.params, limit) as unknown as ChatListing[];
   }
 
@@ -322,6 +327,24 @@ export class ChatStore {
     const clean = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
     if (!clean || !this.get(id, userId)) return null;
     this.db.prepare('UPDATE chats SET title = ? WHERE id = ?').run(clean, id);
+    return this.byId(id);
+  }
+
+  /**
+   * A model-written title for a chat still named after its first message.
+   * Unscoped (the run already holds the chat); `from` is the title it had when
+   * the request went out, so a rename made meanwhile is never overwritten.
+   */
+  retitle(id: string, from: string, title: string): boolean {
+    const clean = title.replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!clean) return false;
+    return this.db.prepare('UPDATE chats SET title = ? WHERE id = ? AND title = ?').run(clean, id, from).changes > 0;
+  }
+
+  /** Pins or unpins, without counting as activity. Null when the chat is not theirs. */
+  pin(id: string, pinned: boolean, userId: Scope): ChatRow | null {
+    if (!this.get(id, userId)) return null;
+    this.db.prepare('UPDATE chats SET pinned_at = ? WHERE id = ?').run(pinned ? Date.now() : null, id);
     return this.byId(id);
   }
 

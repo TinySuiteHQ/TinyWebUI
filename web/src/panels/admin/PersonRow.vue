@@ -4,11 +4,10 @@ import { computed, ref } from 'vue';
 import { api } from '../../core/api.ts';
 import { useSession } from '../../stores/session.ts';
 import { ago, plural, roleLabel } from './admin_words.ts';
+import type { AdminUsersReply, AdminUserView, UserStatusView } from '../../../../shared/api.ts';
 
-// A user from /api/admin/users, read field by field.
-type Json = any;
-const props = defineProps<{ user: Json, roles: string[] }>();
-const emit = defineEmits<{ changed: [user: Json], chats: [], connectors: [] }>();
+const props = defineProps<{ user: AdminUsersReply['users'][number], roles: string[] }>();
+const emit = defineEmits<{ changed: [user: AdminUserView], chats: [], connectors: [] }>();
 const session = useSession();
 const enc = encodeURIComponent;
 
@@ -32,11 +31,11 @@ const meta = computed(() => (props.user.status === 'pending'
   : [props.user.name && props.user.email, plural(props.user.chatCount ?? 0, 'chat'), `seen ${ago(props.user.lastLoginAt)}`]).filter(Boolean).join(' · '));
 const initial = computed(() => (props.user.name || props.user.email || '?').trim().charAt(0).toUpperCase() || '?');
 
-async function patch(body: Json) {
+async function patch(body: { role?: string, status?: UserStatusView }) {
   busy.value = true;
   err.value = '';
   try {
-    const out = await api.patch(`/api/admin/users/${enc(props.user.id)}`, body);
+    const out = await api.patch<{ user: AdminUserView }>(`/api/admin/users/${enc(props.user.id)}`, body);
     emit('changed', out.user);
   } catch (e) { err.value = e.message; } finally { busy.value = false; }
 }

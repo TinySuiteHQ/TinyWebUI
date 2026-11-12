@@ -7,11 +7,12 @@ import { actor } from '../access/auth_gate.ts';
 import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
 import type { McpHub } from '../mcp.ts';
+import type { ConfigReply, ToolBrief } from '../../shared/api.ts';
 
 interface ProviderModel { id: string; name: string | null }
 interface ModelList { supported: boolean; models: ProviderModel[]; error?: string }
 
-export const toolList = (hub: McpHub) => hub.tools.map((t) => ({
+export const toolList = (hub: McpHub): ToolBrief[] => hub.tools.map((t) => ({
   name: t.function.name,
   description: t.function.description,
   parameters: t.function.parameters
@@ -52,7 +53,7 @@ export function settingsRoutes({ config, configFor, hub, saveConfig, toolsView }
       ...configFor(auth),
       tools: toolList(hub()),
       mcpErrors: hub().errors
-    }) },
+    } satisfies ConfigReply) },
 
     { method: 'POST', path: /^\/api\/config$/, feature: FEATURE.SETTINGS, handle: async ({ req, res, auth }) => {
       const patch = await readJson(req);

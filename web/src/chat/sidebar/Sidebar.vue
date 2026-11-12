@@ -16,6 +16,7 @@ import { usePanels, PANEL } from '../../stores/panels.ts';
 import { useUi } from '../../stores/ui.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import Icon from '../../ui/Icon.vue';
+import Popover from '../../ui/Popover.vue';
 import ChatItem from './ChatItem.vue';
 import FolderDialog, { type FolderDialogMode } from './FolderDialog.vue';
 
@@ -58,6 +59,7 @@ const showMcp = computed(() => session.can(FEATURE.MCP) || session.can(FEATURE.I
 const accountEl = ref<HTMLElement>();
 const accountBtn = ref<HTMLButtonElement>();
 const accountOpen = ref(false);
+const accountPop = ref<InstanceType<typeof Popover>>();
 const user = computed(() => session.me.user);
 const accountName = computed(() => user.value?.name || user.value?.email || 'Settings');
 const initial = computed(() => (user.value?.name || user.value?.email || '?').trim().charAt(0).toUpperCase());
@@ -76,10 +78,16 @@ function closeAccount(refocus = false) {
   if (refocus) accountBtn.value?.focus();
 }
 function onDocPointer(e: PointerEvent) {
-  if (accountOpen.value && !accountEl.value?.contains(e.target as Node)) closeAccount();
+  // On a phone a menu is a sheet under body, outside the sidebar; the folder check finds it by class either way.
+  if (accountOpen.value && !accountEl.value?.contains(e.target as Node) && !accountPop.value?.el?.contains(e.target as Node)) closeAccount();
   if (folderMenu.value && !(e.target as Element).closest?.('.folder-menu, .folder-options')) folderMenu.value = null;
 }
 function onDocKey(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && session.can(FEATURE.SEARCH)) {
+    e.preventDefault();
+    openSearch();
+    return;
+  }
   if (e.key === 'Escape' && accountOpen.value) { e.preventDefault(); closeAccount(true); }
   if (e.key === 'Escape' && folderMenu.value) { e.preventDefault(); folderMenu.value = null; }
 }
@@ -99,13 +107,22 @@ function bucketOf(updatedAt: number, now: number) {
   return d.toLocaleDateString('en-US', sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
 }
 
-type Row = { kind: 'heading', key: string, label: string } | { kind: 'chat', key: string, chat: ChatRow, depth: number } | { kind: 'draft', key: string };
+type Row = { kind: 'heading', key: string, label: string } | { kind: 'chat', key: string, chat: ChatRow, depth: number };
 type Group = { folder: string | null, rows: Row[], count: number };
 
-// The draft in progress is not a chat on the server yet: it gets a row only so
-// the list shows where you are, in the unfiled Today bucket, and disappears
-// the moment it becomes a real chat or is abandoned.
+// A chat not yet sent is not in the list: a row for it would appear, then
+// vanish when it is sent or left, moving everything under it. New chat
+// itself is what shows you are there.
 const isDraft = computed(() => !chat.chatId && !chat.loading);
+// Files and MCP sit over the chat, so while one is open it is where you are, not the chat.
+const pageOpen = computed(() => panels.open === PANEL.FILES || panels.open === PANEL.MCP);
+const onNewChat = computed(() => isDraft.value && !pageOpen.value);
+
+// Pinned chats leave their folder and day for a section of their own above
+// the folders, most recently pinned first; their forks stay where they were.
+const pinned = computed(() => chats.chats.filter((c) => c.pinned_at != null)
+  .sort((a, b) => (b.pinned_at ?? 0) - (a.pinned_at ?? 0)));
+const unpinned = computed(() => chats.chats.filter((c) => c.pinned_at == null));
 
 /**
  * Forks are listed under the chat they were branched from, wherever that one
@@ -114,9 +131,9 @@ const isDraft = computed(() => !chat.chatId && !chat.loading);
  * activity, so a fresh fork does not hide under an old original.
  */
 const family = computed(() => {
-  const listed = new Set(chats.chats.map((c) => c.id));
+  const listed = new Set(unpinned.value.map((c) => c.id));
   const forks = new Map<string, ChatRow[]>();
-  for (const c of chats.chats) {
+  for (const c of unpinned.value) {
     if (!c.parent_id || c.parent_id === c.id || !listed.has(c.parent_id)) continue;
     if (!forks.has(c.parent_id)) forks.set(c.parent_id, []);
     forks.get(c.parent_id)!.push(c); // set on the line above
@@ -130,8 +147,8 @@ const family = computed(() => {
     latest.set(c.id, t);
     return t;
   };
-  for (const c of chats.chats) visit(c, new Set());
-  const roots = chats.chats.filter((c) => !c.parent_id || c.parent_id === c.id || !listed.has(c.parent_id))
+  for (const c of unpinned.value) visit(c, new Set());
+  const roots = unpinned.value.filter((c) => !c.parent_id || c.parent_id === c.id || !listed.has(c.parent_id))
     .sort((a, b) => latest.get(b.id)! - latest.get(a.id)!);
   return { forks, latest, roots };
 });
@@ -146,19 +163,13 @@ function withForks(c: ChatRow, depth: number, out: Row[], seen: Set<string>) {
 }
 
 const groups = computed<Group[]>(() => {
-  const byFolder = new Map<string | null, (ChatRow | null)[]>();
+  const byFolder = new Map<string | null, ChatRow[]>();
   // A folder just created and not yet moved into is still a real folder.
   for (const name of chats.folders) byFolder.set(name, []);
   for (const c of family.value.roots) {
     const folder = (c.folder || '').trim() || null;
     if (!byFolder.has(folder)) byFolder.set(folder, []);
     byFolder.get(folder)!.push(c); // set on the line above
-  }
-  if (isDraft.value) {
-    // A chat started in a folder sits in it from the start.
-    const home = chat.draftFolder && byFolder.has(chat.draftFolder) ? chat.draftFolder : null;
-    if (!byFolder.has(home)) byFolder.set(home, []);
-    byFolder.get(home)!.unshift(null); // set on the line above
   }
   const names = [...byFolder.keys()].sort((a, b) => (a === null ? 1 : b === null ? -1 : a.localeCompare(b)));
   const now = Date.now();
@@ -169,10 +180,12 @@ const groups = computed<Group[]>(() => {
     let count = 0;
     const seen = new Set<string>();
     for (const c of list) {
-      const bucket = c ? bucketOf(family.value.latest.get(c.id) ?? c.updated_at, now) : 'Today';
-      if (bucket !== last) { last = bucket; rows.push({ kind: 'heading', key: `h:${folder}:${bucket}`, label: bucket }); }
+      // A folder is a short list you go back to: by day only outside folders.
+      const bucket = folder === null ? bucketOf(family.value.latest.get(c.id) ?? c.updated_at, now) : '';
+      if (bucket !== last) { last = bucket; rows.push({ kind: 'heading', key: `h:${bucket}`, label: bucket }); }
       const before = rows.length;
-      if (c) { withForks(c, 0, rows, seen); count += rows.length - before; } else rows.push({ kind: 'draft', key: 'draft' });
+      withForks(c, 0, rows, seen);
+      count += rows.length - before;
     }
     return { folder, rows, count };
   });
@@ -181,8 +194,8 @@ const groups = computed<Group[]>(() => {
 const folderGroups = computed(() => groups.value.filter((g): g is Group & { folder: string } => g.folder !== null));
 const looseRows = computed(() => groups.value.find((g) => g.folder === null)?.rows ?? []);
 const canFolder = computed(() => session.can(FEATURE.FOLDERS));
-const empty = computed(() => !chats.chats.length && !isDraft.value && !chats.folders.length);
-const currentId = computed(() => chat.loading || chat.chatId);
+const empty = computed(() => !chats.chats.length && !chats.folders.length);
+const currentId = computed(() => (pageOpen.value ? null : chat.loading || chat.chatId));
 
 function toggleFolder(folder: string, e: Event) {
   const open = (e.target as HTMLDetailsElement).open;
@@ -202,11 +215,35 @@ const repeatsTitle = (r: SearchHit) => {
 };
 // The snippet carries the marks; it can stand in for a title it spells out whole.
 const titleIsSnippet = (r: SearchHit) => plainText(r.chatTitle) === plainText(r.snippet) && !r.snippet.includes('…');
-const searching = computed(() => Boolean(chats.query.trim()) && chats.results !== null);
+// Results show from the first keystroke; until the ones for this query land,
+// the last ones stay, dimmed, under "Searching…", rather than passing as current.
+const searching = computed(() => Boolean(chats.query.trim()));
 const q = computed({ get: () => chats.query, set: (v: string) => chats.search(v) });
-function onSearchKey(e: KeyboardEvent) {
-  if (e.key === 'Escape' && chats.query) { e.preventDefault(); chats.clearSearch(); }
+/**
+ * Search is an icon in the header, not a standing row: the field shows only
+ * while it is in use, so the nav stays short. It closes when left empty.
+ */
+const searchOpen = ref(false);
+const showSearch = computed(() => searchOpen.value || Boolean(chats.query));
+const searchBtn = ref<HTMLButtonElement>();
+function openSearch() {
+  // From the keyboard shortcut the sidebar may be away; bring it back first.
+  if (ui.narrow ? !ui.drawerOpen : ui.collapsed) ui.toggleMenu();
+  searchOpen.value = true;
+  nextTick(() => { searchEl.value?.focus(); searchEl.value?.select(); });
 }
+function closeSearch(refocus = false) {
+  chats.clearSearch();
+  searchOpen.value = false;
+  if (refocus) nextTick(() => searchBtn.value?.focus());
+}
+function onSearchKey(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (chats.query) chats.clearSearch(); else closeSearch(true);
+}
+function onSearchBlur() { if (!chats.query) searchOpen.value = false; }
 function clearSearch() { chats.clearSearch(); searchEl.value?.focus(); }
 
 /* ---------- width ---------- */
@@ -277,6 +314,12 @@ watch(() => ui.drawerOpen, (open) => {
   else if (sideEl.value?.contains(document.activeElement)) document.getElementById('menu')?.focus();
 });
 
+/** Collapsing moves focus to the toggle left in its place, so the keyboard is not stranded. */
+function collapse() {
+  ui.toggleMenu();
+  nextTick(() => document.getElementById('menu')?.focus());
+}
+
 function rowKey(e: KeyboardEvent, go: () => void) {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   e.preventDefault(); // space would scroll the list instead
@@ -292,16 +335,26 @@ function rowKey(e: KeyboardEvent, go: () => void) {
         <img class="logo" src="/favicon.svg" alt="" aria-hidden="true">
         <span class="brand-name">TinyWebUI</span>
       </button>
+      <button v-if="session.can(FEATURE.SEARCH)" id="side-search" ref="searchBtn" class="icon-btn" type="button"
+              :class="{ active: showSearch }" aria-label="Search chats" title="Search chats (Ctrl+K)" @mousedown.prevent @click="showSearch ? closeSearch() : openSearch()">
+        <Icon name="search" />
+      </button>
+      <!-- On a desktop the toggle lives here while the sidebar is open; collapsed, it waits in the page's corner. -->
+      <button v-if="!ui.narrow" id="side-collapse" class="icon-btn" type="button" aria-label="Collapse sidebar" title="Collapse sidebar"
+              aria-controls="side" aria-expanded="true" @click="collapse">
+        <Icon name="sidebar" />
+      </button>
     </div>
     <div class="side-scroll">
       <nav class="nav">
-        <button id="new" ref="newEl" class="nav-item" type="button" @click="newChat"><Icon name="new" /><span>New chat</span></button>
-        <div v-if="session.can(FEATURE.SEARCH)" class="search-row nav-item">
+        <div v-if="showSearch" class="search-row nav-item">
           <Icon name="search" />
-          <input id="chatSearch" ref="searchEl" v-model="q" type="search" placeholder="Search" aria-label="Search chats"
-                 autocomplete="off" spellcheck="false" @keydown="onSearchKey">
+          <input id="chatSearch" ref="searchEl" v-model="q" type="search" placeholder="Search chats" aria-label="Search chats"
+                 autocomplete="off" spellcheck="false" @keydown="onSearchKey" @blur="onSearchBlur">
           <button v-if="chats.query" id="chatSearchClear" class="x" type="button" aria-label="Clear search" @click="clearSearch">×</button>
         </div>
+        <button id="new" ref="newEl" class="nav-item" type="button" :class="{ active: onNewChat }"
+                :aria-current="onNewChat ? 'page' : undefined" @click="newChat"><Icon name="new" /><span>New chat</span></button>
         <button v-if="showFiles" id="toggle-files" class="nav-item" type="button"
                 :class="{ active: panels.open === PANEL.FILES }" @click="panels.toggle(PANEL.FILES)">
           <Icon name="files" /><span>Files</span>
@@ -313,9 +366,12 @@ function rowKey(e: KeyboardEvent, go: () => void) {
       </nav>
       <div id="chats">
         <template v-if="searching">
-          <div class="side-label"><span>Search results</span></div>
-          <div v-if="!chats.results?.length" class="empty">no matches for “{{ chats.query }}”</div>
-          <div v-for="(r, i) in chats.results" :key="`${r.chatId}:${i}`" class="chat-item search-hit" tabindex="0" role="button"
+          <div class="side-label" role="status">
+            <span>{{ chats.pending ? 'Searching…' : 'Search results' }}</span>
+            <span v-if="chats.pending" class="side-spinner" aria-hidden="true" />
+          </div>
+          <div v-if="!chats.pending && !chats.results?.length" class="empty">No matches for “{{ chats.query }}”</div>
+          <div v-for="(r, i) in chats.results" :key="`${r.chatId}:${i}`" class="chat-item search-hit" :class="{ stale: chats.pending }" tabindex="0" role="button"
                @click="openChat(r.chatId)" @keydown="rowKey($event, () => openChat(r.chatId))">
             <div class="t">
               <div class="hit-title">
@@ -331,7 +387,11 @@ function rowKey(e: KeyboardEvent, go: () => void) {
           </div>
         </template>
         <template v-else>
-          <!-- Two sections, each named: folders first (a short list you go back to), then everything else by day. -->
+          <!-- Pinned, then folders (short lists you go back to), then everything else by day, each heading in the one style. -->
+          <template v-if="pinned.length">
+            <div class="side-label"><span>Pinned</span></div>
+            <ChatItem v-for="c in pinned" :key="`pin:${c.id}`" :chat="c" :active="c.id === currentId" @open="openChat(c.id)" />
+          </template>
           <template v-if="folderGroups.length">
             <div class="side-label">
               <span>Folders</span>
@@ -340,12 +400,15 @@ function rowKey(e: KeyboardEvent, go: () => void) {
             </div>
             <div v-for="g in folderGroups" :key="g.folder" class="chat-folder-wrap" :class="{ 'menu-open': folderMenu === g.folder }">
             <!-- The menu sits outside <details>: a closed one renders nothing but its summary. -->
-            <div v-if="folderMenu === g.folder" class="popover folder-menu" role="menu" :aria-label="`Folder “${g.folder}”`">
+            <!-- Anchored to the heading's height, not the folder: open, the folder runs on under its chats. -->
+            <div v-if="folderMenu === g.folder" class="row-anchor">
+            <Popover side="right" class="row-menu folder-menu" :aria-label="`Folder “${g.folder}”`">
               <button type="button" class="pop-item" role="menuitem" @click="newChatIn(g.folder)"><Icon name="new" /><span class="pop-name">New chat here</span></button>
               <button type="button" class="pop-item" role="menuitem" @click="openFolderDialog(g.folder, 'chats')"><Icon name="folderOpen" /><span class="pop-name">Add or take out chats</span></button>
               <button type="button" class="pop-item" role="menuitem" @click="openFolderDialog(g.folder, 'edit')"><Icon name="edit" /><span class="pop-name">Name and instructions</span></button>
               <hr class="pop-sep">
               <button type="button" class="pop-item pop-danger" role="menuitem" @click="openFolderDialog(g.folder, 'delete')"><Icon name="trash" /><span class="pop-name">Delete folder</span></button>
+            </Popover>
             </div>
             <details class="chat-folder" :open="chats.expanded.has(g.folder)" @toggle="toggleFolder(g.folder, $event)">
               <summary class="chat-folder-heading">
@@ -354,9 +417,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
                 <span v-if="chats.prompts[g.folder]" class="folder-mark" title="Has its own instructions"><Icon name="instructions" size=".75rem" /></span>
                 <span class="chat-folder-count" :aria-label="`${g.count} chats`">{{ g.count }}</span>
                 <span class="folder-actions">
-                  <button class="folder-action" type="button" title="New chat in this folder" :aria-label="`New chat in “${g.folder}”`"
-                          @click.prevent.stop="newChatIn(g.folder)" @keydown.stop><Icon name="new" /></button>
-                  <button v-if="canFolder" class="folder-action folder-options" type="button" title="Folder options"
+                  <button class="folder-action folder-options" type="button" title="Folder options"
                           :aria-label="`Options for folder “${g.folder}”`" aria-haspopup="menu" :aria-expanded="folderMenu === g.folder"
                           @click.prevent.stop="folderMenu = folderMenu === g.folder ? null : g.folder" @keydown.stop><Icon name="more" /></button>
                 </span>
@@ -365,11 +426,8 @@ function rowKey(e: KeyboardEvent, go: () => void) {
                 <template v-for="row in g.rows" :key="row.key">
                   <ChatItem v-if="row.kind === 'chat'" :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
                             @open="openChat(row.chat.id)" />
-                  <div v-else-if="row.kind === 'draft'" class="chat-item active draft" tabindex="0" role="button" aria-current="true">
-                    <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
-                  </div>
                 </template>
-                <div v-if="!g.count && !(isDraft && chat.draftFolder === g.folder)" class="folder-empty">
+                <div v-if="!g.count" class="folder-empty">
                   <span>Empty.</span>
                   <button type="button" class="link" @click="newChatIn(g.folder)">Start a chat</button>
                   <template v-if="canFolder && chats.chats.length"> or <button type="button" class="link" @click="openFolderDialog(g.folder, 'chats')">bring some in</button></template>
@@ -378,16 +436,18 @@ function rowKey(e: KeyboardEvent, go: () => void) {
             </details>
             </div>
           </template>
-          <div v-if="looseRows.length || !folderGroups.length" class="side-label" :class="{ 'side-label-next': folderGroups.length }">
+          <!-- With no folders yet, New folder rides on the first heading there is. -->
+          <div v-if="!looseRows.length && !folderGroups.length" class="side-label">
             <span>Chats</span>
-            <button v-if="canFolder && !folderGroups.length" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
+            <button v-if="canFolder" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
                     @click="openFolderDialog(null, 'new')"><Icon name="folderPlus" /></button>
           </div>
-          <div v-if="empty" class="empty">no saved chats</div>
-          <template v-for="row in looseRows" :key="row.key">
-            <div v-if="row.kind === 'heading'" class="chat-date-heading">{{ row.label }}</div>
-            <div v-else-if="row.kind === 'draft'" class="chat-item active draft" tabindex="0" role="button" aria-current="true">
-              <span class="t">{{ chat.model.chat.title || 'New chat' }}</span>
+          <div v-if="empty" class="empty">No saved chats yet</div>
+          <template v-for="(row, i) in looseRows" :key="row.key">
+            <div v-if="row.kind === 'heading'" class="side-label">
+              <span>{{ row.label }}</span>
+              <button v-if="i === 0 && canFolder && !folderGroups.length" id="newFolder" class="icon-btn" type="button" aria-label="New folder" title="New folder"
+                      @click="openFolderDialog(null, 'new')"><Icon name="folderPlus" /></button>
             </div>
             <ChatItem v-else :chat="row.chat" :depth="row.depth" :active="row.chat.id === currentId"
                       @open="openChat(row.chat.id)" />
@@ -396,10 +456,10 @@ function rowKey(e: KeyboardEvent, go: () => void) {
       </div>
     </div>
     <div v-if="showAccount" ref="accountEl" class="side-foot">
-      <div v-if="accountOpen" class="popover account-menu" role="menu" aria-label="Account">
-        <div v-if="user" class="account-who">
-          <span class="account-who-name">{{ user.name || user.email }}</span>
-          <span v-if="user.name && user.email" class="account-who-sub">{{ user.email }}</span>
+      <Popover v-if="accountOpen" ref="accountPop" side="left" class="account-menu" aria-label="Account">
+        <!-- The button already names you; only an email it does not show is worth a line here. -->
+        <div v-if="user?.name && user.email" class="account-who">
+          <span class="account-who-sub">{{ user.email }}</span>
         </div>
         <button v-if="hasSettings" id="openSettings" type="button" class="pop-item" role="menuitem" @click="openSettings">
           <Icon name="settings" /><span class="pop-name">Settings</span>
@@ -409,7 +469,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
         <button id="logout" type="button" class="pop-item" role="menuitem" @click="session.logout()">
           <Icon name="logout" /><span class="pop-name">Log out</span>
         </button>
-      </div>
+      </Popover>
       <button id="account" ref="accountBtn" class="nav-item account-btn" type="button"
               :class="{ active: accountOpen || (!hasMenu && panels.sections.some((s) => s.panel === panels.open)) }"
               :aria-haspopup="hasMenu ? 'menu' : undefined" :aria-expanded="hasMenu ? accountOpen : undefined"

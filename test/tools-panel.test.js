@@ -102,6 +102,10 @@ test('disabling a server actually disconnects it, and it stops appearing among t
 
   const on = await post('/api/mcp/servers/toy/toggle', { disabled: false });
   assert.equal(on.body.servers.find((s) => s.name === 'toy').status, 'ok', 'and it reconnects on request');
+  // The page puts this reply in place of the tools panel's: it once lacked
+  // these, and every approval select went blank after a server toggle.
+  assert.ok(typeof on.body.toolApproval === 'string', 'the global approval mode comes back too');
+  assert.ok(on.body.servers.find((s) => s.name === 'toy').tools.every((t) => ['ask', 'auto', 'default'].includes(t.approval)), 'and each tool its approval');
 });
 
 test('toggling an unknown server is a 404, and an unnamed tool toggle is a 400', async () => {

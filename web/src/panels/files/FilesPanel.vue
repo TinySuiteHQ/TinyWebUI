@@ -83,6 +83,8 @@ const viewer = useViewer();
 function openDoc(d: DocRow) { viewer.show([{ kind: 'document', name: d.filename, id: d.id }]); }
 function openImage(i: ImageRow) { viewer.show([{ kind: 'image', name: imageName(i), src: imageUrl(i) }]); }
 function goToChat(chatId: string) { if (panels.closeAll()) chat.openChat(chatId); }
+// The page's ×: back to where a chat starts, as New chat in the sidebar does.
+function toNewChat() { if (panels.closeAll()) chat.newChat(); }
 
 // Reusing puts the file on the composer of the chat that is open, the same
 // as picking it there; nothing is sent until the message is.
@@ -108,6 +110,7 @@ async function useImage(i: ImageRow) {
     <div class="panel-head">
       <h2>Files</h2>
       <span v-if="rows" class="files-count">{{ rows.length }}</span>
+      <button type="button" class="icon-btn panel-close" aria-label="Close Files" title="Close" @click="toNewChat"><Icon name="x" /></button>
     </div>
     <div class="files-content">
       <input v-model="filter" class="files-filter" type="search" autocomplete="off"
@@ -145,9 +148,10 @@ async function useImage(i: ImageRow) {
             <td class="files-col-date num muted">{{ when(r.created_at) }}</td>
             <td class="files-col-use">
               <button type="button" class="icon-btn files-phone-chat" :aria-label="`Go to ${r.chatTitle}`" :title="`Go to ${r.chatTitle}`"
-                      @click="goToChat(r.chatId)"><Icon name="chat" size="1rem" /></button>
-              <button type="button" class="primary" :disabled="!!r.useBlocked" :title="r.useBlocked || 'Put this file on the message you are writing'"
-                      @click="r.use()">Use in chat</button>
+                      @click="goToChat(r.chatId)"><Icon name="chat" /></button>
+              <!-- On a phone only the + shows, leaving the name the room; the words stay for screen readers. -->
+              <button type="button" class="primary files-use" :disabled="!!r.useBlocked" :title="r.useBlocked || 'Put this file on the message you are writing'"
+                      @click="r.use()"><Icon name="plus" /><span class="files-use-label">Use in chat</span></button>
             </td>
           </tr>
         </tbody>

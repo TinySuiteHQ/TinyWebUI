@@ -30,7 +30,7 @@
      is what drives the bar height and the row padding rather than the reverse. */
   --tap: 2.25rem;
   --bar: 3rem;
-  --measure: 46rem;
+  --measure: 48rem; /* the one content column: chat, composer, Files, MCP */
 
   /* Chart series, in fixed order: a palette checked for colour-blind
      separation. Not --accent or --err: a theme may make the accent black, and
@@ -53,11 +53,18 @@ body {
   font: var(--fs-body)/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
   display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+  /* The viewport covers the notch and home bar (index.html); the page stays
+     inside them. Anything fixed or in the top layer (the drawer, full-screen
+     dialogs, the menu sheet) is outside this padding and pads itself. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 /* The two panes below the header, previously body's own direct children and
    row-flexed themselves. Split out so header can run the full page width as
    one top bar instead of being confined to the main column beside it. */
-#shell { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+/* clip, not hidden: a hidden box can still be scrolled by the browser (a focused
+   menu item, a menu taller than the room), which slid the sidebar up and left a
+   gap under it. */
+#shell { display: flex; flex: 1; min-height: 0; overflow: clip; }
 
 /* <header> carries no style of its own: it heads dialogs and settings groups,
    each styled by its class. (It used to be the page's top bar, and those
@@ -72,7 +79,7 @@ body {
    span. One line, truncated, is what a status string is for anyway; the
    model and tool count are both one click away in settings if cut off. */
 #status {
-  font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono);
+  font-size: var(--fs-meta); color: var(--muted);
   min-width: 3rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 
@@ -98,6 +105,15 @@ input, textarea, select {
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm); resize: vertical;
   transition: border-color .12s, box-shadow .12s;
 }
+/* One drawn chevron for every dropdown, in place of each browser's own, so a
+   settings select reads as the same family as the fields beside it. A grey
+   that holds up on light and dark, since a data URI cannot read the tokens. */
+select:not([multiple]):not([size]) {
+  appearance: none; -webkit-appearance: none; padding-right: 2rem; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%238a8a93%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right .625rem center; background-size: .875rem;
+}
+select:disabled { cursor: default; }
 input[type="checkbox"], input[type="radio"] {
   width: 1rem; height: 1rem; min-height: 0; margin: 0; padding: 0;
   flex: none; accent-color: var(--accent); cursor: pointer;
@@ -112,10 +128,12 @@ label { font-size: var(--fs-ui); color: var(--muted); display: block; margin-bot
    the outline minimap are <aside> too, and don't want the sidebar's chrome. */
 #side {
   /* Driven by the drag handle below; the fallback is the width it always had. */
-  width: var(--side-w, 15rem);
+  width: var(--side-w, 16rem);
   position: relative;
   flex-shrink: 0; border-right: 1px solid var(--line);
   display: flex; flex-direction: column; background: var(--panel);
+  /* Dragged narrow (down to 176px), its rows lay out by its own width. */
+  container-type: inline-size;
 }
 
 /* The drag handle straddles the sidebar border: a 1px border is not a target,
@@ -185,16 +203,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* Rename and delete: out of the way until the row is pointed at or focused,
    always there on touch, where nothing hovers. */
 .chat-actions { flex: none; display: none; align-items: center; gap: 1px; margin-right: -.125rem; }
-.chat-item:hover .chat-actions, .chat-item:focus-within .chat-actions, .chat-item.armed .chat-actions { display: inline-flex; }
+.chat-item:hover .chat-actions, .chat-item:focus-within .chat-actions, .chat-item-wrap.menu-open .chat-actions { display: inline-flex; }
 @media (hover: none) { .chat-actions { display: inline-flex; } }
 .chat-action {
   width: 1.625rem; height: 1.625rem; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
 }
-.chat-action .ic { width: .95rem; height: .95rem; }
+.chat-action .ic { width: 1.125rem; height: 1.125rem; }
 .chat-action:hover, .chat-action:focus-visible { color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 button.chat-action:active:not(:disabled) { transform: none; }
-.chat-delete:hover, .chat-delete:focus-visible, .chat-item.armed .chat-delete { color: var(--err); }
 .chat-rename {
   flex: 1; min-width: 0; height: 1.75rem; min-height: 0; padding: 0 .375rem; margin: -.125rem 0;
   font: inherit; color: var(--fg); background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-sm);
@@ -208,12 +225,14 @@ dialog#libraryDialog {
 dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
 #libraryForm { display: flex; flex-direction: column; gap: .5rem; }
 #libraryForm h2 { margin: 0 0 .5rem; font-size: var(--fs-body); }
-.library-list { max-height: min(22rem, 50vh); overflow-y: auto; display: flex; flex-direction: column; }
+.library-list { max-height: min(22rem, 50dvh); overflow-y: auto; display: flex; flex-direction: column; }
 .library-row {
   display: grid; grid-template-columns: auto minmax(0, 1fr) 3.5rem 6.5rem; column-gap: .625rem; align-items: center;
   padding: .4rem .5rem; border-radius: var(--r-sm); cursor: pointer;
 }
 .library-row:hover { background: var(--accent-soft); }
+.library-row.off { opacity: .55; cursor: default; }
+.library-row.off:hover { background: none; }
 .library-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library-meta { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
 .library-meta:last-child { text-align: right; }
@@ -234,7 +253,7 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
 }
 .chat-folder-heading::-webkit-details-marker { display: none; }
 .chat-folder-heading:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
-.chat-folder-heading .folder-icon { flex: none; width: 1.0625rem; height: 1.0625rem; color: var(--muted); }
+.chat-folder-heading .folder-icon { flex: none; width: 1.25rem; height: 1.25rem; color: var(--muted); }
 .chat-folder[open] > .chat-folder-heading .folder-icon, .chat-folder-heading:hover .folder-icon { color: var(--fg); }
 .chat-folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-folder-heading .folder-mark { flex: none; display: inline-flex; color: var(--faint); }
@@ -249,7 +268,7 @@ dialog#libraryDialog::backdrop { background: rgba(0, 0, 0, .62); }
   width: 1.625rem; height: 1.625rem; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
 }
-.folder-action .ic { width: 1rem; height: 1rem; }
+.folder-action .ic { width: 1.125rem; height: 1.125rem; }
 .folder-action:hover, .folder-action:focus-visible, .folder-action[aria-expanded="true"] { color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 button.folder-action:active:not(:disabled) { transform: none; }
 .chat-folder-heading:hover .folder-actions, .chat-folder-heading:focus-within .folder-actions,
@@ -264,22 +283,24 @@ button.folder-action:active:not(:disabled) { transform: none; }
 .pop-item.pop-danger, .pop-item.pop-danger .ic { color: var(--err); }
 .pop-item.pop-danger:hover { background: color-mix(in srgb, var(--err) 10%, transparent); }
 .folder-delete-note { margin: 0; color: var(--muted); font-size: var(--fs-ui); line-height: 1.55; }
-.popover.folder-menu { top: calc(var(--tap) + .125rem); bottom: auto; right: 0; width: min(15rem, 100%); transform-origin: top right; }
+/* A row's "…" menu (a chat or a folder), opening under the row, right-aligned. */
+.chat-item-wrap { position: relative; }
+.popover.row-menu { --pop-gap: .125rem; right: 0; width: min(15rem, 100%); }
+/* A folder's menu hangs from its heading (Sidebar.vue), not the open folder below it. */
+.row-anchor { position: absolute; top: 0; left: 0; right: 0; height: var(--tap); pointer-events: none; }
+.row-anchor > .popover { pointer-events: auto; }
 .folder-empty button.link {
   padding: 0; min-height: 0; border: 0; background: none; color: var(--fg); font: inherit;
   text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; cursor: pointer;
 }
 .folder-empty button.link:hover { text-decoration-color: currentColor; }
 button.link:active:not(:disabled) { transform: none; }
-/* The guide line runs down from the middle of the folder icon. */
-.chat-folder-content { position: relative; margin-left: 1rem; padding: 1px 0 .375rem .375rem; }
-.chat-folder-content::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: .5rem; width: 1px;
-  background: color-mix(in srgb, var(--line) 80%, transparent);
-}
-.folder-empty { padding: .375rem .5rem; color: var(--faint); font-size: var(--fs-meta); }
-.chat-date-heading { padding: .625rem .5rem .1875rem; color: var(--faint); font-size: .75rem; font-weight: 500; }
-.side-label + .chat-date-heading { padding-top: .125rem; }
+/* A folder's chats indent to where its name starts: the indent says they
+   are inside it, so no guide line is needed to say it again. */
+.chat-folder-content { padding: 0 0 .25rem; }
+#side .chat-folder-content .chat-item { padding-left: 2.25rem; }
+#side .chat-folder-content .chat-item.fork { padding-left: calc(2.25rem + var(--depth, 1) * .875rem); }
+.folder-empty { padding: .375rem .5rem .375rem 2.25rem; color: var(--faint); font-size: var(--fs-meta); }
 
 /* A search result carries a title and a snippet, so it grows past the plain
    list's single line rather than truncating either one away. */
@@ -300,7 +321,11 @@ button.link:active:not(:disabled) { transform: none; }
 }
 
 /* main column */
-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+/* A size container: what the chat shows follows the room main has, not the
+   window's width (beside the sidebar the two differ by 256px). It also makes
+   main the frame for anything fixed inside it, which is why the phone menu
+   sheet teleports to body (ui/Popover.vue). */
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; container-type: inline-size; }
 
 /* The settings sections (Account, Models, ...) each fill the dialog's body. */
 .set-panel {
@@ -444,7 +469,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .adm-delete { margin-left:auto; }
 .adm-role-new { display:flex; flex-direction:column; gap:.4rem; padding:1rem; border:1px dashed var(--line); border-radius:var(--r-md); }
 .adm-role-new label { margin:0; color:var(--fg); font-weight:550; }
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .adm-tabs { margin-left:0; }
   .adm-actions { margin-left:0; width:100%; }
   .adm-actions select { flex:1 1 8rem; }
@@ -473,11 +498,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 .panel-head button { margin-left:auto; }
 .panel-head button + button { margin-left:0; }
 .panel-head button[hidden] + button { margin-left:auto; }
-/* A panel's header: title, then a status or a filter pushed to the right. */
-.panel-head select { width:auto; max-width:min(16rem, 45%); margin-left:auto; }
+/* A panel's header is its title, sub-page tabs, a save status and the ×; a
+   page's own filters and actions go in its body (.page-toolbar). */
 .head-status { margin-left:auto; color:var(--muted); font-size:var(--fs-meta); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cfg-actions .head-status { margin-left:0; white-space:normal; }
-.set-lede { width:min(46rem, 100%); margin:.75rem 0 1rem; color:var(--muted); font-size:var(--fs-meta); }
 /* Data: what a backup holds, and what an import did. */
 .data-list { margin:0; padding-left:1.25rem; font-size:var(--fs-small); line-height:1.6; }
 .data-note { margin:.5rem 0 0; color:var(--muted); font-size:var(--fs-meta); line-height:1.45; }
@@ -589,6 +613,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
 
 .automation-empty { width:min(48rem,100%); margin:2rem auto; text-align:center; }
 .automation-empty p { margin:.25rem 0; }
+.automation-empty .automation-empty-action { margin-top:1rem; }
+#automations .page-toolbar { width:min(48rem,100%); margin:0 auto; }
 .automation-empty .muted { color:var(--muted); font-size:var(--fs-meta); }
 .sec {
   display: flex; flex-direction: column; gap: .75rem;
@@ -619,11 +645,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height:
    no border to close, so the header's own bottom rule stands in for it. */
 .tool-group:not(:has(details, .empty)) .tool-group-h { border-bottom: 0; }
 .tool-group-h .name { font-family: var(--mono); color: var(--fg); font-weight: 500; }
+/* A server row names its state, not a tool: words, not an identifier. */
+.tool-group.server .tool-group-h .name { font-family: var(--sans); }
 .tool-group-h .meta { color: var(--muted); font-size: var(--fs-meta); margin-left: auto; }
-.tool-group-err {
-  padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta);
-  font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
-}
+.tool-group-err { padding: .375rem .625rem .5rem 2rem; color: var(--err); font-size: var(--fs-meta); }
 .tool-group-retry {
   display: flex; align-items: center; gap: .5rem; padding: 0 .625rem .5rem 2rem;
   color: var(--muted); font-size: var(--fs-meta);
@@ -715,7 +740,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 /* One chevron for disclosures and links that lead on: drawn from two borders,
    so it sits centred on the row instead of on a text baseline the way a ›
    character does. Right when closed, down when open. */
-.automation-run > summary::after, .page-details > summary::before, .set-link::after {
+.automation-run > summary::after, .page-details > summary::before {
   content: ''; flex: none; width: .4375rem; height: .4375rem; margin-right: .1875rem;
   border: solid currentColor; border-width: 0 1.75px 1.75px 0; transform: rotate(-45deg);
   transition: transform var(--t-fast, .14s);
@@ -723,7 +748,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 .automation-run[open] > summary::after, .page-details[open] > summary::before { transform: translateY(-.125rem) rotate(45deg); }
 /* Text and an icon in one control, centred on each other. */
 .with-icon { display: inline-flex; align-items: center; gap: .375rem; }
-.with-icon .ic { flex: none; width: 1rem; height: 1rem; }
+.with-icon .ic { flex: none; width: 1.125rem; height: 1.125rem; }
 .page-details > summary:hover { background: var(--panel); }
 .page-details[open] > summary { margin-bottom: .5rem; }
 
@@ -736,7 +761,7 @@ details.tool.off .name, details.tool.off .desc { opacity: .6; }
 .kpi-label { color: var(--muted); font-size: var(--fs-meta); }
 .kpi-value { margin-top: .125rem; font-size: 1.375rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .kpi-sub { margin-top: .125rem; min-height: 1.2em; color: var(--muted); font-size: var(--fs-meta); }
-@media (max-width: 900px) {
+@container (max-width: 640px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi + .kpi { border-left: 0; }
   .kpi { border-top: 1px solid var(--line); }
@@ -848,6 +873,9 @@ button.usage-bar-row:active:not(:disabled) { transform: none; }
 .md ul, .md ol { margin: 0 0 .7em; padding-left: 1.3em; }
 .md li { margin: .15em 0; }
 .md li > ul, .md li > ol { margin-bottom: 0; }
+/* A loose list (blank lines between items) wraps each item in a paragraph: keep it list-tight. */
+.md li > p { margin: 0 0 .35em; }
+.md li > p:last-child { margin-bottom: 0; }
 .md a { color: var(--accent); }
 .md code { background: var(--panel); border-radius: var(--r-xs); padding: .1em .3em; font: .9em var(--mono); }
 .md pre {
@@ -861,7 +889,8 @@ button.usage-bar-row:active:not(:disabled) { transform: none; }
 .md th { background: var(--panel); font-weight: 600; }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 
-.usage { font-size: var(--fs-meta); color: var(--muted); font-family: var(--mono); }
+/* Small print (token counts, a server's version, a status): the page's own face, figures lined up. */
+.usage { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* An automation run opens its turn like a question does, but nobody asked
    it: a quiet ruled label instead of the tinted user block. */
@@ -920,7 +949,7 @@ footer { padding: .5rem .875rem 1rem; flex-shrink: 0; }
   flex: none; width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
   border-radius: var(--r-sm); background: var(--panel); color: var(--muted);
 }
-.attachment-card-icon .ic { width: 1.1rem; height: 1.1rem; }
+.attachment-card-icon .ic { width: 1.25rem; height: 1.25rem; }
 .attachment-card-icon[data-kind="filePdf"] { color: var(--chart-8); }
 .attachment-card-icon[data-kind="fileSheet"] { color: var(--chart-3); }
 .attachment-card-icon[data-kind="fileCode"] { color: var(--chart-7); }
@@ -952,6 +981,15 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 /* Input queued on a running turn, listed above the text box until delivered. */
 .queue { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
 .queue[hidden] { display: none; }
+/* A long queue scrolls in place rather than lifting the composer up the screen. */
+.queue-items { display: flex; flex-direction: column; gap: .3rem; max-height: min(12rem, 25dvh); overflow-y: auto; }
+.queue-fold {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: .25rem; min-height: 2rem;
+  padding: .125rem .5rem .125rem .75rem; border: 1px dashed var(--line); border-radius: var(--r-pill);
+  background: none; color: var(--muted); font-size: var(--fs-small);
+}
+.queue-fold .chev { transition: transform var(--t-fast); }
+.queue-fold[aria-expanded="true"] .chev { transform: rotate(180deg); }
 .queued {
   display: flex; align-items: center; gap: .5rem; min-width: 0;
   border: 1px dashed var(--line); border-radius: var(--r-md); padding: .25rem .25rem .25rem .6rem;
@@ -1014,7 +1052,7 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 }
 .rail-card[hidden] { display: none; }
 .rail-card .label {
-  font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--fs-meta); font-weight: 600;
   color: var(--faint); margin: 0 0 .2rem .35rem;
 }
 .rail-card .rail-item {
@@ -1039,10 +1077,10 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 }
 .rail-card .rail-more:hover { background: var(--bg); color: var(--muted); }
 
-@media (max-width: 1040px) {
-  /* No room beside the measure column at this width -- would either overlap
-     the transcript or force it to shrink, so it steps aside instead. */
-  .right-rail, .outline-rail { display: none; }
+/* Without 12rem and a margin free on each side of the measure column it would
+   either overlap the transcript or force it to shrink, so it steps aside. */
+@container (max-width: 76rem) {
+  .right-rail { display: none; }
 }
 
 /* The conversation minimap: one flat tick per question, vertically centered
@@ -1073,6 +1111,10 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
   opacity: 0; pointer-events: none; transition: opacity .1s;
 }
 .outline-tick:hover .tip, .outline-tick:focus-visible .tip { opacity: 1; }
+/* Narrower than the measure plus a margin, the ticks would sit on the ends of
+   the lines (and catch taps meant for the text). After the rules above, or
+   their display:flex wins. */
+@container (max-width: 54rem) { .outline-rail { display: none; } }
 
 #side-backdrop { display: none; }
 
@@ -1082,7 +1124,8 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
      place and tappable the whole time it is open, instead of vanishing
      behind an overlay the moment it appears. */
   #side {
-    position: fixed; top: var(--bar); bottom: 0; left: 0; width: min(85vw, 22rem);
+    position: fixed; top: calc(var(--bar) + env(safe-area-inset-top)); bottom: 0; left: 0; width: min(85vw, 22rem);
+    padding-left: env(safe-area-inset-left); padding-bottom: env(safe-area-inset-bottom);
     z-index: 20; transform: translateX(-100%); transition: transform .18s ease;
   }
   #side.open { transform: none; }
@@ -1094,9 +1137,9 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 
   /* Closing the drawer needs more ways in than hunting for the menu button
      again: tapping the dimmed content behind it, or Escape, both close it
-     (wired in app.js). */
+     (wired in AppShell.vue). */
   #side-backdrop {
-    display: block; position: fixed; top: var(--bar); right: 0; bottom: 0; left: 0;
+    display: block; position: fixed; top: calc(var(--bar) + env(safe-area-inset-top)); right: 0; bottom: 0; left: 0;
     z-index: 19; background: rgb(0 0 0 / 40%);
     opacity: 0; pointer-events: none; transition: opacity .18s ease;
   }
@@ -1211,7 +1254,8 @@ footer::before {
 input:focus, textarea:focus, select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent); }
 button.primary { color: var(--bg); }
 
-.ic { width: 1.125rem; height: 1.125rem; flex-shrink: 0; display: block; }
+/* Icons are drawn at 20px by default: big enough to read their shape at a glance. */
+.ic { width: 1.25rem; height: 1.25rem; flex-shrink: 0; display: block; }
 .icon-btn {
   min-height: 0; width: 2rem; height: 2rem; padding: 0; border: 0; background: none;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1219,77 +1263,111 @@ button.primary { color: var(--bg); }
 }
 .icon-btn:hover { background: var(--accent-soft); color: var(--fg); }
 
-/* Sidebar: a floating card inset from the window edge. */
-#shell { padding: .5rem; gap: .5rem; }
+/* Sidebar: a flush panel down the window's left edge, split from the page by
+   one rule. (It was a floating card; with the toggle outside it and the page
+   inset beside it, nothing lined up.) */
+#shell { padding: 0; gap: 0; }
 #side {
-  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 8px 24px -16px rgb(0 0 0 / 18%);
-  padding: .5rem; overflow: hidden;
+  border: 0; border-right: 1px solid var(--line); border-radius: 0; background: var(--panel);
+  box-shadow: none; padding: .5rem; overflow: hidden;
 }
-.brand { display: flex; align-items: center; gap: .5rem; padding: .25rem .25rem .5rem; }
+/* The brand row is as tall as a page header, so its toggle sits level with the titles beside it. */
+.brand { display: flex; align-items: center; gap: .25rem; height: 2rem; margin-bottom: .5rem; }
 .logo { width: 2rem; height: 2rem; display: block; flex: none; }
-.brand-name { flex: 1; font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em; }
+/* In the sidebar the mark is bigger than the icons below it, but centred on
+   their centre line (.5rem in, 1.25rem wide), so the column still reads as one. */
+.brand .logo { width: 2rem; height: 2rem; }
+.brand-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em;
+}
+/* A sidebar dragged narrow keeps the mark and its buttons; "Tin…" says nothing. */
+@container (max-width: 14rem) { .brand-name { display: none; } }
 
+/* One grid for every row in the sidebar: rows start .5rem in, where icons,
+   headings and chat titles all begin; a label after an icon starts at the
+   same place in every row because every icon and gap is the same size. Rows
+   share one size and weight; only where you are steps up. */
 .nav { display: flex; flex-direction: column; gap: 1px; }
 .nav-item {
   display: flex; align-items: center; gap: .625rem; width: 100%;
   min-height: 2.25rem; padding: .375rem .5rem; border: 0; border-radius: var(--r-sm);
   background: none; color: var(--fg); font-size: var(--fs-ui); font-weight: 500; text-align: left;
 }
+/* Sidebar rows: full-strength text, a 20px icon .5rem from its label. The
+   words carry the list; icons only mark what kind of row it is. */
+#side .nav-item, #side .chat-item, #side .chat-folder-heading, #side .search-row input { font-size: var(--fs-small); font-weight: 400; color: var(--fg); }
+#side .nav-item { gap: .5rem; }
+#side .nav-item .ic { width: 1.25rem; height: 1.25rem; }
+#side .nav-item.active, #side .chat-item.active { font-weight: 500; }
 .nav-item:hover { background: var(--accent-soft); }
 .nav-item.active { background: var(--accent-soft); color: var(--fg); }
 .nav-item .ic { color: var(--muted); transition: color var(--t-fast); }
 .nav-item:hover .ic, .nav-item.active .ic, .search-row:focus-within .ic { color: var(--fg); }
 button.nav-item:active:not(:disabled) { transform: none; }
 
-/* Search looks like a nav row until it is focused. */
-.search-row.nav-item { position: relative; padding: 0 .5rem; border: 0; cursor: text; }
-.search-row.nav-item:focus-within { background: var(--raise); box-shadow: 0 0 0 1px var(--line); }
+/* Search: opened from the header icon, it is a field while it is there. */
+.search-row.nav-item { position: relative; padding: 0 .5rem; border: 0; cursor: text; margin-bottom: .25rem; background: var(--raise); box-shadow: 0 0 0 1px var(--line); }
+.icon-btn.active { background: var(--accent-soft); color: var(--fg); }
 .search-row input {
   border: 0; background: none; padding: .375rem 1.75rem .375rem 0; min-height: 2.25rem;
-  font-weight: 500;
 }
 .search-row input:focus { box-shadow: none; }
-.search-row input::placeholder { color: var(--fg); opacity: 1; }
-.search-row:focus-within input::placeholder { color: var(--faint); }
+.search-row input::placeholder { color: var(--faint); opacity: 1; }
 #chatSearchClear { right: .375rem; }
 
-/* A section's name: darker and heavier than the day headings inside it. */
+/* The one heading style in the list: Folders, the day groups, search results.
+   Quiet (the rows' size, muted, regular weight) with room above it: the space
+   separates the groups, so the heading itself need not shout. */
 .side-label {
-  display: flex; align-items: center; justify-content: space-between; min-height: 2.75rem;
-  padding: 1rem .25rem .25rem .5rem; color: var(--muted); font-size: var(--fs-meta); font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: 1.375rem .25rem .375rem .5rem; color: var(--muted); font-size: var(--fs-small); font-weight: 400;
 }
-.side-label-next { margin-top: .375rem; }
-.side-label .icon-btn { width: 1.75rem; height: 1.75rem; }
-.side-label .ic { width: 1rem; height: 1rem; }
-#chats { padding: 0; margin: 0 -.125rem; }
+.side-label .icon-btn { width: 1.75rem; height: 1.75rem; margin: -.375rem 0; }
+.side-label .ic { width: 1.125rem; height: 1.125rem; }
+#chats { padding: 0; margin: 0; }
+/* A search still on its way: the last results stay, dimmed, under a spinner. */
+.side-spinner {
+  flex: none; width: .75rem; height: .75rem; margin-right: .5rem; border-radius: 50%;
+  border: 1.5px solid var(--line); border-top-color: var(--muted); animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.chat-item.search-hit.stale { opacity: .5; }
 
 /* Nav, label and chat list scroll together, as one column under the pinned
-   brand row: scrolling down moves the nav away and brings the chats up. */
+   brand row: scrolling down moves the nav away and brings the chats up. The
+   gutter is kept even while nothing scrolls, so a folder opening far enough
+   to need a scrollbar does not shift every row sideways. */
 .side-scroll {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  margin: 0 -.5rem; padding: 0 .5rem;
-  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  margin: 0 -.5rem; padding: 0 .125rem 0 .5rem; scrollbar-gutter: stable;
+  /* The thumb shows only while the pointer or focus is in the sidebar: a bar
+     that never goes away read as clutter beside the list. The gutter stays. */
+  scrollbar-width: thin; scrollbar-color: transparent transparent;
+  transition: scrollbar-color var(--t-fast);
 }
+#side:hover .side-scroll, .side-scroll:focus-within { scrollbar-color: var(--line) transparent; }
 .side-scroll::-webkit-scrollbar { width: .5rem; }
-.side-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); }
+.side-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--r-pill); }
+#side:hover .side-scroll::-webkit-scrollbar-thumb, .side-scroll:focus-within::-webkit-scrollbar-thumb { background: var(--line); }
 .side-scroll #chats { flex: none; overflow: visible; }
 .chat-item { padding-left: .5rem; }
 .chat-item.active { background: var(--accent-soft); box-shadow: none; }
-#side-resize { right: -.3125rem; }
+#side-resize { right: -.25rem; }
 
-/* One sidebar toggle at every width: it collapses the desktop sidebar and
-   opens the mobile drawer. It sits above the full-column panels because the
-   sidebar is the way out of them -- they have no close buttons of their own --
-   so every header in the column leaves room for it. */
-#menu { position: absolute; top: .25rem; left: .25rem; z-index: 11; display: inline-flex; }
+/* The way back to a collapsed sidebar (and to the drawer on a phone): in the
+   page's top-left corner, level with the header titles. It sits above the
+   full-column panels because the sidebar is the way out of them, so their
+   headers leave room for it while it shows. An open desktop sidebar carries
+   its own toggle in the brand row, and this one hides. */
+#menu { position: absolute; top: .5rem; left: .5rem; z-index: 11; display: inline-flex; }
 #shell.side-collapsed #side { display: none; }
-.panel-head { padding-left: 3rem; }
-#log { padding-top: 2.75rem; }
+#shell.side-collapsed main .panel-head { padding-left: 3rem; }
+#side-collapse { flex: none; }
 
-/* Full-column panels clip themselves to this frame. Keeping main overflow
-   visible lets focus rings and composer popovers extend where they need to. */
-main { border-radius: var(--r-lg); }
+/* The column the chat, Files and MCP share, so moving between them does not
+   change how wide the page is; scrollers keep their gutter for the same reason. */
+#log, .files-content, .mcp-content, .settings-content, .page-body { scrollbar-gutter: stable; }
 
 /* Transcript: questions are soft grey bubbles on the right. */
 .msg.user { align-self: flex-end; max-width: 85%; }
@@ -1340,13 +1418,12 @@ footer::before { display: none; }
 }
 #hello h2 { margin: 0 0 .375rem; font-size: 1.875rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
 #hello p { margin: 0; color: var(--muted); }
-main.empty-chat { justify-content: center; padding-bottom: 8vh; }
+main.empty-chat { justify-content: center; padding-bottom: 8dvh; }
 main.empty-chat #log,
 main.empty-chat .right-rail,
 main.empty-chat .outline-rail { display: none; }
 main.empty-chat #hello { display: block; animation: fade var(--t-med) ease; }
 main.empty-chat footer { padding-top: 0; }
-main.empty-chat .composer { max-width: 48rem; }
 
 /* Panels open inside main, so they take its rounded corners too. */
 .set-panel, #automations, #statistics, #admin, #mcp { border-radius: inherit; }
@@ -1357,9 +1434,11 @@ main.empty-chat .composer { max-width: 48rem; }
   #side-backdrop { top: 0; }
   #menu { display: inline-flex; top: .5rem; left: .5rem; }
   #shell.side-collapsed #side { display: flex; }
-  #log { padding-top: 3rem; }
+  main .panel-head { padding-left: 3rem; }
   footer { padding: .25rem .5rem .5rem; }
-  .model-chip { max-width: 55vw; }
+}
+@container (max-width: 640px) {
+  .model-chip { max-width: 55cqi; }
 }
 
 /* Icon-only buttons centre their glyph on both axes; a block SVG in a plain
@@ -1368,7 +1447,7 @@ main.empty-chat .composer { max-width: 48rem; }
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0; line-height: 0; flex-shrink: 0;
 }
-.composer-send .ic { width: 1.125rem; height: 1.125rem; }
+.composer-send .ic { width: 1.25rem; height: 1.25rem; }
 .composer-bar { min-height: 2.125rem; }
 .nav-item > span { line-height: 1.2; }
 
@@ -1396,8 +1475,11 @@ main.empty-chat .composer { max-width: 48rem; }
 
 .popover {
   position: absolute; bottom: calc(100% + .5rem); z-index: 30;
-  width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 60vh);
+  width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 60dvh);
   display: flex; flex-direction: column; padding: .375rem;
+  /* Its list (.pop-scroll) gives up height first, down to a few rows
+     (Popover.vue); past that the whole menu scrolls rather than spilling. */
+  overflow-y: auto; overscroll-behavior: contain;
   background: var(--raise); border: 1px solid var(--line); border-radius: var(--r-md);
   box-shadow: 0 16px 40px -12px rgb(0 0 0 / 28%), 0 2px 6px rgb(0 0 0 / 6%);
   animation: pop-in var(--t-fast) var(--ease); transform-origin: bottom left;
@@ -1408,6 +1490,22 @@ main.empty-chat .composer { max-width: 48rem; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }
 /* An empty chat has room below the centred composer, not above it. */
 main.empty-chat .popover { bottom: auto; top: calc(100% + .5rem); transform-origin: top left; }
+/* On a phone: a sheet along the bottom, over a dimmed page (Popover.vue). */
+.popover.sheet {
+  position: fixed; left: 0; right: 0; width: auto; z-index: 41;
+  border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0;
+  padding: .5rem .5rem calc(.5rem + env(safe-area-inset-bottom));
+  animation: sheet-in var(--t-med) var(--ease);
+}
+.popover.sheet::before {
+  content: ""; flex: none; align-self: center; width: 2.25rem; height: 4px; margin: 0 0 .5rem;
+  border-radius: var(--r-pill); background: var(--line);
+}
+.popover.sheet .pop-item { min-height: 2.75rem; }
+.popover.sheet .pop-search { min-height: 2.75rem; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / 32%); animation: fade-in var(--t-med) var(--ease); }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes fade-in { from { opacity: 0; } }
 
 .pop-scroll { overflow-y: auto; min-height: 0; flex: 1; }
 .pop-item {
@@ -1478,17 +1576,22 @@ button.pop-item:active:not(:disabled) { transform: none; }
   border-right: 2px solid var(--fg); border-bottom: 2px solid var(--fg); transform: rotate(45deg) translate(-2px, -2px);
 }
 
-/* MCP: its own full-column page in main, like Files. */
-#mcp {
+/* MCP and Files: their own full-column pages in main. Opening one covers the
+   chat at once and only its contents rise into place: fading the page itself
+   in showed the chat through it for the length of the fade. Closing fades it
+   out, since what shows through then is where you are going. */
+#mcp, #files {
   position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
   display: flex; flex-direction: column; overflow: hidden;
-  visibility: hidden; opacity: 0; transform: translateY(8px); pointer-events: none;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s linear var(--t-med);
+  /* Their layouts follow the room the page has, not the window: beside the
+     sidebar a 780px window leaves a page narrower than a phone's. */
+  container-type: inline-size;
+  visibility: hidden; opacity: 0; pointer-events: none;
+  transition: opacity var(--t-med) var(--ease), visibility 0s linear var(--t-med);
 }
-#mcp.open {
-  visibility: visible; opacity: 1; transform: none; pointer-events: auto;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
-}
+#mcp.open, #files.open { visibility: visible; opacity: 1; pointer-events: auto; transition: visibility 0s; }
+#mcp.open > *, #files.open > * { animation: page-rise var(--t-med) var(--ease); }
+@keyframes page-rise { from { opacity: 0; transform: translateY(8px); } }
 
 /* Settings: plain sections split by a rule, not a card each. Inside one,
    every setting is a row: what it is and what it does on the left, the
@@ -1499,7 +1602,7 @@ button.pop-item:active:not(:disabled) { transform: none; }
   width: min(46rem, 100%); margin: 0; padding: 1.25rem 0;
   border-top: 1px solid var(--line);
 }
-.set-group:first-child, .set-divider + .set-group { border-top: 0; }
+.set-group:first-child { border-top: 0; }
 .set-group > header { margin-bottom: .75rem; }
 .set-group h3 { margin: 0; font-size: var(--fs-ui); font-weight: 600; }
 .set-group > header p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
@@ -1513,12 +1616,12 @@ button.pop-item:active:not(:disabled) { transform: none; }
 .set-grid > div > label:first-child { grid-column: 1; grid-row: 1; padding-top: .5rem; }
 .set-grid > div > small { grid-column: 1; grid-row: 2; }
 .set-grid > div.span-2 { display: block; }
-.set-grid input[type="number"] { max-width: 12rem; }
+/* Short controls share one width, so the control column has one right edge; text and prompts take the full column. */
+.set-grid input[type="number"], .set-grid select { max-width: 20rem; }
 .set-group label { color: var(--fg); font-weight: 500; font-size: var(--fs-small); margin-bottom: .3125rem; }
 .set-group small { display: block; margin-top: .25rem; color: var(--muted); font-size: var(--fs-meta); line-height: 1.4; }
-.set-grid > div > label.inline-check { padding-top: .5rem; }
 .set-group textarea#systemPrompt { font-family: var(--sans); font-size: var(--fs-ui); line-height: 1.55; }
-@media (max-width: 720px) {
+@container (max-width: 480px) {
   .set-panel .settings-content { padding: .5rem 1rem 2rem; }
   .set-grid > div { display: block; }
   .set-grid > div > label:first-child { padding-top: 0; }
@@ -1531,11 +1634,6 @@ button.pop-item:active:not(:disabled) { transform: none; }
 }
 .save-bar-text { margin-right: auto; color: var(--fg); font-weight: 500; }
 .save-bar-err { flex-basis: 100%; order: 5; color: var(--err); font-size: var(--fs-meta); }
-.set-divider { width: min(46rem, 100%); margin: 1.5rem 0 .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.set-divider h2 { margin: 0; font-size: 1.0625rem; }
-.set-divider p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
-/* A person without the settings feature sees only what an admin lets them customise. */
-.set-divider.set-first { margin-top: 0; padding-top: 0; border-top: 0; }
 .panel-head .set-back { margin-left: -.375rem; }
 .panel-head .set-back + h2 { margin-right: auto; }
 
@@ -1565,31 +1663,16 @@ button.pop-item:active:not(:disabled) { transform: none; }
 /* A fresh instance: the first step of setting one up. */
 .ep-setup p { margin: .25rem 0 1rem; color: var(--muted); font-size: var(--fs-small); }
 .set-add { width: min(46rem, 100%); margin: 0 0 1.5rem; }
-.set-nav { width: min(46rem, 100%); margin: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raise); overflow: hidden; }
-.set-link {
-  display: flex; align-items: center; width: 100%; padding: .875rem 1.25rem; text-align: left;
-  background: none; border: 0; border-radius: 0; color: var(--fg);
-}
-.set-link + .set-link { border-top: 1px solid var(--line); }
-.set-link:hover { background: var(--accent-soft); }
-.set-link { gap: .75rem; }
-.set-link::after { margin-left: auto; color: var(--faint); }
-.set-link b { display: block; font-weight: 600; }
-.set-link small { display: block; color: var(--muted); font-size: var(--fs-small); }
-.set-link[hidden] { display: none; }
 .set-foot { width: min(46rem, 100%); margin: 0 0 1rem; padding-top: 1.25rem; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: .5rem; }
 .danger { color: var(--err); }
-.inline-check { display: inline-flex !important; gap: .375rem; align-items: center; margin: 0 !important; font-weight: 400 !important; }
 /* Editor fields inside the model and connector pages. */
 /* JSON fields: the extra request body, globally and per model. */
 textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small); }
 .cfg-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
-.cfg-tags { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
-.cfg-tags label { display: inline-flex; gap: .3rem; align-items: center; margin: 0; font-weight: 400; }
 
 .brand-home {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;
-  min-height: 0; padding: .125rem .375rem .125rem .125rem; margin: -.125rem 0 -.125rem -.125rem;
+  min-height: 2rem; padding: .125rem .5rem .125rem .125rem; margin: 0;
   border: 0; border-radius: var(--r-pill); background: none; color: var(--fg); text-align: left;
 }
 .brand-home:hover { background: var(--accent-soft); }
@@ -1599,9 +1682,6 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 .composer-model.static .chev { display: none; }
 [hidden] { display: none !important; }
 
-/* Saved request attribution */
-#statisticsFilter { margin-left: auto; min-width: 0; }
-#statisticsFilter select { max-width: 100%; width: auto; }
 .task-card {
   max-width: var(--measure); margin: 0 auto .5rem; padding: .5rem .75rem;
   border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
@@ -1637,8 +1717,31 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 
 /* MCP: connected servers, their tools and their management views. */
 .mcp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
-.mcp-mode { display: flex; align-items: center; gap: .5rem; margin: 0 0 0 auto; font-size: var(--fs-meta); color: var(--muted); }
-.mcp-mode select { width: auto; max-width: 14rem; }
+/* Files and MCP close with an ×, last in the header, like Settings. */
+.panel-head .panel-close { flex: none; margin-right: -.375rem; }
+.mcp-content > .page-toolbar { width: min(var(--measure), 100%); margin: 0 auto 1.5rem; }
+
+/* A page's own controls -- a filter, its main action -- are the first row of
+   its body, as wide as the content under them. The header is only the title,
+   sub-page tabs and the ×. */
+.page-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; margin-bottom: 1rem; }
+.page-toolbar .grow { flex: 1; }
+.page-toolbar > label { margin: 0; color: var(--muted); font-size: var(--fs-small); font-weight: 400; white-space: nowrap; }
+.page-toolbar > select { width: auto; max-width: 20rem; }
+.page-toolbar-note { color: var(--muted); font-size: var(--fs-small); }
+@container (max-width: 640px) {
+  .page-toolbar > select { flex: 1 1 12rem; max-width: none; }
+}
+/* A long server error: two lines, the rest behind "Show details". */
+.long-err { display: block; color: var(--err); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.long-err.mono .long-err-text { font-family: var(--mono); white-space: pre-wrap; }
+details.long-err > summary { list-style: none; cursor: pointer; }
+details.long-err > summary::-webkit-details-marker { display: none; }
+details.long-err:not([open]) .long-err-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.long-err-text { display: block; }
+.long-err-more { display: inline-block; margin-top: .25rem; color: var(--muted); font-family: var(--sans); text-decoration: underline; text-underline-offset: 2px; }
+details.long-err > summary:hover .long-err-more { color: var(--fg); }
+.int-card > .long-err { align-self: stretch; }
 .int-tools { width: 100%; }
 .int-tools > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-meta); padding: .25rem 0; }
 .int-tools > summary:hover { color: var(--fg); }
@@ -1648,27 +1751,31 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 
 .int-card { display: flex; flex-direction: column; gap: .6rem; align-items: flex-start; }
 .int-head { display: flex; gap: .75rem; align-items: center; width: 100%; }
-.int-icon { font-size: 1.4rem; width: 2rem; text-align: center; color: var(--accent); }
+.int-icon { flex: none; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--fg); }
+.int-icon .ic { width: 1.25rem; height: 1.25rem; }
+img.int-icon { background: none; }
 .int-logo { height: 2rem; flex: none; }
 .int-name { display: flex; flex-direction: column; min-width: 0; }
 .int-name h4 { margin: 0; font-size: var(--fs-ui); }
 /* The MCP page's tiers (built-in, bundled, third-party): a heading over the cards, as wide as they are. */
 .mcp-tier { margin-bottom: 1.75rem; }
 .mcp-tier .panel-card { margin-bottom: .75rem; }
-.mcp-tier-head { width: min(52rem, 100%); margin: 0 auto .6rem; }
+.mcp-tier-head { width: min(var(--measure), 100%); margin: 0 auto .6rem; }
 .mcp-tier-head h3 { margin: 0; font-size: 1.0625rem; }
 .mcp-tier-head p { margin: .125rem 0 0; color: var(--muted); font-size: var(--fs-small); }
-.mcp-tier-empty { width: min(52rem, 100%); margin: 0 auto; padding: 1rem; border: 1px dashed var(--line); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-small); }
+.mcp-tier-empty { width: min(var(--measure), 100%); margin: 0 auto; padding: 1rem; border: 1px dashed var(--line); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-small); }
 .int-chips { margin-left: auto; display: flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; }
 .chip-ok { color: var(--tool); border-color: var(--tool); }
 .chip-bad { color: var(--err); border-color: var(--err); }
-.int-desc { margin: 0; color: var(--muted); }
+/* Under the title, so smaller than it. */
+.int-desc { margin: 0; color: var(--muted); font-size: var(--fs-small); line-height: 1.5; }
 .int-error { margin: .25rem 0; color: var(--err); font-size: var(--fs-meta); overflow-wrap: anywhere; }
 .int-notice { margin: 0 0 .75rem; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); color: var(--muted); }
-.int-tabs { width: min(52rem, 100%); margin: 0 auto .75rem; display: flex; gap: .35rem; flex-wrap: wrap; }
+.int-tabs { width: min(var(--measure), 100%); margin: 0 auto .75rem; display: flex; gap: .35rem; flex-wrap: wrap; }
 .int-tabs button.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .int-tabs button.off { opacity: .6; }
-.int-view { width: min(52rem, 100%); margin: 0 auto; }
+.int-view { width: min(var(--measure), 100%); margin: 0 auto; }
+.int-card.panel-card, .mcp-content > .sec { width: min(var(--measure), 100%); margin-left: auto; margin-right: auto; }
 .int-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .6rem; }
 .int-stat { display: flex; flex-direction: column; gap: .15rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raise); }
 .int-stat-label { font-size: var(--fs-meta); color: var(--muted); }
@@ -1693,7 +1800,7 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 .int-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .int-actions .danger, .int-filters .danger { color: var(--err); border-color: var(--err); }
 .int-edit { display: flex; flex-direction: column; gap: .4rem; width: 100%; }
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .int-head { flex-wrap: wrap; }
   .int-chips { margin-left: 0; justify-content: flex-start; }
   .int-fields { grid-template-columns: 1fr; }
@@ -1701,19 +1808,9 @@ textarea.mono { font-family: var(--mono, monospace); font-size: var(--fs-small);
 }
 
 /* ---- Files: everything attached, as its own full-column page ---- */
-#files {
-  position: absolute; inset: 0; z-index: 9; background: var(--bg); border-radius: inherit;
-  display: flex; flex-direction: column; overflow: hidden;
-  visibility: hidden; opacity: 0; transform: translateY(8px); pointer-events: none;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s linear var(--t-med);
-}
-#files.open {
-  visibility: visible; opacity: 1; transform: none; pointer-events: auto;
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), visibility 0s;
-}
 .files-count { margin-left: .5rem; color: var(--faint); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 .files-content { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
-.files-content > * { width: min(60rem, 100%); margin-left: auto; margin-right: auto; }
+.files-content > * { width: min(var(--measure), 100%); margin-left: auto; margin-right: auto; }
 .files-filter { display: block; margin-bottom: .75rem; }
 .files-error { margin-bottom: .75rem; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -1738,7 +1835,7 @@ button.files-main:active:not(:disabled) { transform: none; }
   flex: none; width: 2rem; height: 2rem; display: grid; place-items: center;
   border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--muted);
 }
-.files-icon .ic { width: 1.05rem; height: 1.05rem; }
+.files-icon .ic { width: 1.25rem; height: 1.25rem; }
 /* The type reads at a glance from the icon's tint too, from the chart palette. */
 .files-icon[data-kind="filePdf"] { color: var(--chart-8); }
 .files-icon[data-kind="fileSheet"] { color: var(--chart-3); }
@@ -1754,13 +1851,24 @@ button.files-main:active:not(:disabled) { transform: none; }
 .files-chat-link:hover { color: var(--fg); text-decoration: underline; }
 button.files-chat-link:active:not(:disabled) { transform: none; }
 .files-col-use button.primary { font-size: var(--fs-meta); padding: .3rem .625rem; min-height: 0; }
+.files-use { display: inline-flex; align-items: center; gap: .25rem; }
+.files-use .ic { display: none; width: 1.25rem; height: 1.25rem; }
 .files-phone-chat { display: none; }
-@media (max-width: 640px) {
+/* In a narrow page (a phone, or a small window beside the sidebar) the row is
+   the name, and two icon buttons the size of a fingertip. The fixed columns
+   alone take about 360px, so below this the name had no room left. */
+@container (max-width: 700px) {
   .files-table thead { display: none; }
   .files-table .files-col-type, .files-table .files-col-chat, .files-table .files-col-date { display: none; }
-  .files-table .files-col-use { width: 8.5rem; }
+  .files-table .files-col-use { width: 6rem; }
   .files-meta { display: block; }
-  .files-phone-chat { display: inline-flex; width: 2rem; height: 2rem; vertical-align: middle; margin-right: .25rem; }
+  .files-phone-chat { display: inline-flex; width: 2.75rem; height: 2.75rem; vertical-align: middle; }
+  .files-col-use button.files-use {
+    width: 2.75rem; height: 2.75rem; padding: 0; justify-content: center; vertical-align: middle;
+    background: none; border: 1px solid var(--line); color: var(--fg);
+  }
+  .files-use .ic { display: block; }
+  .files-use-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 
 /* ---- Account: pinned under the chat list, the way into settings ---- */
@@ -1772,10 +1880,9 @@ button.files-chat-link:active:not(:disabled) { transform: none; }
   background: var(--accent); color: var(--raise); font-size: .75rem; font-weight: 650;
 }
 .account-btn .adm-badge { margin-left: auto; }
-.popover.account-menu { left: 0; right: 0; width: auto; bottom: calc(100% + .25rem); }
+.popover.account-menu { --pop-gap: .25rem; left: 0; right: 0; width: auto; }
 .account-menu .adm-badge { margin-left: auto; }
 .account-who { display: flex; flex-direction: column; padding: .375rem .5rem .5rem; min-width: 0; }
-.account-who-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-who-sub { color: var(--muted); font-size: var(--fs-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pop-item:disabled { opacity: .5; cursor: not-allowed; }
 .pop-item:disabled:hover { background: none; }
@@ -1787,7 +1894,11 @@ dialog#settingsDialog {
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
 }
 dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
-.settings-frame { display: flex; height: 100%; min-height: 0; }
+.settings-frame { position: relative; display: flex; height: 100%; min-height: 0; }
+/* Close sits in the dialog's top-right corner, level with the section's title. */
+.settings-close { position: absolute; top: .5rem; right: .5rem; z-index: 2; }
+/* Its own stacking context, so the open section (z-index 10 inside it) stays under the close. */
+.settings-body { isolation: isolate; }
 .settings-rail {
   flex: 0 0 13.5rem; display: flex; flex-direction: column; gap: .5rem; padding: .5rem;
   background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto;
@@ -1798,14 +1909,16 @@ dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
 .settings-rail .adm-badge { margin-left: auto; }
 .settings-rail-group {
   padding: .75rem .625rem .25rem; color: var(--faint); font-size: var(--fs-meta);
-  font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 600;
 }
 .settings-rail-group:first-child { padding-top: .25rem; }
 .settings-body { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+/* Each section lays out by the room beside the rail, not the window's width. */
+.settings-body { container-type: inline-size; }
 /* No sidebar toggle over these headers here, so they need no room for one. */
-#settingsDialog .panel-head { padding-left: 1rem; }
+#settingsDialog .panel-head { padding-left: 1rem; padding-right: 3rem; }
 @media (max-width: 720px) {
-  dialog#settingsDialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  dialog#settingsDialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .settings-frame { flex-direction: column; }
   .settings-rail { flex: none; flex-direction: column; gap: .25rem; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .settings-rail-items { flex-direction: row; overflow-x: auto; scrollbar-width: none; margin: 0 -.5rem; padding: 0 .5rem; }
@@ -1845,7 +1958,7 @@ dialog#cameraDialog::backdrop { background: rgba(0, 0, 0, .62); }
 
 /* ---- An answer edited in place: the same card, with room for a long answer ---- */
 .composer-inline.answer-edit { margin-top: .5rem; }
-.answer-edit .composer-input { max-height: 60vh; font-size: var(--fs-body); line-height: 1.6; resize: none; }
+.answer-edit .composer-input { max-height: 60dvh; font-size: var(--fs-body); line-height: 1.6; resize: none; }
 .answer-edit .edit-hint { padding-left: .5rem; color: var(--faint); font-size: var(--fs-meta); }
 @media (hover: none) { .answer-edit .edit-hint { display: none; } }
 
@@ -1885,19 +1998,17 @@ dialog.modal-card::backdrop { background: rgb(0 0 0 / 45%); backdrop-filter: blu
 .modal-head h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; line-height: 1.35; }
 .modal-sub { margin: .2rem 0 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; overflow-wrap: anywhere; }
 .modal-close { flex: none; align-self: flex-start; width: 2rem; height: 2rem; margin: .25rem -.5rem 0 0; }
-.modal-close .ic { width: 1rem; height: 1rem; }
+.modal-close .ic { width: 1.125rem; height: 1.125rem; }
 .modal-body { display: flex; flex-direction: column; gap: 1rem; padding: 1.125rem 1.25rem 0; }
 .modal-card .dialog-actions {
   margin: .25rem -1.25rem 0; padding: .875rem 1.25rem;
   border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--raise));
 }
 .modal-card .dialog-actions button { min-width: 5.5rem; }
-.modal-note { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.5; }
 .field { display: flex; flex-direction: column; gap: .375rem; }
 .field-label { font-size: var(--fs-meta); font-weight: 600; color: var(--fg); }
 .field-optional { margin-left: .25rem; font-weight: 400; color: var(--faint); }
 .field-hint { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
-.field-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .field textarea { resize: vertical; min-height: 6rem; line-height: 1.5; }
 
 
@@ -1937,8 +2048,8 @@ dialog.viewer::backdrop { background: rgb(0 0 0 / 70%); }
 .viewer-nav.prev { left: .75rem; }
 .viewer-nav.next { right: .75rem; }
 @media (max-width: 720px) {
-  dialog.viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
-  .viewer-nav { top: auto; bottom: .75rem; translate: none; }
+  dialog.viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .viewer-nav { top: auto; bottom: calc(.75rem + env(safe-area-inset-bottom)); translate: none; }
 }
 /* A thumbnail in a message is a button that opens the viewer. */
 .msg-image-btn { padding: 0; border: 0; background: none; border-radius: var(--r-sm); cursor: zoom-in; min-height: 0; }
@@ -1961,7 +2072,7 @@ dialog.viewer::backdrop { background: rgb(0 0 0 / 70%); }
   flex: none; width: 1.75rem; height: 1.75rem; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--faint);
 }
-.folder-picked-remove .ic { width: .875rem; height: .875rem; }
+.folder-picked-remove .ic { width: 1rem; height: 1rem; }
 .folder-picked-remove:hover, .folder-picked-remove:focus-visible { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
 button.folder-picked-remove:active:not(:disabled) { transform: none; }
 .folder-picked-empty {
@@ -1982,7 +2093,24 @@ button.folder-chat:active:not(:disabled) { transform: none; }
 .folder-chat:hover .folder-chat-add { color: var(--fg); }
 .dialog-actions .dialog-back { margin-right: auto; display: inline-flex; align-items: center; gap: .375rem; min-width: 0; }
 .modal-card .dialog-actions .dialog-back { min-width: 0; }
-.dialog-back .ic { width: 1rem; height: 1rem; }
+.dialog-back .ic { width: 1.125rem; height: 1.125rem; }
 .folder-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-chat-from { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: var(--fs-meta); }
 .folder-chats-empty { padding: .5rem; color: var(--muted); font-size: var(--fs-small); }
+
+/* ---- Touch: every button a fingertip can find (44px, Apple's floor) ----
+   On a touch screen, or anything phone-wide, the small icon buttons grow to
+   2.75rem. They keep their look; only the box that takes the tap grows. */
+@media (pointer: coarse), (max-width: 640px) {
+  .icon-btn, #log .msg-tools .icon-btn, #log .turn-meta .icon-btn { width: 2.75rem; height: 2.75rem; }
+  #log .msg-tools { gap: 0; margin-top: 0; }
+  .side-label .icon-btn { margin: -.75rem 0; }
+  .brand { height: 2.75rem; }
+  #menu { top: .125rem; left: .25rem; }
+  main .panel-head, #shell.side-collapsed main .panel-head { padding-left: 3.25rem; }
+  .composer .composer-bar > .composer-attach, .composer .composer-bar > .composer-send { width: 2.75rem; height: 2.75rem; }
+  /* A tool or server switch: the box stays small, the label around it takes the tap. */
+  label.tgl { padding: .75rem; margin: -.75rem; }
+  label.tgl input { width: 1.25rem; height: 1.25rem; }
+  .queued-drop { min-height: 2.5rem; }
+}

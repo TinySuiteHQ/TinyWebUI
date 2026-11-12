@@ -16,7 +16,7 @@ const error = ref('');
 async function onToggle(e: Event) {
   if (!(e.target as HTMLDetailsElement).open || runs.value) return;
   error.value = '';
-  try { runs.value = (await api.get(`/api/automations/${encodeURIComponent(props.automationId)}/runs`)).runs || []; } catch (err) {
+  try { runs.value = (await api.get<{ runs: AutomationRunView[] }>(`/api/automations/${encodeURIComponent(props.automationId)}/runs`)).runs; } catch (err) {
     // The next expand retries instead of leaving the section empty for good.
     error.value = `Couldn't load runs (${err.message}).`;
   }

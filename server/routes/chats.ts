@@ -140,13 +140,17 @@ export function chatRoutes({ config, instructionsFor, modelFor, retrieval, runs,
       return json(res, 200, { ok: true });
     } },
 
-    // Renaming is the person's own title; it does not move the chat up the list.
+    // Renaming and pinning are the person's own arrangement; neither moves the chat up the list.
     { method: 'PATCH', path: /^\/api\/chats\/([\w.-]+)$/, feature: F, handle: async ({ req, res, auth, params: [id] }) => {
       if (!store.chats.get(id, auth.userId)) return noChat(res);
-      const { title } = await readJson(req);
-      if (typeof title !== 'string' || !title.trim()) return json(res, 400, { error: 'the title cannot be blank' });
-      const renamed = store.chats.rename(id, title, auth.userId);
-      return json(res, 200, { title: renamed?.title ?? title.trim() });
+      const { title, pinned } = await readJson(req);
+      if (title === undefined && pinned === undefined) return json(res, 400, { error: 'nothing to change: send title or pinned' });
+      if (title !== undefined && (typeof title !== 'string' || !title.trim())) return json(res, 400, { error: 'the title cannot be blank' });
+      if (pinned !== undefined && typeof pinned !== 'boolean') return json(res, 400, { error: 'pinned must be true or false' });
+      if (typeof title === 'string') store.chats.rename(id, title, auth.userId);
+      if (typeof pinned === 'boolean') store.chats.pin(id, pinned, auth.userId);
+      const row = store.chats.get(id, auth.userId);
+      return json(res, 200, { title: row?.title ?? '', pinned: row?.pinned_at != null });
     } },
 
     { method: 'GET', path: /^\/api\/chats\/([\w.-]+)\/stream$/, feature: F, handle: ({ res, auth, url, params: [id] }) => {
@@ -327,6 +331,8 @@ export function chatRoutes({ config, instructionsFor, modelFor, retrieval, runs,
         if (normalized) imgs.push(filename ? { ...normalized, filename } : normalized);
       }
 
+      // The chat's first message names it (autoTitle). Not `content`: the attachment notes say nothing of what it is about.
+      const titleFrom = store.messages.nextSeq(chat.id) === 0 ? String(message) : null;
       store.messages.add(chat.id, { role: 'user', content, ...(imgs.length ? { images: imgs } : {}) });
 
       // The turn is started, not awaited. Closing the tab detaches a
@@ -335,7 +341,7 @@ export function chatRoutes({ config, instructionsFor, modelFor, retrieval, runs,
       const existing = runs.get(chat.id);
       const run = existing && !existing.done
         ? existing
-        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body), role: auth.role });
+        : runs.start({ chat, tools: toolsFor(auth.features), model, instructions: instructionsFor(auth.user?.id), thinking: thinkingAsked(body), role: auth.role, titleFrom });
       return runs.attach(run, res, 0);
     } }
   ];

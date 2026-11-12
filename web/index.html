@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- viewport-fit=cover: drawn under the notch and home bar, kept clear of them by
+       the safe-area padding in base.css. resizes-content: an Android keyboard shrinks
+       the page (100dvh with it), so the composer stays above it instead of behind. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>TinyWebUI</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>

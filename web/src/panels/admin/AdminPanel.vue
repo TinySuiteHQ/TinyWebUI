@@ -20,16 +20,19 @@ import IntegrationView from '../mcp/IntegrationView.vue';
 import Markdown from '../../chat/Markdown.vue';
 import Icon from '../../ui/Icon.vue';
 
-// /api/admin/* replies, read field by field.
-type Json = any;
+import type {
+  AdminChatReply, AdminChatsReply, AdminConnectorsReply, AdminMessageView, AdminPolicyReply, AdminUsersReply, AdminUserView, DocumentTextReply, InviteCreatedReply, InviteView, RoleView
+} from '../../../../shared/api.ts';
+
+type Person = AdminUsersReply['users'][number];
 const session = useSession();
 const admin = useAdmin();
 const me = computed(() => session.me);
 const enc = encodeURIComponent;
 
 const tab = ref<'people' | 'roles'>('people');
-const users = ref<Json[]>([]);
-const policy = ref<Json | null>(null);
+const users = ref<Person[]>([]);
+const policy = ref<AdminPolicyReply | null>(null);
 const fingerprint = ref('');
 const filter = ref('all');
 const search = ref('');
@@ -42,9 +45,9 @@ let loadRequest = 0;
 
 /* ---------- people ---------- */
 
-const roleNames = computed<string[]>(() => policy.value?.roles?.map((r: Json) => r.name) || ['admin', 'user']);
+const roleNames = computed<string[]>(() => policy.value?.roles.map((r) => r.name) || ['admin', 'user']);
 
-type Group = { key: string, title: string, note?: string, people: Json[] };
+type Group = { key: string, title: string, note?: string, people: Person[] };
 /** Who goes in which group, in the order the panel shows them. */
 const groups = computed<Group[]>(() => {
   const out: Group[] = [{ key: 'pending', title: 'Waiting for approval', note: 'New sign-ups and access requests. Approve each into a role, or turn them away.', people: [] }];
@@ -74,7 +77,7 @@ const groups = computed<Group[]>(() => {
 const chips = computed(() => [{ key: 'all', label: 'Everyone', n: users.value.length },
   ...groups.value.filter((g) => g.people.length || g.key === 'pending' || g.key.startsWith('role:'))
     .map((g) => ({ key: g.key, label: g.key === 'pending' ? 'Waiting' : g.title, n: g.people.length }))]);
-const match = (u: Json) => {
+const match = (u: Person) => {
   const q = search.value.trim().toLowerCase();
   return !q || [u.name, u.email, u.id].some((v) => v && String(v).toLowerCase().includes(q));
 };
@@ -84,7 +87,7 @@ const shownGroups = computed(() => groups.value
   // Empty groups are noise in the overview; a group picked on purpose says it is empty.
   .filter((g) => g.people.length || filter.value !== 'all'));
 
-function changed(user: Json, next: Json) {
+function changed(user: Person, next: AdminUserView) {
   Object.assign(user, next);
   admin.markWaiting(users.value);
   // A role's head count on the Roles tab moves with every change here.
@@ -98,11 +101,11 @@ const inviteEmail = ref('');
 const inviteResult = ref('');
 const inviteUrl = ref('');
 const copied = ref(false);
-const invites = ref<Json[]>([]);
+const invites = ref<InviteView[]>([]);
 
 async function loadInvites() {
   if (me.value.authMode !== 'multiuser') return;
-  try { invites.value = (await api.get('/api/admin/invites')).invites; } catch (err) { inviteResult.value = err.message; }
+  try { invites.value = (await api.get<{ invites: InviteView[] }>('/api/admin/invites')).invites; } catch (err) { inviteResult.value = err.message; }
 }
 function toggleInvite() {
   inviteOpen.value = !inviteOpen.value;
@@ -112,7 +115,7 @@ async function createInvite() {
   inviteResult.value = '';
   inviteUrl.value = '';
   try {
-    const out = await api.post('/api/admin/invites', { email: inviteEmail.value.trim() || null });
+    const out = await api.post<InviteCreatedReply>('/api/admin/invites', { email: inviteEmail.value.trim() || null });
     inviteUrl.value = new URL(out.path, location.origin).href;
     inviteEmail.value = '';
     copied.value = false;
@@ -129,7 +132,7 @@ async function revoke(id: string) {
 async function setRequests(on: boolean) {
   msg.value = '';
   try {
-    const out = await api.patch('/api/admin/policy', { allowRequests: on });
+    const out = await api.patch<{ allowRequests: boolean }>('/api/admin/policy', { allowRequests: on });
     if (policy.value) policy.value.allowRequests = out.allowRequests;
   } catch (err) { msg.value = err.message; }
 }
@@ -145,41 +148,41 @@ const foot = computed(() => {
 
 /* ---------- roles ---------- */
 
-function roleSummary(r: Json) {
+function roleSummary(r: RoleView) {
   if (r.fixed) return 'Everything, always, including this panel.';
-  const shown = r.features.filter((f: string) => f !== FEATURE.ADMIN).map(featureName);
+  const shown = r.features.filter((f) => f !== FEATURE.ADMIN).map(featureName);
   if (!shown.length) return 'Nothing yet: tick what this role may use.';
   return shown.length > 5 ? `${shown.slice(0, 5).join(', ')} and ${shown.length - 5} more` : shown.join(', ');
 }
-function showPeopleOf(r: Json) {
+function showPeopleOf(r: RoleView) {
   filter.value = r.users ? `role:${r.name}` : 'all';
   tab.value = 'people';
 }
 async function createRole() {
   rolesMsg.value = '';
   const name = newRole.value.trim().toLowerCase();
-  const base = policy.value?.roles.find((r: Json) => r.name === newRoleFrom.value);
+  const base = policy.value?.roles.find((r) => r.name === newRoleFrom.value);
   const body = base
-    ? { name, features: base.features.filter((f: string) => f !== FEATURE.ADMIN), customize: base.customize, ...(base.settings ? { settings: base.settings } : {}), ...(policy.value.models.length ? { models: base.models } : {}) }
+    ? { name, features: base.features.filter((f) => f !== FEATURE.ADMIN), customize: base.customize, ...(base.settings ? { settings: base.settings } : {}), ...(policy.value?.models.length ? { models: base.models } : {}) }
     : { name, features: [], customize: [] };
   try {
-    const out = await api.post('/api/admin/roles', body);
-    policy.value.roles = out.roles;
+    const out = await api.post<{ roles: RoleView[] }>('/api/admin/roles', body);
+    if (policy.value) policy.value.roles = out.roles;
     newRole.value = '';
     openRole.value = name;
   } catch (err) { rolesMsg.value = err.message; }
 }
-function roleSaved(roles: Json[], message: string) { policy.value.roles = roles; openRole.value = null; rolesMsg.value = message; }
-function roleDeleted(roles: Json[]) { policy.value.roles = roles; openRole.value = null; load(); }
+function roleSaved(roles: RoleView[], message: string) { if (policy.value) policy.value.roles = roles; openRole.value = null; rolesMsg.value = message; }
+function roleDeleted(roles: RoleView[]) { if (policy.value) policy.value.roles = roles; openRole.value = null; load(); }
 
 async function refreshPolicy() {
-  try { policy.value = await api.get('/api/admin/policy'); } catch (err) { rolesMsg.value = err.message; }
+  try { policy.value = await api.get<AdminPolicyReply>('/api/admin/policy'); } catch (err) { rolesMsg.value = err.message; }
 }
 
 /* ---------- oversight: read-only views of one person's chats and connectors ---------- */
 
-type View = { kind: 'chats', user: Json, data: Json | null } | { kind: 'chat', user: Json, chatId: string, data: Json | null }
-  | { kind: 'connectors', user: Json, data: Json | null };
+type View = { kind: 'chats', user: AdminUserView, data: AdminChatsReply | null } | { kind: 'chat', user: AdminUserView, chatId: string, data: AdminChatReply | null }
+  | { kind: 'connectors', user: AdminUserView, data: AdminConnectorsReply | null };
 const view = ref<View | null>(null);
 const viewError = ref('');
 const connectorTab = ref<Record<string, string>>({});
@@ -187,27 +190,30 @@ const connectorTab = ref<Record<string, string>>({});
 let viewRequest = 0;
 let poll: ReturnType<typeof setTimeout> | undefined;
 const stopPoll = () => { clearTimeout(poll); poll = undefined; };
-const who = (u: Json) => u.name || u.email || u.id;
+const who = (u: AdminUserView) => u.name || u.email || u.id;
+/** A message's text: its own, or its text parts joined (images are counted on their own line). */
+const textOf = (c: AdminMessageView['content']) => (typeof c === 'string' ? c : (c || []).map((p) => p.text || '').join('\n'));
 
-async function openView(next: View, url: string) {
+async function openView<V extends View>(next: V, url: string) {
   stopPoll();
   const request = ++viewRequest;
   view.value = next;
   viewError.value = '';
   try {
-    const out = await api.get(url);
+    const out = await api.get<NonNullable<V['data']>>(url);
     if (request !== viewRequest) return;
     next.data = out;
-    view.value = { ...next };
+    const shown: View = { ...next };
+    view.value = shown;
     // Monitoring a turn in flight: re-read while it runs, and only while this chat is on screen.
-    if (next.kind === 'chat' && out.running) poll = setTimeout(() => { if (request === viewRequest && isOpen.value) openChat(next.user, next.chatId); }, 4000);
+    if (shown.kind === 'chat' && shown.data?.running) poll = setTimeout(() => { if (request === viewRequest && isOpen.value) openChat(shown.user, shown.chatId); }, 4000);
   } catch (err) {
     if (request === viewRequest) viewError.value = err.message;
   }
 }
-const openChats = (user: Json) => openView({ kind: 'chats', user, data: null }, `/api/admin/users/${enc(user.id)}/chats`);
-const openChat = (user: Json, chatId: string) => openView({ kind: 'chat', user, chatId, data: view.value?.kind === 'chat' && view.value.chatId === chatId ? view.value.data : null }, `/api/admin/chats/${enc(chatId)}`);
-const openConnectors = (user: Json) => { connectorTab.value = {}; openView({ kind: 'connectors', user, data: null }, `/api/admin/users/${enc(user.id)}/integrations`); };
+const openChats = (user: AdminUserView) => openView({ kind: 'chats', user, data: null }, `/api/admin/users/${enc(user.id)}/chats`);
+const openChat = (user: AdminUserView, chatId: string) => openView({ kind: 'chat', user, chatId, data: view.value?.kind === 'chat' && view.value.chatId === chatId ? view.value.data : null }, `/api/admin/chats/${enc(chatId)}`);
+const openConnectors = (user: AdminUserView) => { connectorTab.value = {}; openView({ kind: 'connectors', user, data: null }, `/api/admin/users/${enc(user.id)}/integrations`); };
 function back() {
   const v = view.value;
   if (v?.kind === 'chat') openChats(v.user);
@@ -215,7 +221,7 @@ function back() {
 }
 async function openDocument(id: string) {
   try {
-    const d = await api.get(`/api/admin/documents/${enc(id)}`);
+    const d = await api.get<DocumentTextReply>(`/api/admin/documents/${enc(id)}`);
     // The text the admin route returns (each read is audited), in the app's viewer.
     useViewer().show([{ kind: 'text', name: d.filename, text: String(d.content ?? '') }]);
   } catch (err) { viewError.value = err.message; }
@@ -231,7 +237,7 @@ const viewMeta = computed(() => {
   if (viewError.value) return viewError.value;
   if (!v?.data) return 'loading…';
   if (v.kind === 'chats') {
-    const s = v.data.summary || {};
+    const s = v.data.summary;
     const cost = s.pricedRounds ? ` · $${Number(s.reportedCost || 0).toFixed(2)} reported` : '';
     return `${v.data.chats.length} chats · ${s.rounds || 0} model rounds${cost}`;
   }
@@ -244,7 +250,7 @@ const viewMeta = computed(() => {
 async function load() {
   const request = ++loadRequest;
   msg.value = '';
-  const [u, p] = await Promise.allSettled([api.get('/api/admin/users'), api.get('/api/admin/policy')]);
+  const [u, p] = await Promise.allSettled([api.get<AdminUsersReply>('/api/admin/users'), api.get<AdminPolicyReply>('/api/admin/policy')]);
   if (request !== loadRequest) return;
   if (p.status === 'fulfilled') policy.value = p.value;
   else rolesMsg.value = p.reason.message;
@@ -261,7 +267,7 @@ const { isOpen } = usePanel(PANEL.ADMIN, { onOpen: () => { view.value = null; re
 onMounted(() => {
   // Someone waiting should not depend on an admin happening to open the panel.
   if (session.can(FEATURE.ADMIN) && ['multiuser', 'trusted-header'].includes(me.value.authMode || '')) {
-    api.get('/api/admin/users').then((out) => admin.markWaiting(out.users), () => {});
+    api.get<AdminUsersReply>('/api/admin/users').then((out) => admin.markWaiting(out.users), () => {});
   }
 });
 onBeforeUnmount(stopPoll);
@@ -298,11 +304,11 @@ onBeforeUnmount(stopPoll);
           <div v-for="(m, i) in view.data.messages.filter((x: any) => x.role !== 'system')" :key="i" class="admin-msg">
             <div class="admin-msg-role">{{ m.role === 'tool' ? 'tool result' : m.role }}{{ m.compacted ? ' (compacted)' : '' }}</div>
             <details v-if="m.role === 'tool'">
-              <summary>{{ String(m.content || '').length.toLocaleString() }} chars</summary>
-              <pre>{{ m.content || '' }}</pre>
+              <summary>{{ textOf(m.content).length.toLocaleString() }} chars</summary>
+              <pre>{{ textOf(m.content) }}</pre>
             </details>
             <template v-else>
-              <div v-if="m.content" class="admin-msg-body"><Markdown :text="m.content" /></div>
+              <div v-if="textOf(m.content)" class="admin-msg-body"><Markdown :text="textOf(m.content)" /></div>
               <div v-if="m.images?.length" class="usage">{{ m.images.length }} image(s) attached</div>
               <details v-for="(call, j) in m.tool_calls || []" :key="j">
                 <summary>calls {{ call.function?.name }}</summary>
@@ -399,7 +405,7 @@ onBeforeUnmount(stopPoll);
               <RoleEditor v-if="openRole === r.name" :role="r" :policy="policy" @saved="roleSaved" @deleted="roleDeleted" @cancel="openRole = null" />
               <template v-else>
                 <p class="adm-role-sum">{{ roleSummary(r) }}</p>
-                <p v-if="!r.fixed && policy.models.length" class="adm-meta">{{ r.models === '*' ? 'Any model' : r.models.length ? `Models: ${r.models.join(', ')}` : 'No models' }}</p>
+                <p v-if="!r.fixed && policy.models.length" class="adm-meta">{{ r.models === '*' ? 'Any model' : r.models?.length ? `Models: ${r.models.join(', ')}` : 'No models' }}</p>
                 <p v-if="roleSettingsSummary(r.settings, r.modelSettings)" class="adm-meta">Chats: {{ roleSettingsSummary(r.settings, r.modelSettings) }}</p>
               </template>
             </article>

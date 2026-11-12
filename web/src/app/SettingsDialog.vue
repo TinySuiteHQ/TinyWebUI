@@ -48,9 +48,6 @@ function onClick(e: MouseEvent) { if (e.target === el.value) panels.closeAll(); 
       <nav class="settings-rail" aria-label="Settings sections">
         <div class="settings-rail-head">
           <h2 id="settingsDialogTitle">Settings</h2>
-          <button class="icon-btn settings-close" type="button" aria-label="Close settings" title="Close" @click="panels.closeAll()">
-            <Icon name="x" />
-          </button>
         </div>
         <div class="settings-rail-items">
           <template v-for="g in panels.sectionGroups" :key="g.group">
@@ -70,6 +67,10 @@ function onClick(e: MouseEvent) { if (e.target === el.value) panels.closeAll(); 
           <component :is="LAZY[name]" v-if="panels.seen.has(name)" />
         </template>
       </div>
+      <!-- Where a dialog's close is looked for: its top-right corner, over the open section's header. -->
+      <button class="icon-btn settings-close" type="button" aria-label="Close settings" title="Close" @click="panels.closeAll()">
+        <Icon name="x" />
+      </button>
     </div>
   </dialog>
 </template>

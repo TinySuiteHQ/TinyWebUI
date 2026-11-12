@@ -10,10 +10,11 @@
  */
 
 export type ApiError = Error & { status?: number };
-// Replies are JSON whose shape each caller knows; `any` keeps those call sites readable.
+// A reply whose shape is in shared/api.ts is asked for by name (api.get<ToolsReply>(...));
+// the areas not moved there yet still read loose JSON.
 type Json = any;
 
-async function request(method: string, url: string, body?: unknown, { signal }: { signal?: AbortSignal } = {}): Promise<Json> {
+async function request<T>(method: string, url: string, body?: unknown, { signal }: { signal?: AbortSignal } = {}): Promise<T> {
   const init: RequestInit = { method, signal };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
@@ -28,10 +29,10 @@ async function request(method: string, url: string, body?: unknown, { signal }: 
 type Opts = { signal?: AbortSignal };
 
 export const api = {
-  get: (url: string, opts?: Opts) => request('GET', url, undefined, opts),
-  post: (url: string, body?: unknown, opts?: Opts) => request('POST', url, body, opts),
-  patch: (url: string, body?: unknown, opts?: Opts) => request('PATCH', url, body, opts),
-  del: (url: string, opts?: Opts) => request('DELETE', url, undefined, opts),
+  get: <T = Json>(url: string, opts?: Opts) => request<T>('GET', url, undefined, opts),
+  post: <T = Json>(url: string, body?: unknown, opts?: Opts) => request<T>('POST', url, body, opts),
+  patch: <T = Json>(url: string, body?: unknown, opts?: Opts) => request<T>('PATCH', url, body, opts),
+  del: <T = Json>(url: string, opts?: Opts) => request<T>('DELETE', url, undefined, opts),
   async blob(url: string, opts?: Opts): Promise<Blob> {
     const res = await fetch(url, { signal: opts?.signal });
     if (!res.ok) {

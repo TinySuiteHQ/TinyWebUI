@@ -30,6 +30,7 @@ const PAGE = rect(4.5, 2.5, 15, 19, 4);
 const FOLDER = p('M2.5 7.5a3 3 0 0 1 3-3h3.4a2 2 0 0 1 1.4.6l1.4 1.4h6.8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3Z');
 const PERSON = [circle(12, 7.5, 4), p('M4 19.5a8 6.5 0 0 1 16 0 1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5Z')];
 const HANDS = p('M12 8.5V12l2.5 1.75');
+const PIN = p('M8.5 3h7a1.25 1.25 0 0 1 1 2l-1.5 2v3.5l3.1 2.6a1.25 1.25 0 0 1-.8 2.2H6.7a1.25 1.25 0 0 1-.8-2.2L9 10.5V7L7.5 5a1.25 1.25 0 0 1 1-2Z');
 
 const ICONS: Record<string, Glyph> = {
   // Sidebar and navigation
@@ -51,6 +52,9 @@ const ICONS: Record<string, Glyph> = {
   sidebar: { solid: [p('M7.5 4h2.5v16H7.5A4.5 4.5 0 0 1 3 15.5v-7A4.5 4.5 0 0 1 7.5 4Z')], line: [rect(4, 4.5, 16, 15, 4)] },
   logout: { line: [p('M10 4H7.5A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20H10'), p('m15 7.5 4.5 4.5-4.5 4.5M19.5 12H9.5')] },
   more: { solid: [circle(5.5, 12, 2), circle(12, 12, 2), circle(18.5, 12, 2)] },
+  // A push pin: a solid head on a short needle; unpin crosses it out.
+  pin: { solid: [PIN], line: [p('M12 15.5V21')] },
+  unpin: { solid: [PIN], cut: [p('M3.5 3.5l17 17')], line: [p('M12 15.5V21'), p('M3.5 3.5l17 17')] },
   instructions: { solid: [rect(3.5, 5, 17, 3, 1.5), rect(3.5, 10.5, 17, 3, 1.5), rect(3.5, 16, 10, 3, 1.5)] },
 
   // Settings rail

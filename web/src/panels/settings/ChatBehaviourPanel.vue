@@ -46,6 +46,9 @@ const { isOpen } = usePanel(PANEL.CHAT, {
           <div><label for="askUserTimeoutSeconds">Question timeout (seconds)</label>
             <input id="askUserTimeoutSeconds" v-model="draft.form.askUserTimeoutSeconds" type="number" min="0" max="86400" :disabled="locked('askUserTimeoutSeconds')">
             <small>How long a question from the model waits before it carries on alone. 0 waits until answered. Tool approval is set on the MCP page.{{ session.personal ? ' A role can set its own under People & roles.' : '' }}</small></div>
+          <div v-if="store.admin"><label for="autoTitle">New chat titles</label>
+            <select id="autoTitle" v-model="draft.form.autoTitle" :disabled="locked('autoTitle')"><option value="true">Written by the chat's model</option><option value="false">The first message</option></select>
+            <small>A model-written title costs one short extra request per new chat.</small></div>
         </div>
       </section>
       <section class="set-group">

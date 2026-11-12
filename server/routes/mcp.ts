@@ -8,6 +8,7 @@ import type { ServerResponse } from 'node:http';
 import type { Auth } from '../access/auth_gate.ts';
 import { FEATURE } from '../../shared/features.ts';
 import type { Route, RouteDeps } from './types.ts';
+import type { McpFileReply, McpSaveReply } from '../../shared/api.ts';
 
 const log = logger('mcp');
 
@@ -32,13 +33,13 @@ export function mcpRoutes({ auditMcp, config, hub, source, swapHub, toolsView }:
   return [
     // mcp.json can hold server credentials (env, headers): admins only.
     { method: 'GET', path: /^\/api\/mcp$/, feature: FEATURE.MCP, handle: ({ res }) =>
-      json(res, 200, { path: source.mcpPath(), text: source.readMcpFile(), locked: source.mcpLocked }) },
+      json(res, 200, { path: source.mcpPath(), text: source.readMcpFile(), locked: source.mcpLocked } satisfies McpFileReply) },
 
     { method: 'POST', path: /^\/api\/mcp$/, feature: FEATURE.MCP, handle: async ({ req, res, auth }) => {
       const { text } = await readJson(req, UPLOAD_LIMIT);
       if (typeof text !== 'string') return json(res, 400, { error: 'text must be the contents of mcp.json' });
       if (!await saveAndReconnect(res, text, auth)) return undefined;
-      return json(res, 200, { tools: toolList(hub()), mcpErrors: hub().errors });
+      return json(res, 200, { tools: toolList(hub()), mcpErrors: hub().errors } satisfies McpSaveReply);
     } },
 
     // Disabling a server tears its connection down rather than filtering its
@@ -57,7 +58,9 @@ export function mcpRoutes({ auditMcp, config, hub, source, swapHub, toolsView }:
       if (!servers[name]) return json(res, 404, { error: `no such server "${name}"` });
       servers[name] = { ...servers[name], disabled: Boolean(disabled) };
       if (!await saveAndReconnect(res, JSON.stringify({ mcpServers: servers }, null, 2), auth)) return undefined;
-      return json(res, 200, { ...hub().inventory(config().disabledTools), disabledTools: config().disabledTools || [] });
+      // The whole tools payload, as the other tool routes answer: the page puts it
+      // in place of what it had, so a part left out (approvals) would go blank.
+      return json(res, 200, toolsView());
     } },
 
     // Tries a server that failed to connect again, now, rather than at its

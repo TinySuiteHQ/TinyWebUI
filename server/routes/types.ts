@@ -8,12 +8,13 @@ import type { Auth, SignedIn } from '../access/auth_gate.ts';
 import type { Feature } from '../access/policy.ts';
 import type { Store } from '../store/index.ts';
 import type { UserRole } from '../store/users.ts';
-import type { Config, ConfigSource, McpServers, ToolApproval } from '../config/config.ts';
+import type { Config, ConfigSource, McpServers } from '../config/config.ts';
 import type { McpHub } from '../mcp.ts';
 import type { Retrieval } from '../retrieval/retrieval.ts';
 import type { Runs } from '../chat/runs.ts';
 import type { Scheduler } from '../automations/scheduler.ts';
 import type { ToolDef } from '../harness/types.ts';
+import type { ConfigReply, ToolsReply } from '../../shared/api.ts';
 
 export interface RouteContext<A extends Auth = Auth> {
   req: IncomingMessage;
@@ -45,16 +46,8 @@ interface OpenRoute {
 /** Every route declares `feature`; leaving it out does not compile. */
 export type Route = FeatureRoute | OpenRoute;
 
-type Inventory = ReturnType<McpHub['inventory']>;
-type ToolRow = Inventory['internal'][number];
-
 /** The tools panel payload: the hub's inventory, each server tool with its approval override. */
-export interface ToolsView {
-  internal: ToolRow[];
-  servers: (Omit<Inventory['servers'][number], 'tools'> & { tools: (ToolRow & { approval: 'ask' | 'auto' | 'default' })[] })[];
-  disabledTools: string[];
-  toolApproval: ToolApproval;
-}
+export type ToolsView = ToolsReply;
 
 /**
  * What route groups may ask for (routeTable in server.ts). config and hub
@@ -78,5 +71,5 @@ export interface RouteDeps {
   instructionsFor(userId: string | null | undefined): string | null;
   toolsFor(features: Set<string>): ToolDef[];
   toolsView(): ToolsView;
-  configFor(auth: Auth): Record<string, unknown>;
+  configFor(auth: Auth): ConfigReply;
 }

@@ -16,17 +16,19 @@
  *
  * The full contract, for server authors: docs/mcp-management.md.
  */
+import type { ActionInput as SharedActionInput, DetailData, FieldFormat, ViewColumn, ViewData, ViewInfo, ViewParam } from '../shared/api.ts';
 
 export const MANIFEST_MIME = 'application/vnd.tinysuite.manage+json';
 export const CONTRACT = 'tinysuite.manage/1';
 
 export type ViewKind = 'stats' | 'table';
 export type ViewScope = 'user' | 'instance';
-export type Format = 'text' | 'multiline' | 'number' | 'datetime';
+// What the browser reads of a manifest is shared/api.ts's; the rest (tools, resources) stays here.
+export type Format = FieldFormat;
 
-export interface Param { name: string; label: string; type: 'text' | 'enum'; maxLength?: number; values?: string[] }
-export interface Column { key: string; label: string; format: Format }
-export interface ActionInput { label: string; initial: string | null; maxLength: number; multiline: boolean }
+export type Param = ViewParam;
+export type Column = ViewColumn;
+export type ActionInput = SharedActionInput;
 export interface Action {
   id: string; label: string; tool: string; target: 'row' | 'view';
   args: Record<string, string | number | boolean>;
@@ -284,7 +286,7 @@ const scalar = (v: unknown, max: number = LIMITS.cell) => {
 const text = (v: unknown, max: number) => (typeof v === 'string' && v ? v.slice(0, max) : null);
 
 /** View data cut down to what the panel draws: scalars only, bounded. */
-export function shapeViewData(view: View, data: unknown): Record<string, unknown> {
+export function shapeViewData(view: View, data: unknown): ViewData {
   const d = isObj(data) ? data : {};
   const notice = text(d.notice, LIMITS.notice);
   if (view.kind === 'stats') {
@@ -293,7 +295,7 @@ export function shapeViewData(view: View, data: unknown): Record<string, unknown
       value: scalar(i.value, 2000),
       unit: text(i.unit, 20),
       hint: text(i.hint, LIMITS.text),
-      format: FORMATS.includes(i.format as Format) ? i.format : null
+      format: FORMATS.includes(i.format as Format) ? i.format as Format : null
     }));
     return { items, notice };
   }
@@ -302,27 +304,27 @@ export function shapeViewData(view: View, data: unknown): Record<string, unknown
     ...view.actions.map((a) => a.input?.initial).filter((k): k is string => Boolean(k))]);
   const rows = (Array.isArray(d.rows) ? d.rows : []).slice(0, LIMITS.rows).filter(isObj)
     .map((row) => Object.fromEntries([...keys].map((k) => [k, scalar(row[k])])));
-  const int = (v: unknown, fallback: number | null) => (Number.isInteger(v) && (v as number) >= 0 ? v as number : fallback);
+  const int = <F extends number | null>(v: unknown, fallback: F): number | F => (Number.isInteger(v) && (v as number) >= 0 ? v as number : fallback);
   return { rows, total: int(d.total, null), offset: int(d.offset, 0), limit: int(d.limit, view.pageSize), hasMore: d.hasMore === true, notice };
 }
 
 /** Detail data for one row: labelled fields, plus the row the actions bind to. */
-export function shapeDetail(view: View, data: unknown): Record<string, unknown> {
+export function shapeDetail(view: View, data: unknown): DetailData {
   const d = isObj(data) ? data : {};
   const fields = (Array.isArray(d.fields) ? d.fields : []).slice(0, LIMITS.fields).filter(isObj).map((f) => {
-    const format = FORMATS.includes(f.format as Format) ? f.format : 'text';
+    const format: Format = FORMATS.includes(f.format as Format) ? f.format as Format : 'text';
     return {
       label: text(f.label, LIMITS.label) || '',
       value: scalar(f.value, format === 'multiline' ? LIMITS.detailText : LIMITS.cell),
       format
     };
   });
-  const { rows } = shapeViewData(view, { rows: isObj(d.row) ? [d.row] : [] }) as { rows: Record<string, unknown>[] };
-  return { fields, row: rows[0] || null };
+  const { rows } = shapeViewData(view, { rows: isObj(d.row) ? [d.row] : [] });
+  return { fields, row: rows?.[0] || null };
 }
 
 /** What the browser is told about a view and its actions: never tool names or URIs. */
-export function publicView(view: View) {
+export function publicView(view: View): ViewInfo {
   return {
     id: view.id, title: view.title, kind: view.kind, scope: view.scope, pageSize: view.pageSize,
     params: view.params, columns: view.columns, rowKey: view.rowKey, hasDetail: Boolean(view.detail),

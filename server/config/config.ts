@@ -59,6 +59,7 @@ export interface Config {
   maxTurnChars: number;
   maxHistoryTokens: number;
   llmCompaction: boolean;
+  autoTitle: boolean;
   compactionMaxTokens: number;
   timezone: string;
   theme: string;
@@ -262,6 +263,9 @@ export const DEFAULTS: Omit<Config, 'access'> = {
   // When that window drops turns, summarise them with the chat's model first
   // and give the model the summary in their place. Off: they are just dropped.
   llmCompaction: true,
+  // Name a new chat with the chat's model from its first message, beside the
+  // first turn. Off: a chat keeps its first message as its title.
+  autoTitle: true,
   // Output cap for that summary request. Reasoning models spend part of it
   // thinking before they write, and a reply cut off by the cap is rejected,
   // so this is headroom; the prompt itself asks for a short summary.
@@ -731,7 +735,7 @@ export const WRITABLE = new Set([
   // The deployment's endpoints and catalog: only the sole user or an admin may
   // send these (see SECRET_PATCH_KEYS in policy.js); keys are write-only.
   'baseUrl', 'apiKey', 'models', 'connectors',
-  'llmCompaction', 'compactionMaxTokens', 'expandCharBudget', 'cache', 'reasoningReplay', 'extraBody'
+  'llmCompaction', 'autoTitle', 'compactionMaxTokens', 'expandCharBudget', 'cache', 'reasoningReplay', 'extraBody'
 ]);
 
 // A short tail is enough to tell two keys apart in a list; short keys show none.

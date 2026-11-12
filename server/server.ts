@@ -31,6 +31,7 @@ import type { RetrievalMode } from './config/config.ts';
 import type { UserRole } from './store/users.ts';
 import type { ToolDef } from './harness/types.ts';
 import type { Route, RouteDeps, ToolsView } from './routes/types.ts';
+import type { ConfigReply } from '../shared/api.ts';
 import { authRoutes } from './routes/auth.ts';
 import { settingsRoutes } from './routes/settings.ts';
 import { mcpRoutes } from './routes/mcp.ts';
@@ -68,7 +69,7 @@ export interface App {
   toolsFor(features: Set<string>): ToolDef[];
   ownerFeatures(userId: string | null): Set<string>;
   toolsView(): ToolsView;
-  configFor(auth: Auth): Record<string, unknown>;
+  configFor(auth: Auth): ConfigReply;
   swapHub(servers: McpServers): Promise<void>;
   onRunIdle(chatId: string): void;
 }
@@ -274,16 +275,12 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     },
 
     configFor(auth) {
-      const pub = source.public(app.cfg);
+      const pub = source.public(app.cfg) satisfies ConfigReply;
       if (auth.features.has(FEATURE.SETTINGS) && auth.isAdmin) return pub;
-      if (auth.features.has(FEATURE.SETTINGS)) {
-        // Allowed to edit settings, but not to see where the deployment's keys point.
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
-        return out;
-      }
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(pub)) if (!ADMIN_ONLY_FIELDS.test(k)) out[k] = v;
+      // The same fields less the admin-only ones: a subset of a ConfigReply, whose fields are all optional.
+      const out = Object.fromEntries(Object.entries(pub).filter(([k]) => !ADMIN_ONLY_FIELDS.test(k))) as Partial<typeof pub>;
+      // Allowed to edit settings, but not to see where the deployment's keys point.
+      if (auth.features.has(FEATURE.SETTINGS)) return out;
       return { ...out, readOnly: true };
     },
 
@@ -502,13 +499,28 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
       } catch (err) { log.error(`cannot watch ${folder}: ${err.message}`); }
     }
   }
-  const onHup = () => scheduleReload('SIGHUP');
+  // SIGHUP means two things. Sent on purpose (kill -HUP, `docker compose kill
+  // -s HUP`) it asks for a reload. Sent because the terminal or WSL session the
+  // server was started from went away, it means stop: taken as a reload, the
+  // server lived on unseen, and the page it served came back after it was
+  // "stopped". A hangup takes the parent shell with it, a deliberate one leaves
+  // it, so after a moment for the shell to go, the parent tells them apart.
+  const parentAtStart = process.ppid;
+  const onHup = () => {
+    setTimeout(() => {
+      if (process.ppid !== parentAtStart) stopOn('SIGHUP');
+      else scheduleReload('SIGHUP');
+    }, 300).unref();
+  };
   process.on('SIGHUP', onHup);
   server.reload = reloadFromFiles;
 
   // Real teardown, reused two ways: on SIGINT/SIGTERM it exits the process, and
   // as `server.shutdown()` it does not -- which is what a test harness needs.
   const shutdown = async () => {
+    // New connections stop first, so nothing is served from a database being closed below.
+    const closed = new Promise((resolve) => server.close(resolve));
+    server.closeIdleConnections();
     scheduler.stop();
     clearTimeout(reloadTimer);
     for (const w of watchers) w.close();
@@ -521,7 +533,9 @@ export async function start({ port = 7777, host = '127.0.0.1', ...sourceOpts }: 
     await Promise.allSettled([...retrieval.pending.values()]);
     embedder?.close?.();
     store.close();
-    await new Promise((resolve) => server.close(resolve));
+    // An open stream (a page watching a chat) would hold the close forever.
+    server.closeAllConnections();
+    await closed;
   };
   // Said out loud so a log that ends here reads as a stop someone asked for, not a crash.
   const stopOn = (signal: NodeJS.Signals) => {

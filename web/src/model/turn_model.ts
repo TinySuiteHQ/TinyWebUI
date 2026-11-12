@@ -191,6 +191,10 @@ export function addError(m: Model, text: string) {
 }
 
 /** The question the person sent, drawn before the server has answered anything. */
+/** A document shown on a question while it is still uploading: no real id yet. */
+export const UPLOADING = 'uploading:';
+export const isUploading = (d: Doc) => d.id.startsWith(UPLOADING);
+
 export function addUser(m: Model, text: string, seq: number | null = null, docs: Doc[] = [], images: Img[] = []) {
   m.items.push({ kind: 'user', id: nextId(m, 'u'), seq, text, docs, images });
 }
