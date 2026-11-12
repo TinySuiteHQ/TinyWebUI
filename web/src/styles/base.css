@@ -53,6 +53,10 @@ body {
   font: var(--fs-body)/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
   display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+  /* The viewport covers the notch and home bar (index.html); the page stays
+     inside them. Anything fixed or in the top layer (the drawer, full-screen
+     dialogs, the menu sheet) is outside this padding and pads itself. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 /* The two panes below the header, previously body's own direct children and
    row-flexed themselves. Split out so header can run the full page width as
@@ -1122,7 +1126,8 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
      place and tappable the whole time it is open, instead of vanishing
      behind an overlay the moment it appears. */
   #side {
-    position: fixed; top: var(--bar); bottom: 0; left: 0; width: min(85vw, 22rem);
+    position: fixed; top: calc(var(--bar) + env(safe-area-inset-top)); bottom: 0; left: 0; width: min(85vw, 22rem);
+    padding-left: env(safe-area-inset-left); padding-bottom: env(safe-area-inset-bottom);
     z-index: 20; transform: translateX(-100%); transition: transform .18s ease;
   }
   #side.open { transform: none; }
@@ -1134,9 +1139,9 @@ button.attachment-remove:active:not(:disabled) { transform: none; }
 
   /* Closing the drawer needs more ways in than hunting for the menu button
      again: tapping the dimmed content behind it, or Escape, both close it
-     (wired in app.js). */
+     (wired in AppShell.vue). */
   #side-backdrop {
-    display: block; position: fixed; top: var(--bar); right: 0; bottom: 0; left: 0;
+    display: block; position: fixed; top: calc(var(--bar) + env(safe-area-inset-top)); right: 0; bottom: 0; left: 0;
     z-index: 19; background: rgb(0 0 0 / 40%);
     opacity: 0; pointer-events: none; transition: opacity .18s ease;
   }
@@ -1932,7 +1937,7 @@ dialog#settingsDialog::backdrop { background: rgba(0, 0, 0, .62); }
 /* No sidebar toggle over these headers here, so they need no room for one. */
 #settingsDialog .panel-head { padding-left: 1rem; padding-right: 3rem; }
 @media (max-width: 720px) {
-  dialog#settingsDialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  dialog#settingsDialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .settings-frame { flex-direction: column; }
   .settings-rail { flex: none; flex-direction: column; gap: .25rem; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .settings-rail-items { flex-direction: row; overflow-x: auto; scrollbar-width: none; margin: 0 -.5rem; padding: 0 .5rem; }
@@ -2064,8 +2069,8 @@ dialog.viewer::backdrop { background: rgb(0 0 0 / 70%); }
 .viewer-nav.prev { left: .75rem; }
 .viewer-nav.next { right: .75rem; }
 @media (max-width: 720px) {
-  dialog.viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
-  .viewer-nav { top: auto; bottom: .75rem; translate: none; }
+  dialog.viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .viewer-nav { top: auto; bottom: calc(.75rem + env(safe-area-inset-bottom)); translate: none; }
 }
 /* A thumbnail in a message is a button that opens the viewer. */
 .msg-image-btn { padding: 0; border: 0; background: none; border-radius: var(--r-sm); cursor: zoom-in; min-height: 0; }

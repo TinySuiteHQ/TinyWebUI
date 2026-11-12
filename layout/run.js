@@ -9,7 +9,8 @@
 //
 // Opt-in (`npm run build:web && npm run test:layout`), not part of `npm test`:
 // it needs Chrome, and lives outside test/ because `node --test` runs every
-// file there. playwright-core drives the installed Chrome, or $CHROME_PATH.
+// file there. playwright-core drives the installed Chrome, $CHROME_PATH, or
+// its own headless shell (`npx playwright-core install chromium-headless-shell`).
 //   --size 783x508     only that size (repeatable)
 //   --state files      only states whose name contains this (repeatable)
 import { mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -261,7 +262,9 @@ async function openSettings(page, shape) {
 
 async function launch() {
   const { chromium } = await import('playwright-core');
-  const tries = process.env.CHROME_PATH ? [{ executablePath: process.env.CHROME_PATH }] : [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }];
+  // Last, Playwright's own headless shell (`npx playwright-core install chromium-headless-shell`):
+  // WSL has no Chrome, and cannot drive the Windows one over Playwright's pipe.
+  const tries = process.env.CHROME_PATH ? [{ executablePath: process.env.CHROME_PATH }] : [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }, {}];
   for (const opt of tries) {
     try { return await chromium.launch({ headless: true, ...opt }); } catch { /* the next one */ }
   }
@@ -275,7 +278,7 @@ async function main() {
   }
   const browser = await launch();
   if (!browser) {
-    console.log('layout: SKIPPED, no Chrome found (install Chrome, or set CHROME_PATH to a Chromium build).');
+    console.log('layout: SKIPPED, no Chrome found (install Chrome, run `npx playwright-core install chromium-headless-shell`, or set CHROME_PATH to a Chromium build).');
     return;
   }
   rmSync(OUT, { recursive: true, force: true });

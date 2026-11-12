@@ -6,7 +6,8 @@
 /* Vue's mount point stands between body and the shell; it passes the full
    height straight through. */
 #app { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.boot { height: 100dvh; background: var(--bg); }
+/* flex, not 100dvh: body's safe-area padding already takes its share. */
+.boot { flex: 1; background: var(--bg); }
 
 /* A chat switch keeps the old transcript in place, dimmed only if the next
    one is slow to arrive, rather than flashing an empty page. */
