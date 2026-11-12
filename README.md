@@ -142,4 +142,6 @@ The server is TypeScript that Node runs directly, with no build step, so working
 
 ## License
 
-[GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version for users over a network, you must offer them the corresponding source code for that version.
+Copyright (C) 2026 MarcellM01
+
+TinyWebUI is free software, released under the [GNU Affero General Public License v3.0 or later](LICENSE). It comes with no warranty. If you run a modified version for users over a network, you must offer them the corresponding source code for that version.

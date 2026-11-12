@@ -16,7 +16,10 @@ export default defineConfig({
     // The server's CSP has no 'unsafe-inline': every script and stylesheet has
     // to be a file, never inlined into index.html.
     assetsInlineLimit: 0,
-    sourcemap: false
+    sourcemap: false,
+    // Vue, Pinia and marked are bundled and minified, which drops their notices;
+    // their MIT licenses require the notice to travel with every copy.
+    license: { fileName: 'third-party-licenses.md' }
   },
   server: {
     port: 5173,
