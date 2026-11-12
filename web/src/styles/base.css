@@ -128,6 +128,8 @@ label { font-size: var(--fs-ui); color: var(--muted); display: block; margin-bot
   position: relative;
   flex-shrink: 0; border-right: 1px solid var(--line);
   display: flex; flex-direction: column; background: var(--panel);
+  /* Dragged narrow (down to 176px), its rows lay out by its own width. */
+  container-type: inline-size;
 }
 
 /* The drag handle straddles the sidebar border: a 1px border is not a target,
@@ -280,7 +282,10 @@ button.folder-action:active:not(:disabled) { transform: none; }
 .folder-delete-note { margin: 0; color: var(--muted); font-size: var(--fs-ui); line-height: 1.55; }
 /* A row's "…" menu (a chat or a folder), opening under the row, right-aligned. */
 .chat-item-wrap { position: relative; }
-.popover.row-menu { top: calc(var(--tap) + .125rem); bottom: auto; right: 0; width: min(15rem, 100%); transform-origin: top right; }
+.popover.row-menu { --pop-gap: .125rem; right: 0; width: min(15rem, 100%); }
+/* A folder's menu hangs from its heading (Sidebar.vue), not the open folder below it. */
+.row-anchor { position: absolute; top: 0; left: 0; right: 0; height: var(--tap); pointer-events: none; }
+.row-anchor > .popover { pointer-events: auto; }
 .folder-empty button.link {
   padding: 0; min-height: 0; border: 0; background: none; color: var(--fg); font: inherit;
   text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; cursor: pointer;
@@ -1269,7 +1274,12 @@ button.primary { color: var(--bg); }
 /* In the sidebar the mark is bigger than the icons below it, but centred on
    their centre line (.5rem in, 1.25rem wide), so the column still reads as one. */
 .brand .logo { width: 2rem; height: 2rem; }
-.brand-name { flex: 1; font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em; }
+.brand-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 650; font-size: var(--fs-ui); letter-spacing: -.01em;
+}
+/* A sidebar dragged narrow keeps the mark and its buttons; "Tin…" says nothing. */
+@container (max-width: 14rem) { .brand-name { display: none; } }
 
 /* One grid for every row in the sidebar: rows start .5rem in, where icons,
    headings and chat titles all begin; a label after an icon starts at the
@@ -1883,7 +1893,7 @@ button.files-chat-link:active:not(:disabled) { transform: none; }
   background: var(--accent); color: var(--raise); font-size: .75rem; font-weight: 650;
 }
 .account-btn .adm-badge { margin-left: auto; }
-.popover.account-menu { left: 0; right: 0; width: auto; bottom: calc(100% + .25rem); }
+.popover.account-menu { --pop-gap: .25rem; left: 0; right: 0; width: auto; }
 .account-menu .adm-badge { margin-left: auto; }
 .account-who { display: flex; flex-direction: column; padding: .375rem .5rem .5rem; min-width: 0; }
 .account-who-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

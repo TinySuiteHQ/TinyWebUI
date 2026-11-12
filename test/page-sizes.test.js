@@ -16,12 +16,12 @@ const ROOT = join(REPO, 'web', 'src');
 /** The shell's breakpoint (drawer instead of sidebar) and the phone's (tap targets, the menu sheet). */
 const SHELL = '(max-width: 720px)';
 const PHONE = '(max-width: 640px)';
-/** Content widths a container query may use: narrow, compact, the Files table, and the chat's two rails beside --measure. */
-const CONTAINER_WIDTHS = ['480px', '640px', '700px', '54rem', '76rem'];
+/** Content widths a container query may use: narrow, compact, the Files table, the chat's two rails beside --measure, and a narrow sidebar. */
+const CONTAINER_WIDTHS = ['480px', '640px', '700px', '54rem', '76rem', '14rem'];
 /** What a width @media may style: the shell, and dialogs that go full screen on a phone. */
 const SHELL_SELECTOR = /^(#shell|#side|#menu|body|html|input|textarea|select|footer|main \.panel-head|dialog#settingsDialog|\.settings-(frame|rail)|dialog\.viewer|\.viewer-nav)\b/;
 /** The elements a page lays out in, each `container-type: inline-size`. */
-const HOSTS = ['main', '.settings-body', '#mcp', '#files'];
+const HOSTS = ['main', '#side', '.settings-body', '#mcp', '#files'];
 
 const rel = (abs) => relative(REPO, abs).split(sep).join('/');
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>

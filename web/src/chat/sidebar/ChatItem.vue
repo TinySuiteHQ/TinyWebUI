@@ -11,6 +11,7 @@ import { api } from '../../core/api.ts';
 import { useChats, type ChatRow } from '../../stores/chats.ts';
 import { useChat } from '../../stores/chat.ts';
 import Icon from '../../ui/Icon.vue';
+import Popover from '../../ui/Popover.vue';
 
 const props = withDefaults(defineProps<{ chat: ChatRow, active: boolean, depth?: number }>(), { depth: 0 });
 const emit = defineEmits<{ open: [] }>();
@@ -20,6 +21,7 @@ const current = useChat();
 const wrapEl = ref<HTMLElement>();
 const menuBtn = ref<HTMLButtonElement>();
 const menuOpen = ref(false);
+const pop = ref<InstanceType<typeof Popover>>();
 const editing = ref(false);
 const draft = ref('');
 const field = ref<HTMLInputElement>();
@@ -39,7 +41,9 @@ function closeMenu(refocus = false) {
   if (refocus) menuBtn.value?.focus();
 }
 function onDocPointer(e: PointerEvent) {
-  if (!wrapEl.value?.contains(e.target as Node)) closeMenu();
+  // On a phone the menu is a sheet under body, outside the row.
+  const t = e.target as Node;
+  if (!wrapEl.value?.contains(t) && !pop.value?.el?.contains(t)) closeMenu();
 }
 function onDocKey(e: KeyboardEvent) {
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(true); }
@@ -114,7 +118,7 @@ async function remove() {
       </template>
     </div>
     <!-- Beside the row, not in it: the row is itself a button. -->
-    <div v-if="menuOpen" class="popover row-menu" role="menu" :aria-label="`Chat “${chat.title}”`">
+    <Popover v-if="menuOpen" ref="pop" side="right" class="row-menu" :aria-label="`Chat “${chat.title}”`">
       <button type="button" class="pop-item" role="menuitem" @click="togglePin">
         <Icon :name="chat.pinned_at != null ? 'unpin' : 'pin'" /><span class="pop-name">{{ chat.pinned_at != null ? 'Unpin' : 'Pin' }}</span>
       </button>
@@ -123,6 +127,6 @@ async function remove() {
       <button type="button" class="pop-item pop-danger" role="menuitem" @click="remove">
         <Icon :name="armed ? 'check' : 'trash'" /><span class="pop-name">{{ armed ? 'Click again to delete' : 'Delete' }}</span>
       </button>
-    </div>
+    </Popover>
   </div>
 </template>

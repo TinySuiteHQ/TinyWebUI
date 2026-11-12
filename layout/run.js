@@ -33,6 +33,9 @@ const SIZES = [
 const SHELL = 720;
 const CHAT_ID = 'layout-long-chat';
 const COLLAPSE_KEY = 'tinywebui.side.collapsed';
+/** The sidebar's narrowest drag (chat/sidebar/Sidebar.vue SIDE_MIN), remembered under this key. */
+const WIDTH_KEY = 'tinywebui.sideWidth';
+const SIDE_MIN = 176;
 
 const args = process.argv.slice(2);
 const want = (flag) => args.flatMap((a, i) => (a === flag && args[i + 1] ? [args[i + 1]] : []));
@@ -58,6 +61,7 @@ ${'A paragraph long enough to wrap over several lines at every width, so the mea
 
 async function seed(dbPath) {
   const { Store } = await import('../server/store/index.ts');
+  const { ALL_USERS } = await import('../server/store/scope.ts');
   const store = new Store(dbPath);
   try {
     store.chats.create({ id: CHAT_ID, title: 'A long chat whose title is long enough to need truncating in the header at narrow widths' });
@@ -68,7 +72,11 @@ async function seed(dbPath) {
     for (const name of ['quarterly-report-with-a-long-file-name.txt', 'notes.md', 'data.csv']) {
       store.documents.add(CHAT_ID, { filename: name, mime: 'text/plain', content: `The contents of ${name}.\n`.repeat(20) });
     }
-    for (let i = 1; i <= 4; i++) store.chats.create({ title: `Another chat ${i}` });
+    // Enough chats that the list scrolls, so the last row's menu meets the list's bottom edge.
+    const day = 24 * 3600 * 1000;
+    for (let i = 1; i <= 16; i++) store.chats.create({ title: `Another chat ${i} with a title long enough to be cut`, createdAt: Date.now() - i * day });
+    const filed = store.chats.create({ title: 'A chat in a folder' });
+    store.chats.organize(filed.id, { folder: 'Research' }, ALL_USERS);
   } finally { store.close(); }
 }
 
@@ -162,10 +170,27 @@ function audit() {
 // ---------- the states, each from a fresh load ----------
 
 const settle = (page) => page.waitForTimeout(250);
-async function openSidebarItem(page, narrow, selector) {
-  if (narrow) { await page.click('#menu'); await settle(page); }
+/** On a phone the sidebar is a drawer, and on a desktop it may be collapsed: either way #menu brings it out. */
+async function showSidebar(page, { narrow, collapsed }) {
+  if (narrow || collapsed) { await page.click('#menu'); await settle(page); }
+}
+async function openSidebarItem(page, shape, selector) {
+  await showSidebar(page, shape);
   await page.click(selector);
   await settle(page);
+}
+async function lastChatMenu(page, shape) {
+  await showSidebar(page, shape);
+  const last = page.locator('#side .chat-item-wrap').last();
+  await last.scrollIntoViewIfNeeded();
+  await last.hover();
+  await last.locator('.chat-action').click();
+}
+async function folderMenu(page, shape) {
+  await showSidebar(page, shape);
+  const heading = page.locator('#side .chat-folder-heading').first();
+  await heading.hover();
+  await heading.locator('.folder-options').click();
 }
 
 /** Each returns false when the state does not exist at this size (nothing is checked then). */
@@ -176,24 +201,57 @@ const STATES = [
   { name: 'long chat', path: `/?chat=${CHAT_ID}`, run: async () => true },
   { name: 'long chat, model menu', path: `/?chat=${CHAT_ID}`, run: async (page) => { await page.click('.composer-model'); return true; } },
   { name: 'long chat, + menu', path: `/?chat=${CHAT_ID}`, run: async (page) => { await page.click('.composer-attach'); return true; } },
-  { name: 'files', run: async (page, { narrow }) => { await openSidebarItem(page, narrow, '#toggle-files'); return true; } },
+  {
+    name: 'empty chat, library dialog',
+    run: async (page) => {
+      await page.click('.composer-attach');
+      await page.getByText('Attach from earlier chats').click();
+      await page.waitForSelector('dialog[open]');
+      return true;
+    }
+  },
+  {
+    name: 'long chat, delete answer dialog', path: `/?chat=${CHAT_ID}`,
+    run: async (page) => {
+      const last = page.locator('#log .turn').last();
+      await last.hover();
+      await page.locator('[aria-label="Delete answer"]').last().click();
+      await page.waitForSelector('dialog[open]');
+      return true;
+    }
+  },
+  { name: 'last chat menu', run: async (page, shape) => { await lastChatMenu(page, shape); return true; } },
+  { name: 'folder menu', run: async (page, shape) => { await folderMenu(page, shape); return true; } },
+  {
+    name: 'folder dialog',
+    run: async (page, shape) => {
+      await folderMenu(page, shape);
+      await page.getByText('Name and instructions').click();
+      await page.waitForSelector('dialog[open]');
+      return true;
+    }
+  },
+  // The sidebar dragged as narrow as it goes.
+  { name: 'narrow sidebar', narrowSide: true, run: async (page, shape) => !shape.narrow && !shape.collapsed },
+  { name: 'narrow sidebar, last chat menu', narrowSide: true, run: async (page, shape) => { if (shape.narrow || shape.collapsed) return false; await lastChatMenu(page, shape); return true; } },
+  { name: 'files', run: async (page, shape) => { await openSidebarItem(page, shape, '#toggle-files'); return true; } },
   {
     name: 'file viewer',
-    run: async (page, { narrow }) => {
-      await openSidebarItem(page, narrow, '#toggle-files');
+    run: async (page, shape) => {
+      await openSidebarItem(page, shape, '#toggle-files');
       await page.click('.files-main');
       await page.waitForSelector('dialog.viewer[open]', { timeout: 3000 });
       return true;
     }
   },
-  { name: 'mcp', run: async (page, { narrow }) => { await openSidebarItem(page, narrow, '#toggle-mcp'); return true; } },
+  { name: 'mcp', run: async (page, shape) => { await openSidebarItem(page, shape, '#toggle-mcp'); return true; } },
   { name: 'drawer', run: async (page, { narrow }) => { if (!narrow) return false; await page.click('#menu'); return true; } },
   // Every settings section, from the dialog's own rail.
   { name: 'settings', many: true }
 ];
 
-async function openSettings(page, narrow) {
-  await openSidebarItem(page, narrow, '#account');
+async function openSettings(page, shape) {
+  await openSidebarItem(page, shape, '#account');
   if (await page.locator('#openSettings').isVisible()) await page.click('#openSettings');
   await page.waitForSelector('#settingsDialog[open]');
   await settle(page);
@@ -233,6 +291,8 @@ async function main() {
         const ctx = await browser.newContext({ viewport: { width: size.width, height: size.height }, reducedMotion: 'reduce' });
         if (collapsed) await ctx.addInitScript(([k]) => localStorage.setItem(k, '1'), [COLLAPSE_KEY]);
         const page = await ctx.newPage();
+        page.setDefaultTimeout(5000);
+        const shape = { narrow, collapsed };
         const where = `${size.width}×${size.height} (${size.name}${narrow ? '' : collapsed ? ', sidebar collapsed' : ', sidebar open'})`;
         const tag = `${size.width}x${size.height}${collapsed ? '-collapsed' : ''}`;
         const check = async (state) => {
@@ -244,12 +304,13 @@ async function main() {
         };
         for (const state of STATES) {
           if (onlyStates.length && !onlyStates.some((s) => state.name.includes(s))) continue;
+          await page.evaluate(([k, v]) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch {} }, [WIDTH_KEY, state.narrowSide ? String(SIDE_MIN) : '']).catch(() => {});
           await page.goto(app.base + (state.path || '/'));
           await page.waitForSelector('.composer-model');
           if (state.path) await page.waitForSelector('#log .wrap');
           try {
             if (state.many) {
-              await openSettings(page, narrow);
+              await openSettings(page, shape);
               const items = page.locator('#settingsDialog .settings-rail-items .nav-item');
               for (let i = 0; i < await items.count(); i++) {
                 const name = (await items.nth(i).innerText()).trim().replace(/\s+\d+$/, '');
@@ -258,7 +319,7 @@ async function main() {
               }
               continue;
             }
-            if (await state.run(page, { narrow }) === false) continue;
+            if (await state.run(page, shape) === false) continue;
             await check(state.name);
           } catch (err) {
             failures.push(`${where} · ${state.name}: could not open (${String(err.message).split('\n')[0]})`);

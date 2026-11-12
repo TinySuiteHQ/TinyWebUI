@@ -118,6 +118,49 @@ Charts use a fixed, colour-blind-checked palette (`--chart-1` to `--chart-8`),
 never the theme's accent or its error red. A theme can make the accent black,
 and red reads as "something is wrong".
 
+### Screen sizes: the room, not the window
+
+People use the page on phones, laptops and in narrow places like an editor's
+preview pane. A layout that measures only the window gets the in-between sizes
+wrong. Above 720px the sidebar takes 256px, so a 780px window leaves the chat a
+column narrower than a phone's, yet it still got the desktop layout: a table's
+fixed columns crushed its names, and menus hung off the bottom of the window.
+
+So there are two kinds of size rule, and each has its own tool:
+
+- **The device and the shell around the content** are `@media`, at two
+  widths. Below 720px the sidebar becomes a drawer, and settings and the file
+  viewer go full screen. Below 640px, or on any touch screen, buttons grow to
+  44px and the composer's menus become a sheet along the bottom.
+- **Everything about how much room the content has** is `@container`. Each
+  place content is laid out in is a size container: the chat column (`main`),
+  the sidebar, Files and MCP, and the settings section beside its rail. A rule
+  there asks how wide its own page is, so it holds in a narrow window, beside a
+  wide sidebar, or with the sidebar collapsed, without knowing which. The
+  widths are few and named (narrow, compact, and what the chat's rails need
+  beside the reading column), so pages break at the same points.
+
+A size container is also the frame for anything fixed inside it, so the phone
+menu sheet renders under `body` (a Vue `Teleport` in `ui/Popover.vue`).
+
+Every menu is the one `Popover`. It measures the room it has against the
+window and against any box around it that clips or scrolls (the sidebar's
+list, the transcript), opens on the side with room, caps its height and
+scrolls inside itself. A menu placed by CSS alone ("always below") was how the
+last chat's menu opened off screen. The shell clips (`overflow: clip`) rather
+than hides: the browser can still scroll a box that hides its overflow (to
+show a focused item), and that slid the whole sidebar up out of place.
+
+Two checks hold this. `npm test` reads the stylesheets and fails on a width
+`@media` that styles content, a container width off the list, or a page host
+that isn't a container. `npm run test:layout` opens the app in Chrome at
+phone, phone-landscape, editor-pane, tablet, laptop and desktop sizes, with the
+sidebar open, collapsed and dragged narrow. At each size it opens every page,
+menu and dialog, and fails on anything past the window's edge, a menu spilling
+out of its box, a box scrolled although nobody can scroll it, table headers on
+top of each other, or a rail over the transcript. It needs Chrome, so it is
+not part of `npm test`; run it before shipping a change to the page.
+
 ### One of each
 
 - **One header per panel, and only a header:** the title, sub-page tabs where a

@@ -16,6 +16,7 @@ import { usePanels, PANEL } from '../../stores/panels.ts';
 import { useUi } from '../../stores/ui.ts';
 import { useAdmin } from '../../stores/admin.ts';
 import Icon from '../../ui/Icon.vue';
+import Popover from '../../ui/Popover.vue';
 import ChatItem from './ChatItem.vue';
 import FolderDialog, { type FolderDialogMode } from './FolderDialog.vue';
 
@@ -58,6 +59,7 @@ const showMcp = computed(() => session.can(FEATURE.MCP) || session.can(FEATURE.I
 const accountEl = ref<HTMLElement>();
 const accountBtn = ref<HTMLButtonElement>();
 const accountOpen = ref(false);
+const accountPop = ref<InstanceType<typeof Popover>>();
 const user = computed(() => session.me.user);
 const accountName = computed(() => user.value?.name || user.value?.email || 'Settings');
 const initial = computed(() => (user.value?.name || user.value?.email || '?').trim().charAt(0).toUpperCase());
@@ -76,7 +78,8 @@ function closeAccount(refocus = false) {
   if (refocus) accountBtn.value?.focus();
 }
 function onDocPointer(e: PointerEvent) {
-  if (accountOpen.value && !accountEl.value?.contains(e.target as Node)) closeAccount();
+  // On a phone a menu is a sheet under body, outside the sidebar; the folder check finds it by class either way.
+  if (accountOpen.value && !accountEl.value?.contains(e.target as Node) && !accountPop.value?.el?.contains(e.target as Node)) closeAccount();
   if (folderMenu.value && !(e.target as Element).closest?.('.folder-menu, .folder-options')) folderMenu.value = null;
 }
 function onDocKey(e: KeyboardEvent) {
@@ -397,12 +400,15 @@ function rowKey(e: KeyboardEvent, go: () => void) {
             </div>
             <div v-for="g in folderGroups" :key="g.folder" class="chat-folder-wrap" :class="{ 'menu-open': folderMenu === g.folder }">
             <!-- The menu sits outside <details>: a closed one renders nothing but its summary. -->
-            <div v-if="folderMenu === g.folder" class="popover row-menu folder-menu" role="menu" :aria-label="`Folder “${g.folder}”`">
+            <!-- Anchored to the heading's height, not the folder: open, the folder runs on under its chats. -->
+            <div v-if="folderMenu === g.folder" class="row-anchor">
+            <Popover side="right" class="row-menu folder-menu" :aria-label="`Folder “${g.folder}”`">
               <button type="button" class="pop-item" role="menuitem" @click="newChatIn(g.folder)"><Icon name="new" /><span class="pop-name">New chat here</span></button>
               <button type="button" class="pop-item" role="menuitem" @click="openFolderDialog(g.folder, 'chats')"><Icon name="folderOpen" /><span class="pop-name">Add or take out chats</span></button>
               <button type="button" class="pop-item" role="menuitem" @click="openFolderDialog(g.folder, 'edit')"><Icon name="edit" /><span class="pop-name">Name and instructions</span></button>
               <hr class="pop-sep">
               <button type="button" class="pop-item pop-danger" role="menuitem" @click="openFolderDialog(g.folder, 'delete')"><Icon name="trash" /><span class="pop-name">Delete folder</span></button>
+            </Popover>
             </div>
             <details class="chat-folder" :open="chats.expanded.has(g.folder)" @toggle="toggleFolder(g.folder, $event)">
               <summary class="chat-folder-heading">
@@ -450,7 +456,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
       </div>
     </div>
     <div v-if="showAccount" ref="accountEl" class="side-foot">
-      <div v-if="accountOpen" class="popover account-menu" role="menu" aria-label="Account">
+      <Popover v-if="accountOpen" ref="accountPop" side="left" class="account-menu" aria-label="Account">
         <!-- The button already names you; only an email it does not show is worth a line here. -->
         <div v-if="user?.name && user.email" class="account-who">
           <span class="account-who-sub">{{ user.email }}</span>
@@ -463,7 +469,7 @@ function rowKey(e: KeyboardEvent, go: () => void) {
         <button id="logout" type="button" class="pop-item" role="menuitem" @click="session.logout()">
           <Icon name="logout" /><span class="pop-name">Log out</span>
         </button>
-      </div>
+      </Popover>
       <button id="account" ref="accountBtn" class="nav-item account-btn" type="button"
               :class="{ active: accountOpen || (!hasMenu && panels.sections.some((s) => s.panel === panels.open)) }"
               :aria-haspopup="hasMenu ? 'menu' : undefined" :aria-expanded="hasMenu ? accountOpen : undefined"
