@@ -22,8 +22,9 @@ tinywebui.db-shm
 *.db
 *.db-*
 
-# Eval run records (evals/run.js).
+# Eval run records (evals/run.js), and the layout run's screenshots (layout/run.js).
 evals/results/
+layout/out/
 
 # Embedding bundles (tinywebui models pull): large, fetched per deployment.
 # Anchored: a bare "models/" also matched web/src/panels/models/ and kept

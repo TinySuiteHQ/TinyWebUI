@@ -45,7 +45,8 @@
     "build:web": "vite build web",
     "clean": "tsc -b --clean tsconfig.build.json",
     "prepack": "npm run build",
-    "eval": "node evals/run.js"
+    "eval": "node evals/run.js",
+    "test:layout": "node layout/run.js"
   },
   "dependencies": {
     "@jsquash/avif": "^2.1.1",
@@ -68,6 +69,7 @@
     "@vitejs/plugin-vue": "6.0.10",
     "marked": "18.1.2",
     "pinia": "4.1.0",
+    "playwright-core": "1.65.0",
     "typescript": "^7.0.2",
     "vite": "8.3.6",
     "vue": "3.5.45",
