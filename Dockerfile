@@ -12,8 +12,9 @@
 # lexical-only image, build Dockerfile.lexical instead.
 # The page: Vite builds web/ into dist/. Its own stage, so the dev
 # dependencies it needs never reach the image. Not --omit=optional: Vite's
-# bundler ships its native binary as an optional dependency.
-FROM node:22.23.3-slim AS web
+# bundler ships its native binary as an optional dependency. The page is the
+# same bytes on every CPU, so it builds once, natively, not under emulation.
+FROM --platform=$BUILDPLATFORM node:22.23.3-slim AS web
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts

@@ -45,6 +45,132 @@ jobs:
           kill %1
       - run: npm publish --access public
 
+  # After the npm job, so an image is only published from a tag whose tests passed.
+  # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are organisation secrets, shared with
+  # TinySearch and TinyContext.
+  docker:
+    name: Docker image (${{ matrix.variant }})
+    needs: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write   # keyless cosign signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: hybrid
+            dockerfile: Dockerfile
+            suffix: ''
+            latest: latest
+          - variant: lexical
+            dockerfile: Dockerfile.lexical
+            suffix: '-lexical'
+            latest: lexical
+    env:
+      IMAGE_NAME: marcellm01/tinywebui
+    steps:
+      - uses: actions/checkout@v4
+
+      # v0.2.0 -> :v0.2.0 (+ :latest), or :v0.2.0-lexical (+ :lexical). A pre-release
+      # tag (v0.3.0-rc.1) gets only its own tag, so the moving tag never points at one.
+      - name: Set image tags
+        id: tags
+        env:
+          VERSION: ${{ github.ref_name }}
+          SUFFIX: ${{ matrix.suffix }}
+          LATEST: ${{ matrix.latest }}
+        run: |
+          {
+            echo "value<<EOF"
+            echo "${IMAGE_NAME}:${VERSION}${SUFFIX}"
+            case "$VERSION" in *-*) ;; *) echo "${IMAGE_NAME}:${LATEST}" ;; esac
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # security.yml runs these on the tag too, but beside this job, not before it.
+      - name: Scan the Dockerfile for misconfigurations
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: ${{ matrix.dockerfile }}
+          scanners: misconfig
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+      - name: Scan the repository for secrets
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          skip-dirs: .git,node_modules,models
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4.5.2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build for the vulnerability scan
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_NAME }}:scan
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+
+      - name: Scan image for vulnerabilities and secrets
+        uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_IMAGE_CONFIG_SCANNERS: secret
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:scan
+          scanners: vuln,secret
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.tags.outputs.value }}
+          labels: |
+            org.opencontainers.image.title=TinyWebUI${{ matrix.suffix }}
+            org.opencontainers.image.description=Chat UI for any OpenAI-compatible endpoint, with MCP tools
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the published image (keyless)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
+
   record-deployment:
     name: Record npm deployment
     needs: npm
