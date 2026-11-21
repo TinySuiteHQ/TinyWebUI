@@ -3,6 +3,14 @@ name: publish
 on:
   push:
     tags: ['v*']
+  # Builds the Docker images of a version already on npm, without publishing to npm:
+  # to backfill one, or to rebuild it for base-image security fixes.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to build the images from, for example v0.2.1 (must already be on npm)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,6 +18,7 @@ permissions:
 
 jobs:
   npm:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -46,11 +55,14 @@ jobs:
       - run: npm publish --access public
 
   # After the npm job, so an image is only published from a tag whose tests passed.
+  # A manual run skips that job (!failure() lets this one run after a skip) and
+  # checks instead that the version is already on npm.
   # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are organisation secrets, shared with
   # TinySearch and TinyContext.
   docker:
     name: Docker image (${{ matrix.variant }})
     needs: npm
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -71,21 +83,56 @@ jobs:
     env:
       IMAGE_NAME: marcellm01/tinywebui
     steps:
-      - uses: actions/checkout@v4
+      - name: Check the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT" = push ]; then version="$GITHUB_REF_NAME"; else version="$INPUT"; fi
+          if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Not a release tag: $version"; exit 1
+          fi
+          if [ "$EVENT" != push ]; then
+            npm view "tinywebui@${version#v}" version > /dev/null 2>&1 \
+              || { echo "::error::tinywebui@${version#v} is not on npm"; exit 1; }
+            npm_latest=$(npm view tinywebui dist-tags.latest)
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "npm_latest=${npm_latest:-}" >> "$GITHUB_OUTPUT"
 
-      # v0.2.0 -> :v0.2.0 (+ :latest), or :v0.2.0-lexical (+ :lexical). A pre-release
-      # tag (v0.3.0-rc.1) gets only its own tag, so the moving tag never points at one.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.version.outputs.value }}
+
+      - name: Check the tag matches package.json
+        id: source
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          node -e "const p=require('./package.json'); if (process.env.VERSION !== 'v' + p.version) { console.error('Tag must match package version: v' + p.version); process.exit(1) }"
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # v0.2.0 -> :v0.2.0 (+ :latest), or :v0.2.0-lexical (+ :lexical). The moving tag
+      # never points at a pre-release (v0.3.0-rc.1), and a manual run moves it only
+      # for npm's latest version, so rebuilding an older one never takes it backwards.
       - name: Set image tags
         id: tags
         env:
-          VERSION: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+          NPM_LATEST: ${{ steps.version.outputs.npm_latest }}
           SUFFIX: ${{ matrix.suffix }}
           LATEST: ${{ matrix.latest }}
         run: |
+          case "$VERSION" in
+            *-*) move=no ;;
+            *) if [ "$EVENT" = push ] || [ "$VERSION" = "v$NPM_LATEST" ]; then move=yes; else move=no; fi ;;
+          esac
           {
             echo "value<<EOF"
             echo "${IMAGE_NAME}:${VERSION}${SUFFIX}"
-            case "$VERSION" in *-*) ;; *) echo "${IMAGE_NAME}:${LATEST}" ;; esac
+            if [ "$move" = yes ]; then echo "${IMAGE_NAME}:${LATEST}"; fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -159,7 +206,8 @@ jobs:
             org.opencontainers.image.title=TinyWebUI${{ matrix.suffix }}
             org.opencontainers.image.description=Chat UI for any OpenAI-compatible endpoint, with MCP tools
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.revision }}
             org.opencontainers.image.licenses=AGPL-3.0-or-later
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
