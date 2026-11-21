@@ -83,8 +83,19 @@ COPY --from=build /app /app
 # server and a Python for it on first start. Both are kept in /data, so they
 # are downloaded once per volume, not once per container.
 COPY --from=ghcr.io/astral-sh/uv:0.12.0 /uv /uvx /usr/local/bin/
+# TinySearch reads pages with Playwright's Chromium, which it downloads itself
+# on first use (into /data, below). Chromium needs system libraries that slim
+# leaves out, and Playwright's driver needs libatomic; `install-deps` knows the
+# library list for this Debian release. The Python and packages uv fetches to
+# run it are thrown away.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libatomic1 \
+ && UV_CACHE_DIR=/tmp/uv UV_PYTHON_INSTALL_DIR=/tmp/uv-python \
+    uvx --python 3.12 --from 'playwright>=1.59,<2' playwright install-deps chromium \
+ && rm -rf /tmp/uv /tmp/uv-python /root/.cache /var/lib/apt/lists/*
 ENV UV_CACHE_DIR=/data/uv/cache \
-    UV_PYTHON_INSTALL_DIR=/data/uv/python
+    UV_PYTHON_INSTALL_DIR=/data/uv/python \
+    PLAYWRIGHT_BROWSERS_PATH=/data/ms-playwright
 
 USER node
 VOLUME ["/data"]

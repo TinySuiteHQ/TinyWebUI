@@ -87,23 +87,32 @@ With accounts, a role decides what its people may use (features, models, what th
 
 `npx tinywebui` keeps the config, keys, database and embedding models in one folder per user: `~/Library/Application Support/TinyWebUI` on macOS, `%LOCALAPPDATA%\TinyWebUI` on Windows and `~/.local/share/tinywebui` (or `$XDG_DATA_HOME/tinywebui`) on Linux. Run it in a folder that has its own `tinywebui.config.json`, or pass `--config`, to use that instead. It uses keyword search until you run `npx tinywebui models pull fast` (about 90 MB) to enable hybrid search.
 
-From a clone, run `npm install && npm start`. With Docker, start the service and create the administrator with an email address and password in the browser. The email is checked for valid format; TinyWebUI does not send mail or require a mail server for local accounts:
+From a clone, run `npm install && npm start`.
+
+With Docker, run the image from [Docker Hub](https://hub.docker.com/r/marcellm01/tinywebui) (amd64 and arm64), then create the administrator with an email address and password in the browser. The email is checked for valid format; TinyWebUI does not send mail or require a mail server for local accounts:
 
 ```bash
-docker compose build
-docker compose up -d
+docker run -d --name tinywebui -p 127.0.0.1:7777:7777 -v tinywebui-data:/data marcellm01/tinywebui
 ```
 
-The Compose example publishes port 7777 on the host's loopback interface. Keep the data volume: it contains the accounts, conversations and local password hashes.
+This publishes port 7777 on the host's loopback interface only. Keep the data volume: it contains the accounts, conversations and local password hashes.
+
+| Tag | Image |
+| --- | --- |
+| `latest` | Hybrid search, with the embedding model baked in. Includes uv, so the bundled TinySearch and TinyContext start as they do with `npx`. |
+| `light` | Keyword search only, smaller. No uv: connect MCP servers over HTTP. |
+
+Each image is signed with cosign and carries an SBOM and build provenance. To build it yourself from a clone, run `docker compose build && docker compose up -d`.
 
 Since no mail is sent, there is no emailed reset. People change their own password under Settings → Account, and an admin can set a new one for anyone from Settings → People & roles. If the admin is the one locked out, run this on the server, where it prints a new password and signs that account out everywhere (`--stdin` reads the password instead):
 
 ```bash
 node bin/tinywebui.ts users password owner@example.com                          # from a clone
+docker exec tinywebui node bin/tinywebui.ts users password owner@example.com            # docker run
 docker compose exec tinywebui node bin/tinywebui.ts users password owner@example.com
 ```
 
- `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx; connect MCP servers over HTTP or include their executables in a custom image.
+ `npm start` and `npx tinywebui` default to multiuser setup. To run a local workspace without login, explicitly set `"authMode": "local"` in `tinywebui.config.json`; this mode binds only to loopback and has full access to settings and data, without account management. The runtime images contain Node.js but no npm/npx (the default one has uv for the bundled servers); connect other MCP servers over HTTP or include their executables in a custom image.
 
 The former password-only `single` mode now fails startup instead of opening without login. To move such an installation to local accounts, set `authMode` to `multiuser`, restart, and create the administrator in the browser. On that first setup, existing unowned chats, files, artifacts, folders and automations move to the new administrator. Remove any `TINYWEBUI_PASSWORD` environment variable; it no longer selects an auth mode.
 

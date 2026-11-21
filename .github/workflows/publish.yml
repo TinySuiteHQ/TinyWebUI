@@ -76,10 +76,10 @@ jobs:
             dockerfile: Dockerfile
             suffix: ''
             latest: latest
-          - variant: lexical
+          - variant: light
             dockerfile: Dockerfile.lexical
-            suffix: '-lexical'
-            latest: lexical
+            suffix: '-light'
+            latest: light
     env:
       IMAGE_NAME: marcellm01/tinywebui
     steps:
@@ -113,7 +113,7 @@ jobs:
           node -e "const p=require('./package.json'); if (process.env.VERSION !== 'v' + p.version) { console.error('Tag must match package version: v' + p.version); process.exit(1) }"
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      # v0.2.0 -> :v0.2.0 (+ :latest), or :v0.2.0-lexical (+ :lexical). The moving tag
+      # v0.2.0 -> :v0.2.0 (+ :latest), or :v0.2.0-light (+ :light). The moving tag
       # never points at a pre-release (v0.3.0-rc.1), and a manual run moves it only
       # for npm's latest version, so rebuilding an older one never takes it backwards.
       - name: Set image tags
