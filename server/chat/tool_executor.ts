@@ -26,8 +26,11 @@ export type Approve = (call: { id: string; name: string; args: ToolArgs }) => Pr
 /** A tool result as stored and handed back: `compacted` when only its stub goes to the model. */
 export type StoredToolMessage = NewMessage & { compacted?: true };
 
-/** A call that will not run (`result`), or one that will (`run`). */
-interface Prepared { args: ToolArgs; result?: unknown; run?: CallContext }
+/**
+ * A call that will not run (`result`), or one that will (`run`). `name` is
+ * the tool it resolved to, which can be longer than the name the model wrote.
+ */
+interface Prepared { name: string; args: ToolArgs; result?: unknown; run?: CallContext }
 
 /**
  * Key for spotting a repeated call. Keys are sorted at every depth: a flat
@@ -49,8 +52,10 @@ function stableKey(value: unknown): string {
  * stubbing. State that spans the turn (seen calls, "always allow") lives in
  * the closure, so one executor serves exactly one turn.
  */
-export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, unattended, approve, askUser, footer: roundFooter, hooks, signal }: {
+export function toolExecutor({ cfg, chatId, userId = null, store, hub, offered = null, emit, unattended, approve, askUser, footer: roundFooter, hooks, signal }: {
   cfg: Config; chatId: string; userId?: string | null; store: Store; hub: McpHub; emit: Emit; unattended: boolean;
+  // The names of the tools this turn offered the model; a bare name resolves only among them (null: all).
+  offered?: string[] | null;
   approve: Approve | null; askUser: ((request: AskRequest) => Promise<AskOutcome>) | null;
   footer: (round: number) => string; hooks: Hooks; signal?: AbortSignal;
 }) {
@@ -121,7 +126,13 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
    * for one that will.
    */
   const prepare = async (call: ToolCall, round: number): Promise<Prepared> => {
-    const name = call.function.name;
+    // Resolved first, so approval, the hooks, duplicate tracking and the call
+    // itself all see the tool's full name: a bare `search` is approved (and
+    // "always allow" saved) as `tinysearch__search`, never as `search`. A
+    // name that is no tool is answered here, before anyone is asked to
+    // approve a call that could never run.
+    const resolved = hub.resolve?.(call.function.name, offered) ?? { name: call.function.name };
+    const name = 'name' in resolved ? resolved.name : call.function.name;
     let args: ToolArgs = {};
     let badArgs: string | null = null;
     try { args = call.function.arguments ? JSON.parse(call.function.arguments) : {}; }
@@ -131,11 +142,13 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
     }
     emit({ type: EVENT.TOOL_CALL, id: call.id, name, args: badArgs ? {} : args });
 
+    if ('error' in resolved) return { name, args: badArgs ? {} : args, result: resolved.error };
     if (badArgs) {
       // Never run a tool on arguments the model did not write. Falling back
       // to {} quietly runs it on its defaults, and the model then reasons as
       // if its own arguments had been used.
       return {
+        name,
         args: {},
         result: `Error: the arguments for "${name}" were not valid JSON (${badArgs}), so the`
           + ' tool was not called. Retry with a well-formed JSON object.'
@@ -145,6 +158,7 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
     const seenRound = hub.isIdempotent?.(name) ? seenCalls.get(dupKey) : undefined;
     if (seenRound !== undefined) {
       return {
+        name,
         args,
         result: `Skipped: this is an identical call to "${name}" with the same arguments`
           + ` already made in round ${seenRound + 1} of this turn, and this tool returns the same`
@@ -166,9 +180,9 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
       blocked = `Error: a policy check for "${name}" failed (${err.message}), so the tool was not`
         + ' called. Continue without it.';
     }
-    if (blocked !== null) return { args, result: blocked };
+    if (blocked !== null) return { name, args, result: blocked };
     seenCalls.set(dupKey, round);
-    return { args, run: ctx };
+    return { name, args, run: ctx };
   };
 
   /**
@@ -203,10 +217,10 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
     // lands while one waits for approval must still answer all of them.
     for (const call of calls) {
       try {
-        prepared.push(signal?.aborted ? { args: {}, result: STOPPED } : await prepare(call, round));
+        prepared.push(signal?.aborted ? { name: call.function.name, args: {}, result: STOPPED } : await prepare(call, round));
       } catch (err) {
         if (!signal?.aborted) throw err;
-        prepared.push({ args: {}, result: STOPPED });
+        prepared.push({ name: call.function.name, args: {}, result: STOPPED });
       }
     }
 
@@ -215,7 +229,7 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
     const parallel = prepared.every((p) => !p.run || hub.executionMode?.(p.run.name) === 'parallel');
     const finish = async (p: Prepared, call: ToolCall) => {
       if (p.run) p.result = await run(p.run);
-      emit({ type: EVENT.TOOL_RESULT, id: call.id, name: call.function.name, result: p.result });
+      emit({ type: EVENT.TOOL_RESULT, id: call.id, name: p.name, result: p.result });
     };
     if (parallel) await Promise.all(prepared.map((p, i) => finish(p, calls[i])));
     else for (const [i, p] of prepared.entries()) await finish(p, calls[i]);
@@ -223,8 +237,7 @@ export function toolExecutor({ cfg, chatId, userId = null, store, hub, emit, una
     // Persisted in the order the model made the calls, whatever order they finished in.
     const out: Delivered<StoredToolMessage>[] = [];
     for (const [i, call] of calls.entries()) {
-      const name = call.function.name;
-      const { args, result } = prepared[i];
+      const { name, args, result } = prepared[i];
 
       const text = String(result);
       // Every tool result becomes an artifact, whatever tool produced it. This

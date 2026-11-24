@@ -216,7 +216,7 @@ export async function runChat({
   // the chat record, so it is the owner the route already authorised and not
   // anything the caller, the browser or the model could name.
   const userId = store.chats.get(chatId, ALL_USERS)?.user_id ?? null;
-  const tools_ = toolExecutor({ cfg, chatId, userId, store, hub, emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
+  const tools_ = toolExecutor({ cfg, chatId, userId, store, hub, offered: tools.map((t) => t.function.name), emit, unattended, approve, askUser, footer: (round) => budgetFooter(round, maxRounds) + openTasksNote(store.chats.listTasks(chatId)), hooks, signal });
   const saved: { assistant: AssistantMessage; seq: number }[] = [];
   const appended = await runAgentLoop<AssistantMessage, NewMessage>({
     messages: working,
